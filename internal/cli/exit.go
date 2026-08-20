@@ -9,6 +9,7 @@ import (
 
 	"github.com/LeaflowNET/leaflow/internal/auth"
 	"github.com/LeaflowNET/leaflow/internal/config"
+	"github.com/LeaflowNET/leaflow/internal/dynamic"
 	"github.com/LeaflowNET/leaflow/internal/output"
 	"github.com/LeaflowNET/leaflow/internal/transport"
 	"github.com/LeaflowNET/leaflow/internal/validate"
@@ -118,7 +119,9 @@ func classify(err error) Failure {
 	case errors.As(err, &apiErr):
 		return fromAPI(apiErr)
 
-	case errors.Is(err, config.ErrConfigNotFound),
+	case errors.Is(err, dynamic.ErrMissingArguments),
+		errors.Is(err, dynamic.ErrTooManyArguments),
+		errors.Is(err, config.ErrConfigNotFound),
 		errors.Is(err, config.ErrConfigMalformed),
 		errors.Is(err, output.ErrUnknownFormat),
 		errors.Is(err, output.ErrBadColumnSpec),

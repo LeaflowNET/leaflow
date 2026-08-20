@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -220,4 +221,62 @@ func names(parameters []*openapi3.Parameter) []string {
 	}
 
 	return out
+}
+
+// "accepts 1 arg(s), received 0" says how many are missing, not what they are.
+// Everything reported here comes from the contract.
+func TestMissingArgumentsAreNamed(t *testing.T) {
+	binding := Bind(operation(t, "compute", "detach-disk"))
+
+	cmd := &cobra.Command{Use: "detach-disk"}
+	binding.Register(cmd)
+
+	err := cmd.Args(cmd, nil)
+	if err == nil {
+		t.Fatal("expected missing arguments to be rejected")
+	}
+
+	if !errors.Is(err, ErrMissingArguments) {
+		t.Errorf("err = %v, want ErrMissingArguments", err)
+	}
+
+	for _, want := range []string{"<instance-id>", "<disk-id>", "uuid"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not mention %s: %v", want, err)
+		}
+	}
+}
+
+// A format is more useful than a bare type: knowing an argument is a UUID is
+// what stops someone passing a name.
+func TestArgumentHelpStatesTypesAndLimits(t *testing.T) {
+	uuidArg := describeArguments(Bind(operation(t, "compute", "get-instance")))
+	if !strings.Contains(uuidArg, "uuid") {
+		t.Errorf("expected a uuid format: %s", uuidArg)
+	}
+
+	bounded := describeArguments(Bind(operation(t, "canopy", "get-model")))
+	if !strings.Contains(bounded, "at most 128 characters") {
+		t.Errorf("expected the length limit: %s", bounded)
+	}
+}
+
+// Filenames are never a valid id, and offering them answers a question nobody
+// asked.
+func TestPositionalArgsDoNotCompleteFilenames(t *testing.T) {
+	cmd := NewCommand("get-instance", operation(t, "compute", "get-instance"), &Runtime{})
+
+	if cmd.ValidArgsFunction == nil {
+		t.Fatal("no completion function was set")
+	}
+
+	values, directive := cmd.ValidArgsFunction(cmd, nil, "")
+
+	if len(values) != 0 {
+		t.Errorf("unexpected suggestions: %v", values)
+	}
+
+	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
+		t.Errorf("directive = %v, want NoFileComp", directive)
+	}
 }

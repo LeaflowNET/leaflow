@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/LeaflowNET/leaflow/internal/naming"
 	"github.com/LeaflowNET/leaflow/internal/output"
 	"github.com/LeaflowNET/leaflow/internal/spec"
 	"github.com/LeaflowNET/leaflow/internal/transport"
@@ -28,7 +29,7 @@ func NewCommand(use string, op *spec.Operation, rt *Runtime) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           commandUsage(use, binding),
 		Short:         summary(op),
-		Long:          details(op),
+		Long:          details(op, binding),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -38,6 +39,15 @@ func NewCommand(use string, op *spec.Operation, rt *Runtime) *cobra.Command {
 	}
 
 	binding.Register(cmd)
+
+	// Filenames are never a valid id, and offering them is worse than offering
+	// nothing: it answers a question nobody asked. No candidates are suggested
+	// because the contract does not say where they would come from — deriving
+	// that from the path would be right often enough to be relied on and wrong
+	// often enough to mislead.
+	cmd.ValidArgsFunction = func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, binding, rt)
@@ -93,10 +103,44 @@ func commandUsage(name string, binding *Binding) string {
 	parts := []string{name}
 
 	for _, parameter := range binding.Path {
-		parts = append(parts, "<"+kebab(parameter.Name)+">")
+		parts = append(parts, "<"+naming.Kebab(parameter.Name)+">")
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// describeArguments spells out each positional argument.
+//
+// The usage line says <modelId> and nothing else, which does not say whether
+// that is a name, a UUID, or something with a length limit. Everything printed
+// here is already in the contract; none of it is inferred.
+func describeArguments(binding *Binding) string {
+	if len(binding.Path) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+
+	builder.WriteString("Arguments:\n")
+
+	for _, parameter := range binding.Path {
+		constraint := describeSchema(parameterSchema(parameter))
+
+		description := firstSentence(parameter.Description)
+		if description == "" {
+			description = firstSentence(schemaDescription(parameterSchema(parameter)))
+		}
+
+		fmt.Fprintf(&builder, "  %-22s %s", "<"+naming.Kebab(parameter.Name)+">", constraint)
+
+		if description != "" {
+			fmt.Fprintf(&builder, " — %s", description)
+		}
+
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
 }
 
 func summary(op *spec.Operation) string {
@@ -110,7 +154,7 @@ func summary(op *spec.Operation) string {
 // details ends with the operationId, method and path: those are what you match
 // against backend logs or API docs, and there is no other way back to the
 // operationId from a command name.
-func details(op *spec.Operation) string {
+func details(op *spec.Operation, binding *Binding) string {
 	var builder strings.Builder
 
 	if op.Summary != "" {
@@ -121,6 +165,11 @@ func details(op *spec.Operation) string {
 	if op.Description != "" {
 		builder.WriteString(strings.TrimSpace(op.Description))
 		builder.WriteString("\n\n")
+	}
+
+	if arguments := describeArguments(binding); arguments != "" {
+		builder.WriteString(arguments)
+		builder.WriteString("\n")
 	}
 
 	fmt.Fprintf(&builder, "operation: %s (%s %s)", op.ID, op.Method, op.Path)

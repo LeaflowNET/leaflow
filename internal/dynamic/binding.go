@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/LeaflowNET/leaflow/internal/naming"
 	"github.com/LeaflowNET/leaflow/internal/spec"
 	"github.com/LeaflowNET/leaflow/internal/validate"
 )
@@ -25,6 +26,10 @@ var (
 	ErrBodyUnreadable = errors.New("cannot read request body")
 
 	ErrBodyNotJSON = errors.New("--body is not valid JSON")
+
+	ErrMissingArguments = errors.New("missing argument")
+
+	ErrTooManyArguments = errors.New("too many arguments")
 )
 
 // Binding describes an operation's arguments:
@@ -153,7 +158,7 @@ func (b *Binding) bindBody(op *spec.Operation) {
 
 		b.Fields = append(b.Fields, &BodyField{
 			Name:     name,
-			Flag:     kebab(name),
+			Flag:     naming.Kebab(name),
 			Schema:   ref.Value,
 			Required: required[name],
 		})
@@ -172,7 +177,7 @@ func (b *Binding) nameFlags() {
 	}
 
 	for _, parameter := range b.Query {
-		name := kebab(parameter.Name)
+		name := naming.Kebab(parameter.Name)
 		if taken[name] {
 			name = "query-" + name
 		}
@@ -187,7 +192,7 @@ func (b *Binding) FlagName(parameter *openapi3.Parameter) string {
 		return name
 	}
 
-	return kebab(parameter.Name)
+	return naming.Kebab(parameter.Name)
 }
 
 func (b *Binding) Register(cmd *cobra.Command) {
@@ -210,11 +215,48 @@ func (b *Binding) Register(cmd *cobra.Command) {
 		flags.String("body", "", "whole request body as JSON; @file or @- to read from a file or stdin")
 	}
 
+	// cobra's own message is "accepts 1 arg(s), received 0", which says how many
+	// are missing but not what they are. The contract knows their names, types
+	// and limits, and that is the whole of what someone needs to type one.
 	if len(b.Path) > 0 {
-		cmd.Args = cobra.ExactArgs(len(b.Path))
+		cmd.Args = b.exactArgs()
 	} else {
 		cmd.Args = cobra.NoArgs
 	}
+}
+
+func (b *Binding) exactArgs() cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) == len(b.Path) {
+			return nil
+		}
+
+		help := fmt.Sprintf("\n\n%s\nusage: %s %s",
+			strings.TrimRight(describeArguments(b), "\n"),
+			cmd.CommandPath(),
+			commandUsageArgs(b))
+
+		if len(args) < len(b.Path) {
+			missing := make([]string, 0, len(b.Path)-len(args))
+			for _, parameter := range b.Path[len(args):] {
+				missing = append(missing, "<"+naming.Kebab(parameter.Name)+">")
+			}
+
+			return fmt.Errorf("%w: %s%s", ErrMissingArguments, strings.Join(missing, " "), help)
+		}
+
+		return fmt.Errorf("%w: expected %d, got %d%s",
+			ErrTooManyArguments, len(b.Path), len(args), help)
+	}
+}
+
+func commandUsageArgs(b *Binding) string {
+	parts := make([]string, 0, len(b.Path))
+	for _, parameter := range b.Path {
+		parts = append(parts, "<"+naming.Kebab(parameter.Name)+">")
+	}
+
+	return strings.Join(parts, " ")
 }
 
 func registerFlag(flags *pflag.FlagSet, name string, schema *openapi3.Schema, usage string) {
@@ -245,7 +287,7 @@ func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, quer
 
 		converted, convErr := convert(raw, schema)
 		if convErr != nil {
-			problems = append(problems, fmt.Sprintf("<%s> %s", kebab(parameter.Name), convErr))
+			problems = append(problems, fmt.Sprintf("<%s> %s", naming.Kebab(parameter.Name), convErr))
 
 			continue
 		}
@@ -553,10 +595,6 @@ func flattenable(schema *openapi3.Schema) bool {
 	return false
 }
 
-func kebab(name string) string {
-	return strings.ReplaceAll(name, "_", "-")
-}
-
 func schemaUsage(schema *openapi3.Schema) string {
 	if schema == nil {
 		return ""
@@ -609,7 +647,7 @@ func flagLabel(name string) validate.Labeler {
 }
 
 func positionalLabel(parameter *openapi3.Parameter) validate.Labeler {
-	return func([]string) string { return "<" + kebab(parameter.Name) + ">" }
+	return func([]string) string { return "<" + naming.Kebab(parameter.Name) + ">" }
 }
 
 // bodyLabel maps a JSON field back to the flag that set it.
@@ -641,4 +679,64 @@ func pointerLabel() validate.Labeler {
 
 		return "request body ." + strings.Join(path, ".")
 	}
+}
+
+// describeSchema states a value's type and limits in the terms the contract
+// uses. Nothing is inferred: a missing constraint simply is not printed.
+func describeSchema(schema *openapi3.Schema) string {
+	if schema == nil {
+		return "string"
+	}
+
+	kind := primaryType(schema)
+	if kind == "" {
+		kind = "string"
+	}
+
+	// The format is more useful than the type when there is one: knowing an
+	// argument is a UUID is what stops someone passing a name.
+	if schema.Format != "" {
+		kind = schema.Format
+	}
+
+	var limits []string
+
+	if schema.MaxLength != nil {
+		limits = append(limits, fmt.Sprintf("at most %d characters", *schema.MaxLength))
+	}
+
+	if schema.MinLength > 0 {
+		limits = append(limits, fmt.Sprintf("at least %d characters", schema.MinLength))
+	}
+
+	if schema.Min != nil {
+		limits = append(limits, fmt.Sprintf("minimum %v", *schema.Min))
+	}
+
+	if schema.Max != nil {
+		limits = append(limits, fmt.Sprintf("maximum %v", *schema.Max))
+	}
+
+	if len(schema.Enum) > 0 {
+		options := make([]string, 0, len(schema.Enum))
+		for _, option := range schema.Enum {
+			options = append(options, fmt.Sprint(option))
+		}
+
+		limits = append(limits, "one of "+strings.Join(options, ", "))
+	}
+
+	if len(limits) == 0 {
+		return kind
+	}
+
+	return kind + ", " + strings.Join(limits, ", ")
+}
+
+func schemaDescription(schema *openapi3.Schema) string {
+	if schema == nil {
+		return ""
+	}
+
+	return schema.Description
 }
