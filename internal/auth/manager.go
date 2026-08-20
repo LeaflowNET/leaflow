@@ -39,6 +39,10 @@ var (
 
 	ErrExchangeFailed = errors.New("project token exchange failed")
 
+	// ErrLoginAborted means the caller gave up on the browser flow, not that
+	// anything failed.
+	ErrLoginAborted = errors.New("browser sign-in abandoned")
+
 	ErrExchangeUnknown = errors.New(
 		"the bundled contract does not declare " + ExchangeOperation + ", so a project token cannot be obtained")
 
@@ -285,7 +289,10 @@ const loginScope = "openid profile email iam offline_access"
 // requires S256 for this client, so a downgrade to `plain` is refused.
 //
 // The redirect is a loopback listener on a port the OS picks, per RFC 8252.
-func (m *Manager) Login(ctx context.Context, notify func(target string)) (*Credentials, error) {
+// abort, when closed, gives up on the browser flow and returns
+// ErrLoginAborted. The caller offers it when a keypress should switch to the
+// device flow instead.
+func (m *Manager) Login(ctx context.Context, notify func(target string), abort <-chan struct{}) (*Credentials, error) {
 	ep, err := m.endpoints(ctx)
 	if err != nil {
 		return nil, err
@@ -326,6 +333,8 @@ func (m *Manager) Login(ctx context.Context, notify func(target string)) (*Crede
 
 	select {
 	case result = <-loopback.results:
+	case <-abort:
+		return nil, ErrLoginAborted
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(5 * time.Minute):

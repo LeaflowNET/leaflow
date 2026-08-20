@@ -38,9 +38,12 @@ leaflow project use <project>
 leaflow compute list-instances
 ```
 
-Signing in opens a browser and uses authorization code with PKCE. On a machine
-without one — over ssh, in a container — use `leaflow login --device` and
-approve the code elsewhere.
+Signing in opens a browser and uses authorization code with PKCE.
+
+The redirect goes to a loopback port on the machine running the command, so
+opening the link anywhere else — over ssh, for instance — cannot complete it.
+Press Enter at the prompt for a code you can approve from any device, or start
+that way with `leaflow login --device`.
 
 For CI, pipe in a refresh token, or set `LEAFLOW_TOKEN` to a project token:
 

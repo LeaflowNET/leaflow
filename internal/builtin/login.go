@@ -100,20 +100,54 @@ or set LEAFLOW_TOKEN to a project token and do not sign in at all.`,
 
 // Progress goes to stderr so a scripted `leaflow login -o json` keeps stdout to
 // the result alone.
+//
+// Pressing Enter switches to the device flow, and that is not a nicety. The
+// redirect address is a loopback port on *this* machine. Over ssh the URL is
+// printed on the server while the browser opens on the laptop, so the callback
+// arrives at the laptop's own port where nothing is listening, and sign-in
+// hangs until it times out with no indication of why. Someone in that position
+// needs a way out that does not require knowing any of the above.
 func browserLogin(cmd *cobra.Command, ext *extension.Context, noBrowser bool) (*auth.Credentials, error) {
 	out := cmd.ErrOrStderr()
+	canPrompt := interactive(cmd)
 
-	return ext.Tokens.Login(cmd.Context(), func(target string) {
-		if noBrowser || !interactive(cmd) {
+	abort := make(chan struct{})
+
+	if canPrompt {
+		// Reads until a newline. The goroutine outlives a successful sign-in,
+		// which is fine: nothing else reads stdin afterwards and the process is
+		// about to exit.
+		go func() {
+			_, _ = bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+			close(abort)
+		}()
+	}
+
+	creds, err := ext.Tokens.Login(cmd.Context(), func(target string) {
+		if noBrowser || !canPrompt {
 			fmt.Fprintf(out, "open this URL to sign in:\n\n  %s\n\n", target)
-
-			return
+		} else {
+			fmt.Fprintln(out, "opening your browser to sign in...")
+			fmt.Fprintf(out, "if it does not open, use:\n\n  %s\n\n", target)
+			auth.OpenBrowser(target)
 		}
 
-		fmt.Fprintln(out, "opening your browser to sign in...")
-		fmt.Fprintf(out, "if it does not open, use:\n\n  %s\n\n", target)
-		auth.OpenBrowser(target)
-	})
+		if canPrompt {
+			fmt.Fprintln(out, "That address is local to this machine, so it will not work")
+			fmt.Fprintln(out, "if you opened the link somewhere else — over ssh, for instance.")
+			fmt.Fprintln(out, "Press Enter for a code you can approve from any device.")
+			fmt.Fprintln(out)
+		}
+	}, abort)
+
+	if errors.Is(err, auth.ErrLoginAborted) {
+		fmt.Fprintln(out, "Switching to device sign-in.")
+		fmt.Fprintln(out)
+
+		return deviceLogin(cmd, ext, noBrowser)
+	}
+
+	return creds, err
 }
 
 func deviceLogin(cmd *cobra.Command, ext *extension.Context, noBrowser bool) (*auth.Credentials, error) {
@@ -130,22 +164,13 @@ func deviceLogin(cmd *cobra.Command, ext *extension.Context, noBrowser bool) (*a
 	}
 
 	fmt.Fprintf(out, "first copy your one-time code: %s\n", code.UserCode)
+	fmt.Fprintf(out, "then open: %s\n", target)
 
-	// The code is shown before the browser opens, and the pause is what makes
-	// that useful: a browser stealing focus mid-sentence is how people end up on
-	// the verification page without having read the code.
-	if interactive(cmd) && !noBrowser {
-		fmt.Fprint(out, "press Enter to open the browser, or Ctrl-C to quit... ")
-		_, _ = bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
-
-		if code.CompleteURI != "" {
-			// This form carries the code, so there is nothing to paste.
-			auth.OpenBrowser(code.CompleteURI)
-		} else {
-			auth.OpenBrowser(target)
-		}
-	} else {
-		fmt.Fprintf(out, "then open: %s\n", target)
+	// No pause for a keypress here. This is reached either from a machine with
+	// no browser, or from the browser flow having just consumed the Enter that
+	// got us here — waiting for a second one would look like a hang.
+	if !noBrowser && interactive(cmd) {
+		auth.OpenBrowser(target)
 	}
 
 	fmt.Fprintln(out, "\nwaiting for confirmation...")
