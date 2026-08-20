@@ -8,8 +8,11 @@ Command line interface for the Leaflow platform.
 curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh
 ```
 
-Installs to `~/.local/bin`; set `LEAFLOW_INSTALL_DIR` to put it elsewhere. The
-download is checked against the published checksums.
+Installs to `~/.local/bin` and turns on completion for your shell. The download
+is checked against the published checksums.
+
+Set `LEAFLOW_INSTALL_DIR` to install elsewhere, or `LEAFLOW_NO_COMPLETION=1` to
+skip the completion script.
 
 With Go:
 
@@ -19,11 +22,7 @@ go install github.com/LeaflowNET/leaflow/cmd/leaflow@latest
 
 On Windows, take the zip from the [releases page](https://github.com/LeaflowNET/leaflow/releases).
 
-Then turn on completion for your shell:
-
-```sh
-leaflow install-completion
-```
+Installed another way, turn on completion with `leaflow install-completion`.
 
 Later, update in place:
 

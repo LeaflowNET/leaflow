@@ -6,8 +6,9 @@
 #
 # Environment:
 #
-#   LEAFLOW_VERSION       version to install, default the latest release
-#   LEAFLOW_INSTALL_DIR   where to put the binary, default ~/.local/bin
+#   LEAFLOW_VERSION         version to install, default the latest release
+#   LEAFLOW_INSTALL_DIR     where to put the binary, default ~/.local/bin
+#   LEAFLOW_NO_COMPLETION   set to skip installing shell completion
 #
 # Written for POSIX sh, not bash: this runs on whatever /bin/sh happens to be,
 # including Alpine's ash inside a container.
@@ -152,6 +153,8 @@ main() {
 
     say "Installed ${INSTALL_DIR}/${BINARY}"
 
+    install_completion
+
     case ":${PATH}:" in
         *":${INSTALL_DIR}:"*)
             say ""
@@ -170,6 +173,26 @@ main() {
             say "Then run: ${BINARY} login"
             ;;
     esac
+}
+
+# install_completion writes a completion script for the current shell.
+#
+# Writing the file is safe to do unasked: it goes to a directory the shell
+# already scans, and a stale one is inert. Editing ~/.zshrc is not, so that is
+# never done here — install-completion prints the one line to add when zsh
+# needs it.
+#
+# Failure is not an error. Completion is a convenience, and a shell this does
+# not know about should not make an installation look like it failed.
+install_completion() {
+    [ -z "${LEAFLOW_NO_COMPLETION:-}" ] || return 0
+
+    # Probed first, because this script is fetched from main and may be running
+    # against an older release that has no such command. Letting that print its
+    # own error would make a successful installation look broken.
+    "${INSTALL_DIR}/${BINARY}" install-completion --help >/dev/null 2>&1 || return 0
+
+    "${INSTALL_DIR}/${BINARY}" install-completion 2>&1 || true
 }
 
 main
