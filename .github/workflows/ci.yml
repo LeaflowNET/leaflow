@@ -35,13 +35,32 @@ jobs:
       - name: doctor
         run: go run ./cmd/leaflow-doctor
 
-      # Catches a broken release config on the commit that introduces it, rather
-      # than on the tag that needs it to work.
+      # check validates the config's structure, which is not the same as the
+      # release working: a template function that does not exist passes check
+      # and fails at publish time, after the release has already been created.
       - name: goreleaser check
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: check
+
+      - name: goreleaser build
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: build --snapshot --clean --single-target
+
+      # A wrong ldflags path does not fail the build — it silently leaves the
+      # version at "dev", and the first person to notice is whoever asks a
+      # released binary what it is.
+      - name: version is stamped
+        run: |
+          binary=$(find dist -name leaflow -type f | head -1)
+          version=$("$binary" --version)
+          echo "$version"
+          case "$version" in
+            *dev*) echo "version was not stamped; check the ldflags paths in .goreleaser.yaml" >&2; exit 1 ;;
+          esac
 
       - name: gofmt
         run: |
