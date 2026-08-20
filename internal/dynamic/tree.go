@@ -7,31 +7,34 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/LeaflowNET/leaflow/internal/extension"
 	"github.com/LeaflowNET/leaflow/internal/naming"
 	"github.com/LeaflowNET/leaflow/internal/spec"
 )
 
 // Build assembles the command tree straight from the contracts:
 //
-//	leaflow <service> <tag> <operation-id>
-//	leaflow compute    disk  create-disk
+//	leaflow <service> <operation-id>
+//	leaflow compute    create-disk
 //
-// Both name parts are literal values from the contract, lowercased and
-// hyphenated. Nothing is inferred, so nothing can drift: an operationId is
-// already treated as a stable identifier — the Go and TypeScript SDKs generate
-// their method names from it — and a command name is now the same identifier
-// rather than a second vocabulary that has to be kept in sync with it.
+// The name is a literal value from the contract, lowercased and hyphenated.
+// Nothing is inferred, so nothing can drift: an operationId is already treated
+// as a stable identifier — the Go and TypeScript SDKs generate their method
+// names from it — and a command name is now that same identifier rather than a
+// second vocabulary to keep in sync with it. One identifier therefore serves
+// the CLI, the SDKs and an MCP tool name alike.
 //
-// It also means one identifier serves the CLI, the SDKs and an MCP tool name,
-// so a new backend operation becomes reachable everywhere at once, with no
-// table to update.
+// The contract's tag is not a level in the path. operationIds are unique within
+// a contract, so a tag adds nothing to addressing and quite a lot of noise to
+// typing: `compute disk create-disk` says disk twice. Tags become help groups
+// instead, so `leaflow compute --help` still reads as a set of resources rather
+// than eighty-three flat lines.
 //
-// Commands written in code are layered on top and may replace any of these; see
-// package extension.
-func Build(specs *spec.Set, rt *Runtime, ext *extension.Context) []*cobra.Command {
-	services := map[string]*cobra.Command{}
-
+// Every command comes from a contract. Nothing is hand-written on top: a
+// hand-written command is a second source for the same surface, and then the
+// question "is this one generated" has to be answered per command. Where the
+// contract makes something awkward — a verb that lives in the request body —
+// the fix belongs upstream in the contract, not in a local exception.
+func Build(specs *spec.Set, rt *Runtime) []*cobra.Command {
 	var roots []*cobra.Command
 
 	for _, service := range specs.Services() {
@@ -44,60 +47,76 @@ func Build(specs *spec.Set, rt *Runtime, ext *extension.Context) []*cobra.Comman
 
 		addOperations(cmd, service, rt)
 
-		services[service.Name] = cmd
 		roots = append(roots, cmd)
 	}
 
 	sort.Slice(roots, func(i, j int) bool { return roots[i].Use < roots[j].Use })
 
-	return append(roots, applyExtensions(services, ext)...)
+	return roots
 }
 
 func addOperations(root *cobra.Command, service *spec.Service, rt *Runtime) {
-	groups := map[string]*cobra.Command{}
+	// Groups are declared up front and in order, because cobra prints them in
+	// the order they were added — and adding them as operations are walked would
+	// order the headings by whichever operationId happened to sort first.
+	for _, tag := range serviceTags(service) {
+		root.AddGroup(&cobra.Group{ID: tag, Title: groupTitle(root, tag)})
+	}
 
 	for _, op := range service.Operations() {
-		parent := root
+		cmd := NewCommand(naming.Kebab(op.ID), op, rt)
 
 		if len(op.Tags) > 0 {
-			parent = ensureGroup(root, groups, op.Tags[0])
+			cmd.GroupID = op.Tags[0]
 		}
 
-		name := naming.Kebab(op.ID)
-
-		// operationIds are unique within a contract, so two commands can only
-		// collide with a group name. Renaming either would invent a name that is
-		// in no contract, so the operation keeps its own and the group yields.
-		if existing := findChild(parent, name); existing != nil && !existing.Runnable() {
-			existing.Use = name + "-group"
-		}
-
-		parent.AddCommand(NewCommand(name, op, rt))
+		root.AddCommand(cmd)
 	}
 }
 
-func ensureGroup(root *cobra.Command, groups map[string]*cobra.Command, tag string) *cobra.Command {
-	name := naming.Kebab(tag)
-	if name == "" {
-		return root
+// serviceTags lists a service's tags in the contract's own order, falling back
+// to alphabetical for any the contract does not declare. The contract's order
+// is editorial — it puts the primary resource first — and alphabetising would
+// throw that away.
+func serviceTags(service *spec.Service) []string {
+	seen := map[string]bool{}
+
+	var declared []string
+
+	if service.Doc != nil {
+		for _, tag := range service.Doc.Tags {
+			if tag != nil && tag.Name != "" && !seen[tag.Name] {
+				seen[tag.Name] = true
+				declared = append(declared, tag.Name)
+			}
+		}
 	}
 
-	if group, ok := groups[name]; ok {
-		return group
+	var rest []string
+
+	for _, op := range service.Operations() {
+		if len(op.Tags) == 0 || seen[op.Tags[0]] {
+			continue
+		}
+
+		seen[op.Tags[0]] = true
+		rest = append(rest, op.Tags[0])
 	}
 
-	group := &cobra.Command{
-		Use: name,
-		// Short is whatever the contract says about this tag, and nothing when it
-		// says nothing. "operations tagged Account" is not a description, it is
-		// the command name restated as a sentence.
-		Short: tagSummary(root, tag),
+	sort.Strings(rest)
+
+	return append(declared, rest...)
+}
+
+// groupTitle is the heading a tag gets in help. The contract's own description
+// is used when it has one; otherwise the tag itself, because "operations tagged
+// Account" is not a description, it is the heading restated as a sentence.
+func groupTitle(root *cobra.Command, tag string) string {
+	if summary := tagSummary(root, tag); summary != "" {
+		return summary
 	}
 
-	groups[name] = group
-	root.AddCommand(group)
-
-	return group
+	return tag
 }
 
 // tagSummary looks up the tag's description in the contract's top-level tags
@@ -116,66 +135,6 @@ func tagSummary(root *cobra.Command, tag string) string {
 	}
 
 	return ""
-}
-
-func findChild(parent *cobra.Command, name string) *cobra.Command {
-	for _, child := range parent.Commands() {
-		if child.Name() == name {
-			return child
-		}
-	}
-
-	return nil
-}
-
-// applyExtensions attaches code-written commands, replacing generated ones of
-// the same name, and returns those belonging at the top level.
-func applyExtensions(services map[string]*cobra.Command, ext *extension.Context) []*cobra.Command {
-	if ext == nil {
-		return nil
-	}
-
-	var top []*cobra.Command
-
-	for _, declared := range extension.All() {
-		built := declared.Build(ext)
-		if built == nil {
-			continue
-		}
-
-		if declared.Service == "" {
-			top = append(top, built)
-
-			continue
-		}
-
-		// Declared under a service with no contract bundled. Skipping beats
-		// crashing: one missing contract should not stop the CLI from starting.
-		parent, ok := services[declared.Service]
-		if !ok {
-			continue
-		}
-
-		for i := 0; i+1 < len(declared.Path); i++ {
-			child := findChild(parent, declared.Path[i])
-			if child == nil {
-				child = &cobra.Command{Use: declared.Path[i]}
-				parent.AddCommand(child)
-			}
-
-			parent = child
-		}
-
-		if len(declared.Path) > 0 {
-			if existing := findChild(parent, declared.Path[len(declared.Path)-1]); existing != nil {
-				parent.RemoveCommand(existing)
-			}
-		}
-
-		parent.AddCommand(built)
-	}
-
-	return top
 }
 
 // tagDescriptions flattens the contract's tag list into the annotation the

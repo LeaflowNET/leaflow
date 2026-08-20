@@ -15,7 +15,6 @@
 package spec
 
 import (
-	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,18 +24,16 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/LeaflowNET/leaflow/apis"
 )
 
-// The tree is embedded as published — leaflow/<service>/v1/openapi.yaml plus
-// the shared leaflow/type/v1/error.yaml that every contract references. Keeping
-// the layout means a synced file is byte-identical to upstream, so a review
-// diff is the upstream diff and nothing in between.
-//
-//go:embed all:data/leaflow
-var embedded embed.FS
+// embedded is the contract tree, which lives in the apis package at the
+// repository root; see its documentation for the layout.
+var embedded = apis.Contracts
 
 const (
-	embedRoot = "data/leaflow"
+	embedRoot = apis.Root
 
 	// typeService holds shared schemas rather than operations, so it is not a
 	// service and gets no command tree.

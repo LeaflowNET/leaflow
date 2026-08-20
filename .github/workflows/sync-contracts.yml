@@ -1,36 +1,32 @@
-# Pull current contracts into internal/spec/data and open a pull request.
+# Bring current contracts into apis/ and open a pull request.
 #
-# Three triggers, deliberately:
+# Two ways in, and the design does not depend on which one works:
 #
-#   repository_dispatch  the contracts repository says it released something
-#   schedule             reconciliation, because events get lost
-#   workflow_dispatch    by hand
+#   push to contracts/sync   the contracts repository pushed a branch here
+#   schedule                 reconciliation, once a day
 #
-# The event is what makes this prompt; the schedule is what makes it reliable.
-# A dispatch goes missing whenever a token expires, a workflow is edited, or a
-# release is cut by hand — and nothing reports that it did. The daily run
-# notices within a day either way, and is a no-op when the event already worked.
+# The contracts repository pushes with a deploy key: a credential scoped to this
+# one repository, holding no API rights, belonging to no person, and revocable
+# without touching anyone's account. What is genuinely unclear is whether a
+# deploy-key push starts a workflow — GitHub documents that GITHUB_TOKEN pushes
+# do not, and says nothing either way about deploy keys.
 #
-# To send the event, add this to the contracts repository's release workflow:
+# So this does not rely on the answer. If the push does start this workflow, the
+# pull request appears immediately. If it does not, the scheduled run finds the
+# branch within a day and opens the same one. Either way the result is identical
+# and nothing silently does not happen.
 #
-#   - uses: peter-evans/repository-dispatch@v3
-#     with:
-#       token: ${{ secrets.LEAFLOW_CLI_TOKEN }}   # PAT with repo scope on LeaflowNET/leaflow
-#       repository: LeaflowNET/leaflow
-#       event-type: contracts-released
-#       client-payload: '{"ref": "${{ github.ref_name }}"}'
-#
-# The result is a pull request, never a direct push. A contract can remove an
-# operation, which removes a command, which breaks whatever was scripted against
-# it — that deserves a person, and the pull request body says exactly which
-# commands appear and disappear so the decision takes seconds rather than a
-# read through several thousand lines of YAML.
+# The pull request is always the outcome, never a direct push to main. A
+# contract can remove an operation, which removes a command, which breaks
+# whatever was scripted against it. The body states exactly which commands
+# appear and disappear, so that decision takes seconds instead of a read through
+# several thousand lines of YAML.
 
 name: sync-contracts
 
 on:
-  repository_dispatch:
-    types: [contracts-released]
+  push:
+    branches: [contracts/sync]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -51,7 +47,11 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # Always builds the surface from main, so the diff describes what merging
+      # would change rather than what the branch changed against itself.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-go@v5
         with:
@@ -61,27 +61,47 @@ jobs:
       - name: record the current command surface
         run: go run ./cmd/leaflow-doctor -commands > /tmp/before.txt
 
-      - name: check out contracts
+      - name: take contracts from the pushed branch
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}"
+          git checkout "origin/${GITHUB_REF_NAME}" -- apis/
+
+      - name: take contracts from the source repository
+        if: github.event_name != 'push'
         uses: actions/checkout@v4
         with:
           repository: ${{ env.CONTRACTS_REPO }}
-          ref: ${{ github.event.client_payload.ref || inputs.ref || 'main' }}
+          ref: ${{ inputs.ref || 'main' }}
           path: .contracts
           token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
 
       - name: copy contracts
+        if: github.event_name != 'push'
         run: ./scripts/sync-contracts.sh .contracts
 
-      # Runs before the diff so a contract that does not even parse fails here,
-      # rather than producing a pull request whose summary is an error message.
+      - name: stop if nothing changed
+        id: changed
+        run: |
+          if git diff --quiet -- apis/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Contracts already up to date."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Runs before the summary so a contract that does not even parse fails
+      # here, rather than producing a pull request whose body is an error.
       - name: verify
+        if: steps.changed.outputs.changed == 'true'
         run: |
           go build ./...
           go test ./...
           go run ./cmd/leaflow-doctor
 
       - name: summarise the change
-        id: changes
+        if: steps.changed.outputs.changed == 'true'
+        id: summary
         run: |
           go run ./cmd/leaflow-doctor -commands > /tmp/after.txt
           ./scripts/contract-changes.sh /tmp/before.txt /tmp/after.txt > /tmp/changes.md
@@ -91,18 +111,17 @@ jobs:
             echo 'body<<CHANGES_EOF'
             cat /tmp/changes.md
             echo
-            echo "Synced from \`${{ env.CONTRACTS_REPO }}@${{ github.event.client_payload.ref || inputs.ref || 'main' }}\`."
-            echo
-            echo 'Contracts are embedded at build time, so these commands reach users'
-            echo 'with the next release, not on merge.'
+            echo 'Contracts are embedded at build time, so these reach users with the'
+            echo 'next release rather than on merge.'
             echo CHANGES_EOF
           } >> "$GITHUB_OUTPUT"
 
       - name: open pull request
+        if: steps.changed.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
-          branch: contracts/sync
+          branch: contracts/pr
           title: "chore: sync API contracts"
           commit-message: "chore: sync API contracts"
-          body: ${{ steps.changes.outputs.body }}
+          body: ${{ steps.summary.outputs.body }}
           delete-branch: true

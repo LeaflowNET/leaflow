@@ -5,7 +5,24 @@ Command line interface for the Leaflow platform.
 ## Install
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh
+```
+
+Installs to `~/.local/bin`; set `LEAFLOW_INSTALL_DIR` to put it elsewhere. The
+download is checked against the published checksums.
+
+With Go:
+
+```sh
 go install github.com/LeaflowNET/leaflow/cmd/leaflow@latest
+```
+
+On Windows, take the zip from the [releases page](https://github.com/LeaflowNET/leaflow/releases).
+
+Then turn on completion for your shell:
+
+```sh
+leaflow install-completion
 ```
 
 ## Sign in
@@ -13,7 +30,7 @@ go install github.com/LeaflowNET/leaflow/cmd/leaflow@latest
 ```sh
 leaflow login
 leaflow project use <project>
-leaflow compute instance list-instances
+leaflow compute list-instances
 ```
 
 Signing in opens a browser and uses authorization code with PKCE. On a machine
@@ -28,23 +45,24 @@ echo "$LEAFLOW_REFRESH_TOKEN" | leaflow login --with-token
 
 ## Commands
 
-Commands come from each service's OpenAPI contract, named after the contract's
-own tag and operationId:
+Every command comes from a service's OpenAPI contract and is named after the
+contract's own operationId:
 
 ```
-leaflow <service> <tag> <operationId>
-leaflow compute    disk  create-disk
+leaflow <service> <operationId>
+leaflow compute    create-disk
 ```
 
 The same identifier names the operation in the SDKs, so there is no second
-vocabulary to learn.
+vocabulary to learn. `leaflow <service> --help` groups them by the contract's
+tags.
 
 ## Output
 
 `-o table` (default), `-o json`, `-o yaml`, or pick your own columns:
 
 ```sh
-leaflow compute instance list-instances -o custom-columns=NAME:.name,IP:.private_ip
+leaflow compute list-instances -o custom-columns=NAME:.name,IP:.private_ip
 ```
 
 Use `json` in scripts; the table layout may change.

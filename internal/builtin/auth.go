@@ -7,6 +7,7 @@
 package builtin
 
 import (
+	"errors"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,14 +15,24 @@ import (
 	"github.com/LeaflowNET/leaflow/internal/extension"
 )
 
+var (
+	ErrCompletionFailed = errors.New("cannot install completion")
+
+	ErrUnsupportedShell = errors.New("unsupported shell")
+)
+
 // Commands returns every top-level command.
-func Commands(ext *extension.Context) []*cobra.Command {
+//
+// root is needed because completion is generated from the finished tree, which
+// does not exist yet when these are built.
+func Commands(ext *extension.Context, root *cobra.Command) []*cobra.Command {
 	return []*cobra.Command{
 		newLoginCommand(ext),
 		newLogoutCommand(ext),
 		newAuthCommand(ext),
 		newProjectCommand(ext),
 		newContextCommand(ext),
+		newCompletionInstallCommand(root),
 	}
 }
 

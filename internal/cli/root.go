@@ -136,11 +136,11 @@ Contracts ship with this binary and can be refreshed: leaflow spec update`),
 		return a.setup(cmd)
 	}
 
-	for _, cmd := range builtin.Commands(a.ext) {
+	for _, cmd := range builtin.Commands(a.ext, root) {
 		root.AddCommand(cmd)
 	}
 
-	for _, cmd := range dynamic.Build(specs, a.rt, a.ext) {
+	for _, cmd := range dynamic.Build(specs, a.rt) {
 		root.AddCommand(cmd)
 	}
 

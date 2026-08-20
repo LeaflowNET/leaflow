@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copy OpenAPI documents into internal/spec/data.
+# Copy OpenAPI documents into apis/.
 #
 # CI and a person run the same script, so "it worked on my machine" and "it
 # worked in the workflow" cannot mean different things.
@@ -35,7 +35,7 @@ if [ ! -d "$source_repo/leaflow" ]; then
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-destination="$root/internal/spec/data/leaflow"
+destination="$root/apis/leaflow"
 
 updated=0
 missing=0
