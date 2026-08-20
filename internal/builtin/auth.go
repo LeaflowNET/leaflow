@@ -25,7 +25,7 @@ var (
 //
 // root is needed because completion is generated from the finished tree, which
 // does not exist yet when these are built.
-func Commands(ext *extension.Context, root *cobra.Command) []*cobra.Command {
+func Commands(ext *extension.Context, root *cobra.Command, version string) []*cobra.Command {
 	return []*cobra.Command{
 		newLoginCommand(ext),
 		newLogoutCommand(ext),
@@ -33,6 +33,7 @@ func Commands(ext *extension.Context, root *cobra.Command) []*cobra.Command {
 		newProjectCommand(ext),
 		newContextCommand(ext),
 		newCompletionInstallCommand(root),
+		newUpdateCommand(ext, version),
 	}
 }
 

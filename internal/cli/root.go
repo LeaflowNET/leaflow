@@ -136,7 +136,7 @@ Contracts ship with this binary and can be refreshed: leaflow spec update`),
 		return a.setup(cmd)
 	}
 
-	for _, cmd := range builtin.Commands(a.ext, root) {
+	for _, cmd := range builtin.Commands(a.ext, root, version) {
 		root.AddCommand(cmd)
 	}
 

@@ -25,6 +25,12 @@ Then turn on completion for your shell:
 leaflow install-completion
 ```
 
+Later, update in place:
+
+```sh
+leaflow update
+```
+
 ## Sign in
 
 ```sh
@@ -89,6 +95,15 @@ leaflow context use local
 Credentials go to the system keychain, falling back to a `0600` file where
 there is none. Set `credential_store` to `keychain` or `file` to decide
 explicitly.
+
+## Updating
+
+`leaflow update` replaces the binary with the latest release, verifying it
+against the published checksums first. `leaflow update --check` only reports
+whether one is available.
+
+Installed through a package manager, update through that instead — the command
+refuses when it cannot write to its own directory.
 
 ## Exit codes
 
