@@ -1,0 +1,53 @@
+version: 2
+
+project_name: leaflow
+
+before:
+  hooks:
+    - go mod tidy
+    # The release must not ship a CLI whose hand-written assumptions no longer
+    # match the contracts it embeds.
+    - go run ./cmd/leaflow-doctor
+
+builds:
+  # leaflow-doctor is deliberately absent: it is a development check, and
+  # shipping it would put a command in users' hands that only makes sense
+  # against a source tree.
+  - id: leaflow
+    main: ./cmd/leaflow
+    binary: leaflow
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/LeaflowNET/leaflow/internal/cli.version={{ .Version }}
+      - -X github.com/LeaflowNET/leaflow/internal/cli.commit={{ .ShortCommit }}
+      - -X github.com/LeaflowNET/leaflow/internal/cli.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore: sync API contracts"
+
+release:
+  prerelease: auto

@@ -1,0 +1,2719 @@
+openapi: 3.1.0
+info:
+  description: |-
+    用户自己项目里的监控：接入机器、看指标、处理告警、开维护窗口、定可用率目标。
+
+    ## 怎么带身份
+
+    每个请求都要带 `Authorization: Bearer <项目令牌>`。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（`POST /api/v1/projects/{projectId}/token`）。一张项目令牌同时说明当前用户和当前项目。
+
+    **路径上没有 `projectId`**：当前项目由令牌决定。
+
+    鉴权在网关完成，被拒的请求不会到达这些接口。按错误码区分处理方式：`TOKEN_MISSING` 表示没带令牌；`TOKEN_EXPIRED` 表示令牌过期，用账号令牌重新换取即可，无需重新登录；`TOKEN_INVALID` 表示令牌验不过；`NOT_A_MEMBER` 表示当前账号不是该项目成员；`USER_SUSPENDED` / `USER_BANNED` 表示账号本身不能操作。
+
+    ## 两组容易混淆的概念
+
+    - **停止监控不等于删除**：`POST /servers/{id}/disable` 可逆，历史数据完整保留；`DELETE /servers/{id}` 会连同监控主机、历史数据和这台机器名下的告警一并删除，不可恢复。
+    - **告警恢复不等于告警了结**：`incident_status` 表示监控系统是否判定已恢复，`closed_at` 表示是否有人完成了处理。尚未恢复的告警也可以按「已接受的风险」了结。
+
+    ## PSK 只返回一次
+
+    接入和轮换的响应中包含 `tls_psk`，其他任何接口都不会再返回它，请及时保存。遗失后可再轮换一次，代价是被监控的机器需要同步更新一次 agent 配置。
+  title: Leaflow 监控 用户 API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/incidents:
+    get:
+      summary: 列出告警
+      description: '`incident_status` 表示监控系统是否判定已恢复，`closed` 表示是否有人完成了处理。两者相互独立，可分别筛选。'
+      operationId: list-incidents
+      tags:
+        - Incident
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: 只看某一台机器的
+          explode: false
+          in: query
+          name: server_id
+          schema:
+            description: 只看某一台机器的
+            type: string
+        - explode: false
+          in: query
+          name: incident_status
+          schema:
+            enum:
+              - PROBLEM
+              - RESOLVED
+            type: string
+        - description: 按不低于该等级匹配，而非精确匹配
+          explode: false
+          in: query
+          name: min_severity
+          schema:
+            description: 按不低于该等级匹配，而非精确匹配
+            enum:
+              - NOT_CLASSIFIED
+              - INFORMATION
+              - WARNING
+              - AVERAGE
+              - HIGH
+              - DISASTER
+            type: string
+        - explode: false
+          in: query
+          name: started_after
+          schema:
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: started_before
+          schema:
+            format: date-time
+            type: string
+        - description: 与 [active_from, active_to] **有交集**的告警，给指标图叠加故障区间要的是这个
+          explode: false
+          in: query
+          name: active_from
+          schema:
+            description: 与 [active_from, active_to] **有交集**的告警，给指标图叠加故障区间要的是这个
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: active_to
+          schema:
+            format: date-time
+            type: string
+        - description: 形如 key 或 key=value，可重复；多个标签之间是与关系
+          explode: false
+          in: query
+          name: tag
+          schema:
+            description: 形如 key 或 key=value，可重复；多个标签之间是与关系
+            items:
+              type: string
+            type:
+              - array
+              - 'null'
+        - explode: false
+          in: query
+          name: assignee_user_id
+          schema:
+            type: string
+        - description: 有没有人在这边把它处理完，与 incident_status 无关
+          explode: false
+          in: query
+          name: closed
+          schema:
+            description: 有没有人在这边把它处理完，与 incident_status 无关
+            enum:
+              - 'true'
+              - 'false'
+            type: string
+        - explode: false
+          in: query
+          name: acknowledged
+          schema:
+            enum:
+              - 'true'
+              - 'false'
+            type: string
+        - explode: false
+          in: query
+          name: unassigned
+          schema:
+            enum:
+              - 'true'
+              - 'false'
+            type: string
+        - explode: false
+          in: query
+          name: keyword
+          schema:
+            maxLength: 255
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageIncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}:
+    get:
+      summary: 查一条告警
+      operationId: get-incident
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/acknowledge:
+    post:
+      summary: 确认这条告警
+      description: 同时会在监控系统中标记为已确认，便于其他渠道也能看到该告警已有人处理。
+      operationId: acknowledge-incident
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcknowledgeIncidentRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/assignee:
+    put:
+      summary: 把这条告警交给谁，或者收回来
+      description: |-
+        `assignee_user_id` 留空即取消指派。
+
+        **这里不校验被指派的人在不在这个项目里**——那要问 IAM，而这个服务的准入还没接。
+      operationId: assign-incident
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignIncidentRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/close:
+    post:
+      summary: 了结这条告警
+      description: 了结的是**平台上的处理流程**，不是告警本身的状态：尚未恢复的告警也可以按「已接受的风险」了结，它在监控系统中仍为未恢复。
+      operationId: close-incident
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseIncidentRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/comments:
+    post:
+      summary: 在时间线上写一条备注
+      operationId: add-incident-comment
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCommentRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentActivityResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/following:
+    put:
+      summary: 关注这条告警，或者取消关注
+      description: 关注的是**自己**：操作者就是被加进关注列表的那个人。
+      operationId: set-incident-following
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetFollowingRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/reopen:
+    post:
+      summary: 重新打开一条已经了结的告警
+      operationId: reopen-incident
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/incidents/{incidentId}/timeline:
+    get:
+      summary: 列出这条告警的时间线
+      description: 游标翻页而不是偏移量：时间线是只增的，用偏移量翻页会在新记录写入时漏行和重行。
+      operationId: list-incident-timeline
+      tags:
+        - Incident
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 500
+            minimum: 0
+            type: integer
+        - description: 上一页返回的 next_cursor，空即从头开始
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: 上一页返回的 next_cursor，空即从头开始
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CursorPageIncidentActivityResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/maintenance-windows:
+    get:
+      summary: 列出维护窗口
+      operationId: list-maintenance-windows
+      tags:
+        - MaintenanceWindow
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceWindowListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/maintenance-windows/{windowId}:
+    delete:
+      summary: 撤掉一个维护窗口
+      description: 立刻恢复告警，哪怕窗口还没到期。
+      operationId: delete-maintenance-window
+      tags:
+        - MaintenanceWindow
+      parameters:
+        - in: path
+          name: windowId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查一个维护窗口
+      operationId: get-maintenance-window
+      tags:
+        - MaintenanceWindow
+      parameters:
+        - in: path
+          name: windowId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceWindowResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 开一个维护窗口，或者按同一个 id 覆盖它
+      description: |-
+        **创建即覆盖**：延长一个正在进行的窗口就是用同一个 id 再调一次。
+
+        窗口期内这些机器的问题不告警，也不扣 SLA 的可用率。`server_ids` 留空表示整个项目，包括窗口开着的时候新接进来的机器。
+      operationId: put-maintenance-window
+      tags:
+        - MaintenanceWindow
+      parameters:
+        - in: path
+          name: windowId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutMaintenanceWindowRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceWindowResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/overview:
+    get:
+      summary: 项目总览
+      description: 项目下还没有任何机器时返回各项均为零的总览，而不是 404——空项目是一个正常状态。
+      operationId: get-project-overview
+      tags:
+        - Observability
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectOverviewResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/items:
+    get:
+      summary: 列出一台机器的监控项
+      description: 原样返回采集到的监控项，不做筛选或重命名。哪些属于重要指标，由调用方依据监控项自带的标签自行判断。
+      operationId: list-server-items
+      tags:
+        - Observability
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - description: 按 key 或名字模糊匹配
+          explode: false
+          in: query
+          name: keyword
+          schema:
+            description: 按 key 或名字模糊匹配
+            maxLength: 255
+            type: string
+        - description: 形如 key 或 key=value，可重复。官方模板打好的 component 标签（cpu / memory / filesystem…）就是靠它筛
+          explode: false
+          in: query
+          name: tag
+          schema:
+            description: 形如 key 或 key=value，可重复。官方模板打好的 component 标签（cpu / memory / filesystem…）就是靠它筛
+            items:
+              type: string
+            type:
+              - array
+              - 'null'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/metrics:
+    get:
+      summary: 取一个监控项的时间序列
+      description: '`item_key` 是**前缀匹配**：按分区、按网卡发现出来的监控项 key 带参数（`vfs.fs.size[/var,pused]`），所以 `vfs.fs.size` 这一个请求就能画出每个挂载点一条线。'
+      operationId: get-server-metric
+      tags:
+        - Observability
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - description: '**前缀匹配**：vfs.fs.size 一次拿回每个挂载点一条线。与 item_id 至少给一个'
+          explode: false
+          in: query
+          name: item_key
+          schema:
+            description: '**前缀匹配**：vfs.fs.size 一次拿回每个挂载点一条线。与 item_id 至少给一个'
+            type: string
+        - explode: false
+          in: query
+          name: item_id
+          schema:
+            type: string
+        - description: 不给就是一小时前
+          explode: false
+          in: query
+          name: from
+          schema:
+            description: 不给就是一小时前
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: to
+          schema:
+            format: date-time
+            type: string
+        - description: 降采样的桶数，0 表示原样返回采集到的数据点
+          explode: false
+          in: query
+          name: max_points
+          schema:
+            description: 降采样的桶数，0 表示原样返回采集到的数据点
+            format: int64
+            minimum: 0
+            type: integer
+        - description: 顺带取这些监控项当前生效的阈值线
+          explode: false
+          in: query
+          name: include_thresholds
+          schema:
+            description: 顺带取这些监控项当前生效的阈值线
+            type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/resources:
+    get:
+      summary: 一台机器的硬件与接口
+      operationId: get-server-resources
+      tags:
+        - Observability
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerResourcesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/snapshot:
+    get:
+      summary: 一台机器此刻的状态
+      operationId: get-server-snapshot
+      tags:
+        - Observability
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/top-items:
+    get:
+      summary: 某个指标最高的前几台
+      operationId: list-project-top-items
+      tags:
+        - Observability
+      parameters:
+        - explode: false
+          in: query
+          name: kind
+          required: true
+          schema:
+            enum:
+              - CPU_UTILIZATION
+              - MEMORY_UTILIZATION
+              - ROOT_FILESYSTEM_USED
+            type: string
+        - description: 0 表示用默认
+          explode: false
+          in: query
+          name: limit
+          schema:
+            description: 0 表示用默认
+            format: int64
+            maximum: 100
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopItemListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers:
+    get:
+      summary: 列出项目里的机器
+      operationId: list-servers
+      tags:
+        - Onboarding
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: 按名字或地址模糊匹配
+          explode: false
+          in: query
+          name: keyword
+          schema:
+            description: 按名字或地址模糊匹配
+            maxLength: 255
+            type: string
+        - explode: false
+          in: query
+          name: monitoring_status
+          schema:
+            enum:
+              - PENDING
+              - ACTIVE
+              - DISABLED
+              - FAILED
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageServerResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}:
+    delete:
+      summary: 删掉这台机器
+      description: '**不可逆**：监控主机、历史数据和这台机器名下的告警会一并删除。若只是想暂时停止采集，改用 /disable。'
+      operationId: delete-server
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查一台机器的接入情况
+      operationId: get-server
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 改一台机器的接入参数
+      description: 只更新请求体中出现的字段。`address` 与 `address_kind` 必须一并提供：只改其中一个会得到互相矛盾的接入配置，该错误不会被报出，表现为 agent 连不上。
+      operationId: update-server
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServerRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 把一台机器接入监控
+      description: |-
+        **同一个 server id 重复调用是幂等的**：参数一致时返回已接入的那台，不会重复创建监控主机，因此接入失败可以安全重试。
+
+        修改接入参数请改用 PATCH。本接口在参数不一致时会返回错误，不会更新已有配置。
+
+        响应中的 `tls_psk` **只返回这一次**，请及时保存；遗失后需要轮换。
+      operationId: enable-server-monitoring
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnableMonitoringRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerEnrollmentResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/disable:
+    post:
+      summary: 停止监控这台机器
+      description: 可逆操作：监控主机保留，仅停止采集，历史数据不受影响。重新接入即可恢复采集。如需连同历史数据一并删除，改用 DELETE。
+      operationId: disable-server-monitoring
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/psk:
+    post:
+      summary: 换一把 agent 的 PSK
+      description: 换完要同步改 agent 侧的配置，否则那台机器立刻失联。新密钥同样**只在这个响应里明文出现一次**。
+      operationId: rotate-agent-psk
+      tags:
+        - Onboarding
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/servers/{serverId}/web-checks/{checkId}:
+    delete:
+      summary: 删掉一个网页检查
+      description: 同时删除监控系统中对应的检查任务和触发器，不会遗留永远无法恢复的告警。
+      operationId: delete-web-check
+      tags:
+        - WebCheck
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: checkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查一个网页检查
+      operationId: get-web-check
+      tags:
+        - WebCheck
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: checkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebCheckResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 建一个网页检查，或者按同一个 id 覆盖它
+      description: '**创建即覆盖**：修改一个检查即用同一个 id 再次调用本接口，无需先判断它是否已存在。'
+      operationId: put-web-check
+      tags:
+        - WebCheck
+      parameters:
+        - in: path
+          name: serverId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: checkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutWebCheckRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebCheckResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/web-checks:
+    get:
+      summary: 列出网页检查
+      operationId: list-web-checks
+      tags:
+        - WebCheck
+      parameters:
+        - description: 只看某一台机器的检查；不给就是整个项目的
+          explode: false
+          in: query
+          name: server_id
+          schema:
+            description: 只看某一台机器的检查；不给就是整个项目的
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebCheckListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/sli-report:
+    get:
+      summary: 查实测的达成情况
+      description: |-
+        SLI 是测出来的数，SLO 是定下来的目标——这里返回的是前者。
+
+        `server_id` 为空的那一行是项目整体。
+      operationId: get-sli-report
+      tags:
+        - SLA
+      parameters:
+        - explode: false
+          in: query
+          name: from
+          schema:
+            format: date-time
+            type: string
+        - explode: false
+          in: query
+          name: to
+          schema:
+            format: date-time
+            type: string
+        - description: 取最近 N 个完整周期，与 from/to 二选一
+          explode: false
+          in: query
+          name: periods
+          schema:
+            description: 取最近 N 个完整周期，与 from/to 二选一
+            format: int64
+            maximum: 100
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLIReportResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/slo:
+    delete:
+      summary: 撤掉这个项目的可用率目标
+      description: 同时移除监控系统中对应的服务树，此后不再统计可用率。
+      operationId: delete-slo
+      tags:
+        - SLA
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查这个项目的可用率目标
+      description: 没定过就是 404，而不是一份默认目标：没承诺过和承诺了 99.9% 是两回事。
+      operationId: get-slo
+      tags:
+        - SLA
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLOResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 定下这个项目的可用率目标，或者改它
+      description: |-
+        一个项目一条 SLO，**创建即覆盖**。
+
+        `min_severity` 必须显式选：它决定什么算「不可用」，是这条承诺的一半内容。
+      operationId: put-slo
+      tags:
+        - SLA
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutSLORequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLOResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    IncidentFollowerResource:
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+        followed_at:
+          format: date-time
+          type: string
+        user_id:
+          type: string
+      required:
+        - user_id
+        - display_name
+        - followed_at
+      type: object
+    MonitoringItemResource:
+      additionalProperties: false
+      properties:
+        aggregation_function:
+          description: last / avg / min / max 之类
+          type: string
+        evaluation_window_seconds:
+          format: int64
+          type: integer
+        item_id:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        operator:
+          type: string
+        threshold:
+          description: 只有 threshold_status 为 RESOLVED 时才有
+          format: double
+          type:
+            - number
+            - 'null'
+        threshold_status:
+          type: string
+        value:
+          description: 触发那一刻的值，原样存下来的
+          type: string
+      required:
+        - item_id
+        - name
+        - key
+        - value
+        - threshold_status
+        - threshold
+        - operator
+        - aggregation_function
+        - evaluation_window_seconds
+      type: object
+    TagResource:
+      additionalProperties: false
+      properties:
+        tag:
+          type: string
+        value:
+          type: string
+      required:
+        - tag
+        - value
+      type: object
+    IncidentResource:
+      additionalProperties: false
+      properties:
+        acknowledge_message:
+          type: string
+        acknowledged:
+          type: boolean
+        acknowledged_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        acknowledged_by_display_name:
+          type: string
+        acknowledged_by_user_id:
+          type: string
+        assigned_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        assignee_display_name:
+          type: string
+        assignee_user_id:
+          type: string
+        close_message:
+          type: string
+        close_reason:
+          type: string
+        closed_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        closed_by_display_name:
+          type: string
+        closed_by_user_id:
+          type: string
+        duration_seconds:
+          format: int64
+          type: integer
+        followers:
+          items:
+            $ref: '#/components/schemas/IncidentFollowerResource'
+          type:
+            - array
+            - 'null'
+        host_connection:
+          type: string
+        host_display_name:
+          type: string
+        id:
+          format: uuid
+          type: string
+        incident_status:
+          description: 监控系统是否判定已恢复。它与是否有人了结这条告警是两件事
+          enum:
+            - PROBLEM
+            - RESOLVED
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/MonitoringItemResource'
+          type:
+            - array
+            - 'null'
+        name:
+          type: string
+        operational_data:
+          description: 触发器配的那行现场数据
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        resolved_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        resolved_trigger_expression:
+          type: string
+        server_id:
+          format: uuid
+          type: string
+        server_name:
+          type: string
+        severity:
+          enum:
+            - NOT_CLASSIFIED
+            - INFORMATION
+            - WARNING
+            - AVERAGE
+            - HIGH
+            - DISASTER
+          type: string
+        started_at:
+          format: date-time
+          type: string
+        tags:
+          items:
+            $ref: '#/components/schemas/TagResource'
+          type:
+            - array
+            - 'null'
+        trigger_expression:
+          type: string
+        zabbix_event_id:
+          type: string
+      required:
+        - id
+        - project_id
+        - server_id
+        - server_name
+        - name
+        - severity
+        - incident_status
+        - operational_data
+        - started_at
+        - resolved_at
+        - duration_seconds
+        - acknowledged
+        - acknowledged_at
+        - acknowledged_by_user_id
+        - acknowledged_by_display_name
+        - acknowledge_message
+        - assignee_user_id
+        - assignee_display_name
+        - assigned_at
+        - closed_at
+        - closed_by_user_id
+        - closed_by_display_name
+        - close_reason
+        - close_message
+        - zabbix_event_id
+        - host_display_name
+        - host_connection
+        - trigger_expression
+        - resolved_trigger_expression
+        - items
+        - tags
+        - followers
+      type: object
+    LengthAwarePageIncidentResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/IncidentResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    AcknowledgeIncidentRequestBody:
+      additionalProperties: false
+      properties:
+        message:
+          description: 会一并写入监控系统的确认记录
+          maxLength: 2000
+          type: string
+      type: object
+    AssignIncidentRequestBody:
+      additionalProperties: false
+      properties:
+        assignee_display_name:
+          description: 不给就用 user id：时间线上要留一个当时的人名副本
+          maxLength: 255
+          type: string
+        assignee_user_id:
+          maxLength: 255
+          type: string
+      type: object
+    CloseIncidentRequestBody:
+      additionalProperties: false
+      properties:
+        message:
+          description: reason 为 OTHER 时必填，否则请求会被拒绝
+          maxLength: 2000
+          type: string
+        reason:
+          enum:
+            - RECOVERED
+            - FIXED
+            - FALSE_POSITIVE
+            - DUPLICATE
+            - NO_ACTION_REQUIRED
+            - ACCEPTED_RISK
+            - OTHER
+          type: string
+      required:
+        - reason
+      type: object
+    AddCommentRequestBody:
+      additionalProperties: false
+      properties:
+        message:
+          maxLength: 2000
+          minLength: 1
+          type: string
+      required:
+        - message
+      type: object
+    IncidentActivityResource:
+      additionalProperties: false
+      properties:
+        activity_type:
+          enum:
+            - OPENED
+            - RECOVERED
+            - ACKNOWLEDGED
+            - ASSIGNED
+            - UNASSIGNED
+            - FOLLOWER_ADDED
+            - FOLLOWER_REMOVED
+            - COMMENT
+            - CLOSED
+            - REOPENED
+          type: string
+        actor_display_name:
+          type: string
+        actor_user_id:
+          description: 操作者；来源为 SYSTEM 或 ZABBIX 时为空
+          type: string
+        close_reason:
+          type: string
+        id:
+          format: uuid
+          type: string
+        incident_id:
+          format: uuid
+          type: string
+        message:
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        source:
+          enum:
+            - SYSTEM
+            - OPERATOR
+            - ZABBIX
+          type: string
+        subject_display_name:
+          type: string
+        subject_user_id:
+          description: 被指派 / 被取消关注的那个人
+          type: string
+      required:
+        - id
+        - incident_id
+        - activity_type
+        - source
+        - message
+        - actor_user_id
+        - actor_display_name
+        - subject_user_id
+        - subject_display_name
+        - close_reason
+        - occurred_at
+      type: object
+    SetFollowingRequestBody:
+      additionalProperties: false
+      properties:
+        following:
+          type: boolean
+      required:
+        - following
+      type: object
+    CursorPageIncidentActivityResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/IncidentActivityResource'
+          type: array
+        next_cursor:
+          description: 下一页的游标；为空表示已经到底
+          type: string
+      required:
+        - items
+        - next_cursor
+      type: object
+    MaintenancePeriodResource:
+      additionalProperties: false
+      properties:
+        duration_seconds:
+          format: int64
+          type: integer
+        every:
+          description: DAILY / WEEKLY：每 N 天 / 每 N 周
+          format: int64
+          type: integer
+        kind:
+          enum:
+            - ONCE
+            - DAILY
+            - WEEKLY
+          type: string
+        start_time_seconds:
+          description: DAILY / WEEKLY：当天零点起的秒数，按窗口自己的时区算
+          format: int64
+          type: integer
+        starts_at:
+          description: 只有 ONCE 有
+          format: date-time
+          type:
+            - string
+            - 'null'
+        weekdays:
+          description: WEEKLY：星期几的位图，**周一是最低位**
+          format: int64
+          type: integer
+      required:
+        - kind
+        - starts_at
+        - start_time_seconds
+        - duration_seconds
+        - every
+        - weekdays
+      type: object
+    MaintenanceWindowResource:
+      additionalProperties: false
+      properties:
+        active_since:
+          format: date-time
+          type: string
+        active_till:
+          format: date-time
+          type: string
+        description:
+          type: string
+        last_error:
+          type: string
+        name:
+          type: string
+        period:
+          $ref: '#/components/schemas/MaintenancePeriodResource'
+        project_id:
+          format: uuid
+          type: string
+        server_ids:
+          description: 空表示**整个项目**
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        sync_status:
+          enum:
+            - PENDING
+            - ACTIVE
+            - FAILED
+            - EXPIRED
+          type: string
+        timezone:
+          type: string
+        window_id:
+          format: uuid
+          type: string
+      required:
+        - window_id
+        - project_id
+        - name
+        - description
+        - active_since
+        - active_till
+        - timezone
+        - server_ids
+        - period
+        - sync_status
+        - last_error
+      type: object
+    MaintenanceWindowListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MaintenanceWindowResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    MaintenancePeriodRequest:
+      additionalProperties: false
+      properties:
+        duration_seconds:
+          format: int64
+          minimum: 0
+          type: integer
+        every:
+          description: DAILY / WEEKLY：每 N 天 / 每 N 周
+          format: int64
+          minimum: 0
+          type: integer
+        kind:
+          enum:
+            - ONCE
+            - DAILY
+            - WEEKLY
+          type: string
+        start_time_seconds:
+          description: DAILY / WEEKLY：当天零点起的秒数，按窗口自己的时区算
+          format: int64
+          maximum: 86399
+          minimum: 0
+          type: integer
+        starts_at:
+          description: 只有 ONCE 用得上
+          format: date-time
+          type: string
+        weekdays:
+          description: WEEKLY：星期几的位图，**周一是最低位**
+          format: int64
+          maximum: 127
+          minimum: 0
+          type: integer
+      required:
+        - kind
+      type: object
+    PutMaintenanceWindowRequestBody:
+      additionalProperties: false
+      properties:
+        active_since:
+          description: 整条规则的生效区间起点
+          format: date-time
+          type: string
+        active_till:
+          format: date-time
+          type: string
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        period:
+          $ref: '#/components/schemas/MaintenancePeriodRequest'
+        server_ids:
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        timezone:
+          description: IANA 名字，比如 Asia/Shanghai；空即用部署配的默认
+          maxLength: 64
+          type: string
+      required:
+        - name
+        - active_since
+        - active_till
+        - period
+      type: object
+    CountResource:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        key:
+          type: string
+      required:
+        - key
+        - count
+      type: object
+    ProjectOverviewResource:
+      additionalProperties: false
+      properties:
+        monitored_servers:
+          format: int64
+          type: integer
+        problem_counts:
+          items:
+            $ref: '#/components/schemas/CountResource'
+          type:
+            - array
+            - 'null'
+        reachability_counts:
+          items:
+            $ref: '#/components/schemas/CountResource'
+          type:
+            - array
+            - 'null'
+        total_servers:
+          format: int64
+          type: integer
+      required:
+        - total_servers
+        - monitored_servers
+        - reachability_counts
+        - problem_counts
+      type: object
+    ItemResource:
+      additionalProperties: false
+      properties:
+        item_id:
+          type: string
+        key:
+          type: string
+        last_collected_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        last_value:
+          type: string
+        name:
+          type: string
+        tags:
+          items:
+            $ref: '#/components/schemas/TagResource'
+          type:
+            - array
+            - 'null'
+        units:
+          type: string
+        value_type:
+          enum:
+            - FLOAT
+            - CHARACTER
+            - LOG
+            - UNSIGNED
+            - TEXT
+          type: string
+      required:
+        - item_id
+        - key
+        - name
+        - units
+        - value_type
+        - last_value
+        - last_collected_at
+        - tags
+      type: object
+    ItemListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ItemResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    MetricPointResource:
+      additionalProperties: false
+      properties:
+        max_value:
+          format: double
+          type: number
+        min_value:
+          format: double
+          type: number
+        timestamp:
+          format: date-time
+          type: string
+        value:
+          format: double
+          type: number
+      required:
+        - timestamp
+        - value
+        - min_value
+        - max_value
+      type: object
+    MetricSeriesResource:
+      additionalProperties: false
+      properties:
+        item_id:
+          type: string
+        item_key:
+          type: string
+        item_name:
+          type: string
+        points:
+          items:
+            $ref: '#/components/schemas/MetricPointResource'
+          type:
+            - array
+            - 'null'
+        units:
+          type: string
+      required:
+        - item_id
+        - item_key
+        - item_name
+        - units
+        - points
+      type: object
+    ItemThresholdResource:
+      additionalProperties: false
+      properties:
+        aggregation_function:
+          type: string
+        evaluation_window_seconds:
+          format: int64
+          type: integer
+        item_id:
+          type: string
+        operator:
+          type: string
+        severity:
+          type: string
+        threshold:
+          format: double
+          type: number
+        trigger_name:
+          description: 图例上说明这条线是什么
+          type: string
+      required:
+        - item_id
+        - threshold
+        - operator
+        - severity
+        - trigger_name
+        - aggregation_function
+        - evaluation_window_seconds
+      type: object
+    MetricResponseBody:
+      additionalProperties: false
+      properties:
+        downsampled:
+          type: boolean
+        effective_from:
+          format: date-time
+          type: string
+        effective_to:
+          format: date-time
+          type: string
+        from_trends:
+          description: 数据来自趋势表，每个点是一小时的聚合
+          type: boolean
+        series:
+          items:
+            $ref: '#/components/schemas/MetricSeriesResource'
+          type:
+            - array
+            - 'null'
+        thresholds:
+          items:
+            $ref: '#/components/schemas/ItemThresholdResource'
+          type:
+            - array
+            - 'null'
+        truncated:
+          type: boolean
+      required:
+        - series
+        - from_trends
+        - truncated
+        - downsampled
+        - effective_from
+        - effective_to
+        - thresholds
+      type: object
+    HostInterfaceResource:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        dns:
+          type: string
+        ip:
+          type: string
+        port:
+          format: int64
+          type: integer
+        use_ip:
+          type: boolean
+      required:
+        - ip
+        - dns
+        - port
+        - use_ip
+        - available
+      type: object
+    ServerResourcesResource:
+      additionalProperties: false
+      properties:
+        interfaces:
+          items:
+            $ref: '#/components/schemas/HostInterfaceResource'
+          type:
+            - array
+            - 'null'
+        inventory:
+          additionalProperties:
+            type: string
+          description: 自动采集的硬件与系统清单：CPU、内存、操作系统等
+          type: object
+        tags:
+          items:
+            $ref: '#/components/schemas/TagResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - inventory
+        - interfaces
+        - tags
+      type: object
+    SnapshotResource:
+      additionalProperties: false
+      properties:
+        agent_error:
+          type: string
+        agent_reachability:
+          description: AGENT_DOWN 是 agent 不通但机器还活着；UNREACHABLE 是连这一点都说不上
+          enum:
+            - UNKNOWN
+            - REACHABLE
+            - AGENT_DOWN
+            - UNREACHABLE
+          type: string
+        last_collected_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        monitoring_enabled:
+          type: boolean
+        problem_counts:
+          items:
+            $ref: '#/components/schemas/CountResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - agent_reachability
+        - agent_error
+        - monitoring_enabled
+        - last_collected_at
+        - problem_counts
+      type: object
+    TopItemResource:
+      additionalProperties: false
+      properties:
+        item_key:
+          type: string
+        server_id:
+          format: uuid
+          type: string
+        units:
+          type: string
+        value:
+          format: double
+          type: number
+      required:
+        - server_id
+        - item_key
+        - units
+        - value
+      type: object
+    TopItemListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TopItemResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    ServerTemplateResource:
+      additionalProperties: false
+      properties:
+        configured_secret_parameters:
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        parameters:
+          additionalProperties:
+            type: string
+          type: object
+        template_key:
+          type: string
+        zabbix_template_id:
+          type: string
+        zabbix_template_name:
+          type: string
+      required:
+        - template_key
+        - zabbix_template_id
+        - zabbix_template_name
+        - parameters
+        - configured_secret_parameters
+      type: object
+    ServerResource:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        address_kind:
+          enum:
+            - ip
+            - dns
+          type: string
+        agent_mode:
+          enum:
+            - PASSIVE
+            - ACTIVE
+          type: string
+        agent_port:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        id:
+          format: uuid
+          type: string
+        last_error:
+          type: string
+        monitoring_status:
+          description: FAILED 时看 last_error
+          enum:
+            - PENDING
+            - ACTIVE
+            - DISABLED
+            - FAILED
+          type: string
+        name:
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        templates:
+          items:
+            $ref: '#/components/schemas/ServerTemplateResource'
+          type:
+            - array
+            - 'null'
+        updated_at:
+          format: date-time
+          type: string
+        zabbix_host_name:
+          description: agent 配置里的 Hostname 必须与它一致，主动式采集靠它认人
+          type: string
+      required:
+        - id
+        - project_id
+        - name
+        - description
+        - address_kind
+        - address
+        - agent_port
+        - agent_mode
+        - monitoring_status
+        - last_error
+        - zabbix_host_name
+        - templates
+        - created_at
+        - updated_at
+      type: object
+    LengthAwarePageServerResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/ServerResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    TemplateBindingRequest:
+      additionalProperties: false
+      properties:
+        parameters:
+          additionalProperties:
+            type: string
+          description: 模板自己声明的参数，密钥参数写明文，返回时只报名字
+          type: object
+        template_key:
+          enum:
+            - LINUX
+            - SYSTEMD
+            - DOCKER
+            - ICMP_PING
+            - NGINX
+            - PHP_FPM
+            - WEBSITE_CERTIFICATE
+            - WINDOWS
+            - SMART
+            - NVIDIA
+            - PROXMOX_VE
+          type: string
+      required:
+        - template_key
+      type: object
+    EnableMonitoringRequestBody:
+      additionalProperties: false
+      properties:
+        address:
+          minLength: 1
+          maxLength: 255
+          type: string
+        address_kind:
+          enum:
+            - ip
+            - dns
+          type: string
+        agent_mode:
+          description: 空即被动式：它对 agent 侧配置要求最少
+          enum:
+            - PASSIVE
+            - ACTIVE
+          type: string
+        agent_port:
+          description: 0 表示用默认的 10050
+          format: int64
+          maximum: 65535
+          minimum: 0
+          type: integer
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        template_bindings:
+          items:
+            $ref: '#/components/schemas/TemplateBindingRequest'
+          type:
+            - array
+            - 'null'
+      required:
+        - name
+        - address_kind
+        - address
+      type: object
+    EnrollmentResource:
+      additionalProperties: false
+      properties:
+        install_command:
+          description: 含 PSK，与 tls_psk 一样只出现这一次
+          type: string
+        install_script_url:
+          type: string
+        tls_psk:
+          description: '**只出现这一次**'
+          type: string
+        tls_psk_identity:
+          type: string
+        zabbix_host_name:
+          type: string
+        zabbix_server_address:
+          description: agent 配置里的 Server / ServerActive
+          type: string
+      required:
+        - zabbix_host_name
+        - zabbix_server_address
+        - tls_psk_identity
+        - tls_psk
+        - install_script_url
+        - install_command
+      type: object
+    ServerEnrollmentResponseBody:
+      additionalProperties: false
+      properties:
+        enrollment:
+          $ref: '#/components/schemas/EnrollmentResource'
+        server:
+          $ref: '#/components/schemas/ServerResource'
+      required:
+        - server
+        - enrollment
+      type: object
+    UpdateServerRequestBody:
+      additionalProperties: false
+      properties:
+        address:
+          maxLength: 255
+          type: string
+        address_kind:
+          description: 要改地址就必须和 address 一起给
+          enum:
+            - ip
+            - dns
+          type: string
+        agent_mode:
+          description: 改采集模式会把全部模板换成另一个变体
+          enum:
+            - PASSIVE
+            - ACTIVE
+          type: string
+        agent_port:
+          format: int64
+          maximum: 65535
+          minimum: 1
+          type: integer
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        template_bindings:
+          items:
+            $ref: '#/components/schemas/TemplateBindingRequest'
+          type: array
+      type: object
+    WebCheckResultResource:
+      additionalProperties: false
+      properties:
+        checked_at:
+          format: date-time
+          type: string
+        error:
+          type: string
+        failed_step:
+          description: 第几步失败的，从 1 数；healthy 时为 0
+          format: int64
+          type: integer
+        healthy:
+          type: boolean
+        response_code:
+          format: int64
+          type: integer
+        response_time_seconds:
+          format: double
+          type: number
+      required:
+        - healthy
+        - failed_step
+        - error
+        - response_code
+        - response_time_seconds
+        - checked_at
+      type: object
+    WebCheckStepResource:
+      additionalProperties: false
+      properties:
+        expected_status_codes:
+          description: 状态码表达式，比如 200 或者 200,301-302
+          type: string
+        follow_redirects:
+          type: boolean
+        name:
+          type: string
+        required_pattern:
+          type: string
+        url:
+          type: string
+      required:
+        - name
+        - url
+        - expected_status_codes
+        - required_pattern
+        - follow_redirects
+      type: object
+    WebCheckResource:
+      additionalProperties: false
+      properties:
+        check_id:
+          format: uuid
+          type: string
+        interval_seconds:
+          format: int64
+          type: integer
+        last_error:
+          type: string
+        response_time_threshold_seconds:
+          format: int64
+          type: integer
+        result:
+          anyOf:
+            - $ref: '#/components/schemas/WebCheckResultResource'
+            - type: 'null'
+          description: null 表示这个检查还一轮都没跑过。零值会把「还不知道」显示成「响应 0 秒、状态码 0」
+        retries:
+          format: int64
+          type: integer
+        server_id:
+          format: uuid
+          type: string
+        steps:
+          items:
+            $ref: '#/components/schemas/WebCheckStepResource'
+          type:
+            - array
+            - 'null'
+        sync_status:
+          enum:
+            - PENDING
+            - ACTIVE
+            - FAILED
+          type: string
+        timeout_seconds:
+          format: int64
+          type: integer
+      required:
+        - check_id
+        - server_id
+        - steps
+        - interval_seconds
+        - timeout_seconds
+        - retries
+        - response_time_threshold_seconds
+        - sync_status
+        - last_error
+        - result
+      type: object
+    WebCheckStepRequest:
+      additionalProperties: false
+      properties:
+        expected_status_codes:
+          description: 状态码表达式，比如 200 或者 200,301-302；留空表示不检查状态码
+          maxLength: 255
+          type: string
+        follow_redirects:
+          type: boolean
+        name:
+          maxLength: 64
+          type: string
+        required_pattern:
+          description: 响应体里必须出现的字符串
+          maxLength: 255
+          type: string
+        url:
+          maxLength: 2048
+          type: string
+      required:
+        - name
+        - url
+      type: object
+    PutWebCheckRequestBody:
+      additionalProperties: false
+      properties:
+        interval_seconds:
+          description: 0 表示用默认
+          format: int64
+          minimum: 0
+          type: integer
+        response_time_threshold_seconds:
+          description: 超过它算慢，0 表示不看响应时间
+          format: int64
+          minimum: 0
+          type: integer
+        retries:
+          format: int64
+          minimum: 0
+          type: integer
+        steps:
+          items:
+            $ref: '#/components/schemas/WebCheckStepRequest'
+          minItems: 1
+          type:
+            - array
+            - 'null'
+        timeout_seconds:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - steps
+      type: object
+    WebCheckListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/WebCheckResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    SLIReportRowResource:
+      additionalProperties: false
+      properties:
+        downtime_seconds:
+          format: int64
+          type: integer
+        error_budget_seconds:
+          description: 为负表示这个周期的额度已经超支
+          format: int64
+          type: integer
+        excluded_downtime_seconds:
+          description: 被计划内维护排除掉的那部分
+          format: int64
+          type: integer
+        period_from:
+          format: date-time
+          type: string
+        period_to:
+          format: date-time
+          type: string
+        server_id:
+          description: 空表示这一行是项目整体
+          type: string
+        sli_percent:
+          format: double
+          type: number
+        uptime_seconds:
+          format: int64
+          type: integer
+      required:
+        - server_id
+        - period_from
+        - period_to
+        - sli_percent
+        - uptime_seconds
+        - downtime_seconds
+        - error_budget_seconds
+        - excluded_downtime_seconds
+      type: object
+    SLIReportResponseBody:
+      additionalProperties: false
+      properties:
+        rows:
+          items:
+            $ref: '#/components/schemas/SLIReportRowResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - rows
+      type: object
+    ScheduleWindowResource:
+      additionalProperties: false
+      properties:
+        end_time_seconds:
+          format: int64
+          type: integer
+        start_time_seconds:
+          format: int64
+          type: integer
+        weekdays:
+          description: 星期几的位图，**周一是最低位**，与维护窗口同一套编码
+          format: int64
+          type: integer
+      required:
+        - weekdays
+        - start_time_seconds
+        - end_time_seconds
+      type: object
+    SLOResource:
+      additionalProperties: false
+      properties:
+        effective_from:
+          format: date-time
+          type: string
+        last_error:
+          type: string
+        min_severity:
+          enum:
+            - ANY
+            - INFORMATION
+            - WARNING
+            - AVERAGE
+            - HIGH
+            - DISASTER
+          type: string
+        name:
+          type: string
+        period:
+          enum:
+            - DAILY
+            - WEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - ANNUALLY
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        schedule:
+          description: 空表示 7×24 全天候承诺
+          items:
+            $ref: '#/components/schemas/ScheduleWindowResource'
+          type:
+            - array
+            - 'null'
+        slo_id:
+          format: uuid
+          type: string
+        slo_percent:
+          description: 目标可用率，比如 99.9
+          format: double
+          type: number
+        sync_status:
+          enum:
+            - PENDING
+            - ACTIVE
+            - FAILED
+          type: string
+        timezone:
+          type: string
+      required:
+        - slo_id
+        - project_id
+        - name
+        - slo_percent
+        - period
+        - timezone
+        - effective_from
+        - schedule
+        - min_severity
+        - sync_status
+        - last_error
+      type: object
+    ScheduleWindowRequest:
+      additionalProperties: false
+      properties:
+        end_time_seconds:
+          format: int64
+          maximum: 86400
+          minimum: 0
+          type: integer
+        start_time_seconds:
+          format: int64
+          maximum: 86400
+          minimum: 0
+          type: integer
+        weekdays:
+          description: 星期几的位图，**周一是最低位**（1=周一 … 64=周日）
+          format: int64
+          maximum: 127
+          minimum: 1
+          type: integer
+      required:
+        - weekdays
+      type: object
+    PutSLORequestBody:
+      additionalProperties: false
+      properties:
+        effective_from:
+          format: date-time
+          type: string
+        min_severity:
+          enum:
+            - ANY
+            - INFORMATION
+            - WARNING
+            - AVERAGE
+            - HIGH
+            - DISASTER
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        period:
+          description: 空即按月
+          enum:
+            - DAILY
+            - WEEKLY
+            - MONTHLY
+            - QUARTERLY
+            - ANNUALLY
+          type: string
+        schedule:
+          items:
+            $ref: '#/components/schemas/ScheduleWindowRequest'
+          type:
+            - array
+            - 'null'
+        slo_id:
+          format: uuid
+          type: string
+        slo_percent:
+          description: 目标可用率，比如 99.9；最多四位小数
+          format: double
+          maximum: 100
+          minimum: 0
+          type: number
+        timezone:
+          description: 决定统计周期的边界，即每个周期从哪一刻开始
+          maxLength: 64
+          type: string
+      required:
+        - slo_id
+        - name
+        - slo_percent
+        - min_severity
+      type: object

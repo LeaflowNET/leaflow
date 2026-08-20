@@ -1,0 +1,4027 @@
+openapi: 3.1.0
+info:
+  description: |-
+    Leaflow 计算的用户接口，用于管理云服务器、云硬盘、快照、备份、自制镜像、私有网络、子网、路由、安全组、网卡与公网 IP。
+
+    ## 身份与鉴权
+
+    每个请求需携带 `Authorization: Bearer <项目令牌>`。先在 auth.leaflow.net 登录获取账号令牌，再用它向 IAM 换取项目令牌（`POST /api/v1/projects/{projectId}/token`）。一张项目令牌同时说明当前用户和当前项目。
+
+    **路径和请求头上都没有 `project_id`**：当前项目由令牌决定。
+
+    鉴权在网关完成，失败的请求不会到达这些接口。按错误码区分处理方式：`TOKEN_MISSING` 表示没带令牌；`TOKEN_EXPIRED` 表示令牌过期，用账号令牌重新换取即可，无需重新登录；`TOKEN_INVALID` 表示令牌验不过；`NOT_A_MEMBER` 表示当前账号不是该项目成员；`USER_SUSPENDED` / `USER_BANNED` 表示账号本身不能操作。
+
+    ## 通用约定
+
+    - **操作是异步的。** 创建云服务器、创建云硬盘、变更配置在返回时尚未完成，资源处于 `provisioning` 等中间状态，需轮询 GET 确认结果。查询单个资源时会同步一次当前状态。
+    - **可用区。** 云硬盘与云服务器必须位于同一可用区才能挂载。机型和硬盘类型各自绑定在一个可用区上，选定类型即选定可用区。
+    - **IPv6 不单独售卖。** 在私有网络上启用后，IPv6 地址会自动下发至该网络内的云服务器，无需也无法单独申领。
+    - **公网 IP 有冷却期。** 释放后短时间内既不能重新申领，也不会分配给其他用户，以免仍指向该地址的 DNS 记录和访问白名单立即失效。
+    - **密码只返回一次。** 创建或重装时若由平台生成密码，它仅出现在该次响应中，请及时保存。
+  title: Leaflow 计算用户 API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/backups:
+    get:
+      summary: 列出备份
+      operationId: list-backups
+      tags:
+        - Backup
+      parameters:
+        - description: 只返回该云硬盘的备份
+          explode: false
+          in: query
+          name: disk_id
+          schema:
+            description: 只返回该云硬盘的备份
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建备份
+      description: |-
+        备份是云硬盘在独立存储中的一份完整副本：**源云硬盘删除后仍可恢复，且可恢复到本地区的其他可用区。**快照不具备这两项能力，它与源云硬盘位于同一存储，且源云硬盘存在快照时无法删除。
+
+        运行中云服务器上挂载的云硬盘、以及系统盘，均可创建备份。
+
+        备份耗时取决于数据量。接口返回时尚未完成，请轮询查看接口。
+      operationId: create-backup
+      tags:
+        - Backup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBackupRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/backups/{backupId}:
+    delete:
+      summary: 删除备份
+      description: 与源云硬盘无关，源云硬盘是否存在都不影响删除。
+      operationId: delete-backup
+      tags:
+        - Backup
+      parameters:
+        - in: path
+          name: backupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看备份
+      description: 会实时查询备份的当前状态，因此比列表接口慢但更准确。轮询创建进度请使用本接口。
+      operationId: get-backup
+      tags:
+        - Backup
+      parameters:
+        - in: path
+          name: backupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名备份
+      operationId: rename-backup
+      tags:
+        - Backup
+      parameters:
+        - in: path
+          name: backupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameBackupRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/backups/{backupId}/restore:
+    post:
+      summary: 由备份恢复
+      description: |-
+        恢复到一块**新建的**云硬盘上，源云硬盘不受影响，也不要求它仍然存在。
+
+        目标硬盘类型可位于本地区的其他可用区，容量不能小于备份。恢复完成前该云硬盘不可挂载，请轮询云硬盘查看接口。
+      operationId: restore-backup
+      tags:
+        - Backup
+      parameters:
+        - in: path
+          name: backupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreBackupRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/disk-types:
+    get:
+      summary: 列出在售硬盘类型
+      operationId: list-disk-types
+      tags:
+        - Catalog
+      parameters:
+        - explode: false
+          in: query
+          name: region_code
+          required: true
+          schema:
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskTypeListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/images:
+    get:
+      summary: 列出在售镜像
+      description: min_ram_mb 超过所选机型内存的镜像无法启动，请据此过滤可选项。
+      operationId: list-images
+      tags:
+        - Catalog
+      parameters:
+        - explode: false
+          in: query
+          name: region_code
+          required: true
+          schema:
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instance-types:
+    get:
+      summary: 列出在售机型
+      operationId: list-instance-types
+      tags:
+        - Catalog
+      parameters:
+        - explode: false
+          in: query
+          name: region_code
+          required: true
+          schema:
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceTypeListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/regions:
+    get:
+      summary: 列出可用的地区
+      operationId: list-regions
+      tags:
+        - Catalog
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegionListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/regions/{regionCode}/availability-zones:
+    get:
+      summary: 列出一个地区的可用区
+      description: 云硬盘与云服务器必须位于同一可用区才能挂载，创建前请确认所选可用区。
+      operationId: list-availability-zones
+      tags:
+        - Catalog
+      parameters:
+        - in: path
+          name: regionCode
+          required: true
+          schema:
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/disks:
+    get:
+      summary: 列出云硬盘
+      description: 同时提供 region_code 与 availability_zone 时，只返回可挂载到该位置云服务器的云硬盘。
+      operationId: list-disks
+      tags:
+        - Disk
+      parameters:
+        - explode: false
+          in: query
+          name: region_code
+          schema:
+            maxLength: 32
+            type: string
+        - description: 与 region_code 同时提供，用于筛选可挂载的云硬盘
+          explode: false
+          in: query
+          name: availability_zone
+          schema:
+            description: 与 region_code 同时提供，用于筛选可挂载的云硬盘
+            maxLength: 64
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建云硬盘
+      description: 云硬盘创建在所选硬盘类型所属的可用区，云服务器必须位于同一可用区才能挂载。因此选定硬盘类型即确定了可用区。
+      operationId: create-disk
+      tags:
+        - Disk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDiskRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/disks/{diskId}:
+    delete:
+      summary: 删除云硬盘
+      description: 云硬盘处于挂载状态，或仍存在基于它创建的快照时，删除会被拒绝。
+      operationId: delete-disk
+      tags:
+        - Disk
+      parameters:
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看云硬盘
+      description: 会实时查询云硬盘的当前状态，因此比列表接口慢但更准确。
+      operationId: get-disk
+      tags:
+        - Disk
+      parameters:
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名云硬盘
+      description: 仅可修改名称。容量请使用扩容接口，类型与可用区不可修改。
+      operationId: rename-disk
+      tags:
+        - Disk
+      parameters:
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameDiskRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/disks/{diskId}/resize:
+    post:
+      summary: 扩容
+      description: 容量只能增加，不支持缩容。扩容完成后需在云服务器内自行扩展文件系统。
+      operationId: resize-disk
+      tags:
+        - Disk
+      parameters:
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResizeDiskRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/disks/{diskId}/revert:
+    post:
+      summary: 回滚到快照
+      description: |-
+        将云硬盘的内容恢复到创建该快照的时刻。**该时刻之后写入的数据全部丢失，且无法撤销。**
+
+        三项限制：只能回滚到该云硬盘最新的一个快照；云硬盘必须先从云服务器上卸载；创建快照后扩容过的云硬盘不能回滚。需要回到更早的时刻，或需要保留现有云硬盘时，请改用由快照创建一块新的云硬盘。
+
+        接口返回时回滚尚未完成，请轮询查看接口。
+      operationId: revert-disk
+      tags:
+        - Disk
+      parameters:
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevertDiskRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/floating-ips:
+    get:
+      summary: 列出公网 IP
+      operationId: list-floating-ips
+      tags:
+        - FloatingIP
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 申领公网 IP
+      description: |-
+        若该私有网络尚未连通外网，会一并为其接入外网。
+
+        IPv6 不通过本接口申请。IPv6 地址由私有网络自动下发至云服务器，在私有网络上启用即可。
+      operationId: allocate-floating-ip
+      tags:
+        - FloatingIP
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllocateFloatingIPRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/floating-ips/{floatingIpId}:
+    delete:
+      summary: 释放公网 IP
+      description: 地址释放后进入冷却期才会重新分配，以免仍指向它的 DNS 记录和访问白名单立即失效。因此释放后的短时间内**无法重新申领同一个地址**，请谨慎操作。
+      operationId: release-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看公网 IP
+      operationId: get-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/floating-ips/{floatingIpId}/bandwidth:
+    put:
+      summary: 设带宽上限
+      description: 出入两个方向同时限速。仅限制出方向无法防止入方向流量打满上联带宽。
+      operationId: set-floating-ip-bandwidth
+      tags:
+        - FloatingIP
+      parameters:
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetBandwidthRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/floating-ips/{floatingIpId}/binding:
+    delete:
+      summary: 解绑公网 IP
+      description: 地址仍归本项目持有，只是不再指向任何网卡。
+      operationId: unbind-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 将公网 IP 绑定到网卡
+      operationId: bind-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindFloatingIPRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances:
+    get:
+      summary: 列出云服务器
+      operationId: list-instances
+      tags:
+        - Instance
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建云服务器
+      description: |-
+        **必须在请求中设置密码**：不设置时请求会被拒绝，否则创建出的云服务器将无法登录。密码可由平台生成，此时仅在本次响应中返回一次。
+
+        `count` 可一次创建多台（最多 20 台），名称自动加 `-1`、`-2` 编号，所有云服务器共用同一个密码。**响应中的 `instances` 始终是数组**，单台创建时也是。
+
+        批量创建按顺序逐台进行。若中途失败（例如配额不足），**已创建的云服务器会保留**，响应中的 `failure` 给出中止原因；第一台就失败时视为整次请求失败，不会创建任何云服务器。
+
+        镜像二选一：`image_id` 使用平台提供的镜像，`private_image_id` 使用自制镜像。两者都给或都不给都会被拒绝。
+
+        云服务器创建在机型所属的可用区。后续要挂载的云硬盘必须位于同一可用区。
+
+        接口返回时创建尚未完成（status 为 provisioning），请轮询 GET 确认结果。
+      operationId: launch-instance
+      tags:
+        - Instance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LaunchInstanceRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchInstanceResponseBody'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}:
+    delete:
+      summary: 释放云服务器
+      description: |-
+        系统盘随云服务器一并删除，**基于系统盘创建的快照也会一并删除**。数据盘会被卸载并保留，其快照与备份不受影响。主网卡随云服务器一并释放。
+
+        正在制作镜像的云服务器无法释放，请等待制作完成或先删除该镜像。
+      operationId: delete-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看云服务器
+      description: 会实时查询云服务器的当前状态，因此比列表接口慢但更准确。轮询创建进度请使用本接口。
+      operationId: get-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名云服务器
+      description: 仅修改显示名称。云服务器内的主机名不变，它等于云服务器 id。
+      operationId: rename-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameInstanceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/actions:
+    post:
+      summary: 开机、关机、重启
+      description: |-
+        重启默认为软重启，由操作系统正常关闭后重新启动。
+
+        系统已无响应时软重启不会生效，此时可设置 `force` 强制重启。强制重启不等待操作系统关闭，**未落盘的数据会丢失**。`force` 仅适用于 reboot。
+
+        已被平台停服的云服务器需先解除停服。
+      operationId: act-on-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActOnInstanceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/console:
+    post:
+      summary: 打开远程控制台
+      description: |-
+        在浏览器中直接操作云服务器，无需网络可达，适用于网络配置失误导致无法登录的情况。
+
+        返回的地址一次性使用，数分钟后失效。**请勿缓存**，每次使用前重新获取。
+      operationId: open-instance-console
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/console-output:
+    get:
+      summary: 读取串口输出
+      description: |-
+        云服务器启动过程与内核输出的原始文本。无法登录或远程控制台无输出时，应首先查看本接口。其中可查看启动停止于哪一步、系统盘是否正常挂载、初始化过程是否报错。
+
+        处于错误状态或已被平台停服的云服务器同样可以读取。
+      operationId: get-instance-console-output
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - description: 返回末尾多少行，0 表示全部
+          explode: false
+          in: query
+          name: lines
+          schema:
+            default: 200
+            description: 返回末尾多少行，0 表示全部
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsoleOutputResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/password:
+    post:
+      summary: 重置登录密码
+      description: |-
+        在不重启的情况下改掉 root 的密码，云服务器必须处于运行中。
+
+        **并非所有镜像都支持**：镜像列表中 `supports_password_reset` 为 false 的镜像做不到，此时只能通过重装系统设置新密码，而重装会清除系统盘上的全部数据。
+
+        镜像标记为支持、但云服务器内相应组件已被卸载或停止时，本接口同样会被拒绝。
+      operationId: reset-instance-password
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/rebuild:
+    post:
+      summary: 重装系统
+      description: '**系统盘数据将被清除且无法恢复。** 已挂载的数据盘不受影响。'
+      operationId: rebuild-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebuildInstanceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebuildInstanceResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/resize:
+    post:
+      summary: 变配
+      description: |-
+        只能变更为同一地区、同一可用区的机型，否则已挂载的云硬盘无法随之迁移。
+
+        变配分两步：本接口下发后云服务器会在新规格上重新启动，状态变为 `resize_verifying`，此时**必须**调用确认或回滚接口。目标机型在确认前记在 `pending_instance_type_id` 上，`instance_type_id` 仍为当前生效并计费的机型。
+
+        **未确认期间新旧两份规格同时占用资源。** 请在状态变为 `resize_verifying` 后尽快确认。
+      operationId: resize-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResizeInstanceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/resize/confirm:
+    post:
+      summary: 确认变配
+      description: 释放原规格占用的资源，`pending_instance_type_id` 成为生效机型并从此按它计费。
+      operationId: confirm-instance-resize
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/resize/revert:
+    post:
+      summary: 回滚变配
+      description: 云服务器回到原规格，`pending_instance_type_id` 被丢弃，计费不受本次变配影响。
+      operationId: revert-instance-resize
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/disks:
+    get:
+      summary: 列出云服务器已挂载的云硬盘
+      operationId: list-instance-disks
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 挂载云硬盘
+      description: 云硬盘必须与云服务器位于同一地区和可用区。挂载后需在云服务器内自行分区并挂载文件系统。
+      operationId: attach-disk
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachDiskRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/disks/{diskId}:
+    delete:
+      summary: 卸载云硬盘
+      description: 请先在云服务器内卸载（umount）该设备再调用本接口，正在写入的文件系统被强制卸载会损坏数据。
+      operationId: detach-disk
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: diskId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/floating-ips:
+    post:
+      summary: 为云服务器绑定公网 IP
+      description: 公网 IP 绑定在云服务器的主网卡上。
+      operationId: attach-instance-floating-ip
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachFloatingIPRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/floating-ips/{floatingIpId}:
+    delete:
+      summary: 解绑云服务器的公网 IP
+      operationId: detach-instance-floating-ip
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: floatingIpId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/ports:
+    get:
+      summary: 列出云服务器的网卡
+      operationId: list-instance-ports
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 挂载网卡
+      operationId: attach-port
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachPortRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/ports/{portId}:
+    delete:
+      summary: 卸载网卡
+      description: 主网卡不可卸载，卸载后云服务器将失去网络地址。
+      operationId: detach-port
+      tags:
+        - Attachment
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: portId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/operation-logs:
+    get:
+      summary: 列出本项目的操作记录
+      description: |-
+        记录本项目内的每一次写操作：谁、在什么时候、对什么做了什么、成功还是失败。读取操作不记录。
+
+        **平台代为执行的操作也在其中，但不显示具体执行人**，`by_platform` 为 true。例如欠费停机、违规封禁：需要知道机器何时被平台停止，但执行人属于平台内部信息。
+
+        密码一类的字段在写入时即被替换为占位符，不会出现在 `payload` 中。
+      operationId: list-operation-logs
+      tags:
+        - OperationLog
+      parameters:
+        - description: 只看某一种操作，取值与接口的 operation id 一致
+          explode: false
+          in: query
+          name: action
+          schema:
+            description: 只看某一种操作，取值与接口的 operation id 一致
+            maxLength: 64
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            default: 0
+            format: int64
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/ports:
+    get:
+      summary: 列出网卡
+      operationId: list-ports
+      tags:
+        - Port
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建网卡
+      description: 创建出的网卡尚未挂载到任何云服务器。主网卡不由本接口创建，它随云服务器一并创建。
+      operationId: create-port
+      tags:
+        - Port
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/ports/{portId}:
+    delete:
+      summary: 删除网卡
+      description: 主网卡不可单独删除，它随云服务器一并释放。仍挂载在云服务器上的网卡也无法删除。
+      operationId: delete-port
+      tags:
+        - Port
+      parameters:
+        - in: path
+          name: portId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-images:
+    get:
+      summary: 列出自制镜像
+      operationId: list-private-images
+      tags:
+        - PrivateImage
+      parameters:
+        - description: 只返回该地区的镜像。镜像只能用于所在地区
+          explode: false
+          in: query
+          name: region_code
+          schema:
+            description: 只返回该地区的镜像。镜像只能用于所在地区
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 将云服务器制作为镜像
+      description: |-
+        依据云服务器的系统盘制作，数据盘不包含在内。制作出的镜像可用于创建云服务器或重装系统，并在源云服务器释放后继续可用。
+
+        **镜像内容取自开始制作的那一刻，此后对云服务器的改动不会包含在内。**
+
+        制作分两个阶段，请轮询查看接口：
+
+        - `provisioning` 正在读取系统盘，通常数十秒。此阶段云服务器可以继续使用，但为保证一致性建议先关机。
+        - `uploading` 已与系统盘无关，**此时即可开机，无需等待制作完成**。该阶段耗时与系统盘容量成正比，20 GB 约需 3 分钟。
+
+        运行中的云服务器其文件系统可能处于写入中间状态，制作出的镜像等同于一次断电后的磁盘内容。对一致性有要求时，请在开始制作前关机，并在状态变为 `uploading` 后开机。
+
+        制作期间该云服务器可以正常启停与使用，但无法释放。
+      operationId: create-private-image
+      tags:
+        - PrivateImage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrivateImageRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-images/{privateImageId}:
+    delete:
+      summary: 删除自制镜像
+      description: |-
+        仍有云服务器由该镜像创建时，删除会被拒绝：这些云服务器需要它才能重装系统。
+
+        制作尚未完成的镜像也可以删除，制作会被终止。
+      operationId: delete-private-image
+      tags:
+        - PrivateImage
+      parameters:
+        - in: path
+          name: privateImageId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看自制镜像
+      description: 轮询制作进度请使用本接口。status 为 error 时，failure 给出失败原因。
+      operationId: get-private-image
+      tags:
+        - PrivateImage
+      parameters:
+        - in: path
+          name: privateImageId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名自制镜像
+      operationId: rename-private-image
+      tags:
+        - PrivateImage
+      parameters:
+        - in: path
+          name: privateImageId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenamePrivateImageRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks:
+    get:
+      summary: 列出私有网络
+      operationId: list-private-networks
+      tags:
+        - PrivateNetwork
+      parameters:
+        - description: 不传时返回全部地区
+          explode: false
+          in: query
+          name: region_code
+          schema:
+            description: 不传时返回全部地区
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建私有网络
+      description: 同时创建一张网络、一台路由器和一个默认安全组。默认安全组拒绝全部入站流量、放行全部出站流量。
+      operationId: create-private-network
+      tags:
+        - PrivateNetwork
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrivateNetworkRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}:
+    delete:
+      summary: 释放私有网络
+      description: 其中仍有云服务器或网卡时，释放会被拒绝。IPv6、路由器与安全组随之一并释放。
+      operationId: delete-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看私有网络
+      operationId: get-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名私有网络
+      description: 仅修改显示名称。网段、路由与外网网关均不可修改。
+      operationId: rename-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenamePrivateNetworkRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/ipv6:
+    delete:
+      summary: 关闭私有网络的 IPv6
+      description: 释放的前缀不会立即重新分配。
+      operationId: disable-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看私有网络的 IPv6
+      operationId: get-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPv6ResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 为私有网络启用 IPv6
+      description: |-
+        为该私有网络分配一段 IPv6 地址。地址由私有网络自动下发至云服务器，无需也无法单独申领，也不占用公网 IPv4。
+
+        该私有网络尚未接入外网时会自动接入，无需单独操作。
+      operationId: enable-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPv6ResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/routes:
+    get:
+      summary: 列出静态路由
+      operationId: list-routes
+      tags:
+        - Route
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建静态路由
+      description: 以下三种会导致网络中断的写法会被拒绝：目的网段为 0.0.0.0/0（覆盖默认路由，所有公网 IP 立即失效）、目的网段为某个子网自身（覆盖直连路由）、下一跳为某个子网的网关（指回路由器自身）。
+      operationId: create-route
+      tags:
+        - Route
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/routes/{routeId}:
+    delete:
+      summary: 删除静态路由
+      operationId: delete-route
+      tags:
+        - Route
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: routeId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/subnets:
+    get:
+      summary: 列出子网
+      description: IPv6 子网也在返回结果中，ip_version 为 6。它在启用 IPv6 时自动创建，不可单独删除。
+      operationId: list-subnets
+      tags:
+        - Subnet
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubnetListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建子网
+      operationId: create-subnet
+      tags:
+        - Subnet
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubnetRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubnetResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/subnets/next-free-cidr:
+    get:
+      summary: 推荐下一个空闲网段
+      description: 返回的只是建议值，创建子网时仍会重新校验。用于避免手工计算下一个空闲网段时出错。
+      operationId: suggest-subnet-cidr
+      tags:
+        - Subnet
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - explode: false
+          in: query
+          name: prefix_length
+          schema:
+            default: 24
+            format: int64
+            maximum: 30
+            minimum: 16
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextFreeCidrResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/private-networks/{privateNetworkId}/subnets/{subnetId}:
+    delete:
+      summary: 删除子网
+      description: 该子网中仍有网卡，或仍有静态路由的下一跳落在该网段内时，删除会被拒绝。
+      operationId: delete-subnet
+      tags:
+        - Subnet
+      parameters:
+        - in: path
+          name: privateNetworkId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: subnetId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/security-groups:
+    get:
+      summary: 列出安全组
+      operationId: list-security-groups
+      tags:
+        - SecurityGroup
+      parameters:
+        - explode: false
+          in: query
+          name: region_code
+          schema:
+            maxLength: 32
+            type: string
+        - description: 只返回该私有网络下的安全组
+          explode: false
+          in: query
+          name: private_network_id
+          schema:
+            description: 只返回该私有网络下的安全组
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建安全组
+      description: 新建的安全组带有一条规则：放行 ICMP 需要分片（type 3 code 4）。缺少该规则会导致路径 MTU 发现失败，表现为连接建立后传输大数据包时卡住。
+      operationId: create-security-group
+      tags:
+        - SecurityGroup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityGroupRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/security-groups/{securityGroupId}:
+    delete:
+      summary: 删除安全组
+      description: 默认安全组不可删除，它随私有网络一并释放。仍被网卡引用的安全组也无法删除。
+      operationId: delete-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看安全组
+      operationId: get-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名安全组
+      description: |-
+        仅可修改名称，规则请用规则接口。
+      operationId: rename-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSecurityGroupRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/security-groups/{securityGroupId}/rules:
+    get:
+      summary: 列出安全组规则
+      operationId: list-security-group-rules
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityRuleListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建安全组规则
+      description: 重复添加同一条规则会被拒绝。判重时 `0.0.0.0/0`、`::/0` 与留空视为等同。
+      operationId: create-security-group-rule
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityRuleRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityRuleResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/security-groups/{securityGroupId}/rules/{ruleId}:
+    delete:
+      summary: 删除安全组规则
+      operationId: delete-security-group-rule
+      tags:
+        - SecurityGroup
+      parameters:
+        - in: path
+          name: securityGroupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+        - in: path
+          name: ruleId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/snapshots:
+    get:
+      summary: 列出快照
+      operationId: list-snapshots
+      tags:
+        - Snapshot
+      parameters:
+        - description: 只返回该云硬盘的快照
+          explode: false
+          in: query
+          name: disk_id
+          schema:
+            description: 只返回该云硬盘的快照
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建快照
+      description: |-
+        运行中云服务器上挂载的云硬盘同样可以创建快照。快照记录的是某一时刻的块设备状态，文件系统层面可能不一致，重要数据建议先在云服务器内执行 sync。
+
+        **系统盘的快照不能用于回滚该系统盘**：回滚要求先从云服务器上卸载，而系统盘不可卸载。它可用于创建一块新的数据盘。需要保留并恢复整个系统时，请使用自制镜像；需要可跨可用区、且在云硬盘删除后仍可恢复的副本时，请使用备份。
+      operationId: create-snapshot
+      tags:
+        - Snapshot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSnapshotRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/snapshots/{snapshotId}:
+    delete:
+      summary: 删除快照
+      operationId: delete-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - in: path
+          name: snapshotId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看快照
+      operationId: get-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - in: path
+          name: snapshotId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 重命名快照
+      operationId: rename-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - in: path
+          name: snapshotId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSnapshotRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    BackupResource:
+      additionalProperties: false
+      properties:
+        availability_zone:
+          description: 源云硬盘所在的可用区。恢复时可选择本地区的其他可用区
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        region_code:
+          type: string
+        size_gb:
+          description: 创建备份时源云硬盘的容量。恢复出的云硬盘不能小于此容量
+          format: int64
+          type: integer
+        source_disk_id:
+          description: 备份来源。该云硬盘删除后本备份仍然可用
+          format: uuid
+          type: string
+        status:
+          enum:
+            - provisioning
+            - available
+            - restoring
+            - deleting
+            - error
+          type: string
+      required:
+        - id
+        - source_disk_id
+        - name
+        - size_gb
+        - status
+        - region_code
+        - availability_zone
+        - created_at
+      type: object
+    BackupListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/BackupResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateBackupRequestBody:
+      additionalProperties: false
+      properties:
+        disk_id:
+          format: uuid
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - disk_id
+        - name
+      type: object
+    RenameBackupRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    RestoreBackupRequestBody:
+      additionalProperties: false
+      properties:
+        disk_type_id:
+          description: 可选择与源云硬盘不同的可用区，但必须在同一地区
+          format: uuid
+          maxLength: 64
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        size_gb:
+          description: 留空时与备份等大。给出时不能小于备份
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - disk_type_id
+        - name
+      type: object
+    DiskResource:
+      additionalProperties: false
+      properties:
+        attached_instance_id:
+          type:
+            - string
+            - 'null'
+        availability_zone:
+          description: 云硬盘实际所在的可用区。挂载时云服务器必须位于同一可用区
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        device:
+          description: 系统分配的设备名，在云服务器内看到的即为该名称
+          type:
+            - string
+            - 'null'
+        disk_type_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        is_system:
+          description: 系统盘随云服务器一并释放，不能卸载也不能单独删除
+          type: boolean
+        name:
+          type: string
+        region_code:
+          type: string
+        size_gb:
+          format: int64
+          type: integer
+        status:
+          enum:
+            - provisioning
+            - available
+            - attaching
+            - in_use
+            - detaching
+            - resizing
+            - reverting
+            - restoring
+            - releasing
+            - deleting
+            - error
+          type: string
+      required:
+        - id
+        - name
+        - region_code
+        - availability_zone
+        - disk_type_id
+        - size_gb
+        - status
+        - is_system
+        - attached_instance_id
+        - device
+        - created_at
+      type: object
+    DiskTypeResource:
+      additionalProperties: false
+      properties:
+        availability_zone_code:
+          type: string
+        id:
+          format: uuid
+          type: string
+        iops_display:
+          type: string
+        max_size_gb:
+          format: int64
+          type: integer
+        media:
+          enum:
+            - ssd
+            - hdd
+            - nvme
+          type: string
+        min_size_gb:
+          format: int64
+          type: integer
+        name:
+          type: string
+        region_code:
+          type: string
+        step_gb:
+          format: int64
+          type: integer
+        throughput_display:
+          type: string
+      required:
+        - id
+        - name
+        - media
+        - region_code
+        - availability_zone_code
+        - min_size_gb
+        - max_size_gb
+        - step_gb
+        - iops_display
+        - throughput_display
+      type: object
+    DiskTypeListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DiskTypeResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    ImageResource:
+      additionalProperties: false
+      properties:
+        architecture:
+          type: string
+        id:
+          format: uuid
+          type: string
+        min_disk_gb:
+          format: int64
+          type: integer
+        min_ram_mb:
+          format: int64
+          type: integer
+        name:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        region_code:
+          type: string
+        supports_password_reset:
+          description: false 表示由该镜像创建的云服务器只能通过重装系统设置新密码
+          type: boolean
+      required:
+        - id
+        - name
+        - os_family
+        - os_version
+        - architecture
+        - region_code
+        - min_disk_gb
+        - min_ram_mb
+        - supports_password_reset
+      type: object
+    ImageListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ImageResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    InstanceTypeResource:
+      additionalProperties: false
+      properties:
+        availability_zone_code:
+          description: 该机型所属的可用区。云硬盘必须位于同一可用区才能挂载
+          type: string
+        id:
+          format: uuid
+          type: string
+        max_bandwidth_mbps:
+          format: int64
+          type: integer
+        max_floating_ips:
+          format: int64
+          type: integer
+        max_ports:
+          format: int64
+          type: integer
+        name:
+          type: string
+        ram_mb:
+          format: int64
+          type: integer
+        region_code:
+          type: string
+        vcpus:
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - vcpus
+        - ram_mb
+        - region_code
+        - availability_zone_code
+        - max_ports
+        - max_floating_ips
+        - max_bandwidth_mbps
+      type: object
+    InstanceTypeListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InstanceTypeResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    RegionResource:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        country_code:
+          type: string
+        name:
+          type: string
+      required:
+        - code
+        - name
+        - country_code
+      type: object
+    RegionListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RegionResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    ZoneResource:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+      required:
+        - code
+        - name
+      type: object
+    ZoneListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ZoneResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    DiskListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DiskResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateDiskRequestBody:
+      additionalProperties: false
+      properties:
+        disk_type_id:
+          format: uuid
+          maxLength: 64
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        size_gb:
+          format: int64
+          minimum: 1
+          type: integer
+        snapshot_id:
+          description: 从该快照恢复。提供时容量只需不小于快照本身
+          format: uuid
+          type: string
+      required:
+        - disk_type_id
+        - name
+        - size_gb
+      type: object
+    RenameDiskRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    ResizeDiskRequestBody:
+      additionalProperties: false
+      properties:
+        size_gb:
+          description: 必须大于当前容量
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - size_gb
+      type: object
+    RevertDiskRequestBody:
+      additionalProperties: false
+      properties:
+        snapshot_id:
+          description: 必须是该云硬盘最新的一个快照
+          format: uuid
+          type: string
+      required:
+        - snapshot_id
+      type: object
+    FloatingIPResource:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        attached_fixed_ip:
+          type:
+            - string
+            - 'null'
+        attached_port_id:
+          type:
+            - string
+            - 'null'
+        bandwidth_mbps:
+          format: int64
+          type:
+            - integer
+            - 'null'
+        created_at:
+          format: date-time
+          type: string
+        detached_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        region_code:
+          type: string
+        status:
+          description: idle 表示尚未绑定到网卡
+          enum:
+            - idle
+            - bound
+          type: string
+      required:
+        - id
+        - region_code
+        - address
+        - status
+        - bandwidth_mbps
+        - attached_port_id
+        - attached_fixed_ip
+        - detached_at
+        - created_at
+      type: object
+    FloatingIPListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/FloatingIPResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    AllocateFloatingIPRequestBody:
+      additionalProperties: false
+      properties:
+        address:
+          description: 指定要申领的地址。留空时由平台自动分配
+          maxLength: 64
+          type: string
+        private_network_id:
+          format: uuid
+          type: string
+      required:
+        - private_network_id
+      type: object
+    SetBandwidthRequestBody:
+      additionalProperties: false
+      properties:
+        mbps:
+          description: 出入方向均限制为该值
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - mbps
+      type: object
+    BindFloatingIPRequestBody:
+      additionalProperties: false
+      properties:
+        port_id:
+          format: uuid
+          type: string
+      required:
+        - port_id
+      type: object
+    InstanceResource:
+      additionalProperties: false
+      properties:
+        availability_zone:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        hostname:
+          description: 云服务器内的主机名，等于云服务器 id
+          type: string
+        id:
+          format: uuid
+          type: string
+        image_id:
+          description: 从平台提供的镜像创建时非空
+          format: uuid
+          type:
+            - string
+            - 'null'
+        instance_type_id:
+          description: 当前生效的机型，即当前计费依据
+          format: uuid
+          type: string
+        ipv6_address:
+          description: 云服务器主网卡的 IPv6 地址。私有网络启用 IPv6 后自动下发
+          type:
+            - string
+            - 'null'
+        name:
+          type: string
+        pending_instance_type_id:
+          description: 非空表示存在待确认的变配。确认后该机型生效，回滚则丢弃
+          format: uuid
+          type:
+            - string
+            - 'null'
+        private_image_id:
+          description: 从自制的私有镜像创建时非空
+          format: uuid
+          type:
+            - string
+            - 'null'
+        private_ip:
+          description: 云服务器的内网地址
+          type:
+            - string
+            - 'null'
+        private_network_id:
+          description: 云服务器主网卡所在的私有网络
+          type:
+            - string
+            - 'null'
+        public_ips:
+          description: 云服务器主网卡上绑定的公网 IPv4，未绑定时为空数组
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        region_code:
+          type: string
+        status:
+          enum:
+            - provisioning
+            - running
+            - stopped
+            - rebooting
+            - resizing
+            - resize_verifying
+            - error
+            - deleting
+            - suspended
+          type: string
+        subnet_id:
+          description: 云服务器主网卡所在的子网
+          type:
+            - string
+            - 'null'
+        suspended_at:
+          description: 非空表示已被平台停服，需先解除后才能操作
+          format: date-time
+          type:
+            - string
+            - 'null'
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - hostname
+        - region_code
+        - availability_zone
+        - private_network_id
+        - subnet_id
+        - private_ip
+        - public_ips
+        - ipv6_address
+        - instance_type_id
+        - pending_instance_type_id
+        - image_id
+        - private_image_id
+        - status
+        - suspended_at
+        - created_at
+        - updated_at
+      type: object
+    InstanceListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/InstanceResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    LaunchInstanceRequestBody:
+      additionalProperties: false
+      properties:
+        count:
+          description: 一次创建的台数，留空为 1。多台时名称自动编号
+          format: int64
+          maximum: 20
+          minimum: 0
+          type: integer
+        generate_password:
+          description: 由平台生成随机密码，仅在本次响应中返回
+          type: boolean
+        image_id:
+          description: 平台提供的镜像。与 private_image_id 二选一
+          format: uuid
+          maxLength: 64
+          type: string
+        instance_type_id:
+          format: uuid
+          maxLength: 64
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        password:
+          description: root 的登录密码。留空时仅使用项目的 SSH 公钥
+          maxLength: 128
+          type: string
+        port_id:
+          description: 使用已有网卡（可预先绑定公网 IP）。与 subnet_id 二选一；使用时只能创建一台
+          format: uuid
+          type: string
+        private_image_id:
+          description: 自制镜像。与 image_id 二选一
+          format: uuid
+          type: string
+        root_disk_gb:
+          description: 系统盘容量（GB）。留空时按镜像要求与平台下限自动选择
+          format: int64
+          maximum: 32768
+          minimum: 0
+          type: integer
+        security_group_ids:
+          description: 新建主网卡时必填，至少一个；不会自动使用默认安全组。使用 port_id 时忽略——那张网卡的安全组在创建它时已经定了
+          items:
+            format: uuid
+            type: string
+          minItems: 1
+          type:
+            - array
+            - 'null'
+        subnet_id:
+          description: 在该子网内新建主网卡。与 port_id 二选一
+          format: uuid
+          type: string
+      required:
+        - name
+        - instance_type_id
+      type: object
+    LaunchInstanceResponseBody:
+      additionalProperties: false
+      properties:
+        failure:
+          description: 非空表示只成功创建了部分云服务器，其余因该原因中止
+          type:
+            - string
+            - 'null'
+        instances:
+          description: 按请求顺序返回，单台创建时也是数组
+          items:
+            $ref: '#/components/schemas/InstanceResource'
+          type:
+            - array
+            - 'null'
+        password:
+          description: 仅在本次响应中返回，请及时保存。批量创建时所有云服务器共用它
+          type: string
+      required:
+        - instances
+        - password
+        - failure
+      type: object
+    RenameInstanceRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    ActOnInstanceRequestBody:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+            - start
+            - stop
+            - reboot
+          minLength: 1
+          type: string
+        force:
+          description: 仅适用于 reboot。强制重启不等待操作系统正常关闭，未落盘的数据会丢失，用于系统已无响应的情况
+          type: boolean
+      required:
+        - action
+      type: object
+    ConsoleResponseBody:
+      additionalProperties: false
+      properties:
+        console_url:
+          description: 远程控制台的连接地址，一次性使用且数分钟后失效
+          type: string
+      required:
+        - console_url
+      type: object
+    ConsoleOutputResponseBody:
+      additionalProperties: false
+      properties:
+        output:
+          description: 串口输出的原始文本，行序与云服务器内一致
+          type: string
+      required:
+        - output
+      type: object
+    ResetPasswordRequestBody:
+      additionalProperties: false
+      properties:
+        generate_password:
+          description: 由平台生成随机密码，仅在本次响应中返回
+          type: boolean
+        password:
+          description: 新的 root 密码。与 generate_password 二选一
+          maxLength: 128
+          type: string
+      type: object
+    ResetPasswordResponseBody:
+      additionalProperties: false
+      properties:
+        password:
+          description: 平台生成的密码，仅本次返回。自行设置密码时为空
+          type: string
+      required:
+        - password
+      type: object
+    RebuildInstanceRequestBody:
+      additionalProperties: false
+      properties:
+        generate_password:
+          type: boolean
+        image_id:
+          description: 平台提供的镜像。与 private_image_id 二选一
+          format: uuid
+          maxLength: 64
+          type: string
+        password:
+          maxLength: 128
+          type: string
+        private_image_id:
+          description: 自制镜像。与 image_id 二选一
+          format: uuid
+          type: string
+      type: object
+    RebuildInstanceResponseBody:
+      additionalProperties: false
+      properties:
+        instance:
+          $ref: '#/components/schemas/InstanceResource'
+        password:
+          description: 仅在本次响应中返回，请及时保存
+          type: string
+      required:
+        - instance
+        - password
+      type: object
+    ResizeInstanceRequestBody:
+      additionalProperties: false
+      properties:
+        instance_type_id:
+          description: 必须与当前机型位于同一地区和可用区
+          format: uuid
+          maxLength: 64
+          type: string
+      required:
+        - instance_type_id
+      type: object
+    AttachDiskRequestBody:
+      additionalProperties: false
+      properties:
+        disk_id:
+          format: uuid
+          type: string
+      required:
+        - disk_id
+      type: object
+    AttachFloatingIPRequestBody:
+      additionalProperties: false
+      properties:
+        floating_ip_id:
+          format: uuid
+          type: string
+      required:
+        - floating_ip_id
+      type: object
+    PortResource:
+      additionalProperties: false
+      properties:
+        attached_instance_id:
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        ipv6_address:
+          type:
+            - string
+            - 'null'
+        is_primary:
+          description: 主网卡随云服务器一并创建和释放，不可单独卸载
+          type: boolean
+        mac:
+          type:
+            - string
+            - 'null'
+        name:
+          type: string
+        private_ip:
+          type:
+            - string
+            - 'null'
+        private_network_id:
+          format: uuid
+          type: string
+        public_ips:
+          description: 绑在这张网卡上的公网 IPv4，未绑定时为空数组
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        subnet_id:
+          format: uuid
+          type: string
+      required:
+        - id
+        - private_network_id
+        - subnet_id
+        - name
+        - mac
+        - is_primary
+        - attached_instance_id
+        - private_ip
+        - ipv6_address
+        - public_ips
+      type: object
+    PortListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PortResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    AttachPortRequestBody:
+      additionalProperties: false
+      properties:
+        port_id:
+          format: uuid
+          type: string
+      required:
+        - port_id
+      type: object
+    OperationLogResource:
+      additionalProperties: false
+      properties:
+        action:
+          description: 操作名，与接口的 operation id 一致
+          type: string
+        actor:
+          description: 发起该操作的用户。平台执行时为空
+          type:
+            - string
+            - 'null'
+        by_platform:
+          description: true 表示由平台代为执行
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        failure:
+          description: 失败时的简要原因
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        payload:
+          additionalProperties: {}
+          description: 该次请求的路径与查询参数。密码一类的字段已被隐去
+          type: object
+        region_code:
+          type:
+            - string
+            - 'null'
+        subject_id:
+          description: 创建类操作为空：新资源的 id 在响应中，不在请求路径上
+          type: string
+        subject_type:
+          type: string
+        succeeded:
+          type: boolean
+      required:
+        - id
+        - action
+        - by_platform
+        - actor
+        - subject_type
+        - subject_id
+        - region_code
+        - payload
+        - succeeded
+        - failure
+        - created_at
+      type: object
+    OperationLogListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OperationLogResource'
+          type:
+            - array
+            - 'null'
+        total:
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+      type: object
+    CreatePortRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          type: string
+        private_ip:
+          description: 指定私网地址。留空时自动分配
+          maxLength: 64
+          type: string
+        security_group_ids:
+          description: 至少一个，且必须属于同一个私有网络
+          items:
+            format: uuid
+            type: string
+          minItems: 1
+          type:
+            - array
+            - 'null'
+        subnet_id:
+          format: uuid
+          type: string
+      required:
+        - subnet_id
+        - security_group_ids
+      type: object
+    PrivateImageResource:
+      additionalProperties: false
+      properties:
+        architecture:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        failure:
+          description: 制作失败的原因，仅在 status 为 error 时非空
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        min_disk_gb:
+          description: 使用本镜像创建云服务器时，系统盘不能小于此容量
+          format: int64
+          type: integer
+        min_ram_mb:
+          description: 使用本镜像创建云服务器时，机型内存不能小于此容量
+          format: int64
+          type: integer
+        name:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        region_code:
+          description: 镜像只能用于所在地区
+          type: string
+        size_bytes:
+          description: 镜像占用的存储容量，制作完成前为 0
+          format: int64
+          type: integer
+        source_instance_id:
+          description: 制作来源。该云服务器释放后本镜像仍然可用
+          format: uuid
+          type:
+            - string
+            - 'null'
+        status:
+          enum:
+            - provisioning
+            - uploading
+            - available
+            - deleting
+            - error
+          type: string
+        supports_password_reset:
+          description: false 表示由该镜像创建的云服务器只能通过重装系统设置新密码
+          type: boolean
+      required:
+        - id
+        - name
+        - source_instance_id
+        - region_code
+        - status
+        - failure
+        - min_disk_gb
+        - min_ram_mb
+        - supports_password_reset
+        - size_bytes
+        - os_family
+        - os_version
+        - architecture
+        - created_at
+      type: object
+    PrivateImageListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PrivateImageResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreatePrivateImageRequestBody:
+      additionalProperties: false
+      properties:
+        instance_id:
+          description: 制作依据其系统盘，数据盘不包含在内
+          format: uuid
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - instance_id
+        - name
+      type: object
+    RenamePrivateImageRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    PrivateNetworkResource:
+      additionalProperties: false
+      properties:
+        cidr:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        has_internet_gateway:
+          type: boolean
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        region_code:
+          type: string
+        status:
+          enum:
+            - available
+            - error
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - region_code
+        - cidr
+        - status
+        - has_internet_gateway
+        - created_at
+        - updated_at
+      type: object
+    PrivateNetworkListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PrivateNetworkResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreatePrivateNetworkRequestBody:
+      additionalProperties: false
+      properties:
+        cidr:
+          description: 必须是 RFC1918 的私有网段，掩码在 /8 到 /24 之间，例如 10.0.0.0/16
+          maxLength: 32
+          minLength: 1
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        region_code:
+          maxLength: 32
+          minLength: 1
+          type: string
+      required:
+        - name
+        - region_code
+        - cidr
+      type: object
+    RenamePrivateNetworkRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    IPv6ResponseBody:
+      additionalProperties: false
+      properties:
+        cidr:
+          description: 已分配的 /64 前缀，未启用时为空
+          type: string
+        enabled:
+          type: boolean
+        status:
+          description: 为 active 时表示 IPv6 已完全可用
+          enum:
+            - pending
+            - active
+            - draining
+          type: string
+      required:
+        - enabled
+        - cidr
+        - status
+      type: object
+    RouteResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        destination:
+          type: string
+        id:
+          format: uuid
+          type: string
+        nexthop:
+          type: string
+      required:
+        - id
+        - destination
+        - nexthop
+        - description
+        - created_at
+      type: object
+    RouteListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RouteResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateRouteRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 255
+          type: string
+        destination:
+          description: 目的网段。不能为 0.0.0.0/0，也不能为某个子网自身的网段
+          maxLength: 32
+          minLength: 1
+          type: string
+        nexthop:
+          description: 云服务器的私网地址，必须落在该私有网络的某个子网内
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - destination
+        - nexthop
+      type: object
+    SubnetResource:
+      additionalProperties: false
+      properties:
+        cidr:
+          type: string
+        gateway_ip:
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        ip_version:
+          enum:
+            - 4
+            - 6
+          format: int64
+          type: integer
+        name:
+          type: string
+        private_network_id:
+          format: uuid
+          type: string
+      required:
+        - id
+        - private_network_id
+        - name
+        - ip_version
+        - cidr
+        - gateway_ip
+      type: object
+    SubnetListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SubnetResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateSubnetRequestBody:
+      additionalProperties: false
+      properties:
+        cidr:
+          description: 必须落在私有网络的网段内，且不能与已有子网重叠
+          maxLength: 32
+          minLength: 1
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+        - cidr
+      type: object
+    NextFreeCidrResponseBody:
+      additionalProperties: false
+      properties:
+        cidr:
+          description: 为空表示该私有网络内已无满足该掩码的空闲网段
+          type: string
+      required:
+        - cidr
+      type: object
+    SecurityGroupResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        id:
+          format: uuid
+          type: string
+        is_default:
+          description: 默认安全组随私有网络一并释放，不可单独删除
+          type: boolean
+        name:
+          type: string
+        private_network_id:
+          format: uuid
+          type: string
+      required:
+        - id
+        - private_network_id
+        - name
+        - description
+        - is_default
+        - created_at
+      type: object
+    SecurityGroupListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityGroupResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateSecurityGroupRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 500
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+        private_network_id:
+          format: uuid
+          type: string
+      required:
+        - private_network_id
+        - name
+      type: object
+    SecurityRuleResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        direction:
+          enum:
+            - ingress
+            - egress
+          type: string
+        ethertype:
+          enum:
+            - IPv4
+            - IPv6
+          type: string
+        id:
+          format: uuid
+          type: string
+        port_range_max:
+          description: ICMP 协议下表示 code，而非端口
+          format: int64
+          type:
+            - integer
+            - 'null'
+        port_range_min:
+          description: ICMP 协议下表示 type，而非端口
+          format: int64
+          type:
+            - integer
+            - 'null'
+        protocol:
+          type:
+            - string
+            - 'null'
+        remote_ip_prefix:
+          type:
+            - string
+            - 'null'
+      required:
+        - id
+        - direction
+        - ethertype
+        - protocol
+        - port_range_min
+        - port_range_max
+        - remote_ip_prefix
+        - description
+        - created_at
+      type: object
+    SecurityRuleListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityRuleResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateSecurityRuleRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 255
+          type: string
+        direction:
+          enum:
+            - ingress
+            - egress
+          type: string
+        ethertype:
+          enum:
+            - IPv4
+            - IPv6
+          type: string
+        port_range_max:
+          description: ICMP 协议下表示 code（0–255），而非端口
+          format: int64
+          type:
+            - integer
+            - 'null'
+        port_range_min:
+          description: ICMP 协议下表示 type（0–255），而非端口
+          format: int64
+          type:
+            - integer
+            - 'null'
+        protocol:
+          description: 如 tcp、udp、icmp、ipv6-icmp。留空表示全部协议
+          maxLength: 16
+          type: string
+        remote_ip_prefix:
+          description: 留空等同于 0.0.0.0/0 或 ::/0
+          maxLength: 64
+          type: string
+      required:
+        - direction
+        - ethertype
+      type: object
+    SnapshotResource:
+      additionalProperties: false
+      properties:
+        availability_zone:
+          description: 由该快照恢复的云硬盘必须位于此可用区
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        disk_id:
+          format: uuid
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        region_code:
+          type: string
+        size_gb:
+          description: 创建快照时源云硬盘的容量。由该快照恢复的云硬盘不能小于此容量
+          format: int64
+          type: integer
+        status:
+          enum:
+            - provisioning
+            - available
+            - restoring
+            - deleting
+            - error
+          type: string
+      required:
+        - id
+        - disk_id
+        - name
+        - size_gb
+        - status
+        - availability_zone
+        - region_code
+        - created_at
+      type: object
+    SnapshotListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SnapshotResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateSnapshotRequestBody:
+      additionalProperties: false
+      properties:
+        disk_id:
+          format: uuid
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - disk_id
+        - name
+      type: object
+    RenameSecurityGroupRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    RenameSnapshotRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object

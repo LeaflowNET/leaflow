@@ -1,0 +1,923 @@
+openapi: 3.1.0
+info:
+  title: Leaflow 账号 API
+  version: 1.0.0
+  description: |-
+    选中项目之前的那些事：注册、账号本身、我参与了哪些项目、进入一个项目。
+
+    这一面用**账号令牌** —— 在 auth.leaflow.net 登录拿到的那张，放在 `Authorization: Bearer` 里。
+
+    进入一个项目：
+
+    1. 调 `GET /account/v1/projects` 列出参与的项目。首次调用会自动登记账号，姓名与邮箱取自登录信息；
+    2. 选定项目后调 `POST /account/v1/projects/{projectId}/token` 换取**项目令牌**；
+    3. 之后一律用项目令牌调各服务的 `/api/v1/*`。
+
+    项目令牌过期后重新执行第 2 步，没有单独的续期接口；账号令牌过期则先在 auth.leaflow.net 续期。
+security:
+  - bearerAuth: []
+paths:
+  /account/v1/settings:
+    get:
+      summary: 这个平台现在收不收人
+      description: |-
+        注册页和「新建项目」按钮用它决定画什么。不需要令牌。
+
+        `registration_mode` 不是 `OPEN` 时 `POST /account/v1/register` 会答 403：`CLOSED` 是整个关着，`INVITE_ONLY` 是只收手上有项目邀请的邮箱。`project_creation_mode` 同理，`VERIFIED_ONLY` 要先过实名。
+
+        两条配额是 0 表示不限。它们只用来提前提示，真正的判定在写入那一刻。
+      operationId: get-settings
+      tags:
+        - Setting
+      security: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/agreements:
+    get:
+      summary: 列出注册必须同意的文件
+      description: |-
+        注册页显示它，用户同意之后把每一项的 `type` 和 `version` 原样回传给 `POST /api/v1/register`。
+
+        不需要令牌。还没有任何文件生效时返回空数组，那时注册不需要提交 `consents`。
+      operationId: list-agreements
+      tags:
+        - Agreement
+      security: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me/consents:
+    get:
+      summary: 列出我同意过的文件
+      description: 全部记录，最新的在前，包括已经不是当前版本的那些。
+      operationId: list-consents
+      tags:
+        - Agreement
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 同意条款
+      description: |-
+        条款改版之后用它重新同意，`GET /api/v1/me` 的 `pending_agreements` 非空时就该调。
+
+        只收当前生效的版本，签旧版答 409。重复提交同一版不报错，第一次那条记录会留着。
+      operationId: accept-agreements
+      tags:
+        - Agreement
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptConsentsRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/register:
+    post:
+      summary: 注册账号
+      description: |-
+        在 auth.leaflow.net 登录之后调它，带上账号令牌。姓名和邮箱取自登录信息，不从请求体收。
+
+        `consents` 要覆盖 `GET /api/v1/agreements` 返回的每一份，版本号也要一致；漏一份答 400，版本对不上答 409（多半是页面开着的时候条款改版了，重新拉一次清单即可）。已经注册过的答 409。
+      operationId: register
+      tags:
+        - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me:
+    get:
+      summary: 查看当前账号
+      description: '`pending_agreements` 是还没同意的文件，非空就要先引导用户同意，再调 `POST /api/v1/me/consents`。'
+      operationId: get-account
+      tags:
+        - Account
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me/identity-verification:
+    get:
+      summary: 查看实名核验状态
+      description: 没交过材料时答 UNVERIFIED，不是 404。姓名和证件号不会出现在任何响应里。
+      operationId: get-identity-verification
+      tags:
+        - Account
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityVerificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 提交实名核验材料
+      description: 已经在等人审的和已经核过的都会被拒。被驳回之后可以改了再交。
+      operationId: submit-identity-verification
+      tags:
+        - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitIdentityVerificationRequestBody'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityVerificationResource'
+          description: Accepted
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me/invitations:
+    get:
+      summary: 列出寄给我的要约
+      description: 按当前账号的邮箱查，因为要约是寄给一个地址的——被邀请的人当时可能还没注册。
+      operationId: list-my-invitations
+      tags:
+        - Invitation
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageInvitationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me/invitations/accept:
+    post:
+      summary: 顺着邀请链接接受
+      description: token 对不上和这份要约已经不作数了是同一个回答：持有者对这两种情况能做的事完全一样，分开报会把这个接口变成一个可以拿来试 token 的探针。
+      operationId: accept-invitation-by-token
+      tags:
+        - Invitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationByTokenRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedInvitationResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/me/invitations/{invitationId}/accept:
+    post:
+      summary: 接受一份列在我名下的要约
+      description: 不需要 token：token 证明的是「你就是这份要约寄给的那个人」，而当前账号的邮箱对得上这份要约，证明的是同一件事。
+      operationId: accept-invitation
+      tags:
+        - Invitation
+      parameters:
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedInvitationResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/projects:
+    get:
+      summary: 列出我参与的项目
+      description: 默认不含已删除的项目——那些是已经不存在了的东西，要看必须明确用 status=DELETED 点名。
+      operationId: list-projects
+      tags:
+        - Project
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: 按名称或描述模糊匹配
+          explode: false
+          in: query
+          name: keyword
+          schema:
+            description: 按名称或描述模糊匹配
+            maxLength: 128
+            type: string
+        - description: 按对外状态过滤。不传时不返回已删除的项目
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: 按对外状态过滤。不传时不返回已删除的项目
+            enum:
+              - ACTIVE
+              - SUSPENDED
+              - BANNED
+              - DELETING
+              - DELETED
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageProjectAccessResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 建一个项目
+      description: 建的人就是所有者。项目会连带预置 OWNER、ADMIN 两个内置角色和一个空权限的 member 角色。
+      operationId: create-project
+      tags:
+        - Project
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectAccessResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /account/v1/projects/{projectId}/token:
+    post:
+      summary: 换一张项目令牌
+      description: |-
+        选定一个项目后，用账号令牌换取该项目的令牌。
+
+        **只接受 auth.leaflow.net 签发的账号令牌，不接受项目令牌。** 项目令牌过期后，先在 auth.leaflow.net 续期账号令牌，再重新调用这个接口。
+
+        换取时会确认账号可用、项目存在，且**调用者是该项目的成员**。非成员无法换取。
+
+        令牌只表明身份（用户与项目），**不包含权限**：权限在每次请求时实时判定，所以角色调整立即生效，不必等待令牌过期。
+
+        项目处于停用、封禁或删除中时**仍可换取令牌**：这些状态限制的是写入，不影响查看项目当前状况。
+      operationId: exchange-project-token
+      tags:
+        - ProjectToken
+      parameters:
+        - in: path
+          name: projectId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectTokenResponseBody'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 账号令牌。在 auth.leaflow.net 登录拿到的那张，只说明你是谁，不带任何项目；用它列出参与的项目，并换取项目令牌。
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    SettingsResource:
+      additionalProperties: false
+      properties:
+        max_members_per_project:
+          description: 一个项目最多几个成员，0 表示不限
+          format: int64
+          type: integer
+        max_projects_per_user:
+          description: 你最多能当几个项目的所有者，0 表示不限。已删除的项目不算在内
+          format: int64
+          type: integer
+        project_creation_mode:
+          description: VERIFIED_ONLY 要求先过实名，审核中不算
+          enum:
+            - OPEN
+            - VERIFIED_ONLY
+            - CLOSED
+          type: string
+        registration_mode:
+          description: INVITE_ONLY 是只收手上有项目邀请的邮箱
+          enum:
+            - OPEN
+            - INVITE_ONLY
+            - CLOSED
+          type: string
+      required:
+        - registration_mode
+        - project_creation_mode
+        - max_projects_per_user
+        - max_members_per_project
+      type: object
+    AgreementResource:
+      additionalProperties: false
+      properties:
+        effective_at:
+          description: 从这一刻起注册必须同意这一版
+          format: date-time
+          type: string
+        type:
+          enum:
+            - TERMS
+            - PRIVACY
+            - DPA
+          type: string
+        url:
+          description: 正文发布在哪
+          type: string
+        version:
+          description: 同意时原样回传这个值
+          type: string
+      required:
+        - type
+        - version
+        - url
+        - effective_at
+      type: object
+    AgreementListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AgreementResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    ConsentResource:
+      additionalProperties: false
+      properties:
+        consented_at:
+          format: date-time
+          type: string
+        method:
+          description: OFFLINE 是线下签的，由运营录入
+          enum:
+            - CLICKWRAP
+            - OFFLINE
+          type: string
+        type:
+          enum:
+            - TERMS
+            - PRIVACY
+            - DPA
+          type: string
+        version:
+          type: string
+      required:
+        - type
+        - version
+        - consented_at
+        - method
+      type: object
+    ConsentListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ConsentResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    ConsentBody:
+      additionalProperties: false
+      properties:
+        type:
+          enum:
+            - TERMS
+            - PRIVACY
+            - DPA
+          type: string
+        version:
+          minLength: 1
+          maxLength: 32
+          type: string
+      required:
+        - type
+        - version
+      type: object
+    AcceptConsentsRequestBody:
+      additionalProperties: false
+      properties:
+        consents:
+          items:
+            $ref: '#/components/schemas/ConsentBody'
+          type:
+            - array
+            - 'null'
+      required:
+        - consents
+      type: object
+    AccountResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        email:
+          type: string
+        email_verified_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        first_name:
+          description: 来自登录信息，可能为空
+          type: string
+        id:
+          description: 身份提供方签发的 subject
+          type: string
+        last_name:
+          description: 来自登录信息，可能为空
+          type: string
+        pending_agreements:
+          items:
+            $ref: '#/components/schemas/AgreementResource'
+          type:
+            - array
+            - 'null'
+        status:
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - BANNED
+            - DELETING
+          type: string
+      required:
+        - id
+        - email
+        - first_name
+        - last_name
+        - status
+        - email_verified_at
+        - created_at
+        - pending_agreements
+      type: object
+    RegisterRequestBody:
+      additionalProperties: false
+      properties:
+        consents:
+          description: 当前生效的必签文件全部要在里面，版本号要和 GET /api/v1/agreements 给的一致
+          items:
+            $ref: '#/components/schemas/ConsentBody'
+          type:
+            - array
+            - 'null'
+      required:
+        - consents
+      type: object
+    IdentityVerificationResource:
+      additionalProperties: false
+      properties:
+        reject_reason:
+          type: string
+        status:
+          description: PERSONAL 和 ENTERPRISE 是两类主体而不是两个等级，别拿它们比大小
+          enum:
+            - UNVERIFIED
+            - PENDING
+            - PERSONAL
+            - ENTERPRISE
+            - REJECTED
+          type: string
+        submitted_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        verified_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+      required:
+        - status
+        - submitted_at
+        - verified_at
+        - reject_reason
+      type: object
+    SubmitIdentityVerificationRequestBody:
+      additionalProperties: false
+      properties:
+        id_number:
+          description: 证件号码。同上，而且同一个号码不能挂在两个账号上
+          maxLength: 64
+          minLength: 6
+          type: string
+        real_name:
+          minLength: 1
+          description: 真实姓名。敏感个人信息，加密入库，任何接口都不会再把它读出来
+          maxLength: 128
+          type: string
+      required:
+        - real_name
+        - id_number
+      type: object
+    InvitationResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        email:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        invited_by:
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        roles:
+          description: 兑现时会授予的角色编码
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - id
+        - project_id
+        - email
+        - roles
+        - invited_by
+        - expires_at
+        - created_at
+      type: object
+    LengthAwarePageInvitationResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/InvitationResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    AcceptInvitationByTokenRequestBody:
+      additionalProperties: false
+      properties:
+        token:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - token
+      type: object
+    ProjectResource:
+      additionalProperties: false
+      properties:
+        ban_reason:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        deleted_at:
+          description: 盖上墓碑的那一刻
+          format: date-time
+          type:
+            - string
+            - 'null'
+        description:
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        overdue_at:
+          description: 欠费的起始时间
+          format: date-time
+          type:
+            - string
+            - 'null'
+        status:
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - BANNED
+            - DELETING
+            - DELETED
+          type: string
+        status_reason:
+          description: 给人看的，不参与任何查询
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - status
+        - status_reason
+        - ban_reason
+        - overdue_at
+        - deleted_at
+        - created_by
+        - created_at
+        - updated_at
+      type: object
+    AcceptedInvitationResponseBody:
+      additionalProperties: false
+      properties:
+        project:
+          $ref: '#/components/schemas/ProjectResource'
+      required:
+        - project
+      type: object
+    GrantResource:
+      additionalProperties: false
+      properties:
+        admin:
+          type: boolean
+        owner:
+          type: boolean
+        permissions:
+          description: 持有的全部自定义角色的权限并集，已去重排序
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        roles:
+          description: 持有的角色编码，只用于展示
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - owner
+        - admin
+        - permissions
+        - roles
+      type: object
+    ProjectAccessResource:
+      additionalProperties: false
+      properties:
+        grant:
+          $ref: '#/components/schemas/GrantResource'
+        project:
+          $ref: '#/components/schemas/ProjectResource'
+      required:
+        - project
+        - grant
+      type: object
+    LengthAwarePageProjectAccessResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/ProjectAccessResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    CreateProjectRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    ProjectTokenResponseBody:
+      additionalProperties: false
+      properties:
+        expires_at:
+          description: 过期时刻。到点之前拿用户身份再换一张，别等第一个 401
+          format: date-time
+          type: string
+        expires_in:
+          description: 还能活多少秒
+          format: int64
+          type: integer
+        grant:
+          description: '**这一份是此刻的快照，不在令牌里，也不要缓存它。** 它只用来决定界面上画什么；真正的判定每次都要重新问'
+          $ref: '#/components/schemas/GrantResource'
+        project:
+          description: 顺带带上项目本身，省掉换完之后立刻再查一次
+          $ref: '#/components/schemas/ProjectResource'
+        token:
+          description: '项目令牌，放进 Authorization: Bearer 里用'
+          type: string
+        token_type:
+          description: 固定是 Bearer
+          type: string
+      required:
+        - token
+        - token_type
+        - expires_at
+        - expires_in
+        - project
+        - grant
+      type: object

@@ -1,0 +1,307 @@
+components:
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    SubscriptionResource:
+      additionalProperties: false
+      properties:
+        status:
+          description: ready 表示节点已全部下发；preparing 表示仍在下发——此时链接照样可用
+          enum:
+          - preparing
+          - ready
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        url:
+          description: 订阅地址。这是一条长期有效的凭据，等同于密码，请勿转发或截图分享
+          type: string
+        version:
+          format: int64
+          type: integer
+      required:
+      - url
+      - version
+      - status
+      - updated_at
+      type: object
+    TunnelResource:
+      additionalProperties: false
+      description: 当前项目那条四层隧道。它只回答一个问题：生成过没有。
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        enabled:
+          description: 隧道当前是否可用。为 false 表示被平台停用（欠费、违规或项目停服），需要先处理停用的原因
+          type: boolean
+        id:
+          format: uuid
+          type: string
+      required:
+      - id
+      - enabled
+      - created_at
+      type: object
+    UsageDayResource:
+      additionalProperties: false
+      properties:
+        billed_bytes:
+          format: int64
+          type: integer
+        day:
+          description: YYYY-MM-DD
+          type: string
+        raw_bytes:
+          format: int64
+          type: integer
+      required:
+      - day
+      - raw_bytes
+      - billed_bytes
+      type: object
+    UsageResource:
+      additionalProperties: false
+      properties:
+        billed_bytes:
+          description: 按线路倍率折算后的用量，配额比对以此为准
+          format: int64
+          type: integer
+        over_quota:
+          type: boolean
+        period_end:
+          description: 本期计费周期的结束日（YYYY-MM-DD）
+          type: string
+        period_start:
+          description: 本期计费周期的起始日（YYYY-MM-DD）
+          type: string
+        quota_bytes:
+          description: 上游给出的真实配额，0 表示不限量
+          format: int64
+          type: integer
+        quota_exceeded_at:
+          description: 上游判定超额的时刻；null 表示未超额
+          format: date-time
+          type:
+          - string
+          - 'null'
+        raw_bytes:
+          description: 实际传输的字节，不用于配额比对
+          format: int64
+          type: integer
+        upload_bytes:
+          format: int64
+          type: integer
+        usage_percent:
+          description: 上游给出的用量百分比
+          format: double
+          type: number
+      required:
+      - quota_bytes
+      - billed_bytes
+      - raw_bytes
+      - upload_bytes
+      - usage_percent
+      - over_quota
+      - period_start
+      - period_end
+      - quota_exceeded_at
+      type: object
+    UsageSeriesResource:
+      additionalProperties: false
+      properties:
+        days:
+          description: 上游实际采用的天数，可能被它夹到 1–365
+          format: int64
+          type: integer
+        points:
+          items:
+            $ref: '#/components/schemas/UsageDayResource'
+          type: array
+      required:
+      - days
+      - points
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      scheme: bearer
+      type: http
+info:
+  description: 'Leaflow 隧道的用户接口：为项目生成隧道、取订阅地址、查看流量用量。
+
+
+    ## 三层隧道，这里只有四层
+
+
+    平台的隧道分二层、三层、四层三种。**这一份文档里的接口全部属于四层**，路径以 `/tunnel/l4` 开头。二层和三层尚未开放，届时会有各自的路径前缀。
+
+
+
+    ## 身份与鉴权
+
+
+    每个请求需携带 `Authorization: Bearer <项目令牌>`。先在 auth.leaflow.net 登录获取账号令牌，再用它向 IAM 换取项目令牌（`POST /api/v1/projects/{projectId}/token`）。一张项目令牌同时说明当前用户和当前项目。
+
+
+    **路径和请求头上都没有 `project_id`**：当前项目由令牌决定。
+
+
+    按错误码区分处理方式：`TOKEN_MISSING` 表示没带令牌；`TOKEN_EXPIRED` 表示令牌过期，用账号令牌重新换取即可，无需重新登录；`TOKEN_INVALID` 表示令牌验不过。
+
+
+    ## 通用约定
+
+
+    - **一个项目一条四层隧道。** 所以路径是单数的 `/tunnel/l4`，不带 id。
+
+    - **生成是幂等的。** 已经有了再调一次会返回同一条，不报错——按钮被点两次是安全的。
+
+    - **订阅地址是凭据。** 它等同于密码，只由 `GET /tunnel/l4/subscription` 单独返回，不出现在隧道详情或任何列表里。客户端不应在用户主动请求之前调用它。怀疑泄露时用重置接口，它会让已分发的每一份订阅立即失效。
+
+    - **`preparing` 不代表不能用。** 节点仍在下发时订阅链接照样有效，内容会在拉取那一刻重新派生。这个状态只该影响页面上说什么，不该让任何按钮变灰。
+
+    - **判断超额只看 `billed_bytes`。** 线路可以设置倍率（如 1.5× 或 0×），`raw_bytes` 是实际传输量，两者不一定相等。`quota_bytes` 为 0 表示不限量。
+
+    - **用量最多滞后一个采集周期。** 适合用量管控，不适合作为计费结算依据。
+
+    - **按天用量加起来不等于本期用量。** 一个按自然日切、一个按计费周期切，两者回答的是不同的问题，不要放在一起做对照。'
+  title: Leaflow 隧道用户 API
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /api/v1/tunnel/l4:
+    get:
+      description: '还没生成过时返回 `TUNNEL_NOT_FOUND`——首屏据此决定画「生成订阅链接」那个按钮还是画结果。
+
+
+        订阅地址、用量、配额各有自己的接口，这里不重复返回。'
+      operationId: get-l4-tunnel
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelResource'
+          description: OK
+        default: &id001
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+      summary: 查看本项目的四层隧道
+      tags:
+      - Tunnel
+    post:
+      description: '**幂等**：已经有了再调一次返回同一条，不报错。按钮被点两次是安全的。
+
+
+        生成之后请调订阅接口取地址，本接口不返回它。'
+      operationId: generate-l4-tunnel
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelResource'
+          description: OK
+        default: *id001
+      summary: 生成四层隧道
+      tags:
+      - Tunnel
+  /api/v1/tunnel/l4/subscription:
+    get:
+      description: '**这条 URL 是凭据，等同于密码。** 拿着它就能取到这个项目的全部节点和密码，所以它只在这一个接口里出现，一次一条——不进任何列表，也不在隧道详情里。
+
+
+        客户端不应在用户主动请求之前调用它：这个接口的每一次调用都会被记进操作日志。
+
+
+        `status` 为 `preparing` 时链接**照样有效**，内容会在拉取那一刻重新派生。它只该影响页面上说什么。'
+      operationId: get-l4-tunnel-subscription
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResource'
+          description: OK
+        default: *id001
+      summary: 获取订阅地址
+      tags:
+      - Tunnel
+  /api/v1/tunnel/l4/subscription/rotate:
+    post:
+      description: '**这是凭据泄露时的处置手段，会让已分发出去的每一份订阅立即失效。**
+
+
+        订阅 token 和节点密码同时更换，所有客户端都必须重新拉取一次订阅才能继续使用。调用前请确认这确实是想要的结果。
+
+
+        隧道被平台停用时无法重置（`TUNNEL_DISABLED_FOR_ROTATE`），需要先处理停用的原因。
+
+
+        重置后请调订阅接口取新地址，**本接口不返回它**。'
+      operationId: rotate-l4-tunnel-subscription
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelResource'
+          description: OK
+        default: *id001
+      summary: 重置订阅地址与节点密码
+      tags:
+      - Tunnel
+  /api/v1/tunnel/l4/usage:
+    get:
+      description: '实时查询，不经过缓存。
+
+
+        判断是否超额只看 `billed_bytes`：线路可以设置倍率（如 1.5× 或 0×），`raw_bytes` 是实际传输量，两者不一定相等。`quota_bytes` 为 0 表示不限量。'
+      operationId: get-l4-tunnel-usage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageResource'
+          description: OK
+        default: *id001
+      summary: 查看本期用量
+      tags:
+      - Tunnel
+  /api/v1/tunnel/l4/usage/series:
+    get:
+      description: '按自然日切分。没有流量的日子不会出现在结果里（不补零），画图那一侧要自己补齐日期轴——否则一段没人用的日子会被画成一条直接连过去的线，看起来像那几天一直在匀速跑流量。
+
+
+        把这里的天加起来**不等于**本期用量，这是有意的：本期按计费周期切，而且「重置本期用量」只作用于本期，日汇总一行都不删。'
+      operationId: list-l4-tunnel-usage-series
+      parameters:
+      - description: 取最近多少天。0 表示用上游的默认值（30）——上游只接受 1–365，超出会被它夹住
+        in: query
+        name: days
+        schema:
+          default: 30
+          format: int64
+          maximum: 3650
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageSeriesResource'
+          description: OK
+        default: *id001
+      summary: 查看按天用量
+      tags:
+      - Tunnel
+security:
+- bearerAuth: []

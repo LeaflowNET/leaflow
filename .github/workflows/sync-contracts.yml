@@ -1,0 +1,72 @@
+# Pull current contracts into internal/spec/data and open a pull request.
+#
+# Contracts are synced automatically; command names are not. That split is the
+# point: a new operation appears as a command on its own, while anything the CLI
+# asserts on top of a contract — the account-token table — is checked by
+# leaflow-doctor before the pull request can merge.
+#
+# The pull request is deliberate rather than a direct push: a contract change
+# can remove an operation, and someone should see that before it ships.
+
+name: sync-contracts
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Contracts ref to sync from
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Repository holding the generated OpenAPI documents.
+  CONTRACTS_REPO: leaflowapis/leaflowapis
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: check out contracts
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CONTRACTS_REPO }}
+          ref: ${{ inputs.ref || 'main' }}
+          path: .contracts
+          token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
+
+      - name: copy contracts
+        run: ./scripts/sync-contracts.sh .contracts
+
+      - name: verify
+        run: |
+          go build ./...
+          go test ./...
+          go run ./cmd/leaflow-doctor
+
+      - name: open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: contracts/sync
+          title: "chore: sync API contracts"
+          commit-message: "chore: sync API contracts"
+          body: |
+            Automated contract sync from `${{ env.CONTRACTS_REPO }}`.
+
+            `leaflow-doctor` passed, so the account-token table in
+            `internal/spec/credential.go` still matches every operation it names.
+
+            Review the diff for removed operations: those disappear as commands.
+          delete-branch: true

@@ -1,0 +1,2002 @@
+openapi: 3.1.0
+info:
+  description: '控制台里的 AI 助手：对话、消息、工具调用与审批、附件，以及把助手接到微信、飞书、Telegram 等即时通讯平台上。
+
+
+    ## 一次对话
+
+
+    1. `POST /v1/threads` 创建对话；
+
+    2. `POST /v1/threads/{thread}/messages` 发送消息，立即返回 `turnId`，助手的执行在后台进行；
+
+    3. `GET /v1/threads/{thread}` 取回对话文档用于渲染，并按其中的 `stream` 连上实时输出；
+
+    4. 助手需要用户参与时，文档中的 `wait` 会说明是哪一种：审批一批工具调用（`POST /v1/threads/{thread}/approvals/{batch}`），或回答几个问题（`POST
+    /v1/threads/{thread}/questions/{item}`）。处理完成后助手自动继续。
+
+
+    发送图片分两步：先 `POST /v1/attachments` 上传拿到 id，发送消息时放进 `attachmentIds`。
+
+
+    ## 实时输出
+
+
+    ```
+
+    GET /v1/turns/{turn}/stream?ticket=<ticket>&cursor=<cursor>
+
+    ```
+
+
+    这是一条 Server-Sent Events 流，因此不在下方的接口列表中。
+
+
+    - `path` 与 `ticket` 都取自对话文档的 `stream`。`path` 是相对路径，按取回文档的地址解析；
+
+    - `cursor` 是起始位置，取自对话文档的 `cursor`。不传则从可用范围的开头开始；
+
+    - 推送的每一条都是对那份对话文档的一次增量编辑，套用同一套渲染逻辑即可；
+
+    - 连接有生存期，到时会正常关闭。使用 `EventSource` 时浏览器会自动携带 `Last-Event-ID` 重连并从断点续传，无需额外处理；
+
+    - 三种结束事件：`done` 本次 turn 完成（附带最终状态）、`paused` 助手在等待用户处理（重新取回对话文档读 `wait`）、`stalled` 执行已中断且不会恢复，不要重连。'
+  title: Leaflow Assistant 用户 API
+  version: 1.0.0
+security:
+- bearerAuth: []
+paths:
+  /api/v1/attachments:
+    post:
+      summary: 上传图片
+      description: 请求体直接是文件字节，不使用 multipart 封装，一次上传一个文件。类型由内容判定，与 Content-Type 无关。返回的 id 在发送消息时放进 attachmentIds；从未被任何消息引用的附件会被定期清除。
+      operationId: upload-attachment
+      tags:
+      - Attachment
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              contentMediaType: application/octet-stream
+              format: binary
+              type: string
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadedResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/attachments/{attachment}:
+    get:
+      summary: 取回图片
+      description: 按附件 id 取回原始字节，可直接作为 <img> 的地址使用。响应带长期缓存头，附件内容不会变化。附件不存在或不属于当前用户时返回 404。
+      operationId: download-attachment
+      tags:
+      - Attachment
+      parameters:
+      - in: path
+        name: attachment
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            image/*:
+              schema:
+                format: binary
+                type: string
+          description: OK
+          headers:
+            Cache-Control:
+              description: 私有而且长缓存：这些字节按 id 寻址而 id 永不复用，所以它们永远不会变；而它们属于一个人，所以不能进任何共享缓存。
+              schema:
+                type: string
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/bindings:
+    get:
+      summary: 列出绑定
+      description: 接入面那张表按通道列出各自绑了谁时用 channelId 过滤。
+      operationId: list-bindings
+      tags:
+      - Onboarding
+      parameters:
+      - description: 这一页最多返回多少条
+        explode: false
+        in: query
+        name: limit
+        schema:
+          default: 50
+          description: 这一页最多返回多少条
+          format: int64
+          maximum: 200
+          minimum: 1
+          type: integer
+      - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+        explode: false
+        in: query
+        name: offset
+        schema:
+          description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          format: int64
+          maximum: 10000
+          minimum: 0
+          type: integer
+      - explode: false
+        in: query
+        name: platform
+        schema:
+          type: string
+      - explode: false
+        in: query
+        name: channelId
+        schema:
+          format: uuid
+          type: string
+      - description: 仅返回处于活跃状态的绑定
+        explode: false
+        in: query
+        name: active
+        schema:
+          description: 仅返回处于活跃状态的绑定
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageBindingResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/bindings/{binding}:
+    delete:
+      summary: 解除绑定
+      operationId: delete-binding
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: binding
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看绑定
+      operationId: get-binding
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: binding
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels:
+    get:
+      summary: 列出通道
+      operationId: list-channels
+      tags:
+      - Onboarding
+      parameters:
+      - description: 这一页最多返回多少条
+        explode: false
+        in: query
+        name: limit
+        schema:
+          default: 50
+          description: 这一页最多返回多少条
+          format: int64
+          maximum: 200
+          minimum: 1
+          type: integer
+      - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+        explode: false
+        in: query
+        name: offset
+        schema:
+          description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          format: int64
+          maximum: 10000
+          minimum: 0
+          type: integer
+      - explode: false
+        in: query
+        name: platform
+        schema:
+          type: string
+      - description: 仅返回处于启用状态的通道
+        explode: false
+        in: query
+        name: active
+        schema:
+          description: 仅返回处于启用状态的通道
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageChannelResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建通道
+      description: 回调密钥归谁定由平台决定，见 list-platforms 的 secretSource：generated 的平台不要传 webhookSecret，我们生成的那把仅在本次响应中返回一次、之后无法再次取回，错过了只能调轮换接口换一把新的；supplied
+        的平台必须把平台后台那把传进来，此时响应里的webhookSecret 为 null。
+      operationId: create-channel
+      tags:
+      - Onboarding
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelWithSecretResponseBody'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}:
+    delete:
+      summary: 删除通道
+      description: 删除后该通道不再接收入站消息，其上的绑定一并失效。项目处于停服或清理状态时本接口仍然可用。
+      operationId: delete-channel
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看通道
+      operationId: get-channel
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 修改通道
+      description: 只修改传了的字段。senderPolicy 与 allowFrom 是一对，由 senderPolicy 决定是否替换；改动对常驻连接要等连接重建后才生效，回调型平台立即生效。
+      operationId: update-channel
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}/binding-codes:
+    post:
+      summary: 签发绑定码
+      description: 生成一个一次性绑定码交给待绑定的人，他在该平台上用自己的账号把这个码发给助手即完成绑定。绑定只能由本人以这种方式建立，不能直接指定平台账号。绑定码有有效期，过期后需重新签发。
+      operationId: create-binding-code
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BindingCodeResponseBody'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}/rejections:
+    get:
+      summary: 查看最近被拒绝的入站消息
+      description: 排查「发了消息但助手没有响应」时使用。按时间倒序返回最近被这条通道拒绝的入站消息及其拒绝原因，最常见的原因是发送方尚未绑定。
+      operationId: list-channel-rejections
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - explode: false
+        in: query
+        name: limit
+        schema:
+          default: 50
+          format: int64
+          maximum: 100
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectionListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}/secret:
+    post:
+      summary: 轮换回调密钥
+      description: 换一把新的回调密钥，旧的立即失效，通道降回待平台确认状态。密钥归谁定由平台决定，见 list-platforms 的 secretSource：generated 的平台不要传请求体，新密钥仅在本次响应中返回、之后无法再次取回；supplied
+        的平台必须把平台后台那把新密钥传进来。
+      operationId: rotate-channel-secret
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateSecretRequestBody'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSecretResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}/sender-check:
+    get:
+      summary: 推演一个发件人会不会被放行
+      description: 改完发件人策略之后用来自查，不发送任何消息、也不改变任何状态：它走的是和真实入站完全相同的那份判定，并说明结论由哪一条规则得出。无法推演绑定码那一条——是否是绑定码取决于对方发来的内容。
+      operationId: check-sender
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - description: 平台上那个人的 id，和绑定、被拒记录里的是同一个值
+        explode: false
+        in: query
+        name: peerId
+        required: true
+        schema:
+          description: 平台上那个人的 id，和绑定、被拒记录里的是同一个值
+          type: string
+      - description: 仅 Telegram 这类有用户名的平台填得出来，不带 @。留空即当作没有用户名
+        explode: false
+        in: query
+        name: username
+        schema:
+          description: 仅 Telegram 这类有用户名的平台填得出来，不带 @。留空即当作没有用户名
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderCheckResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channel}/weixin-logins:
+    post:
+      summary: 发起微信扫码登录
+      description: 微信个人号通道需要本人扫码登录后才能收发消息。本接口返回二维码，之后轮询 `GET /v1/weixin-logins/{login}` 获取进度；状态提示需要验证码时，调用
+        `POST /v1/weixin-logins/{login}/verify-code` 补交。
+      operationId: begin-weixin-login
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: channel
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/platforms:
+    get:
+      summary: 列出可接入的平台
+      description: 返回本平台当前支持接入的即时通讯平台，以及各自建通道时要走的流程和要填的凭据字段。新建通道表单完全由这份响应驱动：setupMethod 决定展示录入表单还是扫码流程，credentialFields
+        是要填的字段，secretSource 决定要不要有回调密钥那一栏。
+      operationId: list-platforms
+      tags:
+      - Onboarding
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/weixin-logins/{login}:
+    get:
+      summary: 查询扫码登录状态
+      description: 轮询本接口直到状态变为成功或失败。状态提示需要验证码时，调用补交验证码接口。
+      operationId: get-weixin-login
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/weixin-logins/{login}/verify-code:
+    post:
+      summary: 补交登录验证码
+      description: 微信在扫码后要求短信或设备验证码时使用。验证码由登录发起人在自己手机上获取。
+      operationId: submit-weixin-verify-code
+      tags:
+      - Onboarding
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          format: uuid
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyCodeRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/models:
+    get:
+      summary: 列出可用模型
+      description: 返回本平台当前提供的模型及其上下文窗口、推理档位和支持的输入类型。用于填充对话设置里的模型选择。
+      operationId: list-models
+      tags:
+      - Thread
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads:
+    get:
+      summary: 列出对话
+      description: 按最近活动排序，只返回当前账号在当前项目里的对话。archived 是一个二选一的开关而不是「包含归档」：归档的对话不出现在默认列表里，要看它们就把这个参数打开。
+      operationId: list-threads
+      tags:
+      - Thread
+      parameters:
+      - description: 按标题搜索，大小写不敏感。留空则返回最近的对话
+        explode: false
+        in: query
+        name: q
+        schema:
+          description: 按标题搜索，大小写不敏感。留空则返回最近的对话
+          maxLength: 100
+          type: string
+      - description: 为真时**只**返回已归档的对话，否则只返回未归档的
+        explode: false
+        in: query
+        name: archived
+        schema:
+          description: 为真时**只**返回已归档的对话，否则只返回未归档的
+          type: boolean
+      - explode: false
+        in: query
+        name: limit
+        schema:
+          format: int64
+          maximum: 200
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 创建对话
+      operationId: create-thread
+      tags:
+      - Thread
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThreadRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadSummaryResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}:
+    get:
+      summary: 取回对话文档
+      description: 对话的完整当前状态，用于首屏渲染。文档中的 stream 给出实时输出地址和入场票据，流推送的是对这份文档的增量编辑，可直接套用同一套渲染逻辑。
+      operationId: get-thread
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 修改对话设置
+      description: 可修改模型、推理档位、审批模式和归档状态。改动从下一次 turn 起生效，正在执行的 turn 沿用它启动时的设置。reasoningEffort 仅在同时提供 model
+        时生效。
+      operationId: update-thread
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateThreadRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadSummaryResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/approvals/{batch}:
+    post:
+      summary: 批准或拒绝一批工具调用
+      description: 批次 id 来自对话文档的 wait 字段。本接口是幂等的：重复提交同一批次不会改变已经生效的决定，也不会报错。批次不属于该对话时返回 404。
+      operationId: decide-approval
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: batch
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecideRequestBody'
+        required: true
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/earlier:
+    get:
+      summary: 取回更早的对话内容
+      description: 首屏只给对话最新的那一段，再往上的内容用本接口按需取回，一次一段。before 用文档里的 earlier.before，响应里的 earlier 是再往上那一段的游标，为
+        null 表示已经到顶。返回的条目和文档里的 items 是同一种形状，顺序也一样（由旧到新），直接接在现有内容前面即可。
+      operationId: list-earlier-items
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      - description: 来自文档里的 earlier.before，取这个序号之前的条目
+        explode: false
+        in: query
+        name: before
+        required: true
+        schema:
+          description: 来自文档里的 earlier.before，取这个序号之前的条目
+          format: int64
+          minimum: 0
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EarlierResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/interrupt:
+    post:
+      summary: 中断正在执行的 turn
+      description: 对没有正在执行的 turn 的对话调用同样返回 204，不视为错误——用户点击停止与 turn 自然结束之间存在竞争，两种结果一致。项目处于停服或清理状态时本接口仍然可用。
+      operationId: interrupt-thread
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/messages:
+    post:
+      summary: 发送消息并触发一次 turn
+      description: 立即返回 turnId，不等待执行完成——一次 turn 可能持续数十分钟。执行进度通过对话文档中 stream 指向的实时流获取，不在本响应里。
+      operationId: send-message
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequestBody'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnIDResponseBody'
+          description: Accepted
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/questions/{item}:
+    post:
+      summary: 回答助手提出的问题
+      description: 问题 id 来自对话文档的 wait 字段。已被回答过的问题同样返回 204——可能是另一个页面提交在先，也可能是自动应答窗口已到期，两种情况下 turn 都已带着答案继续执行。
+      operationId: answer-question
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: item
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnswerRequestBody'
+        required: true
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/read:
+    post:
+      summary: 标记对话已读
+      operationId: mark-thread-read
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/threads/{thread}/revert:
+    post:
+      summary: 从指定位置起撤回
+      description: 撤回 ordinal 及其之后的全部条目。被撤回的条目仍留在逐字稿中并标记 reverted，序号不会重排。返回实际撤回的条目数。
+      operationId: revert-thread
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: thread
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevertRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevertedCountResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    UploadedResource:
+      additionalProperties: false
+      properties:
+        height:
+          format: int64
+          type: integer
+        id:
+          type: string
+        width:
+          format: int64
+          type: integer
+      required:
+      - id
+      - width
+      - height
+      type: object
+    BindingResource:
+      additionalProperties: false
+      properties:
+        channelId:
+          format: uuid
+          type: string
+        connState:
+          enum:
+          - logged_out
+          - qr_pending
+          - online
+          - expired
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        peerName:
+          type: string
+        platform:
+          type: string
+        status:
+          enum:
+          - pending
+          - active
+          - revoked
+          type: string
+        verifiedAt:
+          format: date-time
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - channelId
+      - platform
+      - peerName
+      - status
+      - connState
+      - verifiedAt
+      - createdAt
+      type: object
+    LengthAwarePageBindingResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/BindingResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      type: object
+    ChannelResource:
+      additionalProperties: false
+      properties:
+        allowFrom:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        connState:
+          description: 平台接入状态。只有 online 才收得到消息、也才签得出绑定码
+          enum:
+          - logged_out
+          - qr_pending
+          - online
+          - expired
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        runtimeState:
+          description: 常驻连接此刻的状态。回调型平台恒为 stopped
+          enum:
+          - stopped
+          - running
+          type: string
+        senderPolicy:
+          enum:
+          - bound_only
+          - open
+          type: string
+        status:
+          enum:
+          - active
+          - suspended
+          - disabled
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        webhookPath:
+          description: 回调路径，网关配置和排查时用
+          type: string
+        webhookUrl:
+          description: 填到平台后台的回调地址。部署未声明公网入口时为 null
+          type:
+          - string
+          - 'null'
+      required:
+      - id
+      - platform
+      - name
+      - status
+      - connState
+      - runtimeState
+      - senderPolicy
+      - allowFrom
+      - webhookUrl
+      - webhookPath
+      - createdAt
+      - updatedAt
+      type: object
+    LengthAwarePageChannelResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/ChannelResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      type: object
+    CreateChannelRequestBody:
+      additionalProperties: false
+      properties:
+        allowFrom:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        credentials:
+          additionalProperties:
+            type: string
+          description: 平台侧凭据。只写不读，创建后无法取回
+          type: object
+        name:
+          minLength: 1
+          maxLength: 128
+          type: string
+        platform:
+          minLength: 1
+          type: string
+        senderPolicy:
+          enum:
+          - bound_only
+          - open
+          type: string
+        webhookSecret:
+          description: 平台生成密钥的平台（secretSource=supplied）必须传；我们生成的（generated）不能传，那把会在本次响应的 webhookSecret
+            里返回一次
+          type: string
+      required:
+      - platform
+      - name
+      type: object
+    ChannelWithSecretResponseBody:
+      additionalProperties: false
+      properties:
+        allowFrom:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        connState:
+          description: 平台接入状态。只有 online 才收得到消息、也才签得出绑定码
+          enum:
+          - logged_out
+          - qr_pending
+          - online
+          - expired
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        runtimeState:
+          description: 常驻连接此刻的状态。回调型平台恒为 stopped
+          enum:
+          - stopped
+          - running
+          type: string
+        senderPolicy:
+          enum:
+          - bound_only
+          - open
+          type: string
+        status:
+          enum:
+          - active
+          - suspended
+          - disabled
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        webhookPath:
+          description: 回调路径，网关配置和排查时用
+          type: string
+        webhookSecret:
+          description: 我们生成的那把回调密钥，拿去粘到平台后台。**之后无法再次取回**，只能轮换出新的一把。密钥由平台生成（secretSource=supplied）或该平台不走回调时为
+            null
+          type:
+          - string
+          - 'null'
+        webhookUrl:
+          description: 填到平台后台的回调地址。部署未声明公网入口时为 null
+          type:
+          - string
+          - 'null'
+      required:
+      - webhookSecret
+      - id
+      - platform
+      - name
+      - status
+      - connState
+      - runtimeState
+      - senderPolicy
+      - allowFrom
+      - webhookUrl
+      - webhookPath
+      - createdAt
+      - updatedAt
+      type: object
+    UpdateChannelRequestBody:
+      additionalProperties: false
+      properties:
+        allowFrom:
+          description: 放行名单。仅在同时传了 senderPolicy 时生效
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        credentials:
+          additionalProperties:
+            type: string
+          description: 整份替换而不是逐键合并。不传表示不动
+          type: object
+        enabled:
+          type: boolean
+        name:
+          maxLength: 128
+          type: string
+        senderPolicy:
+          description: 传了才会连同 allowFrom 一起替换
+          enum:
+          - bound_only
+          - open
+          type: string
+      type: object
+    BindingCodeResponseBody:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+      required:
+      - code
+      - expiresAt
+      type: object
+    RejectionResource:
+      additionalProperties: false
+      properties:
+        at:
+          format: date-time
+          type: string
+        peerId:
+          type: string
+        peerName:
+          type: string
+        peerUsername:
+          type: string
+        platform:
+          type: string
+        textLength:
+          format: int64
+          type: integer
+        verdict:
+          type: string
+      required:
+      - peerId
+      - peerName
+      - peerUsername
+      - platform
+      - verdict
+      - textLength
+      - at
+      type: object
+    RejectionListResponseBody:
+      additionalProperties: false
+      properties:
+        rejections:
+          items:
+            $ref: '#/components/schemas/RejectionResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - rejections
+      type: object
+    RotateSecretRequestBody:
+      additionalProperties: false
+      properties:
+        webhookSecret:
+          description: 平台生成密钥的平台（secretSource=supplied）必须传新的那把；我们生成的（generated）不能传
+          type: string
+      type: object
+    WebhookSecretResponseBody:
+      additionalProperties: false
+      properties:
+        webhookSecret:
+          type: string
+      required:
+      - webhookSecret
+      type: object
+    SenderCheckResource:
+      additionalProperties: false
+      properties:
+        allowFrom:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        allowed:
+          type: boolean
+        bindingId:
+          type:
+          - string
+          - 'null'
+        senderPolicy:
+          type: string
+        verdict:
+          enum:
+          - ALLOWED_BY_BINDING
+          - ALLOWED_BY_ALLOW_FROM
+          - ALLOWED_BY_POLICY
+          - REJECTED_NOT_ALLOWED
+          type: string
+      required:
+      - allowed
+      - verdict
+      - senderPolicy
+      - allowFrom
+      - bindingId
+      type: object
+    LoginResource:
+      additionalProperties: false
+      properties:
+        expiresAt:
+          description: 这条登录流的截止时间。到点之后不要再轮询，重新发起一次
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        qrcodeData:
+          description: 二维码的内容，由客户端编码成二维码图形渲染（不是图片地址，也不是 data URI）。码过期时这条流会自己换一张接着等，所以每次轮询拿到的可能是新的一串
+          type: string
+        reason:
+          description: 失败原因。仅在 status 为 error 或 expired 时有内容
+          type: string
+        status:
+          enum:
+          - wait
+          - scanned
+          - confirmed
+          - expired
+          - error
+          - need_verify_code
+          type: string
+      required:
+      - id
+      - status
+      - qrcodeData
+      - reason
+      - expiresAt
+      type: object
+    CredentialFieldResource:
+      additionalProperties: false
+      properties:
+        help:
+          type: string
+        key:
+          type: string
+        label:
+          type: string
+        required:
+          type: boolean
+        secret:
+          type: boolean
+      required:
+      - key
+      - label
+      - required
+      - secret
+      - help
+      type: object
+    PlatformResource:
+      additionalProperties: false
+      properties:
+        credentialFields:
+          items:
+            $ref: '#/components/schemas/CredentialFieldResource'
+          type:
+          - array
+          - 'null'
+        name:
+          type: string
+        resident:
+          type: boolean
+        secretSource:
+          enum:
+          - generated
+          - supplied
+          - none
+          type: string
+        setupChallenge:
+          enum:
+          - none
+          - webhook
+          - scan
+          type: string
+        setupMethod:
+          enum:
+          - credentials
+          - scan
+          type: string
+        webhookPath:
+          description: 回调路径模板，{channel} 处替换为通道 id
+          type: string
+        webhookUrlTemplate:
+          description: 完整回调地址模板。部署未声明公网入口时为 null
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      - resident
+      - setupMethod
+      - setupChallenge
+      - secretSource
+      - credentialFields
+      - webhookPath
+      - webhookUrlTemplate
+      type: object
+    PlatformListResponseBody:
+      additionalProperties: false
+      properties:
+        platforms:
+          items:
+            $ref: '#/components/schemas/PlatformResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - platforms
+      type: object
+    VerifyCodeRequestBody:
+      additionalProperties: false
+      properties:
+        code:
+          minLength: 1
+          type: string
+      required:
+      - code
+      type: object
+    ModelResource:
+      additionalProperties: false
+      properties:
+        contextWindow:
+          format: int64
+          type: integer
+        inputModalities:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        key:
+          type: string
+        reasoningTiers:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+      required:
+      - key
+      - contextWindow
+      - reasoningTiers
+      - inputModalities
+      type: object
+    ModelListResponseBody:
+      additionalProperties: false
+      properties:
+        models:
+          items:
+            $ref: '#/components/schemas/ModelResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - models
+      type: object
+    ThreadSummaryResource:
+      additionalProperties: false
+      properties:
+        approvalMode:
+          enum:
+          - guardian
+          - manual
+          - yolo
+          type: string
+        archived:
+          type: boolean
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        model:
+          type: string
+        title:
+          type:
+          - string
+          - 'null'
+        unread:
+          type: boolean
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - id
+      - title
+      - model
+      - createdAt
+      - updatedAt
+      - archived
+      - unread
+      - approvalMode
+      type: object
+    ThreadListResponseBody:
+      additionalProperties: false
+      properties:
+        threads:
+          items:
+            $ref: '#/components/schemas/ThreadSummaryResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - threads
+      type: object
+    CreateThreadRequestBody:
+      additionalProperties: false
+      properties:
+        approvalMode:
+          description: 不传则使用平台默认审批模式
+          enum:
+          - guardian
+          - manual
+          - yolo
+          type: string
+      type: object
+    ContextResource:
+      additionalProperties: false
+      properties:
+        compactAt:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        model:
+          type: string
+        used:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        warnAt:
+          format: int64
+          type: integer
+        window:
+          format: int64
+          type:
+          - integer
+          - 'null'
+      required:
+      - model
+      - used
+      - window
+      - compactAt
+      - warnAt
+      type: object
+    EarlierResource:
+      additionalProperties: false
+      properties:
+        before:
+          format: int64
+          type: integer
+        foldedAbove:
+          type: boolean
+      required:
+      - before
+      - foldedAbove
+      type: object
+    AttachmentResource:
+      additionalProperties: false
+      properties:
+        height:
+          format: int64
+          type: integer
+        id:
+          type: string
+        width:
+          format: int64
+          type: integer
+      required:
+      - id
+      - width
+      - height
+      type: object
+    ItemResource:
+      additionalProperties: false
+      properties:
+        approval:
+          enum:
+          - approved
+          - declined
+          - auto_approved
+          - unreviewed
+          type:
+          - string
+          - 'null'
+        approvalReason:
+          type:
+          - string
+          - 'null'
+        arguments:
+          type: string
+        attachments:
+          items:
+            $ref: '#/components/schemas/AttachmentResource'
+          type:
+          - array
+          - 'null'
+        createdAt:
+          format: date-time
+          type: string
+        detail:
+          type:
+          - string
+          - 'null'
+        durationMs:
+          format: int64
+          type:
+          - integer
+          - 'null'
+        id:
+          type: string
+        model:
+          description: 产出这一条的模型。用户自己发的消息为 null
+          type:
+          - string
+          - 'null'
+        namespace:
+          type:
+          - string
+          - 'null'
+        ordinal:
+          format: int64
+          type: integer
+        reverted:
+          type: boolean
+        status:
+          enum:
+          - pending
+          - in_progress
+          - completed
+          - failed
+          - declined
+          - interrupted
+          type: string
+        target:
+          type:
+          - string
+          - 'null'
+        text:
+          type: string
+        tool:
+          type:
+          - string
+          - 'null'
+        type:
+          description: 决定这一条包含哪些字段
+          enum:
+          - user_message
+          - agent_message
+          - reasoning
+          - dynamic_tool_call
+          - context_compaction
+          - token_budget_reminder
+          - turn_failure
+          type: string
+      required:
+      - id
+      - ordinal
+      - type
+      - status
+      - createdAt
+      - reverted
+      - model
+      type: object
+    StreamResource:
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        ticket:
+          type: string
+      required:
+      - path
+      - ticket
+      type: object
+    TurnResource:
+      additionalProperties: false
+      properties:
+        approvalMode:
+          enum:
+          - guardian
+          - manual
+          - yolo
+          type: string
+      required:
+      - approvalMode
+      type: object
+    Choice:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        label:
+          type: string
+      required:
+      - label
+      - description
+      type: object
+    Question:
+      additionalProperties: false
+      properties:
+        choices:
+          items:
+            $ref: '#/components/schemas/Choice'
+          type:
+          - array
+          - 'null'
+        header:
+          type: string
+        id:
+          type: string
+        question:
+          type: string
+      required:
+      - id
+      - header
+      - question
+      - choices
+      type: object
+    WaitResource:
+      additionalProperties: false
+      properties:
+        autoResolutionMs:
+          format: int64
+          type: integer
+        batchId:
+          type: string
+        itemId:
+          type: string
+        itemIds:
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        kind:
+          enum:
+          - tool_approval
+          - user_input
+          type: string
+        questions:
+          items:
+            $ref: '#/components/schemas/Question'
+          type:
+          - array
+          - 'null'
+        turnId:
+          type: string
+      required:
+      - kind
+      - turnId
+      type: object
+    DocumentResource:
+      additionalProperties: false
+      properties:
+        context:
+          $ref: '#/components/schemas/ContextResource'
+        cursor:
+          type:
+          - string
+          - 'null'
+        earlier:
+          anyOf:
+          - $ref: '#/components/schemas/EarlierResource'
+          - type: 'null'
+        items:
+          items:
+            $ref: '#/components/schemas/ItemResource'
+          type:
+          - array
+          - 'null'
+        status:
+          type: string
+        stream:
+          anyOf:
+          - $ref: '#/components/schemas/StreamResource'
+          - type: 'null'
+        turn:
+          anyOf:
+          - $ref: '#/components/schemas/TurnResource'
+          - type: 'null'
+        turnId:
+          type:
+          - string
+          - 'null'
+        wait:
+          anyOf:
+          - $ref: '#/components/schemas/WaitResource'
+          - type: 'null'
+      required:
+      - turnId
+      - stream
+      - status
+      - cursor
+      - earlier
+      - context
+      - items
+      - wait
+      - turn
+      type: object
+    UpdateThreadRequestBody:
+      additionalProperties: false
+      properties:
+        approvalMode:
+          enum:
+          - guardian
+          - manual
+          - yolo
+          type: string
+        archived:
+          type: boolean
+        model:
+          type: string
+        reasoningEffort:
+          type: string
+      type: object
+    DecideRequestBody:
+      additionalProperties: false
+      properties:
+        approved:
+          type: boolean
+        reason:
+          type: string
+      required:
+      - approved
+      type: object
+    EarlierResponseBody:
+      additionalProperties: false
+      properties:
+        earlier:
+          $ref: '#/components/schemas/EarlierResource'
+        items:
+          items:
+            $ref: '#/components/schemas/ItemResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - items
+      - earlier
+      type: object
+    SendMessageRequestBody:
+      additionalProperties: false
+      properties:
+        attachmentIds:
+          description: 此前上传、尚未绑定到任何消息的附件 id
+          items:
+            type: string
+          type:
+          - array
+          - 'null'
+        text:
+          minLength: 1
+          type: string
+      required:
+      - text
+      type: object
+    TurnIDResponseBody:
+      additionalProperties: false
+      properties:
+        turnId:
+          type: string
+      required:
+      - turnId
+      type: object
+    AnswerRequestBody:
+      additionalProperties: false
+      properties:
+        answers:
+          additionalProperties:
+            type: string
+          description: 问题 id 到所选答案的映射
+          type: object
+      required:
+      - answers
+      type: object
+    RevertRequestBody:
+      additionalProperties: false
+      properties:
+        ordinal:
+          description: 起始序号，该条及其之后的全部条目都会被撤回
+          format: int64
+          type: integer
+      required:
+      - ordinal
+      type: object
+    RevertedCountResponseBody:
+      additionalProperties: false
+      properties:
+        reverted:
+          format: int64
+          type: integer
+      required:
+      - reverted
+      type: object

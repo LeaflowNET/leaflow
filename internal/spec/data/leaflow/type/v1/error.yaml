@@ -1,0 +1,83 @@
+# 跨服务共用的错误形状。
+#
+# # 为什么单独一份
+#
+# 此前每份契约各自定义一次,共七份,内容完全相同。副本之间的漂移不会被任何环节发现:某份契约中
+# `meta` 少一层嵌套时,依据它编写的错误处理在其他服务上读不到内容,而两份文档各自看起来都是对的。
+#
+# 错误形状本身也不属于任何单个服务——它由传输层统一决定,契约在此描述的是同一件事。
+#
+# # 目录名
+#
+# 取 `type/`,与 googleapis 的 `google/type/`(Money、Date、LatLng 等共用值类型)一致。
+# 未采用 `google/rpc/` 的命名:本平台的接口是 REST。
+#
+# # 此处只放传输层的形状
+#
+# Error 与 Violation 都由传输层统一产生,不属于任何单个服务:前者是所有错误的外壳,后者是其中
+# 一类——请求与契约对不上——的明细。
+#
+# 分页参数看似同类,实际不是同一件事:部分接口按游标翻页(主键自带时间序),部分按偏移量,用量类
+# 接口另有必填的时间范围与上限。归一需要以 allOf 逐个修补差异,而对本已规则的结构追加声明,正是
+# 使其开始变得不规则的起点。
+openapi: 3.1.0
+info:
+  title: Leaflow 共用类型
+  version: v1
+  description: |-
+    全平台共用的形状。这里**没有接口**，只有类型——paths 是空的，那是有意的。
+
+    生成出来的是一个独立的 Go 包，各服务的契约用 import-mapping 指过来，于是整个平台只有一个
+    Error 类型，而不是十三个长得一样的。
+paths: {}
+components:
+  schemas:
+    Error:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        meta:
+          additionalProperties: {}
+          type: object
+        status:
+          format: int64
+          type: integer
+      required:
+        - status
+        - message
+      type: object
+    Violation:
+      description: |-
+        一条「请求与契约对不上」的明细。
+
+        它出现在 `Error.meta.violations` 里，`code` 为 `VALIDATION_FAILED` 的响应上一定有，
+        别处没有。
+
+        # 为什么是具名类型，而不是往 meta 里随便塞
+
+        `meta` 是自由形状，六个服务各塞各的就没人能可靠地读它。而这一类错误恰恰是**前端要按字段
+        读**的：把违规标到表单上那一格，而不是弹一句「请求有误」。
+
+        # 三个字段各自的用途
+
+        `field` 给前端定位，`rule` 给它决定说什么话（minLength 和 pattern 该给用户的提示完全
+        不同），`reason` 是兜底的英文原文——它来自校验器，不做翻译：翻译要按 rule 在前端做，
+        那里才知道这个字段在界面上叫什么。
+      additionalProperties: false
+      properties:
+        field:
+          description: 点号分隔的字段路径，形如 `name` 或 `schedule.0.start_time_seconds`
+          type: string
+        rule:
+          description: 没通过的那条 JSON Schema 关键字，形如 `minLength`、`minimum`、`pattern`
+          type: string
+        reason:
+          description: 校验器给出的原文。给排障看，不要直接展示给用户
+          type: string
+      required:
+        - field
+        - rule
+      type: object

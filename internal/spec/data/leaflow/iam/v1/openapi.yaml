@@ -1,0 +1,1173 @@
+openapi: 3.1.0
+info:
+  title: Leaflow IAM 项目 API
+  version: 1.0.0
+  description: |-
+    项目内部的事：成员、角色、邀请、SSH 公钥。
+
+    这一面用**项目令牌**，它同时说清当前用户和当前项目 —— 所以路径上不带 projectId，
+    当前项目由令牌断言，不从路径取。换令牌在账号 API 那一份。
+
+    `GET /api/v1/membership` 返回的是这个人在当前项目里持有哪些角色和权限，不返回
+    「能否执行某个操作」的结论 —— 那需要一份「哪个操作要哪条权限」的对照表，而它由各个服务分别声明。
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/permissions:
+    get:
+      summary: 列出 IAM 自己声明的权限
+      description: '**只有 IAM 这一份。** 别的服务的操作不在这里——权限目录由各个服务自己声明，IAM 认识它们就等于要跟着每个下游一起发版。'
+      operationId: list-permissions
+      tags:
+        - Project
+      security: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/project:
+    delete:
+      summary: 删除项目
+      description: 只有所有者能做，而且没有回头路：项目进入 DELETING，各服务开始清掉它下面的资源。项目行本身永远留着——查一个删掉的项目查得到，答案是它没了，而不是一个 404。
+      operationId: delete-project
+      tags:
+        - Project
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectAccessResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看一个项目
+      description: 在项目里就看得到，不需要额外的读权限。
+      operationId: get-project
+      tags:
+        - Project
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectAccessResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 改项目的名称与描述
+      operationId: update-project
+      tags:
+        - Project
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectAccessResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/membership:
+    get:
+      summary: 查看我在这个项目里的身份
+      description: 只给事实，不给结论：这里没有 allowed，因为 IAM 不知道你要做的是哪个操作——哪个操作需要哪条权限那份目录属于各个服务，判断在它们那边。
+      operationId: get-project-membership
+      tags:
+        - Project
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/invitations:
+    get:
+      summary: 列出这个项目还在等的要约
+      description: 在项目里就看得到，和成员列表同一条规则：谁被请了也是「这个项目有谁」的一部分。
+      operationId: list-project-invitations
+      tags:
+        - Invitation
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageInvitationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 发出一份邀请
+      description: 要约站 14 天。有上限是因为里面那些角色是按发出那一刻的项目校验的，一份活得比它所依据的安排还久的要约会授出现在没人打算授的权限。
+      operationId: issue-invitation
+      tags:
+        - Invitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueInvitationRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedInvitationResponseBody'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/invitations/{invitationId}:
+    delete:
+      summary: 撤回一份还没被兑现的要约
+      operationId: revoke-invitation
+      tags:
+        - Invitation
+      parameters:
+        - in: path
+          name: invitationId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/members:
+    get:
+      summary: 列出项目成员
+      operationId: list-members
+      tags:
+        - Member
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: 按用户 ID、邮箱或姓名模糊匹配
+          explode: false
+          in: query
+          name: keyword
+          schema:
+            description: 按用户 ID、邮箱或姓名模糊匹配
+            maxLength: 255
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageMemberResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/members/{userId}:
+    delete:
+      summary: 移除成员，或者自己退出
+      description: 移除别人要 iam:members.manage；退出只要求自己在这个项目里——任何人都可能被拉进一个项目，那么任何人就得能出去。所有者两条路都不行，先转移所有权。
+      operationId: remove-member
+      tags:
+        - Member
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            maxLength: 255
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/members/{userId}/roles:
+    put:
+      summary: 设置一个成员持有的角色
+      description: 整体替换而不是增删：调用方拿到的就是一份完整清单，让它自己算差集只会让「我以为我取消了那个角色」这种事变得可能。所有者身上的 OWNER 不受影响。
+      operationId: set-member-roles
+      tags:
+        - Member
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            maxLength: 255
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetMemberRolesRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/transfer-ownership:
+    post:
+      summary: 转移项目所有权
+      description: OWNER 唯一的移动方式，只有所有者本人能发起——能像普通角色那样授予的话，任何管理员都可以顺手把自己变成所有者。
+      operationId: transfer-project-ownership
+      tags:
+        - Member
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnershipTransferResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/roles:
+    get:
+      summary: 列出项目里的角色
+      operationId: list-roles
+      tags:
+        - Role
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 建一个角色
+      operationId: create-role
+      tags:
+        - Role
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/roles/{code}:
+    delete:
+      summary: 删一个角色
+      description: 还有人持有时会被拒。级联摘掉那些绑定等于把每个持有者悄悄降级——请求里没有一个字说了这件事，事后也查不到。
+      operationId: delete-role
+      tags:
+        - Role
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看一个角色
+      operationId: get-role
+      tags:
+        - Role
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: 改一个角色
+      description: 名称、描述和权限整体替换。改完会在同一个事务里重新编译持有它的每一个成员——角色的权限变了，就是那些人的权限变了，而下一次请求是拿编译结果判定的。
+      operationId: update-role
+      tags:
+        - Role
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/ssh-keys:
+    get:
+      summary: 列出这个项目的公钥
+      description: 归成员的和归项目的都在里面，靠每一条上的 owner_user_id 区分。
+      operationId: list-ssh-keys
+      tags:
+        - SSHKey
+      parameters:
+        - description: 这一页最多返回多少条
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: 这一页最多返回多少条
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: 不传时两种都返回
+          explode: false
+          in: query
+          name: status
+          schema:
+            description: 不传时两种都返回
+            enum:
+              - ACTIVE
+              - REVOKED
+            type: string
+        - description: 只列挂着这个用途的钥匙。平台自己生成的那把是 platform
+          explode: false
+          in: query
+          name: purpose
+          schema:
+            description: 只列挂着这个用途的钥匙。平台自己生成的那把是 platform
+            maxLength: 64
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageSSHKeyResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: 添加一把公钥
+      description: owner=me 是自己的，是成员就能加；owner=project 是项目公用的，要 iam:ssh_keys.manage —— 它会进这个项目之后开出来的每一台机器。
+      operationId: create-ssh-key
+      tags:
+        - SSHKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSSHKeyRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKeyResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/ssh-keys/{keyId}:
+    delete:
+      summary: 吊销一把公钥
+      description: 行留着，状态变成 REVOKED。事故之后要问的是当时信任的是哪把钥匙。
+      operationId: revoke-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - in: path
+          name: keyId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKeyResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    get:
+      summary: 查看一把公钥
+      operationId: get-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - in: path
+          name: keyId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKeyResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: 给公钥改名
+      description: 只有名字能改：公钥、类型、指纹是同一样东西的三种说法，改其中一个会让这一行描述一把并不存在的钥匙。
+      operationId: rename-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - in: path
+          name: keyId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSSHKeyRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSHKeyResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    PermissionResource:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        name:
+          type: string
+        owner_only:
+          description: 只有项目所有者能做，绑到自定义角色上也不会生效
+          type: boolean
+      required:
+        - name
+        - description
+        - owner_only
+      type: object
+    PermissionListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/PermissionResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    GrantResource:
+      additionalProperties: false
+      properties:
+        admin:
+          type: boolean
+        owner:
+          type: boolean
+        permissions:
+          description: 持有的全部自定义角色的权限并集，已去重排序
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        roles:
+          description: 持有的角色编码，只用于展示
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - owner
+        - admin
+        - permissions
+        - roles
+      type: object
+    ProjectResource:
+      additionalProperties: false
+      properties:
+        ban_reason:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        deleted_at:
+          description: 盖上墓碑的那一刻
+          format: date-time
+          type:
+            - string
+            - 'null'
+        description:
+          type: string
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        overdue_at:
+          description: 欠费的起始时间
+          format: date-time
+          type:
+            - string
+            - 'null'
+        status:
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - BANNED
+            - DELETING
+            - DELETED
+          type: string
+        status_reason:
+          description: 给人看的，不参与任何查询
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - status
+        - status_reason
+        - ban_reason
+        - overdue_at
+        - deleted_at
+        - created_by
+        - created_at
+        - updated_at
+      type: object
+    ProjectAccessResource:
+      additionalProperties: false
+      properties:
+        grant:
+          $ref: '#/components/schemas/GrantResource'
+        project:
+          $ref: '#/components/schemas/ProjectResource'
+      required:
+        - project
+        - grant
+      type: object
+    UpdateProjectRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          type: string
+      type: object
+    MembershipResource:
+      additionalProperties: false
+      properties:
+        grant:
+          $ref: '#/components/schemas/GrantResource'
+        member:
+          type: boolean
+        project_status:
+          type: string
+        user_status:
+          type: string
+      required:
+        - member
+        - grant
+        - user_status
+        - project_status
+      type: object
+    InvitationResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        email:
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        invited_by:
+          type: string
+        project_id:
+          format: uuid
+          type: string
+        roles:
+          description: 兑现时会授予的角色编码
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - id
+        - project_id
+        - email
+        - roles
+        - invited_by
+        - expires_at
+        - created_at
+      type: object
+    LengthAwarePageInvitationResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/InvitationResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    IssueInvitationRequestBody:
+      additionalProperties: false
+      properties:
+        email:
+          format: email
+          maxLength: 320
+          type: string
+        roles:
+          description: 兑现时授予的角色编码。必须是这个项目已经定义的，OWNER 不行
+          items:
+            type: string
+          minItems: 1
+          type:
+            - array
+            - 'null'
+      required:
+        - email
+        - roles
+      type: object
+    IssuedInvitationResponseBody:
+      additionalProperties: false
+      properties:
+        invitation:
+          $ref: '#/components/schemas/InvitationResource'
+        token:
+          description: 兑现用的明文，**只在这一次响应里出现**。库里只有它的哈希，丢了只能撤销重发
+          type: string
+      required:
+        - invitation
+        - token
+      type: object
+    MemberResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        email:
+          type: string
+        first_name:
+          type: string
+        grant:
+          $ref: '#/components/schemas/GrantResource'
+        last_name:
+          type: string
+        user_id:
+          type: string
+      required:
+        - user_id
+        - email
+        - first_name
+        - last_name
+        - grant
+        - created_by
+        - created_at
+      type: object
+    LengthAwarePageMemberResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/MemberResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    SetMemberRolesRequestBody:
+      additionalProperties: false
+      properties:
+        roles:
+          description: 这个人应当持有的**全部**角色编码。OWNER 不能出现在这里
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - roles
+      type: object
+    TransferOwnershipRequestBody:
+      additionalProperties: false
+      properties:
+        to_user_id:
+          minLength: 1
+          description: 接手的人必须已经是这个项目的成员
+          maxLength: 255
+          type: string
+      required:
+        - to_user_id
+      type: object
+    OwnershipTransferResponseBody:
+      additionalProperties: false
+      properties:
+        from:
+          description: 原所有者。他保留其余的角色——转让的是所有权，不是把人踢出去
+          $ref: '#/components/schemas/MemberResource'
+        to:
+          $ref: '#/components/schemas/MemberResource'
+      required:
+        - from
+        - to
+      type: object
+    RoleResource:
+      additionalProperties: false
+      properties:
+        builtin:
+          description: 内置角色不可删、不可改权限：OWNER 和 ADMIN 的语义写在代码里
+          type: boolean
+        code:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        name:
+          type: string
+        permissions:
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - code
+        - name
+        - description
+        - builtin
+        - permissions
+        - created_at
+        - updated_at
+      type: object
+    RoleListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RoleResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    CreateRoleRequestBody:
+      additionalProperties: false
+      properties:
+        code:
+          minLength: 1
+          description: 小写字母开头，可含数字和下划线。建好之后不能改——成员绑定和邀请都指着它
+          maxLength: 64
+          type: string
+        description:
+          maxLength: 255
+          type: string
+        name:
+          minLength: 1
+          maxLength: 64
+          type: string
+        permissions:
+          description: 权限名。OwnerOnly 的那几条会被拒绝：绑上去也不会生效
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - code
+        - name
+      type: object
+    UpdateRoleRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          maxLength: 255
+          type: string
+        name:
+          minLength: 1
+          maxLength: 64
+          type: string
+        permissions:
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+      required:
+        - name
+      type: object
+    SSHKeyResource:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        fingerprint:
+          type: string
+        has_private_key:
+          description: 平台生成并保管的那把。它的私钥不对外提供
+          type: boolean
+        id:
+          format: uuid
+          type: string
+        key_type:
+          type: string
+        name:
+          type: string
+        owner_user_id:
+          description: 归属人；不给表示这把钥匙归项目本身
+          type: string
+        public_key:
+          type: string
+        purposes:
+          description: 用途标签。平台自己生成的那把是 platform
+          items:
+            type: string
+          type:
+            - array
+            - 'null'
+        status:
+          enum:
+            - ACTIVE
+            - REVOKED
+          type: string
+      required:
+        - id
+        - name
+        - public_key
+        - fingerprint
+        - key_type
+        - status
+        - created_at
+        - purposes
+        - has_private_key
+      type: object
+    LengthAwarePageSSHKeyResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: 这一页的内容
+          items:
+            $ref: '#/components/schemas/SSHKeyResource'
+          type: array
+        limit:
+          description: 这一页最多几条，回显请求里的值
+          format: int64
+          type: integer
+        offset:
+          description: 跳过了多少条，回显请求里的值
+          format: int64
+          type: integer
+        total:
+          description: 命中的总条数，不只是这一页
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    CreateSSHKeyRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          minLength: 1
+          maxLength: 128
+          type: string
+        owner:
+          default: me
+          description: 这把钥匙归谁
+          enum:
+            - me
+            - project
+          type: string
+        public_key:
+          minLength: 1
+          description: OpenSSH 格式的公钥。类型和指纹从它算出来，都不可改
+          maxLength: 16384
+          type: string
+        purposes:
+          description: 用途标签，比如 ci、bastion
+          items:
+            type: string
+          maxItems: 16
+          type:
+            - array
+            - 'null'
+      required:
+        - name
+        - public_key
+      type: object
+    RenameSSHKeyRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          minLength: 1
+          maxLength: 128
+          type: string
+      required:
+        - name
+      type: object
