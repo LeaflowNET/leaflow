@@ -158,19 +158,37 @@ main() {
     case ":${PATH}:" in
         *":${INSTALL_DIR}:"*)
             say ""
-            say "Run: ${BINARY} login"
+            say "Start a new shell so completion loads, then run: ${BINARY} login"
             ;;
         *)
+            # Appending to an rc file does not change the shell that is running
+            # now, so telling someone to add the line and then run the command
+            # sends them straight into "command not found". Reloading is the
+            # step, and it is also what makes the completion script take effect.
             say ""
-            say "${INSTALL_DIR} is not on your PATH. Add it:"
+            say "${INSTALL_DIR} is not on your PATH yet."
             say ""
             case "${SHELL:-}" in
-                */fish) say "  fish_add_path ${INSTALL_DIR}" ;;
-                */zsh) say "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc" ;;
-                *) say "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc" ;;
+                */fish)
+                    # fish_add_path applies to this shell and future ones, so
+                    # there is nothing to reload for PATH.
+                    say "  fish_add_path ${INSTALL_DIR}"
+                    say ""
+                    say "Then start a new shell (completion needs one) and run: ${BINARY} login"
+                    ;;
+                */zsh)
+                    say "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc"
+                    say "  source ~/.zshrc"
+                    say ""
+                    say "Then run: ${BINARY} login"
+                    ;;
+                *)
+                    say "  echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc"
+                    say "  source ~/.bashrc"
+                    say ""
+                    say "Then run: ${BINARY} login"
+                    ;;
             esac
-            say ""
-            say "Then run: ${BINARY} login"
             ;;
     esac
 }
@@ -187,12 +205,16 @@ main() {
 install_completion() {
     [ -z "${LEAFLOW_NO_COMPLETION:-}" ] || return 0
 
-    # Probed first, because this script is fetched from main and may be running
-    # against an older release that has no such command. Letting that print its
-    # own error would make a successful installation look broken.
-    "${INSTALL_DIR}/${BINARY}" install-completion --help >/dev/null 2>&1 || return 0
+    # Output is discarded and summarised below, so that PATH and completion
+    # produce one instruction between them rather than two that read as two
+    # separate problems.
+    #
+    # Nothing here depends on flags the binary may not have: this script is
+    # fetched from main while the binary comes from a release, so the two are
+    # not the same version. A missing command just means no completion.
+    "${INSTALL_DIR}/${BINARY}" install-completion >/dev/null 2>&1 || return 0
 
-    "${INSTALL_DIR}/${BINARY}" install-completion 2>&1 || true
+    say "Installed shell completion."
 }
 
 main
