@@ -14,15 +14,34 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/LeaflowNET/leaflow/internal/naming"
 	"github.com/LeaflowNET/leaflow/internal/spec"
 )
 
 func main() {
+	// -commands prints the command surface the embedded contracts produce.
+	//
+	// Taken before and after a contract sync, the two lists diff into something
+	// a reviewer can act on — three commands added, one removed — instead of a
+	// few thousand lines of YAML in which a deleted operation is invisible.
+	commands := flag.Bool("commands", false, "print every command the embedded contracts produce")
+	flag.Parse()
+
+	if *commands {
+		if err := printCommands(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	problems, err := check()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -41,6 +60,37 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "\n%d problem(s)\n", len(problems))
 	os.Exit(1)
+}
+
+func printCommands() error {
+	specs, err := spec.Load()
+	if err != nil {
+		return err
+	}
+
+	var lines []string
+
+	for _, service := range specs.Services() {
+		for _, op := range service.Operations() {
+			parts := []string{service.Name}
+			if len(op.Tags) > 0 {
+				parts = append(parts, naming.Kebab(op.Tags[0]))
+			}
+
+			parts = append(parts, naming.Kebab(op.ID))
+
+			lines = append(lines, fmt.Sprintf("%s\t%s\t%s",
+				service.Name, op.ID, strings.Join(parts, " ")))
+		}
+	}
+
+	sort.Strings(lines)
+
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+
+	return nil
 }
 
 func check() ([]string, error) {

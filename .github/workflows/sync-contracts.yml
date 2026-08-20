@@ -1,16 +1,36 @@
 # Pull current contracts into internal/spec/data and open a pull request.
 #
-# Contracts are synced automatically; command names are not. That split is the
-# point: a new operation appears as a command on its own, while anything the CLI
-# asserts on top of a contract — the account-token table — is checked by
-# leaflow-doctor before the pull request can merge.
+# Three triggers, deliberately:
 #
-# The pull request is deliberate rather than a direct push: a contract change
-# can remove an operation, and someone should see that before it ships.
+#   repository_dispatch  the contracts repository says it released something
+#   schedule             reconciliation, because events get lost
+#   workflow_dispatch    by hand
+#
+# The event is what makes this prompt; the schedule is what makes it reliable.
+# A dispatch goes missing whenever a token expires, a workflow is edited, or a
+# release is cut by hand — and nothing reports that it did. The daily run
+# notices within a day either way, and is a no-op when the event already worked.
+#
+# To send the event, add this to the contracts repository's release workflow:
+#
+#   - uses: peter-evans/repository-dispatch@v3
+#     with:
+#       token: ${{ secrets.LEAFLOW_CLI_TOKEN }}   # PAT with repo scope on LeaflowNET/leaflow
+#       repository: LeaflowNET/leaflow
+#       event-type: contracts-released
+#       client-payload: '{"ref": "${{ github.ref_name }}"}'
+#
+# The result is a pull request, never a direct push. A contract can remove an
+# operation, which removes a command, which breaks whatever was scripted against
+# it — that deserves a person, and the pull request body says exactly which
+# commands appear and disappear so the decision takes seconds rather than a
+# read through several thousand lines of YAML.
 
 name: sync-contracts
 
 on:
+  repository_dispatch:
+    types: [contracts-released]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -25,7 +45,6 @@ permissions:
   pull-requests: write
 
 env:
-  # Repository holding the generated OpenAPI documents.
   CONTRACTS_REPO: leaflowapis/leaflowapis
 
 jobs:
@@ -39,22 +58,45 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: record the current command surface
+        run: go run ./cmd/leaflow-doctor -commands > /tmp/before.txt
+
       - name: check out contracts
         uses: actions/checkout@v4
         with:
           repository: ${{ env.CONTRACTS_REPO }}
-          ref: ${{ inputs.ref || 'main' }}
+          ref: ${{ github.event.client_payload.ref || inputs.ref || 'main' }}
           path: .contracts
           token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
 
       - name: copy contracts
         run: ./scripts/sync-contracts.sh .contracts
 
+      # Runs before the diff so a contract that does not even parse fails here,
+      # rather than producing a pull request whose summary is an error message.
       - name: verify
         run: |
           go build ./...
           go test ./...
           go run ./cmd/leaflow-doctor
+
+      - name: summarise the change
+        id: changes
+        run: |
+          go run ./cmd/leaflow-doctor -commands > /tmp/after.txt
+          ./scripts/contract-changes.sh /tmp/before.txt /tmp/after.txt > /tmp/changes.md
+          cat /tmp/changes.md
+
+          {
+            echo 'body<<CHANGES_EOF'
+            cat /tmp/changes.md
+            echo
+            echo "Synced from \`${{ env.CONTRACTS_REPO }}@${{ github.event.client_payload.ref || inputs.ref || 'main' }}\`."
+            echo
+            echo 'Contracts are embedded at build time, so these commands reach users'
+            echo 'with the next release, not on merge.'
+            echo CHANGES_EOF
+          } >> "$GITHUB_OUTPUT"
 
       - name: open pull request
         uses: peter-evans/create-pull-request@v6
@@ -62,11 +104,5 @@ jobs:
           branch: contracts/sync
           title: "chore: sync API contracts"
           commit-message: "chore: sync API contracts"
-          body: |
-            Automated contract sync from `${{ env.CONTRACTS_REPO }}`.
-
-            `leaflow-doctor` passed, so the account-token table in
-            `internal/spec/credential.go` still matches every operation it names.
-
-            Review the diff for removed operations: those disappear as commands.
+          body: ${{ steps.changes.outputs.body }}
           delete-branch: true
