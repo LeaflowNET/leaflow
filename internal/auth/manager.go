@@ -58,11 +58,12 @@ type Manager struct {
 	store       *Store
 	client      *http.Client
 
-	// exchange is where the account face mints project tokens. Taken from the
-	// contract rather than hardcoded: the path has moved once already, and a
-	// stale constant fails as "you may not be a member", which sends people to
-	// look at permissions instead of at this line.
+	// exchange is where the account face mints project tokens: both the path and
+	// the address come from the contract rather than being hardcoded. The path
+	// has moved once already, and a stale constant fails as "you may not be a
+	// member", which sends people to look at permissions instead of at this line.
 	exchangePath string
+	exchangeBase string
 
 	discovered *endpoints
 }
@@ -70,9 +71,12 @@ type Manager struct {
 // ExchangeOperation is the contract's id for minting a project token.
 const ExchangeOperation = "exchange-project-token"
 
-// UseExchangePath tells the manager where the exchange lives. The CLI wires
-// this from the loaded contract at startup.
-func (m *Manager) UseExchangePath(path string) { m.exchangePath = path }
+// UseExchange tells the manager where the exchange lives. The CLI wires this
+// from the loaded contract at startup.
+func (m *Manager) UseExchange(base, path string) {
+	m.exchangeBase = base
+	m.exchangePath = path
+}
 
 func NewManager(cfg *config.Config, client *http.Client) (*Manager, error) {
 	name := cfg.CurrentName()
@@ -217,7 +221,12 @@ func (m *Manager) exchange(ctx context.Context, accountToken, projectID string) 
 
 	path = strings.ReplaceAll(path, "{projectId}", url.PathEscape(projectID))
 
-	target := m.ctx.ServiceURL(accountService) + path
+	base, err := m.ctx.ServiceURL(accountService, m.exchangeBase)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	target := base + path
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
 	if err != nil {

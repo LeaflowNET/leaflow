@@ -208,7 +208,7 @@ func (a *App) setup(cmd *cobra.Command) error {
 
 	if account, ok := a.ext.Specs.Service("account"); ok {
 		if exchange, found := account.Operation(auth.ExchangeOperation); found {
-			tokens.UseExchangePath(exchange.Path)
+			tokens.UseExchange(account.BaseURL, exchange.Path)
 		}
 	}
 

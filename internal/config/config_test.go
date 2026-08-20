@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,10 +72,6 @@ func TestSaveDoesNotPersistDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if domain := cfg.Context().Domain; domain != config.DefaultDomain {
-		t.Fatalf("effective domain = %q, want the default", domain)
-	}
-
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +81,7 @@ func TestSaveDoesNotPersistDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, leaked := range []string{config.DefaultDomain, config.DefaultIssuer, config.DefaultClientID} {
+	for _, leaked := range []string{config.DefaultIssuer, config.DefaultClientID} {
 		if strings.Contains(string(written), leaked) {
 			t.Errorf("default %q was written to the config:\n%s", leaked, written)
 		}
@@ -109,24 +106,84 @@ func TestContextIsACopy(t *testing.T) {
 	}
 }
 
-func TestServiceURLDerivesFromDomain(t *testing.T) {
+// The address comes from the contract. Deriving it from the service name is
+// right for every service but one, and the exception answers 404 — which reads
+// as "no such endpoint" rather than "right address, wrong face".
+func TestServiceURLUsesTheContractAddress(t *testing.T) {
+	inTempDir(t)
+
+	cfg, _ := config.Load("")
+
+	got, err := cfg.Context().ServiceURL("compute", "https://compute.leaflow.cloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got != "https://compute.leaflow.cloud" {
+		t.Errorf("address = %q, want the contract's", got)
+	}
+}
+
+// A contract with no address is reported, naming the service, rather than
+// guessed at.
+func TestServiceURLRequiresAnAddress(t *testing.T) {
+	inTempDir(t)
+
+	cfg, _ := config.Load("")
+
+	_, err := cfg.Context().ServiceURL("canopy", "")
+	if !errors.Is(err, config.ErrNoServiceAddress) {
+		t.Errorf("err = %v, want ErrNoServiceAddress", err)
+	}
+}
+
+// Domain rewrites a stated address for a local stack; it does not invent one.
+func TestDomainRewritesTheContractAddress(t *testing.T) {
+	inTempDir(t)
+
+	cfg, _ := config.Load("")
+	cfg.EditContext("").Domain = "leaflow.test"
+
+	active := cfg.Context()
+
+	got, err := active.ServiceURL("monitoring", "https://monitoring.leaflow.cloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got != "https://monitoring.leaflow.test" {
+		t.Errorf("rewritten = %q", got)
+	}
+
+	// A port in the contract survives the rewrite: a local gateway is not on 443.
+	got, err = active.ServiceURL("compute", "https://compute.leaflow.cloud:8443")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got != "https://compute.leaflow.test:8443" {
+		t.Errorf("port was lost: %q", got)
+	}
+}
+
+// An explicit override wins over both, and its trailing slash is dropped so
+// paths concatenate.
+func TestEndpointOverrideWins(t *testing.T) {
 	inTempDir(t)
 
 	cfg, _ := config.Load("")
 
 	one := cfg.EditContext("")
 	one.Domain = "leaflow.test"
-	one.Endpoints = map[string]string{"compute": "https://compute.leaflow.test:18100/"}
+	one.Endpoints = map[string]string{"compute": "https://compute.internal:18100/"}
 
-	active := cfg.Context()
-
-	if got := active.ServiceURL("monitoring"); got != "https://monitoring.leaflow.test" {
-		t.Errorf("derived address = %q", got)
+	got, err := cfg.Context().ServiceURL("compute", "https://compute.leaflow.cloud")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// An override wins, and its trailing slash is dropped so paths concatenate.
-	if got := active.ServiceURL("compute"); got != "https://compute.leaflow.test:18100" {
-		t.Errorf("overridden address = %q", got)
+	if got != "https://compute.internal:18100" {
+		t.Errorf("override = %q", got)
 	}
 }
 

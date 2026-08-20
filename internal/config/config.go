@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,17 +28,20 @@ var (
 	ErrConfigUnreadable = errors.New("cannot read config")
 
 	ErrConfigMalformed = errors.New("malformed config")
+
+	ErrNoServiceAddress = errors.New("no address for service")
 )
 
 // Context is one "which platform, as whom, in which project" triple, modelled
 // on kubectl's: people work against production and a local stack at the same
 // time, and a per-command flag is something you eventually forget to pass.
 type Context struct {
-	// Domain is the shared suffix of every service address. The platform gives
-	// each service its own host (compute.leaflow.cloud, monitoring.leaflow.cloud)
-	// rather than a path prefix on one host, because the paths collide: IAM and
-	// monitoring both own /api/v1/projects/{id}/..., so a path alone does not say
-	// which service a call is for.
+	// Domain rewrites the domain part of every address a contract declares, for
+	// a self-hosted deployment or a local stack: compute.leaflow.cloud becomes
+	// compute.leaflow.test.
+	//
+	// It is a rewrite of a stated address, not a way of deriving one. Left
+	// empty — which is the default — the contract is used exactly as written.
 	Domain string `mapstructure:"domain" yaml:"domain,omitempty"`
 
 	// Endpoints overrides Domain per service, for local stacks whose addresses
@@ -72,25 +76,7 @@ type Config struct {
 	path string `mapstructure:"-" yaml:"-"`
 }
 
-// defaultEndpoints is where each service lives on the hosted platform.
-//
-// Built in rather than derived so that a service whose address does not follow
-// <service>.<domain> still resolves, and so a fresh install needs no config at
-// all. Setting Domain switches the whole platform at once — a self-hosted
-// deployment or a local stack — and Endpoints overrides one service.
-var defaultEndpoints = map[string]string{
-	"account":    "https://account.leaflow.cloud",
-	"iam":        "https://iam.leaflow.cloud",
-	"compute":    "https://compute.leaflow.cloud",
-	"monitoring": "https://monitoring.leaflow.cloud",
-	"assistant":  "https://assistant.leaflow.cloud",
-	"tunnel":     "https://tunnel.leaflow.cloud",
-	"canopy":     "https://canopy.leaflow.cloud",
-}
-
 const (
-	DefaultDomain = "leaflow.cloud"
-
 	DefaultIssuer = "https://auth.leaflow.net/realms/user"
 
 	// DefaultClientID is a public client dedicated to the CLI. The console's
@@ -245,10 +231,6 @@ func (c *Config) CurrentName() string {
 }
 
 func (x *Context) applyDefaults() {
-	if x.Domain == "" {
-		x.Domain = DefaultDomain
-	}
-
 	if x.Issuer == "" {
 		x.Issuer = DefaultIssuer
 	}
@@ -276,32 +258,64 @@ func (x *Context) applyEnv() {
 	}
 }
 
-// ServiceURL is one service's base address, without a trailing slash.
+// ServiceURL is where a service answers.
 //
-// Resolution order: an explicit override, then the built-in address, then a
-// name derived from the domain. The built-in table is skipped once a domain is
-// set, because a domain means "a different deployment" and its addresses are
-// not the hosted ones.
+// Resolution order: an explicit override, then the contract's own address with
+// Domain applied if one is set, then the contract's address as written.
 //
-// The service name is also the contract's directory and the SDK namespace —
-// one word across the platform.
-func (x *Context) ServiceURL(service string) string {
+// Nothing is derived from the service name. That convention holds for every
+// service but one, and the exception answers 404 — which reads as "no such
+// endpoint" rather than "right address, wrong face". A contract that states no
+// address produces an error naming the contract, because that is where the fix
+// belongs.
+func (x *Context) ServiceURL(service, declared string) (string, error) {
 	if endpoint, ok := x.Endpoints[service]; ok && endpoint != "" {
-		return strings.TrimRight(endpoint, "/")
+		return strings.TrimRight(endpoint, "/"), nil
 	}
 
-	if x.Domain == "" || x.Domain == DefaultDomain {
-		if endpoint, ok := defaultEndpoints[service]; ok {
-			return endpoint
-		}
+	if declared == "" {
+		return "", fmt.Errorf("%w: %s declares no address; set one with --endpoint %s=<url>",
+			ErrNoServiceAddress, service, service)
 	}
 
-	domain := x.Domain
-	if domain == "" {
-		domain = DefaultDomain
+	if x.Domain == "" {
+		return declared, nil
 	}
 
-	return fmt.Sprintf("https://%s.%s", service, domain)
+	rewritten, err := rewriteDomain(declared, x.Domain)
+	if err != nil {
+		return "", err
+	}
+
+	return rewritten, nil
+}
+
+// rewriteDomain swaps everything after the first label of the host, so
+// compute.leaflow.cloud becomes compute.leaflow.test while keeping the port
+// and scheme a local stack needs.
+func rewriteDomain(declared, domain string) (string, error) {
+	parsed, err := url.Parse(declared)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s: %v", ErrNoServiceAddress, declared, err)
+	}
+
+	// Read before writing: assigning Host discards the port, and reading it
+	// afterwards returns nothing.
+	port := parsed.Port()
+	host := parsed.Hostname()
+
+	label, _, found := strings.Cut(host, ".")
+	if !found {
+		label = host
+	}
+
+	parsed.Host = label + "." + domain
+
+	if port != "" {
+		parsed.Host += ":" + port
+	}
+
+	return strings.TrimRight(parsed.String(), "/"), nil
 }
 
 // Save writes the config back with 0600: it carries no tokens, but it does say

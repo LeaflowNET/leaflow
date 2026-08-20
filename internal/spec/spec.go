@@ -69,6 +69,9 @@ type Operation struct {
 	// contracts and separate addresses.
 	Credential Credential
 
+	// BaseURL is the address its contract declares.
+	BaseURL string
+
 	Parameters openapi3.Parameters
 
 	RequestBody *openapi3.RequestBody
@@ -78,6 +81,13 @@ type Service struct {
 	Name string
 
 	Version string
+
+	// BaseURL is where this service answers, as its contract declares it.
+	//
+	// Taken from the contract rather than derived from the service name: the
+	// convention <service>.leaflow.cloud holds for every service but one, and
+	// the exception answers 404 rather than announcing itself.
+	BaseURL string
 
 	Doc *openapi3.T
 
@@ -170,6 +180,7 @@ func newService(name string, doc *openapi3.T) *Service {
 	svc := &Service{
 		Name:    name,
 		Version: docVersion(doc),
+		BaseURL: docBaseURL(doc),
 		Doc:     doc,
 		ops:     map[string]*Operation{},
 	}
@@ -207,6 +218,7 @@ func newService(name string, doc *openapi3.T) *Service {
 				Deprecated:  op.Deprecated,
 				Tags:        op.Tags,
 				Credential:  credential,
+				BaseURL:     svc.BaseURL,
 				Parameters:  params,
 			}
 
@@ -222,6 +234,23 @@ func newService(name string, doc *openapi3.T) *Service {
 	sort.Strings(svc.order)
 
 	return svc
+}
+
+// docBaseURL reads the first entry of servers, which is where OpenAPI states
+// an API's address. Empty when the contract does not say; callers report that
+// rather than guessing.
+func docBaseURL(doc *openapi3.T) string {
+	if doc == nil {
+		return ""
+	}
+
+	for _, server := range doc.Servers {
+		if server != nil && server.URL != "" {
+			return strings.TrimRight(server.URL, "/")
+		}
+	}
+
+	return ""
 }
 
 // docVersion reads info.version, which is where a contract states its own

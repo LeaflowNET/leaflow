@@ -86,7 +86,8 @@ Use `json` in scripts; the table layout may change.
 | `--output` / `-o` | output format |
 | `LEAFLOW_TOKEN` | project token, for CI |
 
-Point a context at another deployment:
+Service addresses come from the contracts. Point a context at another
+deployment by rewriting the domain, or override one service outright:
 
 ```sh
 leaflow context set local --domain leaflow.test \

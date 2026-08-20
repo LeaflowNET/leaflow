@@ -106,7 +106,12 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 		return nil, 0, err
 	}
 
-	target := c.baseURL(request.Operation) + request.Path
+	base, err := c.baseURL(request.Operation)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	target := base + request.Path
 
 	if len(request.Query) > 0 {
 		target += "?" + request.Query.Encode()
@@ -180,8 +185,8 @@ func (c *Client) trace(format string, args ...any) {
 	}
 }
 
-func (c *Client) baseURL(op *spec.Operation) string {
-	return c.ctx.ServiceURL(op.Service)
+func (c *Client) baseURL(op *spec.Operation) (string, error) {
+	return c.ctx.ServiceURL(op.Service, op.BaseURL)
 }
 
 func parseError(status int, raw []byte) error {
