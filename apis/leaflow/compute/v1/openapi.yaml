@@ -905,6 +905,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/instances/{instanceId}/commands:
+    post:
+      summary: Run a command on an instance
+      description: |-
+        Runs one command over SSH and returns what it wrote. **This is not a shell.** There is no terminal, no standard input and no way to answer a prompt: a command that waits for input produces nothing and is killed at the timeout. Chain steps with `&&`, or write a script and run that.
+
+        Three conditions must hold; the instance is unreachable otherwise:
+
+        - it is `running`
+        - a floating IP is bound to it, since this endpoint connects over the public internet
+        - its security group permits inbound TCP 22
+
+        Authentication uses the key the platform attaches to every instance at creation, so nothing has to be set up first. The instance must have applied that key at first boot, which images without a full cloud-init do not do.
+
+        **The host key is not verified.** Anyone in a position to intercept the connection can read the command and all of its output, so do not pass credentials this way.
+
+        Each stream is capped at 1 MiB. Beyond that the rest is discarded and `truncated` is true.
+      operationId: run-instance-command
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunCommandRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResultResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/instances/{instanceId}/console:
     post:
       summary: Open a remote console
@@ -3198,6 +3244,55 @@ components:
           type: boolean
       required:
         - action
+      type: object
+    RunCommandRequestBody:
+      additionalProperties: false
+      properties:
+        command:
+          description: Run by the login shell, so pipes, redirection and `&&` work. It cannot read standard input
+          maxLength: 65536
+          minLength: 1
+          type: string
+        timeout_seconds:
+          description: Kill the command after this long. 60 when omitted
+          format: int64
+          maximum: 300
+          minimum: 1
+          type: integer
+        username:
+          default: root
+          description: The SSH user to log in as. It is the account the platform sets a password for at creation
+          maxLength: 32
+          minLength: 1
+          type: string
+      required:
+        - command
+      type: object
+    CommandResultResponseBody:
+      additionalProperties: false
+      properties:
+        exit_code:
+          description: Null when the command was killed rather than finishing on its own, which includes the timeout
+          format: int64
+          type:
+            - integer
+            - 'null'
+        stderr:
+          type: string
+        stdout:
+          type: string
+        timed_out:
+          description: True when the command was still running at the timeout and was killed
+          type: boolean
+        truncated:
+          description: True when either stream hit the 1 MiB cap and the rest was discarded
+          type: boolean
+      required:
+        - exit_code
+        - stdout
+        - stderr
+        - truncated
+        - timed_out
       type: object
     ConsoleResponseBody:
       additionalProperties: false
