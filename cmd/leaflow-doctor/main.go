@@ -20,8 +20,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LeaflowNET/leaflow/internal/naming"
-	"github.com/LeaflowNET/leaflow/internal/spec"
+	"github.com/LeaflowNET/leaflow/pkg/naming"
+	"github.com/LeaflowNET/leaflow/pkg/spec"
 )
 
 func main() {

@@ -35,7 +35,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	one.ClientID = "custom-client"
 	one.Issuer = "https://auth.example.test/realms/other"
 	one.Project = "p-1"
-	one.Endpoints = map[string]string{"compute": "https://compute.leaflow.test:18100"}
+	one.Endpoints = map[string]string{
+		"compute": "https://compute.leaflow.test:18100",
+	}
 	cfg.Current = "local"
 
 	if err := cfg.Save(); err != nil {
@@ -49,7 +51,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 
 	got := reloaded.Context()
 
-	for _, tc := range []struct{ field, got, want string }{
+	for _, tc := range []struct {
+		field, got, want string
+	}{
 		{"domain", got.Domain, "leaflow.test"},
 		{"client_id", got.ClientID, "custom-client"},
 		{"issuer", got.Issuer, "https://auth.example.test/realms/other"},
@@ -99,7 +103,9 @@ func TestContextIsACopy(t *testing.T) {
 
 	effective := cfg.Context()
 	effective.Domain = "mutated.test"
-	effective.Endpoints = map[string]string{"compute": "https://nope.test"}
+	effective.Endpoints = map[string]string{
+		"compute": "https://nope.test",
+	}
 
 	if stored := cfg.EditContext(""); stored.Domain != "" || len(stored.Endpoints) != 0 {
 		t.Errorf("stored context was modified through the copy: %#v", stored)
@@ -175,7 +181,9 @@ func TestEndpointOverrideWins(t *testing.T) {
 
 	one := cfg.EditContext("")
 	one.Domain = "leaflow.test"
-	one.Endpoints = map[string]string{"compute": "https://compute.internal:18100/"}
+	one.Endpoints = map[string]string{
+		"compute": "https://compute.internal:18100/",
+	}
 
 	got, err := cfg.Context().ServiceURL("compute", "https://compute.leaflow.cloud")
 	if err != nil {

@@ -73,7 +73,157 @@ tags.
 leaflow compute list-instances -o custom-columns=NAME:.name,IP:.private_ip
 ```
 
-Use `json` in scripts; the table layout may change.
+Use `json` in scripts; the table layout may change. `-o xml` is for feeding a
+reply to a model: a closing tag says which thing ended, where a closing brace
+says only that something did.
+
+## MCP
+
+The same operations, served to an assistant:
+
+```json
+{
+  "mcpServers": {
+    "leaflow": { "command": "leaflow", "args": ["mcp", "serve"] }
+  }
+}
+```
+
+It acts as whoever ran `leaflow login`, in the project that context selects.
+It cannot sign in on its own.
+
+Two hundred operations ship with the binary, and a client is sent every tool
+definition on every turn — so by default four tools are exposed and the client
+walks the contracts through them: `services`, `operations`, `operation-schema`,
+`call-operation`. Arguments come back as JSON Schema carrying every constraint
+the contract states, and replies come back as XML.
+
+| | |
+| --- | --- |
+| `--tools operations` | one tool per operation instead; pair with `--service` |
+| `--service` | limit to these contracts |
+| `--read-only` | drop every write before a client sees it |
+| `--http` | serve over HTTP instead of stdin/stdout; binds loopback |
+
+`--http` has no authentication of its own while holding yours, so it refuses a
+non-loopback address unless `--allow-remote` says something in front of it
+authenticates.
+
+## As a library
+
+The contracts, the argument checking and the requests are a package. The
+command line is one caller of it and holds no privileged position:
+
+```go
+import "github.com/LeaflowNET/leaflow/pkg/leaflow"
+
+client, err := leaflow.New(leaflow.Options{})    // parses the contracts once
+
+result, err := client.Call(ctx, leaflow.Call{
+    Token:     leaflow.Token{Access: userToken},  // per call, not per client
+    Service:   "compute",
+    Operation: "create-disk",
+    Arguments: map[string]any{
+        "body": map[string]any{"name": "data", "size_gb": 100},
+    },
+})
+
+xml, err := result.XML("disk")                   // the shape to hand a model
+```
+
+Reading the contracts costs about forty milliseconds and thirty megabytes. A
+`Client` holds them and is safe to share across goroutines, so a service pays
+that once per process rather than once per request.
+
+Credentials travel with the call because a service is handed a different token
+for every request it serves.
+
+A bare `Token` cannot be replaced once refused, which turns off the transport's
+one automatic retry. Where the work outlives the credential — an access token is
+good for a day, and a task waiting on a human can be paused for longer — pass
+something that can mint a fresh one instead, and the retry works:
+
+```go
+result, err := client.Call(ctx, leaflow.Call{
+    Credentials: yourTokenSource,   // Token(ctx, kind) + Invalidate(kind)
+    Service:     "compute",
+    Operation:   "list-disks",
+})
+```
+
+## Pointing elsewhere
+
+Addresses come from the contracts. Override them per service — inside a cluster
+that means the service name — or rewrite the domain for a whole deployment:
+
+```go
+leaflow.New(leaflow.Options{
+    Endpoints: transport.Endpoints{
+        Overrides: map[string]string{
+            "compute": "http://compute.leaflow.svc.cluster.local:8080",
+        },
+    },
+})
+
+leaflow.New(leaflow.Options{
+    Endpoints: transport.Endpoints{Domain: "leaflow.test"},
+})
+```
+
+A model never sees an address; it names a service.
+
+## Failures
+
+Errors are classified, so a caller decides what to do next without matching on
+prose that changes between releases:
+
+```go
+switch {
+case errors.Is(err, leaflow.ErrTokenExpired):     // mint another, call again
+case errors.Is(err, leaflow.ErrPermissionDenied): // no retry will help
+case errors.Is(err, leaflow.ErrInvalidArgument):  // leaflow.Problems(err)
+}
+
+leaflow.CanRetry(err)                // could the same call succeed later
+leaflow.Code(err)                    // the service's own code, which is contract
+leaflow.RenderError(err, "error")    // the same XML the MCP surface returns
+```
+
+`ErrUnauthenticated`, `ErrTokenExpired`, `ErrPermissionDenied`, `ErrNotFound`,
+`ErrInvalidArgument`, `ErrConflict`, `ErrRateLimited`, `ErrUnavailable`. An
+expired token satisfies both `ErrTokenExpired` and `ErrUnauthenticated`, so
+either question gets a true answer.
+
+Arguments are checked against the contract before anything is sent, and every
+problem is reported at once — `leaflow.Problems(err)` returns them individually,
+because each is a separate thing to fix.
+
+`Options.ReadOnly` drops every write before a caller can see one, and
+`Options.AccessTokenOnly` drops the account face — the operations that need a
+person's sign-in session, which a service acting on someone's behalf does not
+have. Both read the contract rather than a list of service names, so neither
+falls behind when the platform adds one.
+
+Everything an operation accepts is available before calling it:
+
+```go
+client.Count()                          // how many operations
+client.Services()                       // faces, and the groups inside them
+client.Operations()                     // all of them, in contract order
+op, _ := client.Operation("compute", "create-disk")
+op.Schema()                             // JSON Schema, every contract constraint
+```
+
+There is no search here. Choosing which operations belong in a prompt is
+retrieval, which a caller building prompts already does its own way.
+
+| | |
+| --- | --- |
+| `pkg/leaflow` | contracts, validation, calls |
+| `pkg/mcp` | the same, over the Model Context Protocol |
+| `pkg/spec` | the parsed OpenAPI documents |
+| `pkg/transport` | requests, credentials and addresses as interfaces |
+| `pkg/output` | table, JSON, YAML and XML rendering |
 
 ## Configuration
 
@@ -84,7 +234,7 @@ Use `json` in scripts; the table layout may change.
 | `--context` / `LEAFLOW_CONTEXT` | which context to use |
 | `--project` / `LEAFLOW_PROJECT` | project for this run |
 | `--output` / `-o` | output format |
-| `LEAFLOW_TOKEN` | project token, for CI |
+| `LEAFLOW_TOKEN` | access token, for CI |
 
 Service addresses come from the contracts. Point a context at another
 deployment by rewriting the domain, or override one service outright:

@@ -9,13 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+
+	"github.com/LeaflowNET/leaflow/pkg/transport"
 )
 
 var (
@@ -151,7 +152,9 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	cfg := &Config{path: resolved}
+	cfg := &Config{
+		path: resolved,
+	}
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("%w %s: %v", ErrConfigMalformed, resolved, err)
 	}
@@ -258,64 +261,30 @@ func (x *Context) applyEnv() {
 	}
 }
 
-// ServiceURL is where a service answers.
-//
-// Resolution order: an explicit override, then the contract's own address with
-// Domain applied if one is set, then the contract's address as written.
-//
-// Nothing is derived from the service name. That convention holds for every
-// service but one, and the exception answers 404 — which reads as "no such
-// endpoint" rather than "right address, wrong face". A contract that states no
-// address produces an error naming the contract, because that is where the fix
-// belongs.
+// Addresses is this context as the transport wants it: a domain rewrite and a
+// set of overrides, with no notion of files, environments or current contexts.
+func (x *Context) Addresses() transport.Endpoints {
+	return transport.Endpoints{
+		Domain:    x.Domain,
+		Overrides: x.Endpoints,
+	}
+}
+
+// ServiceURL is where a service answers, resolved by the transport and then
+// re-worded for someone at a terminal: the resolver cannot know that the fix
+// for a contract with no address is a flag on this particular command.
 func (x *Context) ServiceURL(service, declared string) (string, error) {
-	if endpoint, ok := x.Endpoints[service]; ok && endpoint != "" {
-		return strings.TrimRight(endpoint, "/"), nil
+	address, err := x.Addresses().ServiceURL(service, declared)
+	if err == nil {
+		return address, nil
 	}
 
-	if declared == "" {
+	if errors.Is(err, transport.ErrNoServiceAddress) && declared == "" {
 		return "", fmt.Errorf("%w: %s declares no address; set one with --endpoint %s=<url>",
 			ErrNoServiceAddress, service, service)
 	}
 
-	if x.Domain == "" {
-		return declared, nil
-	}
-
-	rewritten, err := rewriteDomain(declared, x.Domain)
-	if err != nil {
-		return "", err
-	}
-
-	return rewritten, nil
-}
-
-// rewriteDomain swaps everything after the first label of the host, so
-// compute.leaflow.cloud becomes compute.leaflow.test while keeping the port
-// and scheme a local stack needs.
-func rewriteDomain(declared, domain string) (string, error) {
-	parsed, err := url.Parse(declared)
-	if err != nil {
-		return "", fmt.Errorf("%w: %s: %v", ErrNoServiceAddress, declared, err)
-	}
-
-	// Read before writing: assigning Host discards the port, and reading it
-	// afterwards returns nothing.
-	port := parsed.Port()
-	host := parsed.Hostname()
-
-	label, _, found := strings.Cut(host, ".")
-	if !found {
-		label = host
-	}
-
-	parsed.Host = label + "." + domain
-
-	if port != "" {
-		parsed.Host += ":" + port
-	}
-
-	return strings.TrimRight(parsed.String(), "/"), nil
+	return "", err
 }
 
 // Save writes the config back with 0600: it carries no tokens, but it does say
@@ -356,4 +325,6 @@ func (x *Context) isEmpty() bool {
 		x.Project == "" && x.Account == "" && len(x.Endpoints) == 0
 }
 
-func (c *Config) Path() string { return c.path }
+func (c *Config) Path() string {
+	return c.path
+}

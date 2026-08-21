@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/LeaflowNET/leaflow/internal/cli"
+	"github.com/LeaflowNET/leaflow/cmd/leaflow/internal/cli"
 )
 
 func main() {

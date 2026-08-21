@@ -57,7 +57,9 @@ func manager(t *testing.T, issuer string) *Manager {
 	cfg.CredentialStore = string(StorageFile)
 	cfg.EditContext("").Issuer = issuer
 
-	m, err := NewManager(cfg, &http.Client{Timeout: 5 * time.Second})
+	m, err := NewManager(cfg, &http.Client{
+		Timeout: 5 * time.Second,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +85,9 @@ func TestLoginCanBeAbandonedForTheDeviceFlow(t *testing.T) {
 		close(abort)
 	}()
 
-	_, err := m.Login(t.Context(), func(target string) { notified <- target }, abort)
+	_, err := m.Login(t.Context(), func(target string) {
+		notified <- target
+	}, abort)
 
 	if !errors.Is(err, ErrLoginAborted) {
 		t.Fatalf("err = %v, want ErrLoginAborted", err)
@@ -115,7 +119,9 @@ func TestLoginRedirectsToLoopback(t *testing.T) {
 		}
 	}()
 
-	_, _ = m.Login(t.Context(), func(target string) { seen <- target }, abort)
+	_, _ = m.Login(t.Context(), func(target string) {
+		seen <- target
+	}, abort)
 }
 
 // A cancelled context is Ctrl-C, which is not the same as choosing the device

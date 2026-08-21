@@ -63,7 +63,11 @@ const (
 	StorageFile StorageMode = "file"
 )
 
-var StorageModes = []string{string(StorageAuto), string(StorageKeychain), string(StorageFile)}
+var StorageModes = []string{
+	string(StorageAuto),
+	string(StorageKeychain),
+	string(StorageFile),
+}
 
 func ParseStorageMode(value string) (StorageMode, error) {
 	switch StorageMode(value) {
@@ -81,7 +85,7 @@ func ParseStorageMode(value string) (StorageMode, error) {
 // normal, and mixing the two only ever shows up as a 401.
 type Credentials struct {
 	AccountToken   string    `json:"account_token,omitempty"`
-	AccountExpires time.Time `json:"account_expires,omitempty"`
+	AccountExpires time.Time `json:"account_expires"`
 	RefreshToken   string    `json:"refresh_token,omitempty"`
 
 	Account string `json:"account,omitempty"`
@@ -90,8 +94,12 @@ type Credentials struct {
 	// tied to an SSO session and so does not expire when that one does.
 	Offline bool `json:"offline,omitempty"`
 
-	ProjectToken   string    `json:"project_token,omitempty"`
-	ProjectExpires time.Time `json:"project_expires,omitempty"`
+	// Renaming these makes an entry written by an older version read as having
+	// no access token. That is a cheap thing to be wrong about: the refresh
+	// token and the account token are untouched, so the next call exchanges for
+	// a fresh one and nobody is asked to sign in again.
+	AccessToken        string    `json:"access_token,omitempty"`
+	AccessTokenExpires time.Time `json:"access_token_expires"`
 
 	// ProjectID records which project the cached token belongs to. Switching
 	// projects without clearing it would not fail — it would succeed against the
@@ -174,8 +182,15 @@ func (s *Store) Save(creds *Credentials) error {
 	if s.mode != StorageFile {
 		if err := keyring.Set(keyringService, s.contextName, string(data)); err == nil {
 			// Never leave two copies: a revoked keychain entry with a stale file
-			// beside it would still work.
-			_ = os.Remove(s.fallback)
+			// beside it would still work, which is the whole reason this removal
+			// is not best-effort. A file that will not go is reported, because
+			// silently keeping a second copy of someone's credentials is the one
+			// outcome this function exists to prevent.
+			if err := os.Remove(s.fallback); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("%w: credentials were saved to the keychain but %s could not be removed, "+
+					"and a stale copy there would still work: %v",
+					ErrCredentialsUnwritable, s.fallback, err)
+			}
 
 			return nil
 		} else if s.mode == StorageKeychain {
@@ -223,7 +238,9 @@ func (s *Store) Clear() error {
 	return nil
 }
 
-func (s *Store) Fallback() string { return s.fallback }
+func (s *Store) Fallback() string {
+	return s.fallback
+}
 
 // Describe says where credentials actually live, for `leaflow auth status`.
 func (s *Store) Describe() string {
@@ -234,9 +251,9 @@ func (s *Store) Describe() string {
 	return "system keychain"
 }
 
-// usable allows 30 seconds of slack: a token with two seconds left expires in
+// isUsable allows 30 seconds of slack: a token with two seconds left expires in
 // flight, and that surfaces as an unexplained 401.
-func usable(token string, expires time.Time) bool {
+func isUsable(token string, expires time.Time) bool {
 	if token == "" {
 		return false
 	}

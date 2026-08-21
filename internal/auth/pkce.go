@@ -39,12 +39,12 @@ type pkce struct {
 }
 
 func newPKCE() (*pkce, error) {
-	verifier, err := randomURLSafe(32)
+	verifier, err := makeRandomString(32)
 	if err != nil {
 		return nil, err
 	}
 
-	state, err := randomURLSafe(16)
+	state, err := makeRandomString(16)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func newPKCE() (*pkce, error) {
 	}, nil
 }
 
-func randomURLSafe(size int) (string, error) {
+func makeRandomString(size int) (string, error) {
 	buffer := make([]byte, size)
 	if _, err := rand.Read(buffer); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrLoopbackUnavailable, err)
@@ -91,7 +91,10 @@ func listenLoopback() (*callback, error) {
 		return nil, fmt.Errorf("%w: %v", ErrLoopbackUnavailable, err)
 	}
 
-	return &callback{listener: listener, results: make(chan callbackResult, 1)}, nil
+	return &callback{
+		listener: listener,
+		results:  make(chan callbackResult, 1),
+	}, nil
 }
 
 func (c *callback) redirectURI() string {
@@ -126,7 +129,16 @@ func (c *callback) serve(state string) *http.Server {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	go func() { _ = server.Serve(c.listener) }()
+	go func() {
+		// Serve always returns a non-nil error. ErrServerClosed is this listener
+		// being stopped once the redirect has arrived, which is how a successful
+		// sign-in ends. Anything else means the redirect can never arrive — and
+		// left unsaid, the sign-in would go on waiting for a callback that is not
+		// coming, until whichever timeout runs out first.
+		if err := server.Serve(c.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			c.deliver(callbackResult{err: fmt.Errorf("%w: %v", ErrLoopbackUnavailable, err)})
+		}
+	}()
 
 	return server
 }
@@ -136,19 +148,27 @@ func (c *callback) finish(w http.ResponseWriter, code string, err error) {
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(resultPage("Sign-in failed", "You can close this tab and check the terminal.")))
+		_, _ = w.Write([]byte(renderResultPage("Sign-in failed", "You can close this tab and check the terminal.")))
 	} else {
-		_, _ = w.Write([]byte(resultPage("Signed in", "You can close this tab and return to the terminal.")))
+		_, _ = w.Write([]byte(renderResultPage("Signed in", "You can close this tab and return to the terminal.")))
 	}
 
+	c.deliver(callbackResult{code: code, err: err})
+}
+
+// deliver hands the first outcome to whoever is waiting and drops the rest.
+//
+// Non-blocking because there is exactly one waiter and it takes exactly one
+// answer: a second delivery is a stray browser reload, or the server reporting
+// its own shutdown after the code already arrived.
+func (c *callback) deliver(result callbackResult) {
 	select {
-	case c.results <- callbackResult{code: code, err: err}:
+	case c.results <- result:
 	default:
-		// Already answered. A second request is a stray reload, not a result.
 	}
 }
 
-func resultPage(title, detail string) string {
+func renderResultPage(title, detail string) string {
 	return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
 		`<title>` + title + `</title>` +
 		`<style>body{font:16px/1.6 system-ui,sans-serif;margin:20vh auto;max-width:28rem;text-align:center;color:#111}` +
@@ -158,7 +178,7 @@ func resultPage(title, detail string) string {
 
 // authorizeURL builds the authorization request.
 func authorizeURL(ep *endpoints, clientID, redirectURI, scope string, proof *pkce) (string, error) {
-	authorize, err := authorizationEndpoint(ep)
+	authorize, err := readAuthorizationEndpoint(ep)
 	if err != nil {
 		return "", err
 	}
@@ -196,10 +216,10 @@ func redeem(ctx context.Context, client *http.Client, ep *endpoints, clientID, c
 	return result, nil
 }
 
-// authorizationEndpoint is derived from the token endpoint when discovery did
+// readAuthorizationEndpoint is derived from the token endpoint when discovery did
 // not name it, which keeps this working against a server that publishes a
 // partial document.
-func authorizationEndpoint(ep *endpoints) (string, error) {
+func readAuthorizationEndpoint(ep *endpoints) (string, error) {
 	if ep.Authorize != "" {
 		return ep.Authorize, nil
 	}

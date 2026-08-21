@@ -15,7 +15,7 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/LeaflowNET/leaflow/internal/config"
-	"github.com/LeaflowNET/leaflow/internal/spec"
+	"github.com/LeaflowNET/leaflow/pkg/spec"
 )
 
 // EnvToken carries a project token straight from the environment. It bypasses
@@ -47,6 +47,10 @@ var (
 		"the bundled contract does not declare " + ExchangeOperation + ", so a project token cannot be obtained")
 
 	ErrTokenRejected = errors.New("the realm rejected that refresh token; it may be expired, revoked, or from another realm")
+
+	// ErrCannotRetry says a refused token is not one this manager can replace,
+	// so the transport reports the refusal rather than trying again.
+	ErrCannotRetry = errors.New("this credential cannot be renewed automatically")
 )
 
 // Manager is the single entry point for "give me a usable token". Commands ask
@@ -92,7 +96,9 @@ func NewManager(cfg *config.Config, client *http.Client) (*Manager, error) {
 	}
 
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{
+			Timeout: 30 * time.Second,
+		}
 	}
 
 	return &Manager{
@@ -116,7 +122,7 @@ func (m *Manager) Token(ctx context.Context, kind spec.Credential) (string, erro
 		return m.accountToken(ctx)
 	}
 
-	return m.projectToken(ctx)
+	return m.fetchAccessToken(ctx)
 }
 
 func (m *Manager) accountToken(ctx context.Context) (string, error) {
@@ -125,7 +131,7 @@ func (m *Manager) accountToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if usable(creds.AccountToken, creds.AccountExpires) {
+	if isUsable(creds.AccountToken, creds.AccountExpires) {
 		return creds.AccountToken, nil
 	}
 
@@ -146,11 +152,11 @@ func (m *Manager) accountToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if usable(creds.AccountToken, creds.AccountExpires) {
+	if isUsable(creds.AccountToken, creds.AccountExpires) {
 		return creds.AccountToken, nil
 	}
 
-	ep, err := m.endpoints(ctx)
+	ep, err := m.discoverEndpoints(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -174,7 +180,7 @@ func (m *Manager) accountToken(ctx context.Context) (string, error) {
 	return creds.AccountToken, nil
 }
 
-func (m *Manager) projectToken(ctx context.Context) (string, error) {
+func (m *Manager) fetchAccessToken(ctx context.Context) (string, error) {
 	if m.ctx.Project == "" {
 		return "", ErrNeedProject
 	}
@@ -186,8 +192,8 @@ func (m *Manager) projectToken(ctx context.Context) (string, error) {
 
 	// The project has to match. A cached token from the previous project would
 	// not fail — it would succeed against the wrong project.
-	if creds.ProjectID == m.ctx.Project && usable(creds.ProjectToken, creds.ProjectExpires) {
-		return creds.ProjectToken, nil
+	if creds.ProjectID == m.ctx.Project && isUsable(creds.AccessToken, creds.AccessTokenExpires) {
+		return creds.AccessToken, nil
 	}
 
 	account, err := m.accountToken(ctx)
@@ -200,8 +206,8 @@ func (m *Manager) projectToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	creds.ProjectToken = token
-	creds.ProjectExpires = expires
+	creds.AccessToken = token
+	creds.AccessTokenExpires = expires
 	creds.ProjectID = m.ctx.Project
 
 	if err := m.store.Save(creds); err != nil {
@@ -302,7 +308,7 @@ const loginScope = "openid profile email iam offline_access"
 // ErrLoginAborted. The caller offers it when a keypress should switch to the
 // device flow instead.
 func (m *Manager) Login(ctx context.Context, notify func(target string), abort <-chan struct{}) (*Credentials, error) {
-	ep, err := m.endpoints(ctx)
+	ep, err := m.discoverEndpoints(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +378,7 @@ func (m *Manager) Login(ctx context.Context, notify func(target string), abort <
 // the extension and this client requires it, so the verifier is carried through
 // to redemption exactly as in the browser flow.
 func (m *Manager) LoginWithDeviceCode(ctx context.Context) (*DeviceCode, func() (*Credentials, error), error) {
-	ep, err := m.endpoints(ctx)
+	ep, err := m.discoverEndpoints(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,7 +419,7 @@ func (m *Manager) LoginWithDeviceCode(ctx context.Context) (*DeviceCode, func() 
 // can renew on its own. A project token expires in minutes, which is what
 // LEAFLOW_TOKEN is for.
 func (m *Manager) LoginWithRefreshToken(ctx context.Context, refreshToken string) (*Credentials, error) {
-	ep, err := m.endpoints(ctx)
+	ep, err := m.discoverEndpoints(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +459,7 @@ func (m *Manager) persist(tokens *tokenResponse) (*Credentials, error) {
 func (m *Manager) Logout(ctx context.Context) error {
 	creds, err := m.store.Load()
 	if err == nil && creds.RefreshToken != "" {
-		if ep, derr := m.endpoints(ctx); derr == nil {
+		if ep, derr := m.discoverEndpoints(ctx); derr == nil {
 			revoke(ctx, m.client, ep, m.ctx.ClientID, creds.RefreshToken)
 		}
 	}
@@ -462,13 +468,13 @@ func (m *Manager) Logout(ctx context.Context) error {
 }
 
 type Status struct {
-	LoggedIn       bool
-	Account        string
-	AccountExpires time.Time
-	Project        string
-	ProjectExpires time.Time
-	FromEnv        bool
-	Storage        string
+	LoggedIn           bool
+	Account            string
+	AccountExpires     time.Time
+	Project            string
+	AccessTokenExpires time.Time
+	FromEnv            bool
+	Storage            string
 
 	// Offline reports whether the stored credential outlives the SSO session.
 	// Worth surfacing: it is the difference between signing in twice a day and
@@ -480,7 +486,11 @@ type Status struct {
 // state should not change it.
 func (m *Manager) Status() (*Status, error) {
 	if token := os.Getenv(EnvToken); token != "" {
-		return &Status{LoggedIn: true, FromEnv: true, Project: m.ctx.Project}, nil
+		return &Status{
+			LoggedIn: true,
+			FromEnv:  true,
+			Project:  m.ctx.Project,
+		}, nil
 	}
 
 	creds, err := m.store.Load()
@@ -493,18 +503,32 @@ func (m *Manager) Status() (*Status, error) {
 	}
 
 	return &Status{
-		LoggedIn:       creds.RefreshToken != "" || creds.AccountToken != "",
-		Account:        creds.Account,
-		AccountExpires: creds.AccountExpires,
-		Project:        creds.ProjectID,
-		ProjectExpires: creds.ProjectExpires,
-		Storage:        m.store.Describe(),
-		Offline:        creds.Offline || isOfflineToken(creds.RefreshToken),
+		LoggedIn:           creds.RefreshToken != "" || creds.AccountToken != "",
+		Account:            creds.Account,
+		AccountExpires:     creds.AccountExpires,
+		Project:            creds.ProjectID,
+		AccessTokenExpires: creds.AccessTokenExpires,
+		Storage:            m.store.Describe(),
+		Offline:            creds.Offline || isOfflineToken(creds.RefreshToken),
 	}, nil
 }
 
 // InvalidateProject drops the cached project token. Switching projects without
 // it means the next command runs against the previous project and succeeds.
+// Invalidate satisfies the transport's Credentials interface.
+//
+// Only the project token is ever dropped. An account token comes from the realm
+// and a refused one means the sign-in itself has to happen again, which no
+// retry can do; throwing it away would only turn "log in again" into "log in
+// again, and you are also logged out now".
+func (m *Manager) Invalidate(kind spec.Credential) error {
+	if kind == spec.AccountToken {
+		return ErrCannotRetry
+	}
+
+	return m.InvalidateProject()
+}
+
 func (m *Manager) InvalidateProject() error {
 	creds, err := m.store.Load()
 	if err != nil {
@@ -515,14 +539,14 @@ func (m *Manager) InvalidateProject() error {
 		return err
 	}
 
-	creds.ProjectToken = ""
+	creds.AccessToken = ""
 	creds.ProjectID = ""
-	creds.ProjectExpires = time.Time{}
+	creds.AccessTokenExpires = time.Time{}
 
 	return m.store.Save(creds)
 }
 
-func (m *Manager) endpoints(ctx context.Context) (*endpoints, error) {
+func (m *Manager) discoverEndpoints(ctx context.Context) (*endpoints, error) {
 	if m.discovered != nil {
 		return m.discovered, nil
 	}
@@ -558,5 +582,7 @@ func (m *Manager) lock(ctx context.Context) func() {
 		return func() {}
 	}
 
-	return func() { _ = lock.Unlock() }
+	return func() {
+		_ = lock.Unlock()
+	}
 }
