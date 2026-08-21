@@ -80,10 +80,29 @@ jobs:
         if: github.event_name != 'push'
         run: ./scripts/sync-contracts.sh .contracts
 
+      # Stage first, then ask the index. The two ways in leave the change in
+      # different places, and a plain `git diff` can only see one of them.
+      #
+      # This was `git diff --quiet -- apis/`, which is empty by construction on
+      # the push path: `git checkout <ref> -- apis/` writes the working tree *and*
+      # the index, so that comparison holds two copies of the same thing. Every
+      # push-triggered run since said "Contracts already up to date" and opened
+      # nothing — no pull request has ever come out of this workflow.
+      #
+      # It was not visible because the fallback carried it: the scheduled run does
+      # not read the branch at all, so it kept reporting correctly and a person
+      # syncing by hand kept getting there first. A design that survives one of its
+      # halves being dead is the reason this took a contract change to notice.
+      #
+      # `--cached` alone would only move the blindness — the scheduled path copies
+      # with `cp` and stages nothing. `git add -A` puts both paths in the same
+      # place, and picks up an added contract as well, which no form of `git diff`
+      # reports on its own.
       - name: stop if nothing changed
         id: changed
         run: |
-          if git diff --quiet -- apis/; then
+          git add -A apis/
+          if git diff --cached --quiet -- apis/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Contracts already up to date."
           else
