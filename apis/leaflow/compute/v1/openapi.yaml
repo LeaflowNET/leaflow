@@ -865,46 +865,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-  /api/v1/instances/{instanceId}/actions:
-    post:
-      summary: Start, stop or reboot an instance
-      description: |-
-        Reboot defaults to a soft reboot, in which the operating system shuts down normally before starting again.
-
-        A soft reboot has no effect once the system is unresponsive. Set `force` to reboot forcibly: a forced reboot does not wait for the operating system to shut down, so **unwritten data is lost**. `force` applies to `reboot` only.
-
-        An instance suspended by the platform must be unsuspended first.
-
-        This endpoint returns immediately and the `status` it returns is a transient state: `starting` for start, `stopping` for stop, `rebooting` for reboot. Poll the instance until it settles at `running` or `stopped`.
-      operationId: act-on-instance
-      tags:
-        - Instance
-      parameters:
-        - in: path
-          name: instanceId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActOnInstanceRequestBody'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InstanceResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
   /api/v1/instances/{instanceId}/commands:
     post:
       summary: Run a command on an instance
@@ -1060,6 +1020,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/instances/{instanceId}/reboot:
+    post:
+      summary: Reboot an instance
+      description: |-
+        A reboot defaults to soft, in which the operating system shuts down normally before starting again.
+
+        A soft reboot has no effect once the system is unresponsive. Set `force` to reboot forcibly: a forced reboot does not wait for the operating system to shut down, so **unwritten data is lost**.
+
+        A forced reboot is accepted while the instance is already `rebooting`, which is the way out of a soft reboot the instance never carried out. Every other endpoint refuses an instance in a transient state, and a second soft reboot is refused as well.
+
+        An instance suspended by the platform must be unsuspended first.
+
+        This endpoint returns immediately and the `status` it returns is the transient `rebooting`. Poll the instance until it settles at `running`.
+      operationId: reboot-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebootInstanceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/instances/{instanceId}/rebuild:
     post:
       summary: Rebuild an instance
@@ -1163,6 +1165,68 @@ paths:
       summary: Revert a resize
       description: The instance returns to its previous size, `pending_instance_type_id` is discarded, and billing is unaffected by the resize.
       operationId: revert-instance-resize
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/start:
+    post:
+      summary: Start an instance
+      description: |-
+        An instance suspended by the platform must be unsuspended first.
+
+        This endpoint returns immediately and the `status` it returns is the transient `starting`. Poll the instance until it settles at `running`.
+      operationId: start-instance
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/stop:
+    post:
+      summary: Stop an instance
+      description: |-
+        The operating system is asked to shut down and is powered off once it does, or once it stops responding for long enough. Stopping does not release the instance: it keeps its disks, its addresses and its name, and starts again where it left off.
+
+        An instance suspended by the platform must be unsuspended first.
+
+        This endpoint returns immediately and the `status` it returns is the transient `stopping`. Poll the instance until it settles at `stopped`.
+      operationId: stop-instance
       tags:
         - Instance
       parameters:
@@ -3229,21 +3293,12 @@ components:
       required:
         - name
       type: object
-    ActOnInstanceRequestBody:
+    RebootInstanceRequestBody:
       additionalProperties: false
       properties:
-        action:
-          enum:
-            - start
-            - stop
-            - reboot
-          minLength: 1
-          type: string
         force:
-          description: Applies to `reboot` only. A forced reboot does not wait for the operating system to shut down and unwritten data is lost; use it when the system is unresponsive
+          description: A forced reboot does not wait for the operating system to shut down and unwritten data is lost; use it when the system is unresponsive. False when omitted
           type: boolean
-      required:
-        - action
       type: object
     RunCommandRequestBody:
       additionalProperties: false

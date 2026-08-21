@@ -13,7 +13,7 @@ func TestKebabLeavesOperationIDsAlone(t *testing.T) {
 	for _, id := range []string{
 		"create-disk",
 		"list-disks",
-		"act-on-instance",
+		"reboot-instance",
 		"set-floating-ip-bandwidth",
 		"suggest-subnet-cidr",
 		"accept-invitation-by-token",
