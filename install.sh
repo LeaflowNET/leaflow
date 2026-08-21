@@ -53,10 +53,11 @@ detect_platform() {
     case "$os" in
         Linux) os=linux ;;
         Darwin) os=darwin ;;
-        # Windows users get a zip from the releases page; unzip is not something
-        # to assume here, and PATH setup differs enough to be worth its own text.
+        # Git Bash can run this but cannot finish: a persistent PATH on Windows
+        # is the user's environment, not a file to append to.
         MINGW* | MSYS* | CYGWIN*)
-            die "on Windows, download the zip from https://github.com/${REPO}/releases" ;;
+            die "on Windows, run this in PowerShell instead:
+       irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex" ;;
         *) die "unsupported operating system: $os" ;;
     esac
 

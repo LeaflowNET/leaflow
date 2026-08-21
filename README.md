@@ -8,11 +8,22 @@ Command line interface for the Leaflow platform.
 curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh
 ```
 
-Installs to `~/.local/bin` and turns on completion for your shell. The download
-is checked against the published checksums.
+On Windows, in PowerShell:
 
-Set `LEAFLOW_INSTALL_DIR` to install elsewhere, or `LEAFLOW_NO_COMPLETION=1` to
-skip the completion script.
+```powershell
+irm https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.ps1 | iex
+```
+
+Both verify the download against the published checksums. The shell script
+installs to `~/.local/bin` and turns on completion; the PowerShell one installs
+to `%LOCALAPPDATA%\Programs\leaflow` and adds it to your PATH.
+
+| | |
+| --- | --- |
+| `LEAFLOW_VERSION` | version to install, default the latest |
+| `LEAFLOW_INSTALL_DIR` | where to put the binary |
+| `LEAFLOW_NO_COMPLETION` | skip completion (install.sh) |
+| `LEAFLOW_NO_PATH` | skip the PATH change (install.ps1) |
 
 With Go:
 
@@ -20,9 +31,12 @@ With Go:
 go install github.com/LeaflowNET/leaflow/cmd/leaflow@latest
 ```
 
-On Windows, take the zip from the [releases page](https://github.com/LeaflowNET/leaflow/releases).
-
 Installed another way, turn on completion with `leaflow install-completion`.
+In PowerShell, add this to `$PROFILE`:
+
+```powershell
+leaflow completion powershell | Out-String | Invoke-Expression
+```
 
 Later, update in place:
 
