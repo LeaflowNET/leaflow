@@ -136,7 +136,9 @@ func (c *callback) serve(state string) *http.Server {
 		// left unsaid, the sign-in would go on waiting for a callback that is not
 		// coming, until whichever timeout runs out first.
 		if err := server.Serve(c.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			c.deliver(callbackResult{err: fmt.Errorf("%w: %v", ErrLoopbackUnavailable, err)})
+			c.deliver(callbackResult{
+				err: fmt.Errorf("%w: %v", ErrLoopbackUnavailable, err),
+			})
 		}
 	}()
 
@@ -153,7 +155,10 @@ func (c *callback) finish(w http.ResponseWriter, code string, err error) {
 		_, _ = w.Write([]byte(renderResultPage("Signed in", "You can close this tab and return to the terminal.")))
 	}
 
-	c.deliver(callbackResult{code: code, err: err})
+	c.deliver(callbackResult{
+		code: code,
+		err:  err,
+	})
 }
 
 // deliver hands the first outcome to whoever is waiting and drops the rest.

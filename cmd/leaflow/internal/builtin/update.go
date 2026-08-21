@@ -292,21 +292,22 @@ func verify(archive, sums []byte, name string) error {
 // extractBinary pulls the binary out of whichever archive this platform gets.
 func extractBinary(archive []byte) ([]byte, error) {
 	if runtime.GOOS == "windows" {
-		return extractZip(archive)
+		return extractZip(archive, pickBinaryName())
 	}
 
-	return extractTar(archive)
+	return extractTar(archive, pickBinaryName())
 }
 
 // extractZip reads the Windows archive. A zip is read from the end, so it needs
 // the whole thing addressable rather than a stream.
-func extractZip(archive []byte) ([]byte, error) {
+//
+// Told which name to look for rather than asking the platform itself, so that
+// deciding what to find and going to find it stay separate.
+func extractZip(archive []byte, want string) ([]byte, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUpdateFailed, err)
 	}
-
-	want := pickBinaryName()
 
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() || filepath.Base(file.Name) != want {
@@ -325,7 +326,7 @@ func extractZip(archive []byte) ([]byte, error) {
 	return nil, fmt.Errorf("%w: the archive contains no %s", ErrUpdateFailed, want)
 }
 
-func extractTar(archive []byte) ([]byte, error) {
+func extractTar(archive []byte, want string) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUpdateFailed, err)
@@ -344,12 +345,12 @@ func extractTar(archive []byte) ([]byte, error) {
 			return nil, fmt.Errorf("%w: %v", ErrUpdateFailed, err)
 		}
 
-		if header.Typeflag != tar.TypeReg || filepath.Base(header.Name) != pickBinaryName() {
+		if header.Typeflag != tar.TypeReg || filepath.Base(header.Name) != want {
 			continue
 		}
 
 		return io.ReadAll(io.LimitReader(reader, 128<<20))
 	}
 
-	return nil, fmt.Errorf("%w: the archive contains no %s", ErrUpdateFailed, pickBinaryName())
+	return nil, fmt.Errorf("%w: the archive contains no %s", ErrUpdateFailed, want)
 }
