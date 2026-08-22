@@ -16,11 +16,29 @@
 # branch within a day and opens the same one. Either way the result is identical
 # and nothing silently does not happen.
 #
-# The pull request is always the outcome, never a direct push to main. A
-# contract can remove an operation, which removes a command, which breaks
-# whatever was scripted against it. The body states exactly which commands
-# appear and disappear, so that decision takes seconds instead of a read through
-# several thousand lines of YAML.
+# The outcome is a commit on main. This used to open a pull request, on the
+# argument that a contract can remove an operation, which removes a command,
+# which breaks whatever was scripted against it — so a person should look.
+#
+# That gate was never real. GitHub Actions is not permitted to create pull
+# requests in this repository, so every run ended by pushing contracts/pr and
+# then failing; the "review" was somebody noticing the red run and merging the
+# branch by hand. A gate that nobody passes through is not a gate, it is a step
+# that has to be worked around.
+#
+# What the pull request body was for is kept: the list of commands that appear
+# and disappear is now the commit message, so `git log` answers the same question
+# the review was supposed to. And `verify` below still runs before anything is
+# pushed — a contract that does not build or does not parse never reaches main.
+#
+# What is given up, stated plainly: a contract that removes a command now lands
+# without anyone deciding it should. The place to catch that is upstream, in the
+# contracts repository, where the removal is written — not here, where it has
+# already happened.
+#
+# One consequence of pushing with GITHUB_TOKEN: it does not start other
+# workflows, so ci.yml will not run on these commits. That is why verify is here
+# rather than left to CI.
 
 name: sync-contracts
 
@@ -38,7 +56,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 env:
   CONTRACTS_REPO: leaflowapis/leaflowapis
@@ -118,29 +135,43 @@ jobs:
           go test ./...
           go run ./cmd/leaflow-doctor
 
+      # The summary is the commit message, not a pull request body. It is the
+      # only place that says which commands this change adds and removes, and
+      # `git log` is where somebody looks for that after the fact.
       - name: summarise the change
         if: steps.changed.outputs.changed == 'true'
-        id: summary
         run: |
           go run ./cmd/leaflow-doctor -commands > /tmp/after.txt
           ./scripts/contract-changes.sh /tmp/before.txt /tmp/after.txt > /tmp/changes.md
           cat /tmp/changes.md
 
           {
-            echo 'body<<CHANGES_EOF'
+            echo "chore: sync API contracts"
+            echo
             cat /tmp/changes.md
             echo
-            echo 'Contracts are embedded at build time, so these reach users with the'
-            echo 'next release rather than on merge.'
-            echo CHANGES_EOF
-          } >> "$GITHUB_OUTPUT"
+            echo "Contracts are embedded at build time, so these reach users with the"
+            echo "next release rather than with this commit."
+          } > /tmp/message.txt
 
-      - name: open pull request
+      # Rebase before pushing, and retry: main moves on its own (releases, other
+      # merges), and a rejected push here would leave the sync silently undone
+      # until tomorrow's scheduled run.
+      - name: commit to main
         if: steps.changed.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          branch: contracts/pr
-          title: "chore: sync API contracts"
-          commit-message: "chore: sync API contracts"
-          body: ${{ steps.summary.outputs.body }}
-          delete-branch: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -F /tmp/message.txt
+
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              echo "pushed on attempt $attempt"
+              exit 0
+            fi
+            echo "push rejected, rebasing and retrying $attempt/5"
+            git pull --rebase origin main
+            sleep "$attempt"
+          done
+          echo "five attempts and main still would not take it" >&2
+          exit 1
