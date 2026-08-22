@@ -1,0 +1,1047 @@
+openapi: 3.1.0
+info:
+  description: |-
+    Manage DNS records across supported providers through a single API. Register a provider
+    credential, and every domain that credential can reach becomes readable and writable here.
+
+    Reads and writes always reflect the current state at the provider. Records changed through the
+    provider's own console, an ACME client, or any other automation are visible here immediately,
+    and changes made here take effect there.
+
+    ## Authentication
+
+    Every request carries a project token; see the `bearerAuth` security scheme.
+
+    **Neither the path nor the headers carry a `project_id`**: the current project is determined by
+    the token.
+
+    ## Conventions
+
+    - **Records are addressed as record sets, not as individual records.** All records sharing a
+      name and a type form one set — for example, three A records pointing at three addresses. This
+      API exposes no per-record identifier, because provider-assigned identifiers are neither
+      portable across providers nor guaranteed to be stable within one.
+    - **`PUT` replaces an entire record set.** See the operation description; this is the single
+      most consequential distinction in this API.
+    - **Confirm which credential owns a domain before writing to it.** The same domain can exist in
+      more than one provider account — most commonly while a domain is being migrated and the old
+      account still holds it — and only one of them is actually serving queries.
+    - **Changes do not take effect everywhere at once.** A write reaches the provider immediately,
+      but resolvers elsewhere continue serving the previous value until its TTL expires. Allow at
+      least one TTL before verifying a change by resolving the name.
+    - **Credential material is never returned.** No operation, including the one that registers it,
+      returns the values that were submitted. A credential that was entered incorrectly must be
+      deleted and registered again.
+
+    ## Changing a single record
+
+    There is no operation that edits one record in place; there is only one that states what a
+    record set should contain. To add a second address to `blog`:
+
+    1. `GET /api/v1/zones/example.com/records/blog/A` to retrieve the current values.
+    2. Add the new address to `values`.
+    3. `PUT` the complete list back.
+
+    Sending a `PUT` whose `values` contains only the new address removes the previous ones. The
+    request succeeds and returns 200; the difference is visible only in where traffic subsequently
+    goes. To add values without first reading the set, use `POST /records`, which only adds.
+  title: Leaflow DNS API
+  version: 1.0.0
+servers:
+  - url: https://dns.leaflow.cloud
+    description: DNS credentials, zones and records
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/credentials:
+    get:
+      summary: List provider credentials
+      operationId: list-credentials
+      tags:
+        - Credential
+      parameters:
+        - description: Maximum number of items to return in this page
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Maximum number of items to return in this page
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - description: Number of items to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Number of items to skip
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: Return only credentials for this provider; omit for all providers
+          explode: false
+          in: query
+          name: provider
+          schema:
+            $ref: '#/components/schemas/Provider'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageCredentialResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Register a provider credential
+      description: |-
+        The credential is validated against the provider before it is accepted. A credential that
+        cannot list domains is rejected with `CREDENTIAL_REJECTED_UPSTREAM` and is not stored.
+
+        `provider` selects which configuration block is required: `provider: cloudflare` requires
+        the `cloudflare` block, and the remaining blocks are ignored. Omitting the matching block
+        returns `CREDENTIAL_CONFIG_MISSING`.
+
+        Registering a credential that is already held by this project returns
+        `CREDENTIAL_DUPLICATE`. Provider rate limits apply per credential, so a second copy grants
+        no additional capacity.
+
+        The submitted credential material is not returned by this or any other operation.
+      operationId: create-credential
+      tags:
+        - Credential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/credentials/{credentialId}:
+    get:
+      summary: Get a provider credential
+      operationId: get-credential
+      tags:
+        - Credential
+      parameters:
+        - in: path
+          name: credentialId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: Rename a provider credential
+      description: |-
+        Only the display name can be changed. To use different credential material, delete this
+        credential and register a new one: a credential's identity does not change over its
+        lifetime.
+      operationId: rename-credential
+      tags:
+        - Credential
+      parameters:
+        - in: path
+          name: credentialId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameCredentialRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a provider credential
+      description: |-
+        Domains reachable only through this credential stop appearing in `GET /zones` and can no
+        longer be read or written through this API.
+
+        **No DNS record is modified.** Deleting a credential withdraws this project's access to the
+        provider account; it does not remove anything that was published there.
+      operationId: delete-credential
+      tags:
+        - Credential
+      parameters:
+        - in: path
+          name: credentialId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/credentials/{credentialId}/verification:
+    post:
+      summary: Re-validate a provider credential
+      description: |-
+        Checks the credential against the provider and records the outcome in `last_verified_at`
+        and `last_verify_error`.
+
+        A credential is validated when it is registered. This operation exists for credentials whose
+        permissions or keys were subsequently changed at the provider, which is a change this API is
+        not notified of.
+
+        **A failed check returns 200, not an error.** The outcome is reported in
+        `last_verify_error`: the request itself succeeded, and the answer it obtained is that the
+        credential is no longer usable.
+      operationId: verify-credential
+      tags:
+        - Credential
+      parameters:
+        - in: path
+          name: credentialId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/zones:
+    get:
+      summary: List domains
+      description: |-
+        Lists every domain reachable through the credentials registered by this project.
+
+        Listings may briefly lag behind domains added or removed at the provider. Set `refresh` for
+        an up-to-date answer.
+
+        ## A domain that appears more than once
+
+        While a domain is being migrated it commonly exists in both provider accounts at once. Such
+        a domain is returned once per credential, with the same `zone` and different
+        `credential_id`.
+
+        `authoritative` reports which entry is the one currently serving queries, determined from
+        the domain's delegation. `null` means no determination was made: either the domain appears
+        only once, or its delegation does not identify any of the registered providers — for
+        example when custom nameservers are in use, or the domain is not delegated at all.
+
+        **Write operations are refused while the determination is `null` and the domain appears more
+        than once**, with `ZONE_AMBIGUOUS`. Supply `credential_id` on the write request to select a
+        credential explicitly.
+      operationId: list-zones
+      tags:
+        - Zone
+      parameters:
+        - description: Return only domains reachable through this credential
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: Return only domains reachable through this credential
+            format: uuid
+            type: string
+        - description: >-
+            Return the current set of domains rather than a possibly slightly stale one. Slower,
+            and consumes provider API quota
+          explode: false
+          in: query
+          name: refresh
+          schema:
+            default: false
+            description: >-
+              Return the current set of domains rather than a possibly slightly stale one. Slower,
+              and consumes provider API quota
+            type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZoneListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/zones/{zone}/records:
+    get:
+      summary: List record sets
+      description: |-
+        Returns the domain's records grouped into record sets: all records sharing a name and a type
+        are reported as one entry, with their values in `values`.
+
+        `limit` and `offset` reduce the size of the response but not the time taken to produce it.
+        For domains with many records, filter by `name` or `type`.
+      operationId: list-records
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            Which credential to use. When omitted, the credential is determined from the domain;
+            see ZONE_AMBIGUOUS
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: >-
+              Which credential to use. When omitted, the credential is determined from the domain;
+              see ZONE_AMBIGUOUS
+            format: uuid
+            type: string
+        - description: >-
+            Return only record sets with this name, given relative to the domain. `@` denotes the
+            domain itself
+          explode: false
+          in: query
+          name: name
+          schema:
+            description: >-
+              Return only record sets with this name, given relative to the domain. `@` denotes the
+              domain itself
+            maxLength: 253
+            type: string
+        - description: Return only record sets of this type
+          explode: false
+          in: query
+          name: type
+          schema:
+            $ref: '#/components/schemas/RecordType'
+        - description: Maximum number of items to return in this page
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 100
+            description: Maximum number of items to return in this page
+            format: int64
+            maximum: 500
+            minimum: 1
+            type: integer
+        - description: Number of items to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Number of items to skip
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageRecordSetResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Add records to a record set
+      description: |-
+        **Adds values only.** Records already present under the same name and type are left in
+        place, and the submitted values are added alongside them.
+
+        `PUT` states the final contents of a record set, so two concurrent `PUT` requests against
+        the same set can discard one another's changes. This operation only adds, and is therefore
+        safe to issue concurrently. **Certificate issuance, which places several TXT records under
+        `_acme-challenge` at once, must use this operation**: issuing two certificates concurrently
+        with `PUT` causes one challenge record to displace the other.
+
+        The cost is that duplicate values can be created. Use `PUT` to state what a record set
+        should contain.
+      operationId: append-records
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            Which credential to use. When omitted, the credential is determined from the domain;
+            see ZONE_AMBIGUOUS
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: >-
+              Which credential to use. When omitted, the credential is determined from the domain;
+              see ZONE_AMBIGUOUS
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppendRecordsRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordSetResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/zones/{zone}/records/{name}/{type}:
+    get:
+      summary: Get a record set
+      description: Returns `RECORD_SET_NOT_FOUND` when no record of this type exists under this name.
+      operationId: get-record-set
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+          in: path
+          name: name
+          required: true
+          schema:
+            description: >-
+              The name, given relative to the domain. `@` denotes the domain itself and `*` a
+              wildcard
+            maxLength: 253
+            minLength: 1
+            type: string
+        - in: path
+          name: type
+          required: true
+          schema:
+            $ref: '#/components/schemas/RecordType'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordSetResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Replace a record set
+      description: |-
+        **This replaces the entire record set.** After this request, the only records under this
+        name and type are the ones listed in `values`; any value present beforehand and absent here
+        is removed.
+
+        To add a value, retrieve the set with `GET`, append to the values it returns, and submit the
+        complete list. Submitting only the new value removes the others; both forms return 200.
+
+        The record set is created if it does not yet exist, so this operation both creates and
+        replaces, and is idempotent.
+
+        Two concurrent requests against the same domain conflict; the second receives `ZONE_BUSY`
+        and may be retried. To add values concurrently, use `POST /records`.
+      operationId: set-record-set
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+          in: path
+          name: name
+          required: true
+          schema:
+            description: >-
+              The name, given relative to the domain. `@` denotes the domain itself and `*` a
+              wildcard
+            maxLength: 253
+            minLength: 1
+            type: string
+        - in: path
+          name: type
+          required: true
+          schema:
+            $ref: '#/components/schemas/RecordType'
+        - description: >-
+            Which credential to use. When omitted, the credential is determined from the domain;
+            see ZONE_AMBIGUOUS
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: >-
+              Which credential to use. When omitted, the credential is determined from the domain;
+              see ZONE_AMBIGUOUS
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRecordSetRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordSetResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a record set
+      description: |-
+        Removes every record under this name and type. To remove one value from a set, `PUT` the
+        values that should remain.
+
+        Providers reject removal of the last NS record set at the apex of a domain, which would
+        withdraw the domain from DNS entirely.
+      operationId: delete-record-set
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+          in: path
+          name: name
+          required: true
+          schema:
+            description: >-
+              The name, given relative to the domain. `@` denotes the domain itself and `*` a
+              wildcard
+            maxLength: 253
+            minLength: 1
+            type: string
+        - in: path
+          name: type
+          required: true
+          schema:
+            $ref: '#/components/schemas/RecordType'
+        - description: >-
+            Which credential to use. When omitted, the credential is determined from the domain;
+            see ZONE_AMBIGUOUS
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: >-
+              Which credential to use. When omitted, the credential is determined from the domain;
+              see ZONE_AMBIGUOUS
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Project token. Sign in at auth.leaflow.net to obtain an account token, then exchange it with IAM for a project token (POST /account/v1/projects/{projectId}/token). A project token identifies both the current user and the current project.
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    RecordType:
+      description: |-
+        A DNS record type.
+
+        The listed types are those this API supports uniformly across every provider. HTTPS and
+        SVCB are not yet available.
+      enum:
+        - A
+        - AAAA
+        - CNAME
+        - TXT
+        - MX
+        - NS
+        - SRV
+        - CAA
+      type: string
+    Provider:
+      description: A supported DNS provider.
+      enum:
+        - cloudflare
+        - tencentcloud
+        - alidns
+        - route53
+      type: string
+    CredentialStatus:
+      description: |-
+        `active` is usable. `disabled` means the platform has disabled this credential and requires
+        contact with support.
+
+        A project that has been suspended is reported separately, in `suspended_at`.
+      enum:
+        - active
+        - disabled
+      type: string
+    CredentialResource:
+      additionalProperties: false
+      description: A registered provider credential. The credential material itself is never included.
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        fingerprint:
+          description: Equal fingerprints denote the same credential material
+          type: string
+        id:
+          format: uuid
+          type: string
+        last_verified_at:
+          description: When the credential was last confirmed to work; null if it never has
+          format: date-time
+          type:
+            - string
+            - 'null'
+        last_verify_error:
+          description: Why the most recent check failed; null if the most recent check succeeded
+          type:
+            - string
+            - 'null'
+        name:
+          type: string
+        provider:
+          $ref: '#/components/schemas/Provider'
+        redacted:
+          description: A partially masked fragment of the credential, for visual identification only
+          type: string
+        status:
+          $ref: '#/components/schemas/CredentialStatus'
+        suspended_at:
+          description: When the credential was suspended because the project was suspended; null if it was not. Cleared when the project is restored
+          format: date-time
+          type:
+            - string
+            - 'null'
+        updated_at:
+          format: date-time
+          type: string
+      required:
+        - id
+        - name
+        - provider
+        - redacted
+        - fingerprint
+        - status
+        - suspended_at
+        - last_verified_at
+        - last_verify_error
+        - created_at
+        - updated_at
+      type: object
+    CloudflareConfig:
+      additionalProperties: false
+      description: Cloudflare credentials, created under My Profile then API Tokens
+      properties:
+        api_token:
+          description: An API token with the Zone.DNS edit permission
+          maxLength: 512
+          minLength: 1
+          type: string
+        zone_token:
+          description: Optional, and required only when api_token is scoped to a single zone, in which case it is used to enumerate zones
+          maxLength: 512
+          type: string
+      required:
+        - api_token
+      type: object
+    TencentCloudConfig:
+      additionalProperties: false
+      description: Tencent Cloud DNSPod credentials, created under Access Management then Access Keys
+      properties:
+        secret_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        secret_key:
+          maxLength: 256
+          minLength: 1
+          type: string
+      required:
+        - secret_id
+        - secret_key
+      type: object
+    AliDNSConfig:
+      additionalProperties: false
+      description: Alibaba Cloud DNS credentials, created under RAM
+      properties:
+        access_key_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        access_key_secret:
+          maxLength: 256
+          minLength: 1
+          type: string
+        region_id:
+          description: Defaults to cn-hangzhou
+          maxLength: 64
+          type: string
+      required:
+        - access_key_id
+        - access_key_secret
+      type: object
+    Route53Config:
+      additionalProperties: false
+      description: AWS Route 53 credentials
+      properties:
+        access_key_id:
+          maxLength: 256
+          minLength: 1
+          type: string
+        region:
+          description: Defaults to us-east-1. Route 53 is a global service, so this affects request signing only
+          maxLength: 64
+          type: string
+        secret_access_key:
+          maxLength: 256
+          minLength: 1
+          type: string
+        session_token:
+          description: Optional, and required only for temporary STS credentials. Such credentials expire, after which every operation against this provider fails
+          maxLength: 2048
+          type: string
+      required:
+        - access_key_id
+        - secret_access_key
+      type: object
+    CreateCredentialRequestBody:
+      additionalProperties: false
+      description: |-
+        `provider` selects which configuration block is read. The remaining blocks are ignored.
+      properties:
+        alidns:
+          $ref: '#/components/schemas/AliDNSConfig'
+        cloudflare:
+          $ref: '#/components/schemas/CloudflareConfig'
+        name:
+          description: A display name for this credential
+          maxLength: 128
+          minLength: 1
+          type: string
+        provider:
+          $ref: '#/components/schemas/Provider'
+        route53:
+          $ref: '#/components/schemas/Route53Config'
+        tencentcloud:
+          $ref: '#/components/schemas/TencentCloudConfig'
+      required:
+        - name
+        - provider
+      type: object
+    RenameCredentialRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    LengthAwarePageCredentialResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: The contents of this page
+          items:
+            $ref: '#/components/schemas/CredentialResource'
+          type: array
+        limit:
+          description: Maximum items per page, echoing the value in the request
+          format: int64
+          type: integer
+        offset:
+          description: Items skipped, echoing the value in the request
+          format: int64
+          type: integer
+        total:
+          description: Total number of matching items, not only those in this page
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    ZoneResource:
+      additionalProperties: false
+      properties:
+        authoritative:
+          description: |-
+            Whether this entry is the one currently serving queries for the domain.
+
+            `null` means no determination was made: either the domain appears only once, or its
+            delegation does not identify any registered provider. While this is `null` and the
+            domain appears more than once, write operations require an explicit `credential_id`.
+          type:
+            - boolean
+            - 'null'
+        credential_id:
+          description: The credential through which this domain is reachable
+          format: uuid
+          type: string
+        provider:
+          $ref: '#/components/schemas/Provider'
+        zone:
+          description: The domain in absolute form, with a trailing dot
+          type: string
+      required:
+        - zone
+        - credential_id
+        - provider
+        - authoritative
+      type: object
+    ZoneListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ZoneResource'
+          type: array
+        stale:
+          description: |-
+            True when at least one provider could not be reached while producing this listing, so
+            recent additions or removals may be missing.
+
+            The listing remains usable and write operations are unaffected.
+          type: boolean
+      required:
+        - items
+        - stale
+      type: object
+    RecordSetResource:
+      additionalProperties: false
+      description: Every record sharing a name and a type.
+      properties:
+        name:
+          description: The name relative to the domain. `@` denotes the domain itself
+          type: string
+        ttl:
+          description: Time to live, in seconds. 0 leaves the choice to the provider
+          format: int64
+          type: integer
+        type:
+          $ref: '#/components/schemas/RecordType'
+        values:
+          description: |-
+            Every value in this record set, in unescaped zone-file RDATA syntax:
+
+            - `A`, `AAAA`: `192.0.2.1`, `2001:db8::1`
+            - `CNAME`, `NS`: `target.example.com.`, absolute, with a trailing dot
+            - `TXT`: the text itself, neither quoted nor escaped
+            - `MX`: `10 mail.example.com.`
+            - `SRV`: `10 20 443 target.example.com.`
+            - `CAA`: `0 issue "letsencrypt.org"`
+          items:
+            type: string
+          type: array
+        zone:
+          description: The domain in absolute form, with a trailing dot
+          type: string
+      required:
+        - zone
+        - name
+        - type
+        - ttl
+        - values
+      type: object
+    LengthAwarePageRecordSetResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: The contents of this page
+          items:
+            $ref: '#/components/schemas/RecordSetResource'
+          type: array
+        limit:
+          description: Maximum items per page, echoing the value in the request
+          format: int64
+          type: integer
+        offset:
+          description: Items skipped, echoing the value in the request
+          format: int64
+          type: integer
+        total:
+          description: Total number of matching items, not only those in this page
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      type: object
+    SetRecordSetRequestBody:
+      additionalProperties: false
+      description: '`values` states the final contents of the record set. Values omitted here are removed.'
+      properties:
+        ttl:
+          default: 300
+          description: Time to live, in seconds. 0 leaves the choice to the provider. Providers enforce their own minimum and raise lower values to it
+          format: int64
+          maximum: 604800
+          minimum: 0
+          type: integer
+        values:
+          description: The final contents of the record set. Syntax as described on RecordSetResource.values
+          items:
+            maxLength: 4096
+            minLength: 1
+            type: string
+          maxItems: 100
+          minItems: 1
+          type: array
+      required:
+        - values
+      type: object
+    AppendRecordsRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          description: The name relative to the domain. `@` denotes the domain itself
+          maxLength: 253
+          minLength: 1
+          type: string
+        ttl:
+          default: 300
+          description: Time to live, in seconds. 0 leaves the choice to the provider
+          format: int64
+          maximum: 604800
+          minimum: 0
+          type: integer
+        type:
+          $ref: '#/components/schemas/RecordType'
+        values:
+          description: The values to add. Syntax as described on RecordSetResource.values
+          items:
+            maxLength: 4096
+            minLength: 1
+            type: string
+          maxItems: 100
+          minItems: 1
+          type: array
+      required:
+        - name
+        - type
+        - values
+      type: object
