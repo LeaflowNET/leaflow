@@ -102,6 +102,70 @@ func TestBindFlattensScalarBodyFields(t *testing.T) {
 	}
 }
 
+// A body field named "body" wants the flag that carries the whole request, and
+// cobra panics on the second registration of a name. That is not a monitoring
+// problem: the tree is built before anything runs, so `leaflow --version` died
+// too, on every machine, the moment the contract adding the field landed.
+func TestBodyFieldNeverTakesTheBodyFlag(t *testing.T) {
+	binding := Bind(operation(t, "monitoring", "post-status-page-incident-update"))
+
+	var field *BodyField
+
+	for _, candidate := range binding.Fields {
+		if candidate.Name == "body" {
+			field = candidate
+		}
+	}
+
+	if field == nil {
+		t.Fatal("this operation no longer has a body field named body; point the test at one that does")
+	}
+
+	if field.Flag == "body" {
+		t.Fatalf("the field took --body, which carries the whole request as JSON")
+	}
+
+	cmd := &cobra.Command{
+		Use: "post-status-page-incident-update",
+	}
+	binding.Register(cmd)
+
+	if err := cmd.Flags().Set(field.Flag, "we are investigating"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, body, err := binding.Values(cmd, []string{"00000000-0000-0000-0000-000000000000"})
+	if err != nil {
+		t.Fatalf("collecting values: %v", err)
+	}
+
+	// The flag was renamed, not the field: the request still says "body".
+	object, ok := body.(map[string]any)
+	if !ok {
+		t.Fatalf("body = %T, want an object", body)
+	}
+
+	if object["body"] != "we are investigating" {
+		t.Errorf("body = %v, want the text under the contract's own key", object)
+	}
+}
+
+// Registration happens while the tree is built, which is before a command line
+// is even parsed. Nothing else in this package's tests builds the whole tree, so
+// a duplicate flag name reached users through a contract sync — `go test`,
+// which is what guards that sync, had nothing to say about it.
+func TestEveryOperationRegistersItsFlags(t *testing.T) {
+	defer func() {
+		if problem := recover(); problem != nil {
+			t.Fatalf("building the command tree panicked: %v", problem)
+		}
+	}()
+
+	if len(Build(load(t), &Runtime{})) == 0 {
+		t.Fatal("no commands were built")
+	}
+}
+
 func TestValuesRejectsInvalidArgumentsBeforeSending(t *testing.T) {
 	binding := Bind(operation(t, "compute", "create-disk"))
 

@@ -130,26 +130,41 @@ func (b *Binding) bindFields() {
 
 // assignFlagNames resolves collisions in favour of body fields, which are the point
 // of the command (`disk create --name`), while query parameters are usually
-// filters. Nothing collides in today's contracts, but two flags with one name
-// make cobra panic during registration — on a user's machine, not in CI.
+// filters. Two flags with one name make cobra panic during registration — on a
+// user's machine, not in CI.
+//
+// --body outranks even a body field. It carries the whole request as JSON and
+// is the one flag every operation with a body has, so `--body @payload.json`
+// reads the same everywhere; a field named "body" taking that name would make
+// one operation send the file's name as a string instead, and say nothing.
+// monitoring's post-status-page-incident-update has such a field.
 func (b *Binding) assignFlagNames() {
 	taken := map[string]bool{
 		"body": true,
 	}
 
 	for _, field := range b.Fields {
+		field.Flag = freeName(field.Flag, "body-", taken)
 		taken[field.Flag] = true
 	}
 
 	for _, parameter := range b.Query {
-		name := naming.Kebab(parameter.Name)
-		if taken[name] {
-			name = "query-" + name
-		}
+		name := freeName(naming.Kebab(parameter.Name), "query-", taken)
 
 		taken[name] = true
 		b.flagNames[parameter] = name
 	}
+}
+
+// freeName prefixes a name until nothing holds it. One round settles every
+// contract shipped today; it loops because the alternative to a second round is
+// the panic this exists to prevent.
+func freeName(name, prefix string, taken map[string]bool) string {
+	for taken[name] {
+		name = prefix + name
+	}
+
+	return name
 }
 
 func (b *Binding) FlagName(parameter *openapi3.Parameter) string {
