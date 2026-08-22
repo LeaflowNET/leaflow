@@ -1,25 +1,25 @@
 openapi: 3.1.0
 info:
   description: |-
-    用户自己项目里的监控：接入机器、看指标、处理告警、开维护窗口、定可用率目标。
+    Monitoring for your own project: enroll machines, read metrics, work through incidents, schedule maintenance windows, and set availability targets.
 
-    ## 怎么带身份
+    ## Authentication
 
-    每个请求都要带 `Authorization: Bearer <项目令牌>`。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（`POST /api/v1/projects/{projectId}/token`）。一张项目令牌同时说明当前用户和当前项目。
+    Every request must carry `Authorization: Bearer <project token>`. Sign in at auth.leaflow.net to obtain an account token, then exchange it for a project token (`POST /api/v1/projects/{projectId}/token`). A project token identifies both the current user and the current project.
 
-    **路径上没有 `projectId`**：当前项目由令牌决定。
+    **There is no `projectId` in any path**: the current project is determined by the token.
 
-    鉴权在网关完成，被拒的请求不会到达这些接口。按错误码区分处理方式：`TOKEN_MISSING` 表示没带令牌；`TOKEN_EXPIRED` 表示令牌过期，用账号令牌重新换取即可，无需重新登录；`TOKEN_INVALID` 表示令牌验不过；`NOT_A_MEMBER` 表示当前账号不是该项目成员；`USER_SUSPENDED` / `USER_BANNED` 表示账号本身不能操作。
+    Distinguish the failure modes by error code: `TOKEN_MISSING` means no token was supplied; `TOKEN_EXPIRED` means the token has expired and can be re-issued from the account token without signing in again; `TOKEN_INVALID` means the token failed validation; `NOT_A_MEMBER` means the account is not a member of the project; `USER_SUSPENDED` and `USER_BANNED` mean the account itself is barred from operating.
 
-    ## 两组容易混淆的概念
+    ## Two distinctions worth keeping straight
 
-    - **停止监控不等于删除**：`POST /servers/{id}/disable` 可逆，历史数据完整保留；`DELETE /servers/{id}` 会连同监控主机、历史数据和这台机器名下的告警一并删除，不可恢复。
-    - **告警恢复不等于告警了结**：`incident_status` 表示监控系统是否判定已恢复，`closed_at` 表示是否有人完成了处理。尚未恢复的告警也可以按「已接受的风险」了结。
+    - **Disabling is not deleting.** `POST /servers/{id}/disable` is reversible and preserves all history. `DELETE /servers/{id}` also removes the monitored host, its history and every incident recorded against it, and cannot be undone.
+    - **Recovery is not closure.** `incident_status` reports whether monitoring considers the problem recovered; `closed_at` reports whether someone has finished handling it. An incident that has not recovered may still be closed as an accepted risk.
 
-    ## PSK 只返回一次
+    ## The PSK is returned once
 
-    接入和轮换的响应中包含 `tls_psk`，其他任何接口都不会再返回它，请及时保存。遗失后可再轮换一次，代价是被监控的机器需要同步更新一次 agent 配置。
-  title: Leaflow 监控 用户 API
+    Enrollment and rotation responses include `tls_psk`. No other endpoint will return it again, so store it immediately. If it is lost, rotate once more — at the cost of updating the agent configuration on the monitored machine.
+  title: Leaflow Monitoring API
   version: 1.0.0
 servers:
   - url: https://monitoring.leaflow.cloud
@@ -29,39 +29,39 @@ security:
 paths:
   /api/v1/incidents:
     get:
-      summary: 列出告警
-      description: '`incident_status` 表示监控系统是否判定已恢复，`closed` 表示是否有人完成了处理。两者相互独立，可分别筛选。'
+      summary: List incidents
+      description: '`incident_status` reports whether monitoring considers the problem recovered; `closed` reports whether someone has finished handling it. The two are independent and can be filtered separately.'
       operationId: list-incidents
       tags:
         - Incident
       parameters:
-        - description: 这一页最多返回多少条
+        - description: Maximum number of records in this page
           explode: false
           in: query
           name: limit
           schema:
             default: 50
-            description: 这一页最多返回多少条
+            description: Maximum number of records in this page
             format: int64
             maximum: 200
             minimum: 1
             type: integer
-        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+        - description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
           explode: false
           in: query
           name: offset
           schema:
-            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
             format: int64
             maximum: 10000
             minimum: 0
             type: integer
-        - description: 只看某一台机器的
+        - description: Restrict to a single machine
           explode: false
           in: query
           name: server_id
           schema:
-            description: 只看某一台机器的
+            description: Restrict to a single machine
             type: string
         - explode: false
           in: query
@@ -71,12 +71,12 @@ paths:
               - PROBLEM
               - RESOLVED
             type: string
-        - description: 按不低于该等级匹配，而非精确匹配
+        - description: Matches at or above this severity, not exactly this severity
           explode: false
           in: query
           name: min_severity
           schema:
-            description: 按不低于该等级匹配，而非精确匹配
+            description: Matches at or above this severity, not exactly this severity
             enum:
               - NOT_CLASSIFIED
               - INFORMATION
@@ -97,12 +97,12 @@ paths:
           schema:
             format: date-time
             type: string
-        - description: 与 [active_from, active_to] **有交集**的告警，给指标图叠加故障区间要的是这个
+        - description: Incidents that **overlap** [active_from, active_to]. This is what you want when overlaying incident bands on a metric chart
           explode: false
           in: query
           name: active_from
           schema:
-            description: 与 [active_from, active_to] **有交集**的告警，给指标图叠加故障区间要的是这个
+            description: Incidents that **overlap** [active_from, active_to]. This is what you want when overlaying incident bands on a metric chart
             format: date-time
             type: string
         - explode: false
@@ -111,12 +111,12 @@ paths:
           schema:
             format: date-time
             type: string
-        - description: 形如 key 或 key=value，可重复；多个标签之间是与关系
+        - description: Given as `key` or `key=value`, repeatable. Multiple tags are combined with AND
           explode: false
           in: query
           name: tag
           schema:
-            description: 形如 key 或 key=value，可重复；多个标签之间是与关系
+            description: Given as `key` or `key=value`, repeatable. Multiple tags are combined with AND
             items:
               type: string
             type:
@@ -127,12 +127,12 @@ paths:
           name: assignee_user_id
           schema:
             type: string
-        - description: 有没有人在这边把它处理完，与 incident_status 无关
+        - description: Whether someone has finished handling it here. Independent of `incident_status`
           explode: false
           in: query
           name: closed
           schema:
-            description: 有没有人在这边把它处理完，与 incident_status 无关
+            description: Whether someone has finished handling it here. Independent of `incident_status`
             enum:
               - 'true'
               - 'false'
@@ -174,7 +174,7 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}:
     get:
-      summary: 查一条告警
+      summary: Get an incident
       operationId: get-incident
       tags:
         - Incident
@@ -200,8 +200,8 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/acknowledge:
     post:
-      summary: 确认这条告警
-      description: 同时会在监控系统中标记为已确认，便于其他渠道也能看到该告警已有人处理。
+      summary: Acknowledge an incident
+      description: The incident is also marked as acknowledged in the monitoring system, so that other channels can see it already has an owner.
       operationId: acknowledge-incident
       tags:
         - Incident
@@ -233,11 +233,11 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/assignee:
     put:
-      summary: 把这条告警交给谁，或者收回来
+      summary: Assign an incident, or clear its assignee
       description: |-
-        `assignee_user_id` 留空即取消指派。
+        Leave `assignee_user_id` empty to clear the assignment.
 
-        **这里不校验被指派的人在不在这个项目里**——那要问 IAM，而这个服务的准入还没接。
+        **Project membership of the assignee is not verified.** Any user identifier is accepted and recorded as given.
       operationId: assign-incident
       tags:
         - Incident
@@ -269,8 +269,8 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/close:
     post:
-      summary: 了结这条告警
-      description: 了结的是**平台上的处理流程**，不是告警本身的状态：尚未恢复的告警也可以按「已接受的风险」了结，它在监控系统中仍为未恢复。
+      summary: Close an incident
+      description: Closing records **that the handling process is finished on this platform**; it does not change the state of the incident itself. An incident that has not recovered may still be closed as an accepted risk, and remains unrecovered in the monitoring system.
       operationId: close-incident
       tags:
         - Incident
@@ -302,7 +302,7 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/comments:
     post:
-      summary: 在时间线上写一条备注
+      summary: Add a note to the timeline
       operationId: add-incident-comment
       tags:
         - Incident
@@ -334,8 +334,8 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/following:
     put:
-      summary: 关注这条告警，或者取消关注
-      description: 关注的是**自己**：操作者就是被加进关注列表的那个人。
+      summary: Follow an incident, or stop following it
+      description: 'You follow **yourself**: the caller is the user added to or removed from the follower list.'
       operationId: set-incident-following
       tags:
         - Incident
@@ -367,7 +367,7 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/reopen:
     post:
-      summary: 重新打开一条已经了结的告警
+      summary: Reopen a closed incident
       operationId: reopen-incident
       tags:
         - Incident
@@ -393,8 +393,8 @@ paths:
           description: Error
   /api/v1/incidents/{incidentId}/timeline:
     get:
-      summary: 列出这条告警的时间线
-      description: 游标翻页而不是偏移量：时间线是只增的，用偏移量翻页会在新记录写入时漏行和重行。
+      summary: List the timeline of an incident
+      description: 'Cursor paging rather than offset paging: the timeline is append-only, and offset paging would skip or repeat entries whenever a new one is written.'
       operationId: list-incident-timeline
       tags:
         - Incident
@@ -414,12 +414,12 @@ paths:
             maximum: 500
             minimum: 0
             type: integer
-        - description: 上一页返回的 next_cursor，空即从头开始
+        - description: The `next_cursor` returned by the previous page. Empty starts from the beginning
           explode: false
           in: query
           name: cursor
           schema:
-            description: 上一页返回的 next_cursor，空即从头开始
+            description: The `next_cursor` returned by the previous page. Empty starts from the beginning
             type: string
       responses:
         '200':
@@ -436,7 +436,7 @@ paths:
           description: Error
   /api/v1/maintenance-windows:
     get:
-      summary: 列出维护窗口
+      summary: List maintenance windows
       operationId: list-maintenance-windows
       tags:
         - MaintenanceWindow
@@ -455,8 +455,8 @@ paths:
           description: Error
   /api/v1/maintenance-windows/{windowId}:
     delete:
-      summary: 撤掉一个维护窗口
-      description: 立刻恢复告警，哪怕窗口还没到期。
+      summary: Cancel a maintenance window
+      description: Alerting resumes immediately, even if the window has not yet expired.
       operationId: delete-maintenance-window
       tags:
         - MaintenanceWindow
@@ -477,7 +477,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查一个维护窗口
+      summary: Get a maintenance window
       operationId: get-maintenance-window
       tags:
         - MaintenanceWindow
@@ -502,11 +502,11 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     put:
-      summary: 开一个维护窗口，或者按同一个 id 覆盖它
+      summary: Create a maintenance window, or replace it by the same id
       description: |-
-        **创建即覆盖**：延长一个正在进行的窗口就是用同一个 id 再调一次。
+        **Create or replace**: extending a window that is already running means calling this endpoint again with the same id.
 
-        窗口期内这些机器的问题不告警，也不扣 SLA 的可用率。`server_ids` 留空表示整个项目，包括窗口开着的时候新接进来的机器。
+        While the window is open, problems on these machines do not alert and do not count against SLA availability. Leave `server_ids` empty to cover the entire project, including machines enrolled after the window opens.
       operationId: put-maintenance-window
       tags:
         - MaintenanceWindow
@@ -538,8 +538,8 @@ paths:
           description: Error
   /api/v1/overview:
     get:
-      summary: 项目总览
-      description: 项目下还没有任何机器时返回各项均为零的总览，而不是 404——空项目是一个正常状态。
+      summary: Project overview
+      description: A project with no machines yet returns an overview with every figure at zero rather than a 404 — an empty project is a normal state.
       operationId: get-project-overview
       tags:
         - Observability
@@ -558,8 +558,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/items:
     get:
-      summary: 列出一台机器的监控项
-      description: 原样返回采集到的监控项，不做筛选或重命名。哪些属于重要指标，由调用方依据监控项自带的标签自行判断。
+      summary: List the monitoring items of a machine
+      description: Items are returned exactly as collected, without filtering or renaming. Which of them count as important is for the caller to decide from the tags carried by each item.
       operationId: list-server-items
       tags:
         - Observability
@@ -570,20 +570,20 @@ paths:
           schema:
             format: uuid
             type: string
-        - description: 按 key 或名字模糊匹配
+        - description: Fuzzy match on key or name
           explode: false
           in: query
           name: keyword
           schema:
-            description: 按 key 或名字模糊匹配
+            description: Fuzzy match on key or name
             maxLength: 255
             type: string
-        - description: 形如 key 或 key=value，可重复。官方模板打好的 component 标签（cpu / memory / filesystem…）就是靠它筛
+        - description: Given as `key` or `key=value`, repeatable. The `component` tags applied by the official templates (cpu, memory, filesystem and so on) are filtered through this
           explode: false
           in: query
           name: tag
           schema:
-            description: 形如 key 或 key=value，可重复。官方模板打好的 component 标签（cpu / memory / filesystem…）就是靠它筛
+            description: Given as `key` or `key=value`, repeatable. The `component` tags applied by the official templates (cpu, memory, filesystem and so on) are filtered through this
             items:
               type: string
             type:
@@ -604,8 +604,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/metrics:
     get:
-      summary: 取一个监控项的时间序列
-      description: '`item_key` 是**前缀匹配**：按分区、按网卡发现出来的监控项 key 带参数（`vfs.fs.size[/var,pused]`），所以 `vfs.fs.size` 这一个请求就能画出每个挂载点一条线。'
+      summary: Get the time series of a monitoring item
+      description: '`item_key` is matched **by prefix**. Keys discovered per partition or per interface carry parameters (`vfs.fs.size[/var,pused]`), so a single request for `vfs.fs.size` returns one series per mount point.'
       operationId: get-server-metric
       tags:
         - Observability
@@ -616,24 +616,24 @@ paths:
           schema:
             format: uuid
             type: string
-        - description: '**前缀匹配**：vfs.fs.size 一次拿回每个挂载点一条线。与 item_id 至少给一个'
+        - description: '**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`'
           explode: false
           in: query
           name: item_key
           schema:
-            description: '**前缀匹配**：vfs.fs.size 一次拿回每个挂载点一条线。与 item_id 至少给一个'
+            description: '**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`'
             type: string
         - explode: false
           in: query
           name: item_id
           schema:
             type: string
-        - description: 不给就是一小时前
+        - description: Defaults to one hour ago
           explode: false
           in: query
           name: from
           schema:
-            description: 不给就是一小时前
+            description: Defaults to one hour ago
             format: date-time
             type: string
         - explode: false
@@ -642,21 +642,21 @@ paths:
           schema:
             format: date-time
             type: string
-        - description: 降采样的桶数，0 表示原样返回采集到的数据点
+        - description: Number of downsampling buckets. 0 returns the collected data points unchanged
           explode: false
           in: query
           name: max_points
           schema:
-            description: 降采样的桶数，0 表示原样返回采集到的数据点
+            description: Number of downsampling buckets. 0 returns the collected data points unchanged
             format: int64
             minimum: 0
             type: integer
-        - description: 顺带取这些监控项当前生效的阈值线
+        - description: Also return the thresholds currently in effect for these items
           explode: false
           in: query
           name: include_thresholds
           schema:
-            description: 顺带取这些监控项当前生效的阈值线
+            description: Also return the thresholds currently in effect for these items
             type: boolean
       responses:
         '200':
@@ -673,7 +673,7 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/resources:
     get:
-      summary: 一台机器的硬件与接口
+      summary: Hardware and interfaces of a machine
       operationId: get-server-resources
       tags:
         - Observability
@@ -699,7 +699,7 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/snapshot:
     get:
-      summary: 一台机器此刻的状态
+      summary: Current state of a machine
       operationId: get-server-snapshot
       tags:
         - Observability
@@ -725,7 +725,7 @@ paths:
           description: Error
   /api/v1/top-items:
     get:
-      summary: 某个指标最高的前几台
+      summary: Machines ranked highest by a given metric
       operationId: list-project-top-items
       tags:
         - Observability
@@ -740,12 +740,12 @@ paths:
               - MEMORY_UTILIZATION
               - ROOT_FILESYSTEM_USED
             type: string
-        - description: 0 表示用默认
+        - description: 0 uses the default
           explode: false
           in: query
           name: limit
           schema:
-            description: 0 表示用默认
+            description: 0 uses the default
             format: int64
             maximum: 100
             minimum: 0
@@ -765,38 +765,38 @@ paths:
           description: Error
   /api/v1/servers:
     get:
-      summary: 列出项目里的机器
+      summary: List the machines in the project
       operationId: list-servers
       tags:
         - Onboarding
       parameters:
-        - description: 这一页最多返回多少条
+        - description: Maximum number of records in this page
           explode: false
           in: query
           name: limit
           schema:
             default: 50
-            description: 这一页最多返回多少条
+            description: Maximum number of records in this page
             format: int64
             maximum: 200
             minimum: 1
             type: integer
-        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+        - description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
           explode: false
           in: query
           name: offset
           schema:
-            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
             format: int64
             maximum: 10000
             minimum: 0
             type: integer
-        - description: 按名字或地址模糊匹配
+        - description: Fuzzy match on name or address
           explode: false
           in: query
           name: keyword
           schema:
-            description: 按名字或地址模糊匹配
+            description: Fuzzy match on name or address
             maxLength: 255
             type: string
         - explode: false
@@ -824,8 +824,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}:
     delete:
-      summary: 删掉这台机器
-      description: '**不可逆**：监控主机、历史数据和这台机器名下的告警会一并删除。若只是想暂时停止采集，改用 /disable。'
+      summary: Delete a machine
+      description: '**Irreversible**: the monitored host, its history and every incident recorded against this machine are removed together. To stop collection temporarily, use `/disable` instead.'
       operationId: delete-server
       tags:
         - Onboarding
@@ -846,7 +846,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查一台机器的接入情况
+      summary: Get the enrollment state of a machine
       operationId: get-server
       tags:
         - Onboarding
@@ -871,8 +871,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     patch:
-      summary: 改一台机器的接入参数
-      description: 只更新请求体中出现的字段。`address` 与 `address_kind` 必须一并提供：只改其中一个会得到互相矛盾的接入配置，该错误不会被报出，表现为 agent 连不上。
+      summary: Update the enrollment settings of a machine
+      description: 'Only the fields present in the request body are updated. `address` and `address_kind` must be supplied together: changing one without the other produces a contradictory configuration that is not reported as an error and shows up only as an agent that cannot connect.'
       operationId: update-server
       tags:
         - Onboarding
@@ -903,13 +903,13 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     put:
-      summary: 把一台机器接入监控
+      summary: Enroll a machine into monitoring
       description: |-
-        **同一个 server id 重复调用是幂等的**：参数一致时返回已接入的那台，不会重复创建监控主机，因此接入失败可以安全重试。
+        **Repeated calls with the same server id are idempotent**: given identical parameters, the already-enrolled machine is returned and no duplicate host is created, so a failed enrollment is safe to retry.
 
-        修改接入参数请改用 PATCH。本接口在参数不一致时会返回错误，不会更新已有配置。
+        To change enrollment settings, use PATCH. This endpoint returns an error when the parameters differ, and does not update an existing configuration.
 
-        响应中的 `tls_psk` **只返回这一次**，请及时保存；遗失后需要轮换。
+        The `tls_psk` in the response is **returned only this once**; store it immediately. If it is lost, it must be rotated.
       operationId: enable-server-monitoring
       tags:
         - Onboarding
@@ -941,8 +941,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/disable:
     post:
-      summary: 停止监控这台机器
-      description: 可逆操作：监控主机保留，仅停止采集，历史数据不受影响。重新接入即可恢复采集。如需连同历史数据一并删除，改用 DELETE。
+      summary: Stop monitoring a machine
+      description: 'Reversible: the monitored host is retained, only collection stops, and history is unaffected. Enrolling again resumes collection. To remove the history as well, use DELETE.'
       operationId: disable-server-monitoring
       tags:
         - Onboarding
@@ -964,8 +964,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/psk:
     post:
-      summary: 换一把 agent 的 PSK
-      description: 换完要同步改 agent 侧的配置，否则那台机器立刻失联。新密钥同样**只在这个响应里明文出现一次**。
+      summary: Rotate the agent PSK
+      description: The agent configuration must be updated to match, otherwise the machine loses contact immediately. The new key is likewise **returned in clear text only in this response**.
       operationId: rotate-agent-psk
       tags:
         - Onboarding
@@ -991,8 +991,8 @@ paths:
           description: Error
   /api/v1/servers/{serverId}/web-checks/{checkId}:
     delete:
-      summary: 删掉一个网页检查
-      description: 同时删除监控系统中对应的检查任务和触发器，不会遗留永远无法恢复的告警。
+      summary: Delete a web check
+      description: The corresponding check task and trigger are removed from the monitoring system as well, so no permanently unrecoverable alert is left behind.
       operationId: delete-web-check
       tags:
         - WebCheck
@@ -1019,7 +1019,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查一个网页检查
+      summary: Get a web check
       operationId: get-web-check
       tags:
         - WebCheck
@@ -1050,8 +1050,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     put:
-      summary: 建一个网页检查，或者按同一个 id 覆盖它
-      description: '**创建即覆盖**：修改一个检查即用同一个 id 再次调用本接口，无需先判断它是否已存在。'
+      summary: Create a web check, or replace it by the same id
+      description: '**Create or replace**: to modify a check, call this endpoint again with the same id. There is no need to determine first whether it already exists.'
       operationId: put-web-check
       tags:
         - WebCheck
@@ -1089,17 +1089,17 @@ paths:
           description: Error
   /api/v1/web-checks:
     get:
-      summary: 列出网页检查
+      summary: List web checks
       operationId: list-web-checks
       tags:
         - WebCheck
       parameters:
-        - description: 只看某一台机器的检查；不给就是整个项目的
+        - description: Restrict to the checks of a single machine. Omit for the whole project
           explode: false
           in: query
           name: server_id
           schema:
-            description: 只看某一台机器的检查；不给就是整个项目的
+            description: Restrict to the checks of a single machine. Omit for the whole project
             type: string
       responses:
         '200':
@@ -1116,11 +1116,11 @@ paths:
           description: Error
   /api/v1/sli-report:
     get:
-      summary: 查实测的达成情况
+      summary: Get measured availability
       description: |-
-        SLI 是测出来的数，SLO 是定下来的目标——这里返回的是前者。
+        SLI is what was measured; SLO is what was promised — this endpoint returns the former.
 
-        `server_id` 为空的那一行是项目整体。
+        The row with an empty `server_id` covers the project as a whole.
       operationId: get-sli-report
       tags:
         - SLA
@@ -1137,12 +1137,12 @@ paths:
           schema:
             format: date-time
             type: string
-        - description: 取最近 N 个完整周期，与 from/to 二选一
+        - description: Return the most recent N complete periods. Use this or from/to, not both
           explode: false
           in: query
           name: periods
           schema:
-            description: 取最近 N 个完整周期，与 from/to 二选一
+            description: Return the most recent N complete periods. Use this or from/to, not both
             format: int64
             maximum: 100
             minimum: 0
@@ -1162,8 +1162,8 @@ paths:
           description: Error
   /api/v1/slo:
     delete:
-      summary: 撤掉这个项目的可用率目标
-      description: 同时移除监控系统中对应的服务树，此后不再统计可用率。
+      summary: Remove the availability target of this project
+      description: Availability is no longer tracked from this point on.
       operationId: delete-slo
       tags:
         - SLA
@@ -1177,8 +1177,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查这个项目的可用率目标
-      description: 没定过就是 404，而不是一份默认目标：没承诺过和承诺了 99.9% 是两回事。
+      summary: Get the availability target of this project
+      description: 'A project that has never set one returns 404 rather than a default target: making no promise and promising 99.9% are different things.'
       operationId: get-slo
       tags:
         - SLA
@@ -1196,11 +1196,11 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     put:
-      summary: 定下这个项目的可用率目标，或者改它
+      summary: Set the availability target of this project, or change it
       description: |-
-        一个项目一条 SLO，**创建即覆盖**。
+        One SLO per project, **create or replace**.
 
-        `min_severity` 必须显式选：它决定什么算「不可用」，是这条承诺的一半内容。
+        `min_severity` must be chosen explicitly: it defines what counts as unavailable, which is half of what the target means.
       operationId: put-slo
       tags:
         - SLA
@@ -1223,11 +1223,670 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/status-page:
+    get:
+      summary: Get the status page of this project
+      description: A project has at most one status page. A project that has never created one returns 404.
+      operationId: get-status-page
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Create the status page, or replace its configuration
+      description: |-
+        **Create or replace**: changing the title, switching the domain, publishing and unpublishing are all done by sending the complete configuration again.
+
+        While `published` is false the public address returns 404, including any custom domain already bound. A newly created page is unpublished by default, so that a page still being configured has no address that opens.
+
+        `slug` and `custom_domain` are **globally unique**; a value already taken returns 409.
+      operationId: put-status-page
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete the status page
+      description: Its groups, components, availability history, incident notices and scheduled maintenance are removed together, and cannot be recovered. The slug and custom domain are released.
+      operationId: delete-status-page
+      tags:
+        - StatusPage
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/order:
+    put:
+      summary: Set the order of the top level of the page
+      description: |-
+        Submits the **entire** top-level order in one call rather than moving a single entry to a given position.
+
+        The top level interleaves groups and ungrouped components, so the order is expressed as one list covering both.
+
+        Each entry carries either `group_id` or `component_id`. Entries not listed are placed after those that are.
+      operationId: put-status-page-order
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageOrderRequestBody'
+        required: true
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/groups:
+    get:
+      summary: List groups
+      operationId: list-status-page-groups
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageGroupListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Create a group
+      description: A group is one level of collapsing applied to components on the page. There is exactly one level; groups cannot be nested.
+      operationId: create-status-page-group
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageGroupRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageGroupResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/groups/{groupId}:
+    parameters:
+      - in: path
+        name: groupId
+        required: true
+        schema:
+          format: uuid
+          type: string
+    put:
+      summary: Update a group
+      operationId: update-status-page-group
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageGroupRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageGroupResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a group
+      description: The components in it are **not deleted**. They return to the top level as ungrouped components, keeping their availability history and the incident notices that reference them.
+      operationId: delete-status-page-group
+      tags:
+        - StatusPage
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/groups/{groupId}/order:
+    put:
+      summary: Set the order of components within a group
+      operationId: put-status-page-group-order
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: groupId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageGroupOrderRequestBody'
+        required: true
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/components:
+    get:
+      summary: List components
+      description: 'A component is one row on the status page: an externally promised capability. It is not a machine — a single component may be backed by several machines and several web checks.'
+      operationId: list-status-page-components
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Create a component
+      description: |-
+        `name` is **customer-facing copy** and appears verbatim on the public page; do not use machine names.
+
+        `auto_status_min_severity` sets how severe an alert must be before it changes the status of this row; anything below it has no effect. The default is AVERAGE. Lower settings tend to keep the page permanently off-green, at which point people stop reading it.
+      operationId: create-status-page-component
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageComponentRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/components/{componentId}:
+    parameters:
+      - in: path
+        name: componentId
+        required: true
+        schema:
+          format: uuid
+          type: string
+    get:
+      summary: Get a component
+      operationId: get-status-page-component
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Update a component
+      description: '`started_on` cannot be changed: it determines where the availability bar stops showing as unmeasured, and changing it would rewrite history that has already been published.'
+      operationId: update-status-page-component
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageComponentRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a component
+      description: Its availability history is removed along with it. Passages in already-published notices that refer to it are retained, since customers may already have read them.
+      operationId: delete-status-page-component
+      tags:
+        - StatusPage
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/components/{componentId}/sources:
+    parameters:
+      - in: path
+        name: componentId
+        required: true
+        schema:
+          format: uuid
+          type: string
+    get:
+      summary: List the monitored sources bound to a component
+      description: Monitored sources are internal information and **never appear on the public page**.
+      operationId: list-status-page-component-sources
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentSourcesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Set the complete list of monitored sources for a component
+      description: |-
+        Submits the **complete** set of sources; anything not listed is unbound.
+
+        Once bound, alerts on these machines and web checks drive the status of the component automatically: DISASTER and HIGH are reported as a major outage, AVERAGE as a partial outage, and WARNING as degraded performance. Alerts below `auto_status_min_severity` have no effect.
+
+        `show_url` controls whether the checked address is shown on the public page. It is off by default.
+      operationId: put-status-page-component-sources
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageComponentSourcesRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageComponentSourcesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/incidents:
+    get:
+      summary: List the incident notices on the status page
+      description: These are **customer-facing notices**, distinct from the monitoring incidents under `/incidents`. Nothing from the latter is carried over; the text here is written by your team.
+      operationId: list-status-page-incidents
+      tags:
+        - StatusPage
+      parameters:
+        - description: Maximum number of records in this page
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageStatusPageIncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Publish an incident notice
+      description: |-
+        Publishing a notice and writing its first update are a single operation: a notice with no updates would appear as a bare title on a page that has already been delivered to readers.
+
+        `started_at` is when the **incident began**, not when the notice was published. The two are usually minutes to hours apart, and using the publication time would understate the impact window that customers can compare against their own logs. Backfilling a past incident relies on the same field.
+
+        The statuses given in `components` take effect on the public page immediately and count towards availability.
+      operationId: publish-status-page-incident
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishStatusPageIncidentRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageIncidentResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/incidents/{incidentId}:
+    get:
+      summary: Get an incident notice
+      operationId: get-status-page-incident
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageIncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/incidents/{incidentId}/updates:
+    post:
+      summary: Append an update to an incident notice
+      description: |-
+        Published updates are never modified; a correction is issued as a new update. Customers may already have forwarded the original, and a silent rewrite would leave the two sides with different histories.
+
+        `components` lists only the components **being changed** by this update; those not listed keep their current status. Setting `status` to `RESOLVED` returns every component this notice has affected to operational and closes the notice. A closed notice accepts no further updates.
+      operationId: post-status-page-incident-update
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: incidentId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostStatusPageIncidentUpdateRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageIncidentResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/maintenances:
+    get:
+      summary: List scheduled maintenance
+      operationId: list-status-page-maintenances
+      tags:
+        - StatusPage
+      parameters:
+        - description: Maximum number of records in this page
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: offset
+          schema:
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageStatusPageMaintenanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Schedule maintenance
+      description: |-
+        Maintenance starts and finishes automatically at the scheduled times; nobody needs to be present. While it runs, the affected components are shown as under maintenance and **availability is not reduced** — planned work should not consume the availability you promise to customers, which is the point of announcing it in advance.
+
+        This is separate from `/maintenance-windows`, which suppresses alerting for a period. This endpoint announces the work to your customers. The two are usually created together: without suppression, restarts during the maintenance raise alerts and mark the components unavailable.
+      operationId: schedule-status-page-maintenance
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleStatusPageMaintenanceRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/maintenances/{maintenanceId}:
+    get:
+      summary: Get a scheduled maintenance
+      operationId: get-status-page-maintenance
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: maintenanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/maintenances/{maintenanceId}/cancel:
+    post:
+      summary: Cancel a maintenance that has not started
+      description: Cancelled rather than deleted, so that readers who saw the announcement have an explanation. Maintenance that has already started cannot be cancelled; finish it early instead.
+      operationId: cancel-status-page-maintenance
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: maintenanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/maintenances/{maintenanceId}/complete:
+    post:
+      summary: Finish a running maintenance early
+      description: 'Optional: maintenance finishes on its own at the scheduled end time. Use this endpoint when the work is done ahead of schedule; the affected components return to operational immediately.'
+      operationId: complete-status-page-maintenance
+      tags:
+        - StatusPage
+      parameters:
+        - in: path
+          name: maintenanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
 components:
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
-      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      description: Project token. Sign in at auth.leaflow.net to obtain an account token, then exchange it for a project token (POST /account/v1/projects/{projectId}/token). A project token identifies both the current user and the current project.
       scheme: bearer
       type: http
   schemas:
@@ -1252,7 +1911,7 @@ components:
       additionalProperties: false
       properties:
         aggregation_function:
-          description: last / avg / min / max 之类
+          description: Such as last, avg, min or max
           type: string
         evaluation_window_seconds:
           format: int64
@@ -1266,7 +1925,7 @@ components:
         operator:
           type: string
         threshold:
-          description: 只有 threshold_status 为 RESOLVED 时才有
+          description: Present only when `threshold_status` is RESOLVED
           format: double
           type:
             - number
@@ -1274,7 +1933,7 @@ components:
         threshold_status:
           type: string
         value:
-          description: 触发那一刻的值，原样存下来的
+          description: The value at the moment of the trigger, stored as collected
           type: string
       required:
         - item_id
@@ -1353,7 +2012,7 @@ components:
           format: uuid
           type: string
         incident_status:
-          description: 监控系统是否判定已恢复。它与是否有人了结这条告警是两件事
+          description: Whether monitoring considers the problem recovered. Independent of whether anyone has closed the incident
           enum:
             - PROBLEM
             - RESOLVED
@@ -1367,7 +2026,7 @@ components:
         name:
           type: string
         operational_data:
-          description: 触发器配的那行现场数据
+          description: The operational data line configured on the trigger
           type: string
         project_id:
           format: uuid
@@ -1444,20 +2103,20 @@ components:
       additionalProperties: false
       properties:
         items:
-          description: 这一页的内容
+          description: The records in this page
           items:
             $ref: '#/components/schemas/IncidentResource'
           type: array
         limit:
-          description: 这一页最多几条，回显请求里的值
+          description: Maximum records per page, echoing the request
           format: int64
           type: integer
         offset:
-          description: 跳过了多少条，回显请求里的值
+          description: Number of records skipped, echoing the request
           format: int64
           type: integer
         total:
-          description: 命中的总条数，不只是这一页
+          description: Total number of matches, not just this page
           format: int64
           type: integer
       required:
@@ -1470,7 +2129,7 @@ components:
       additionalProperties: false
       properties:
         message:
-          description: 会一并写入监控系统的确认记录
+          description: Also written to the acknowledgement record in the monitoring system
           maxLength: 2000
           type: string
       type: object
@@ -1478,7 +2137,7 @@ components:
       additionalProperties: false
       properties:
         assignee_display_name:
-          description: 不给就用 user id：时间线上要留一个当时的人名副本
+          description: Defaults to the user id. The timeline keeps a copy of the name as it was at the time
           maxLength: 255
           type: string
         assignee_user_id:
@@ -1489,7 +2148,7 @@ components:
       additionalProperties: false
       properties:
         message:
-          description: reason 为 OTHER 时必填，否则请求会被拒绝
+          description: Required when `reason` is OTHER; the request is rejected otherwise
           maxLength: 2000
           type: string
         reason:
@@ -1534,7 +2193,7 @@ components:
         actor_display_name:
           type: string
         actor_user_id:
-          description: 操作者；来源为 SYSTEM 或 ZABBIX 时为空
+          description: The operator. Empty when the source is SYSTEM or ZABBIX
           type: string
         close_reason:
           type: string
@@ -1558,7 +2217,7 @@ components:
         subject_display_name:
           type: string
         subject_user_id:
-          description: 被指派 / 被取消关注的那个人
+          description: The user who was assigned, or removed from the followers
           type: string
       required:
         - id
@@ -1585,12 +2244,12 @@ components:
       additionalProperties: false
       properties:
         items:
-          description: 这一页的内容
+          description: The records in this page
           items:
             $ref: '#/components/schemas/IncidentActivityResource'
           type: array
         next_cursor:
-          description: 下一页的游标；为空表示已经到底
+          description: Cursor for the next page. Empty means the end has been reached
           type: string
       required:
         - items
@@ -1603,7 +2262,7 @@ components:
           format: int64
           type: integer
         every:
-          description: DAILY / WEEKLY：每 N 天 / 每 N 周
+          description: 'DAILY and WEEKLY: every N days or every N weeks'
           format: int64
           type: integer
         kind:
@@ -1613,17 +2272,17 @@ components:
             - WEEKLY
           type: string
         start_time_seconds:
-          description: DAILY / WEEKLY：当天零点起的秒数，按窗口自己的时区算
+          description: 'DAILY and WEEKLY: seconds from midnight, in the timezone of the window'
           format: int64
           type: integer
         starts_at:
-          description: 只有 ONCE 有
+          description: Present only for ONCE
           format: date-time
           type:
             - string
             - 'null'
         weekdays:
-          description: WEEKLY：星期几的位图，**周一是最低位**
+          description: 'WEEKLY: bitmap of weekdays, **Monday is the lowest bit**'
           format: int64
           type: integer
       required:
@@ -1655,7 +2314,7 @@ components:
           format: uuid
           type: string
         server_ids:
-          description: 空表示**整个项目**
+          description: Empty covers the **entire project**
           items:
             type: string
           type:
@@ -1706,7 +2365,7 @@ components:
           minimum: 0
           type: integer
         every:
-          description: DAILY / WEEKLY：每 N 天 / 每 N 周
+          description: 'DAILY and WEEKLY: every N days or every N weeks'
           format: int64
           minimum: 0
           type: integer
@@ -1717,17 +2376,17 @@ components:
             - WEEKLY
           type: string
         start_time_seconds:
-          description: DAILY / WEEKLY：当天零点起的秒数，按窗口自己的时区算
+          description: 'DAILY and WEEKLY: seconds from midnight, in the timezone of the window'
           format: int64
           maximum: 86399
           minimum: 0
           type: integer
         starts_at:
-          description: 只有 ONCE 用得上
+          description: Used only by ONCE
           format: date-time
           type: string
         weekdays:
-          description: WEEKLY：星期几的位图，**周一是最低位**
+          description: 'WEEKLY: bitmap of weekdays, **Monday is the lowest bit**'
           format: int64
           maximum: 127
           minimum: 0
@@ -1739,7 +2398,7 @@ components:
       additionalProperties: false
       properties:
         active_since:
-          description: 整条规则的生效区间起点
+          description: Start of the period in which the rule is effective
           format: date-time
           type: string
         active_till:
@@ -1761,7 +2420,7 @@ components:
             - array
             - 'null'
         timezone:
-          description: IANA 名字，比如 Asia/Shanghai；空即用部署配的默认
+          description: IANA name such as Asia/Shanghai. Empty uses the configured default
           maxLength: 64
           type: string
       required:
@@ -1926,7 +2585,7 @@ components:
           format: double
           type: number
         trigger_name:
-          description: 图例上说明这条线是什么
+          description: Labels the line in the chart legend
           type: string
       required:
         - item_id
@@ -1949,7 +2608,7 @@ components:
           format: date-time
           type: string
         from_trends:
-          description: 数据来自趋势表，每个点是一小时的聚合
+          description: Data comes from hourly aggregates, one point per hour
           type: boolean
         series:
           items:
@@ -2007,7 +2666,7 @@ components:
         inventory:
           additionalProperties:
             type: string
-          description: 自动采集的硬件与系统清单：CPU、内存、操作系统等
+          description: 'Hardware and system inventory collected automatically: CPU, memory, operating system and so on'
           type: object
         tags:
           items:
@@ -2026,7 +2685,7 @@ components:
         agent_error:
           type: string
         agent_reachability:
-          description: AGENT_DOWN 是 agent 不通但机器还活着；UNREACHABLE 是连这一点都说不上
+          description: AGENT_DOWN means the agent is unreachable while the machine is still alive; UNREACHABLE means neither can be established
           enum:
             - UNKNOWN
             - REACHABLE
@@ -2139,7 +2798,7 @@ components:
         last_error:
           type: string
         monitoring_status:
-          description: FAILED 时看 last_error
+          description: Consult `last_error` when this is FAILED
           enum:
             - PENDING
             - ACTIVE
@@ -2161,7 +2820,7 @@ components:
           format: date-time
           type: string
         zabbix_host_name:
-          description: agent 配置里的 Hostname 必须与它一致，主动式采集靠它认人
+          description: The Hostname in the agent configuration must match this value; active checks identify the machine by it
           type: string
       required:
         - id
@@ -2183,20 +2842,20 @@ components:
       additionalProperties: false
       properties:
         items:
-          description: 这一页的内容
+          description: The records in this page
           items:
             $ref: '#/components/schemas/ServerResource'
           type: array
         limit:
-          description: 这一页最多几条，回显请求里的值
+          description: Maximum records per page, echoing the request
           format: int64
           type: integer
         offset:
-          description: 跳过了多少条，回显请求里的值
+          description: Number of records skipped, echoing the request
           format: int64
           type: integer
         total:
-          description: 命中的总条数，不只是这一页
+          description: Total number of matches, not just this page
           format: int64
           type: integer
       required:
@@ -2211,7 +2870,7 @@ components:
         parameters:
           additionalProperties:
             type: string
-          description: 模板自己声明的参数，密钥参数写明文，返回时只报名字
+          description: Parameters declared by the template. Secret parameters are supplied in clear text and returned by name only
           type: object
         template_key:
           enum:
@@ -2243,13 +2902,13 @@ components:
             - dns
           type: string
         agent_mode:
-          description: 空即被动式：它对 agent 侧配置要求最少
+          description: Empty selects passive mode, which requires the least agent-side configuration
           enum:
             - PASSIVE
             - ACTIVE
           type: string
         agent_port:
-          description: 0 表示用默认的 10050
+          description: 0 uses the default of 10050
           format: int64
           maximum: 65535
           minimum: 0
@@ -2276,19 +2935,19 @@ components:
       additionalProperties: false
       properties:
         install_command:
-          description: 含 PSK，与 tls_psk 一样只出现这一次
+          description: Includes the PSK. Like `tls_psk`, it is returned only this once
           type: string
         install_script_url:
           type: string
         tls_psk:
-          description: '**只出现这一次**'
+          description: '**Returned only this once**'
           type: string
         tls_psk_identity:
           type: string
         zabbix_host_name:
           type: string
         zabbix_server_address:
-          description: agent 配置里的 Server / ServerActive
+          description: The Server and ServerActive values for the agent configuration
           type: string
       required:
         - zabbix_host_name
@@ -2316,13 +2975,13 @@ components:
           maxLength: 255
           type: string
         address_kind:
-          description: 要改地址就必须和 address 一起给
+          description: Must be supplied together with `address` when changing the address
           enum:
             - ip
             - dns
           type: string
         agent_mode:
-          description: 改采集模式会把全部模板换成另一个变体
+          description: Changing the collection mode rebinds every template to the corresponding variant
           enum:
             - PASSIVE
             - ACTIVE
@@ -2353,7 +3012,7 @@ components:
         error:
           type: string
         failed_step:
-          description: 第几步失败的，从 1 数；healthy 时为 0
+          description: Index of the failed step, counting from 1. 0 when healthy
           format: int64
           type: integer
         healthy:
@@ -2376,7 +3035,7 @@ components:
       additionalProperties: false
       properties:
         expected_status_codes:
-          description: 状态码表达式，比如 200 或者 200,301-302
+          description: Status code expression, such as 200 or 200,301-302
           type: string
         follow_redirects:
           type: boolean
@@ -2411,7 +3070,7 @@ components:
           anyOf:
             - $ref: '#/components/schemas/WebCheckResultResource'
             - type: 'null'
-          description: null 表示这个检查还一轮都没跑过。零值会把「还不知道」显示成「响应 0 秒、状态码 0」
+          description: null means the check has not completed a round yet. A zero value would present "not yet known" as "0 seconds, status code 0"
         retries:
           format: int64
           type: integer
@@ -2449,7 +3108,7 @@ components:
       additionalProperties: false
       properties:
         expected_status_codes:
-          description: 状态码表达式，比如 200 或者 200,301-302；留空表示不检查状态码
+          description: Status code expression, such as 200 or 200,301-302. Empty disables status code checking
           maxLength: 255
           type: string
         follow_redirects:
@@ -2458,7 +3117,7 @@ components:
           maxLength: 64
           type: string
         required_pattern:
-          description: 响应体里必须出现的字符串
+          description: A string that must appear in the response body
           maxLength: 255
           type: string
         url:
@@ -2472,12 +3131,12 @@ components:
       additionalProperties: false
       properties:
         interval_seconds:
-          description: 0 表示用默认
+          description: 0 uses the default
           format: int64
           minimum: 0
           type: integer
         response_time_threshold_seconds:
-          description: 超过它算慢，0 表示不看响应时间
+          description: Slower than this counts as slow. 0 disables the response time check
           format: int64
           minimum: 0
           type: integer
@@ -2518,11 +3177,11 @@ components:
           format: int64
           type: integer
         error_budget_seconds:
-          description: 为负表示这个周期的额度已经超支
+          description: A negative value means the budget for this period is already exhausted
           format: int64
           type: integer
         excluded_downtime_seconds:
-          description: 被计划内维护排除掉的那部分
+          description: The portion excluded by planned maintenance
           format: int64
           type: integer
         period_from:
@@ -2532,7 +3191,7 @@ components:
           format: date-time
           type: string
         server_id:
-          description: 空表示这一行是项目整体
+          description: Empty means this row covers the project as a whole
           type: string
         sli_percent:
           format: double
@@ -2572,7 +3231,7 @@ components:
           format: int64
           type: integer
         weekdays:
-          description: 星期几的位图，**周一是最低位**，与维护窗口同一套编码
+          description: Bitmap of weekdays, **Monday is the lowest bit**, using the same encoding as maintenance windows
           format: int64
           type: integer
       required:
@@ -2611,7 +3270,7 @@ components:
           format: uuid
           type: string
         schedule:
-          description: 空表示 7×24 全天候承诺
+          description: Empty means a 24x7 commitment
           items:
             $ref: '#/components/schemas/ScheduleWindowResource'
           type:
@@ -2621,7 +3280,7 @@ components:
           format: uuid
           type: string
         slo_percent:
-          description: 目标可用率，比如 99.9
+          description: Target availability, such as 99.9
           format: double
           type: number
         sync_status:
@@ -2659,7 +3318,7 @@ components:
           minimum: 0
           type: integer
         weekdays:
-          description: 星期几的位图，**周一是最低位**（1=周一 … 64=周日）
+          description: Bitmap of weekdays, **Monday is the lowest bit** (1 = Monday … 64 = Sunday)
           format: int64
           maximum: 127
           minimum: 1
@@ -2687,7 +3346,7 @@ components:
           minLength: 1
           type: string
         period:
-          description: 空即按月
+          description: Empty selects monthly
           enum:
             - DAILY
             - WEEKLY
@@ -2705,13 +3364,13 @@ components:
           format: uuid
           type: string
         slo_percent:
-          description: 目标可用率，比如 99.9；最多四位小数
+          description: Target availability, such as 99.9. At most four decimal places
           format: double
           maximum: 100
           minimum: 0
           type: number
         timezone:
-          description: 决定统计周期的边界，即每个周期从哪一刻开始
+          description: Determines the boundaries of each reporting period, that is, the moment each period begins
           maxLength: 64
           type: string
       required:
@@ -2719,4 +3378,753 @@ components:
         - name
         - slo_percent
         - min_severity
+      type: object
+    StatusPageResource:
+      additionalProperties: false
+      properties:
+        brand_color:
+          description: '#RRGGBB'
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        custom_domain:
+          description: The custom domain bound to this page. Empty means it is served only at /{slug} under the shared domain
+          type: string
+        footer_text:
+          type: string
+        headline:
+          type: string
+        logo_url:
+          type: string
+        name:
+          type: string
+        public_url:
+          description: The current public address of this page. It is returned even while unpublished, in which case opening it returns 404
+          type: string
+        published:
+          type: boolean
+        search_engine_index:
+          description: Whether search engines may index the page
+          type: boolean
+        slug:
+          type: string
+        status_page_id:
+          format: uuid
+          type: string
+        support_url:
+          type: string
+        theme:
+          enum:
+            - AUTO
+            - LIGHT
+            - DARK
+          type: string
+        timezone:
+          description: Determines where the day boundary falls on the availability bar
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        uptime_days:
+          description: Number of days covered by the availability bar
+          format: int64
+          type: integer
+      required:
+        - status_page_id
+        - slug
+        - name
+        - custom_domain
+        - headline
+        - support_url
+        - logo_url
+        - brand_color
+        - footer_text
+        - timezone
+        - theme
+        - published
+        - search_engine_index
+        - uptime_days
+        - public_url
+        - created_at
+        - updated_at
+      type: object
+    PutStatusPageRequestBody:
+      additionalProperties: false
+      properties:
+        brand_color:
+          description: '#RRGGBB. Applied to the page styling; only a strict six-digit hexadecimal value is accepted'
+          maxLength: 7
+          pattern: '^(#[0-9a-fA-F]{6})?$'
+          type: string
+        custom_domain:
+          description: Your own domain, such as status.acme.com. Empty binds none. Globally unique
+          maxLength: 253
+          type: string
+        footer_text:
+          description: The line of free-form text in the page footer. Plain text
+          maxLength: 500
+          type: string
+        headline:
+          description: The line shown below the title
+          maxLength: 255
+          type: string
+        logo_url:
+          maxLength: 2048
+          type: string
+        name:
+          description: Page title
+          maxLength: 128
+          minLength: 1
+          type: string
+        published:
+          default: false
+          description: While false, the public address returns 404. Unpublished by default
+          type: boolean
+        search_engine_index:
+          default: false
+          description: Not indexed by default. Once a page has been crawled, switching back does not remove copies already held in third-party indexes
+          type: boolean
+        slug:
+          description: The address segment under the shared domain. Lowercase letters, digits and hyphens. Globally unique
+          maxLength: 63
+          minLength: 1
+          pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
+          type: string
+        support_url:
+          maxLength: 2048
+          type: string
+        theme:
+          default: AUTO
+          enum:
+            - AUTO
+            - LIGHT
+            - DARK
+          type: string
+        timezone:
+          description: IANA name. Empty selects UTC
+          maxLength: 64
+          type: string
+        uptime_days:
+          default: 90
+          format: int64
+          maximum: 365
+          minimum: 30
+          type: integer
+      required:
+        - slug
+        - name
+      type: object
+    PutStatusPageOrderRequestBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/StatusPageOrderItem'
+          type: array
+      required:
+        - items
+      type: object
+    StatusPageOrderItem:
+      additionalProperties: false
+      description: 'Exactly one of the two: `group_id` marks this position as a group, `component_id` as an ungrouped component'
+      properties:
+        component_id:
+          format: uuid
+          type: string
+        group_id:
+          format: uuid
+          type: string
+      type: object
+    PutStatusPageGroupOrderRequestBody:
+      additionalProperties: false
+      properties:
+        component_ids:
+          items:
+            format: uuid
+            type: string
+          type: array
+      required:
+        - component_ids
+      type: object
+    StatusPageGroupResource:
+      additionalProperties: false
+      properties:
+        collapsed:
+          description: Whether the group is collapsed by default on the page
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        description:
+          type: string
+        group_id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        position:
+          format: int64
+          type: integer
+      required:
+        - group_id
+        - name
+        - description
+        - position
+        - collapsed
+        - created_at
+      type: object
+    StatusPageGroupListResponseBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/StatusPageGroupResource'
+          type: array
+      required:
+        - data
+      type: object
+    PutStatusPageGroupRequestBody:
+      additionalProperties: false
+      properties:
+        collapsed:
+          default: true
+          type: boolean
+        description:
+          maxLength: 2000
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
+    StatusPageComponentResource:
+      additionalProperties: false
+      properties:
+        auto_status_min_severity:
+          enum:
+            - ANY
+            - INFORMATION
+            - WARNING
+            - AVERAGE
+            - HIGH
+            - DISASTER
+          type: string
+        component_id:
+          format: uuid
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        current_status:
+          description: The status currently shown to the public. OPERATIONAL means normal
+          enum:
+            - OPERATIONAL
+            - DEGRADED_PERFORMANCE
+            - PARTIAL_OUTAGE
+            - MAJOR_OUTAGE
+            - UNDER_MAINTENANCE
+          type: string
+        description:
+          type: string
+        group_id:
+          description: Empty means ungrouped, placed directly at the top level of the page
+          type: string
+        name:
+          type: string
+        only_show_if_degraded:
+          description: Hide this row while everything is normal
+          type: boolean
+        position:
+          format: int64
+          type: integer
+        show_uptime:
+          description: Whether the availability bar is shown. Components with this disabled are also excluded from the aggregate of their group
+          type: boolean
+        started_on:
+          description: The moment this component started being covered. Earlier days are shown as unmeasured rather than operational
+          format: date-time
+          type: string
+        uptime_percent:
+          description: Availability over the past `uptime_days` days
+          format: double
+          type: number
+      required:
+        - component_id
+        - name
+        - description
+        - group_id
+        - position
+        - show_uptime
+        - only_show_if_degraded
+        - started_on
+        - auto_status_min_severity
+        - current_status
+        - uptime_percent
+        - created_at
+      type: object
+    StatusPageComponentListResponseBody:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/StatusPageComponentResource'
+          type: array
+      required:
+        - data
+      type: object
+    PutStatusPageComponentRequestBody:
+      additionalProperties: false
+      properties:
+        auto_status_min_severity:
+          default: AVERAGE
+          description: Alerts below this severity do not change the status of this row
+          enum:
+            - ANY
+            - INFORMATION
+            - WARNING
+            - AVERAGE
+            - HIGH
+            - DISASTER
+          type: string
+        description:
+          maxLength: 2000
+          type: string
+        group_id:
+          description: Empty leaves the component ungrouped
+          format: uuid
+          type: string
+        name:
+          description: Customer-facing copy; appears verbatim on the public page
+          maxLength: 128
+          minLength: 1
+          type: string
+        only_show_if_degraded:
+          default: false
+          type: boolean
+        show_uptime:
+          default: true
+          type: boolean
+        started_on:
+          description: Meaningful only at creation and immutable afterwards. Empty selects the current moment
+          format: date-time
+          type: string
+      required:
+        - name
+      type: object
+    StatusPageComponentSourceServer:
+      additionalProperties: false
+      properties:
+        server_id:
+          format: uuid
+          type: string
+      required:
+        - server_id
+      type: object
+    StatusPageComponentSourceWebCheck:
+      additionalProperties: false
+      properties:
+        show_url:
+          default: false
+          description: Whether the checked address is shown on the public page
+          type: boolean
+        web_check_id:
+          format: uuid
+          type: string
+      required:
+        - web_check_id
+      type: object
+    StatusPageComponentSourcesResource:
+      additionalProperties: false
+      properties:
+        servers:
+          items:
+            $ref: '#/components/schemas/StatusPageComponentSourceServer'
+          type: array
+        web_checks:
+          items:
+            $ref: '#/components/schemas/StatusPageComponentSourceWebCheck'
+          type: array
+      required:
+        - servers
+        - web_checks
+      type: object
+    PutStatusPageComponentSourcesRequestBody:
+      additionalProperties: false
+      description: Submits the complete set; anything not listed is unbound
+      properties:
+        servers:
+          items:
+            $ref: '#/components/schemas/StatusPageComponentSourceServer'
+          type: array
+        web_checks:
+          items:
+            $ref: '#/components/schemas/StatusPageComponentSourceWebCheck'
+          type: array
+      type: object
+    StatusPageIncidentComponentResource:
+      additionalProperties: false
+      description: A status transition of one component within one update. The component name is a snapshot taken at the time
+      properties:
+        component_id:
+          format: uuid
+          type: string
+        component_name:
+          type: string
+        new_status:
+          enum:
+            - OPERATIONAL
+            - DEGRADED_PERFORMANCE
+            - PARTIAL_OUTAGE
+            - MAJOR_OUTAGE
+            - UNDER_MAINTENANCE
+          type: string
+        old_status:
+          enum:
+            - OPERATIONAL
+            - DEGRADED_PERFORMANCE
+            - PARTIAL_OUTAGE
+            - MAJOR_OUTAGE
+            - UNDER_MAINTENANCE
+          type: string
+      required:
+        - component_id
+        - component_name
+        - old_status
+        - new_status
+      type: object
+    StatusPageIncidentUpdateResource:
+      additionalProperties: false
+      properties:
+        affected_components:
+          items:
+            $ref: '#/components/schemas/StatusPageIncidentComponentResource'
+          type:
+            - array
+            - 'null'
+        body:
+          description: Body text. Plain text
+          type: string
+        incident_status:
+          enum:
+            - INVESTIGATING
+            - IDENTIFIED
+            - MONITORING
+            - RESOLVED
+          type: string
+        published_at:
+          format: date-time
+          type: string
+        update_id:
+          format: uuid
+          type: string
+      required:
+        - update_id
+        - incident_status
+        - body
+        - published_at
+        - affected_components
+      type: object
+    StatusPageIncidentResource:
+      additionalProperties: false
+      properties:
+        impact:
+          enum:
+            - NONE
+            - MINOR
+            - MAJOR
+            - CRITICAL
+          type: string
+        incident_id:
+          format: uuid
+          type: string
+        incident_status:
+          enum:
+            - INVESTIGATING
+            - IDENTIFIED
+            - MONITORING
+            - RESOLVED
+          type: string
+        name:
+          type: string
+        published_at:
+          format: date-time
+          type: string
+        resolved_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        started_at:
+          description: When the incident began, not when the notice was published
+          format: date-time
+          type: string
+        updates:
+          description: Most recently published first
+          items:
+            $ref: '#/components/schemas/StatusPageIncidentUpdateResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - incident_id
+        - name
+        - incident_status
+        - impact
+        - started_at
+        - resolved_at
+        - published_at
+        - updates
+      type: object
+    LengthAwarePageStatusPageIncidentResource:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/StatusPageIncidentResource'
+          type: array
+        limit:
+          format: int64
+          type: integer
+        offset:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - data
+        - total
+        - limit
+        - offset
+      type: object
+    StatusPageIncidentComponentRequest:
+      additionalProperties: false
+      properties:
+        component_id:
+          format: uuid
+          type: string
+        status:
+          description: Empty returns this component to operational
+          enum:
+            - OPERATIONAL
+            - DEGRADED_PERFORMANCE
+            - PARTIAL_OUTAGE
+            - MAJOR_OUTAGE
+            - UNDER_MAINTENANCE
+          type: string
+      required:
+        - component_id
+      type: object
+    PublishStatusPageIncidentRequestBody:
+      additionalProperties: false
+      properties:
+        body:
+          description: Body of the first update. Plain text
+          minLength: 1
+          type: string
+        components:
+          items:
+            $ref: '#/components/schemas/StatusPageIncidentComponentRequest'
+          type: array
+        impact:
+          description: Empty derives the impact from the affected components
+          enum:
+            - NONE
+            - MINOR
+            - MAJOR
+            - CRITICAL
+          type: string
+        incident_status:
+          default: INVESTIGATING
+          enum:
+            - INVESTIGATING
+            - IDENTIFIED
+            - MONITORING
+            - RESOLVED
+          type: string
+        name:
+          description: The public title
+          maxLength: 255
+          minLength: 1
+          type: string
+        published_at:
+          description: Empty selects the current moment. Backfilling a past incident sets it in the past
+          format: date-time
+          type: string
+        started_at:
+          description: When the incident began. Empty uses the publication time
+          format: date-time
+          type: string
+      required:
+        - name
+        - body
+      type: object
+    PostStatusPageIncidentUpdateRequestBody:
+      additionalProperties: false
+      properties:
+        body:
+          description: Body text. Plain text
+          minLength: 1
+          type: string
+        components:
+          description: Lists only the components being changed by this update; those not listed keep their current status
+          items:
+            $ref: '#/components/schemas/StatusPageIncidentComponentRequest'
+          type: array
+        incident_status:
+          description: Empty keeps the current stage. RESOLVED closes the notice and returns every affected component to operational
+          enum:
+            - INVESTIGATING
+            - IDENTIFIED
+            - MONITORING
+            - RESOLVED
+          type: string
+        published_at:
+          format: date-time
+          type: string
+      required:
+        - body
+      type: object
+    StatusPageMaintenanceComponentResource:
+      additionalProperties: false
+      properties:
+        component_id:
+          format: uuid
+          type: string
+        component_name:
+          type: string
+        component_status:
+          enum:
+            - UNDER_MAINTENANCE
+            - DEGRADED_PERFORMANCE
+          type: string
+      required:
+        - component_id
+        - component_name
+        - component_status
+      type: object
+    StatusPageMaintenanceResource:
+      additionalProperties: false
+      properties:
+        affected_components:
+          items:
+            $ref: '#/components/schemas/StatusPageMaintenanceComponentResource'
+          type:
+            - array
+            - 'null'
+        body:
+          description: Maintenance description. Plain text
+          type: string
+        completed_at:
+          description: When the maintenance actually finished
+          format: date-time
+          type:
+            - string
+            - 'null'
+        maintenance_id:
+          format: uuid
+          type: string
+        maintenance_status:
+          enum:
+            - SCHEDULED
+            - IN_PROGRESS
+            - COMPLETED
+            - CANCELLED
+          type: string
+        name:
+          type: string
+        scheduled_for:
+          format: date-time
+          type: string
+        scheduled_until:
+          format: date-time
+          type: string
+        started_at:
+          description: When the maintenance actually started, which may differ from the scheduled time
+          format: date-time
+          type:
+            - string
+            - 'null'
+      required:
+        - maintenance_id
+        - name
+        - body
+        - maintenance_status
+        - scheduled_for
+        - scheduled_until
+        - started_at
+        - completed_at
+        - affected_components
+      type: object
+    LengthAwarePageStatusPageMaintenanceResource:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/StatusPageMaintenanceResource'
+          type: array
+        limit:
+          format: int64
+          type: integer
+        offset:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - data
+        - total
+        - limit
+        - offset
+      type: object
+    StatusPageMaintenanceComponentRequest:
+      additionalProperties: false
+      properties:
+        component_id:
+          format: uuid
+          type: string
+        component_status:
+          default: UNDER_MAINTENANCE
+          description: How this component is shown while the maintenance runs. Neither value reduces availability
+          enum:
+            - UNDER_MAINTENANCE
+            - DEGRADED_PERFORMANCE
+          type: string
+      required:
+        - component_id
+      type: object
+    ScheduleStatusPageMaintenanceRequestBody:
+      additionalProperties: false
+      properties:
+        body:
+          description: Maintenance description. Plain text
+          minLength: 1
+          type: string
+        components:
+          description: At least one. Maintenance that affects no component reads on the page as an announcement with no subject
+          items:
+            $ref: '#/components/schemas/StatusPageMaintenanceComponentRequest'
+          minItems: 1
+          type: array
+        name:
+          maxLength: 255
+          minLength: 1
+          type: string
+        scheduled_for:
+          format: date-time
+          type: string
+        scheduled_until:
+          description: Must be later than `scheduled_for`
+          format: date-time
+          type: string
+      required:
+        - name
+        - body
+        - scheduled_for
+        - scheduled_until
+        - components
       type: object
