@@ -4,11 +4,21 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh
 #
+# Remove it again:
+#
+#   curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh -s -- --uninstall
+#
 # Environment:
 #
 #   LEAFLOW_VERSION         version to install, default the latest release
 #   LEAFLOW_INSTALL_DIR     where to put the binary, default ~/.local/bin
 #   LEAFLOW_NO_COMPLETION   set to skip installing shell completion
+#   LEAFLOW_UNINSTALL       set to uninstall instead of install
+#   LEAFLOW_PURGE           set to uninstall and also remove the configuration
+#
+# The two variables duplicate --uninstall and --purge because `sh -s --` is the
+# part of a piped invocation people get wrong, and because install.ps1 cannot
+# take arguments at all: whatever works there should work here too.
 #
 # Written for POSIX sh, not bash: this runs on whatever /bin/sh happens to be,
 # including Alpine's ash inside a container.
@@ -24,27 +34,62 @@ BINARY="leaflow"
 # anyway. Override with LEAFLOW_INSTALL_DIR to install system-wide.
 INSTALL_DIR="${LEAFLOW_INSTALL_DIR:-${HOME}/.local/bin}"
 
+UNINSTALL="${LEAFLOW_UNINSTALL:-}"
+PURGE="${LEAFLOW_PURGE:-}"
+
+# As --purge does below. Reading LEAFLOW_PURGE as "install, and by the way
+# delete the configuration" would be an installation that starts by throwing
+# away the credentials.
+[ -z "$PURGE" ] || UNINSTALL=1
+
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    say "Install the leaflow CLI, or remove one that is already there."
+    say ""
+    say "  --uninstall   remove the binary and the completion scripts"
+    say "  --purge       also remove ~/.config/leaflow, credentials included"
+    say "  --help        print this"
+    say ""
+    say "Through a pipe, options go after -s --:"
+    say "  curl -fsSL <url> | sh -s -- --uninstall"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --uninstall) UNINSTALL=1 ;;
+        # Purging alone would leave an installed CLI with no configuration,
+        # which is not a state anyone wants to end up in.
+        --purge) UNINSTALL=1; PURGE=1 ;;
+        -h | --help) usage; exit 0 ;;
+        *) die "unknown option: $1 (run with --help)" ;;
+    esac
+    shift
+done
 
 need() {
     command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"
 }
 
-need uname
-need mkdir
-need tar
+# Only the install path needs these. Requiring tar, or a download tool, to
+# delete a few files would make a broken machine impossible to clean up.
+setup_download() {
+    need uname
+    need mkdir
+    need tar
 
-# curl or wget, whichever is present. Containers often have exactly one.
-if command -v curl >/dev/null 2>&1; then
-    fetch() { curl -fsSL "$1" -o "$2"; }
-    fetch_stdout() { curl -fsSL "$1"; }
-elif command -v wget >/dev/null 2>&1; then
-    fetch() { wget -qO "$2" "$1"; }
-    fetch_stdout() { wget -qO- "$1"; }
-else
-    die "curl or wget is required"
-fi
+    # curl or wget, whichever is present. Containers often have exactly one.
+    if command -v curl >/dev/null 2>&1; then
+        fetch() { curl -fsSL "$1" -o "$2"; }
+        fetch_stdout() { curl -fsSL "$1"; }
+    elif command -v wget >/dev/null 2>&1; then
+        fetch() { wget -qO "$2" "$1"; }
+        fetch_stdout() { wget -qO- "$1"; }
+    else
+        die "curl or wget is required"
+    fi
+}
 
 detect_platform() {
     os=$(uname -s)
@@ -109,7 +154,9 @@ verify_checksum() {
     [ "$actual" = "$expected" ] || die "checksum mismatch for ${name}: expected ${expected}, got ${actual}"
 }
 
-main() {
+install() {
+    setup_download
+
     platform=$(detect_platform)
 
     version="${LEAFLOW_VERSION:-}"
@@ -216,6 +263,102 @@ install_completion() {
     "${INSTALL_DIR}/${BINARY}" install-completion >/dev/null 2>&1 || return 0
 
     say "Installed shell completion."
+}
+
+REMOVED=0
+
+# remove_path deletes one path and says so.
+#
+# A path that is not there is not a failure: uninstalling twice has to end the
+# same way as uninstalling once, and neither the completion files nor the
+# configuration are guaranteed to exist in the first place.
+remove_path() {
+    [ -e "$1" ] || [ -L "$1" ] || return 0
+
+    rm -rf "$1" || die "cannot remove $1"
+
+    say "Removed $1"
+    REMOVED=1
+}
+
+# uninstall undoes what this script does, and only that.
+#
+# The PATH line is left alone: this script never wrote one — it prints the line
+# and lets the reader add it — and ~/.local/bin is shared with every other tool
+# that installs the same way. Removing it would break them.
+uninstall() {
+    binary="${INSTALL_DIR}/${BINARY}"
+    config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
+    config_dir="${LEAFLOW_CONFIG_DIR:-${config_home}/${BINARY}}"
+
+    # Before the binary goes, because it is the only thing that can do this:
+    # credentials may live in the system keychain, which is not a file this
+    # script can reach, and logging out also revokes the refresh token, which
+    # deleting a file never does.
+    #
+    # Best effort. Being offline, or never having logged in, is no reason to
+    # refuse to uninstall. This covers the current context only — any other
+    # context keeps its keychain entry, while its credential file goes with the
+    # configuration directory below.
+    if [ -n "$PURGE" ] && [ -x "$binary" ]; then
+        if "$binary" logout >/dev/null 2>&1; then
+            say "Signed out."
+        else
+            say "Could not sign out; a keychain entry may be left behind."
+        fi
+    fi
+
+    remove_path "$binary"
+
+    # Left behind by an install that was interrupted between the two renames.
+    remove_path "${binary}.new"
+
+    data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+
+    # Every shell, not just the current one: the completion file was written
+    # for whichever shell was in use at install time, and someone who has
+    # switched since would otherwise keep a completion for a missing command.
+    remove_path "${data_home}/bash-completion/completions/${BINARY}"
+    remove_path "${HOME}/.zsh/completions/_${BINARY}"
+    remove_path "${config_home}/fish/completions/${BINARY}.fish"
+
+    if [ -n "$PURGE" ]; then
+        # LEAFLOW_CONFIG_DIR is someone's own value, and set to / or to a home
+        # directory it would turn an uninstall into something unrecoverable.
+        case "$config_dir" in
+            "" | "/" | "${HOME}" | "${HOME}/") die "refusing to remove ${config_dir}" ;;
+        esac
+
+        remove_path "$config_dir"
+    fi
+
+    if [ "$REMOVED" -eq 0 ]; then
+        say "Nothing to remove: no ${BINARY} installation in ${INSTALL_DIR}."
+    else
+        say ""
+        say "Uninstalled."
+
+        if [ -z "$PURGE" ] && [ -d "$config_dir" ]; then
+            say "Kept ${config_dir}. Pass --purge to remove it and sign out."
+        fi
+    fi
+
+    # A copy from Homebrew, go install, or a second install directory is not
+    # this script's to delete. Saying nothing would be worse: the command still
+    # runs afterwards, which reads as an uninstall that did not work.
+    other=$(command -v "$BINARY" 2>/dev/null || true)
+    if [ -n "$other" ]; then
+        say ""
+        say "Note: ${other} is still on your PATH and was not installed by this script."
+    fi
+}
+
+main() {
+    if [ -n "$UNINSTALL" ]; then
+        uninstall
+    else
+        install
+    fi
 }
 
 main
