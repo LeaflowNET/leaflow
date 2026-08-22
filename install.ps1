@@ -2,15 +2,27 @@
 #
 #   irm https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.ps1 | iex
 #
+# Remove it again:
+#
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.ps1))) -Uninstall
+#
 # Environment:
 #
 #   LEAFLOW_VERSION         version to install, default the latest release
 #   LEAFLOW_INSTALL_DIR     where to put the binary, default
 #                           %LOCALAPPDATA%\Programs\leaflow
 #   LEAFLOW_NO_PATH         set to skip adding the directory to PATH
+#   LEAFLOW_UNINSTALL       set to uninstall instead of install
+#   LEAFLOW_PURGE           set to uninstall and also remove the configuration
 #
 # Configured through the environment because `iex` runs the script text and has
-# nowhere to put arguments.
+# nowhere to put arguments. The switches are for every other way of calling
+# this: from a file, or from a script block as above.
+
+param(
+    [switch]$Uninstall,
+    [switch]$Purge
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -46,6 +58,21 @@ function Get-Architecture {
         'x86'   { Stop-Install '32-bit Windows is not supported; the releases are amd64 and arm64' }
         default { Stop-Install "unsupported architecture: $arch" }
     }
+}
+
+function Get-InstallDir {
+    if ($env:LEAFLOW_INSTALL_DIR) { return $env:LEAFLOW_INSTALL_DIR }
+
+    return Join-Path $env:LOCALAPPDATA 'Programs\leaflow'
+}
+
+# Where the CLI itself keeps config.yaml and the credential files, resolved the
+# same way it resolves them: Go's os.UserHomeDir is %USERPROFILE% here.
+function Get-ConfigDir {
+    if ($env:LEAFLOW_CONFIG_DIR) { return $env:LEAFLOW_CONFIG_DIR }
+    if ($env:XDG_CONFIG_HOME) { return Join-Path $env:XDG_CONFIG_HOME 'leaflow' }
+
+    return Join-Path $env:USERPROFILE '.config\leaflow'
 }
 
 # The redirect target of /releases/latest names the tag, which avoids both a
@@ -158,61 +185,209 @@ function Add-ToPath($directory) {
     return $true
 }
 
-$architecture = Get-Architecture
+# The mirror of Add-ToPath, and it reads the User scope for the same reason.
+#
+# Only an exact entry goes: a directory someone put on PATH for their own
+# reasons, or one holding other tools, is not this script's to edit beyond the
+# line it wrote itself.
+function Remove-FromPath($directory) {
+    $current = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if (-not $current) { return $false }
 
-$version = $env:LEAFLOW_VERSION
-if (-not $version) { $version = Get-LatestVersion }
+    $entries = @($current -split ';' | Where-Object { $_ })
+    $kept = @($entries | Where-Object { $_.TrimEnd('\') -ine $directory.TrimEnd('\') })
 
-$installDir = $env:LEAFLOW_INSTALL_DIR
-if (-not $installDir) { $installDir = Join-Path $env:LOCALAPPDATA 'Programs\leaflow' }
+    if ($kept.Count -eq $entries.Count) { return $false }
 
-# Archive names carry the version without its leading v.
-$number = $version -replace '^v', ''
-$archive = "leaflow_${number}_windows_${architecture}.zip"
-$base = "https://github.com/$Repo/releases/download/$version"
+    [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
 
-$work = Join-Path ([System.IO.Path]::GetTempPath()) ("leaflow-install-" + [System.Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $work -Force | Out-Null
+    # This session holds its own copy, so it is corrected too. Otherwise leaflow
+    # still resolves in the window the uninstall was run from, which reads as an
+    # uninstall that did nothing.
+    $env:Path = (@($env:Path -split ';' |
+        Where-Object { $_ -and $_.TrimEnd('\') -ine $directory.TrimEnd('\') }) -join ';')
 
-try {
-    Write-Step "Downloading leaflow $version for windows_$architecture..."
+    return $true
+}
 
-    Get-Download "$base/$archive" (Join-Path $work $archive)
-    Get-Download "$base/checksums.txt" (Join-Path $work 'checksums.txt')
+$script:Removed = $false
 
-    Test-Checksum (Join-Path $work $archive) (Join-Path $work 'checksums.txt') $archive
+# Remove-Target deletes one path and says so. A path that is not there is not a
+# failure: uninstalling twice has to end the same way as uninstalling once.
+function Remove-Target($path, $hint) {
+    if (-not (Test-Path -LiteralPath $path)) { return }
 
-    Expand-Archive -Path (Join-Path $work $archive) -DestinationPath (Join-Path $work 'unpacked') -Force
+    try {
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+    } catch {
+        $message = "cannot remove $path`n       $($_.Exception.Message)"
+        if ($hint) { $message = "cannot remove $path`n$hint" }
 
-    $extracted = Join-Path $work "unpacked\$Binary"
-    if (-not (Test-Path $extracted)) { Stop-Install "$Binary is not in the archive" }
+        Stop-Install $message
+    }
 
-    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+    Write-Step "Removed $path"
+    $script:Removed = $true
+}
 
+function Invoke-Install {
+    $architecture = Get-Architecture
+
+    $version = $env:LEAFLOW_VERSION
+    if (-not $version) { $version = Get-LatestVersion }
+
+    $installDir = Get-InstallDir
+
+    # Archive names carry the version without its leading v.
+    $number = $version -replace '^v', ''
+    $archive = "leaflow_${number}_windows_${architecture}.zip"
+    $base = "https://github.com/$Repo/releases/download/$version"
+
+    $work = Join-Path ([System.IO.Path]::GetTempPath()) ("leaflow-install-" + [System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $work -Force | Out-Null
+
+    try {
+        Write-Step "Downloading leaflow $version for windows_$architecture..."
+
+        Get-Download "$base/$archive" (Join-Path $work $archive)
+        Get-Download "$base/checksums.txt" (Join-Path $work 'checksums.txt')
+
+        Test-Checksum (Join-Path $work $archive) (Join-Path $work 'checksums.txt') $archive
+
+        Expand-Archive -Path (Join-Path $work $archive) -DestinationPath (Join-Path $work 'unpacked') -Force
+
+        $extracted = Join-Path $work "unpacked\$Binary"
+        if (-not (Test-Path $extracted)) { Stop-Install "$Binary is not in the archive" }
+
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+
+        $target = Join-Path $installDir $Binary
+        Install-Binary $extracted $target
+
+        Write-Step "Installed $target"
+
+        $added = $false
+        if (-not $env:LEAFLOW_NO_PATH) {
+            $added = Add-ToPath $installDir
+        }
+
+        Write-Step ''
+
+        if ($added) {
+            Write-Step "Added $installDir to your PATH."
+            Write-Step 'Open a new terminal for it to apply everywhere, then run: leaflow login'
+        } else {
+            Write-Step 'Run: leaflow login'
+        }
+
+        # Printed, not written. PowerShell scans no directory for completion, so
+        # the only place it can go is the profile, and that runs on every shell
+        # start.
+        Write-Step ''
+        Write-Step 'For tab completion, add to $PROFILE:'
+        Write-Step '  leaflow completion powershell | Out-String | Invoke-Expression'
+    } finally {
+        Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Invoke-Uninstall undoes what Invoke-Install does, and only that. The
+# completion line is left to its owner: this script prints it and never writes
+# it, and $PROFILE holds far more than leaflow.
+function Invoke-Uninstall {
+    $installDir = Get-InstallDir
+    $configDir = Get-ConfigDir
     $target = Join-Path $installDir $Binary
-    Install-Binary $extracted $target
 
-    Write-Step "Installed $target"
+    # Before the binary goes, because it is the only thing that can do this:
+    # credentials may sit in Windows Credential Manager, which is not a file
+    # this script can reach, and logging out also revokes the refresh token,
+    # which deleting a file never does.
+    #
+    # Best effort. Being offline, or never having logged in, is no reason to
+    # refuse to uninstall. It covers the current context only — any other
+    # context keeps its Credential Manager entry, while its credential file goes
+    # with the configuration directory below.
+    if ($Purge -and (Test-Path -LiteralPath $target)) {
+        $code = 1
 
-    $added = $false
-    if (-not $env:LEAFLOW_NO_PATH) {
-        $added = Add-ToPath $installDir
+        # $ErrorActionPreference is lowered around the call because Windows
+        # PowerShell turns a native command's stderr into an error record, and
+        # under 'Stop' that would end the uninstall over a failed logout — the
+        # one part of it that is allowed to fail.
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+
+        try {
+            & $target logout *> $null
+            $code = $LASTEXITCODE
+        } catch {
+            $code = 1
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+
+        if ($code -eq 0) {
+            Write-Step 'Signed out.'
+        } else {
+            Write-Step 'Could not sign out; a Credential Manager entry may be left behind.'
+        }
+    }
+
+    Remove-Target $target (
+        "       Close anything using leaflow and try again. An MCP server started by`n" +
+        "       an editor counts: check with  Get-Process leaflow"
+    )
+
+    # Only when it is empty, and only best effort: this script created the
+    # directory, but a directory someone else has since put files in is theirs.
+    if ((Test-Path -LiteralPath $installDir) -and
+        -not (Get-ChildItem -LiteralPath $installDir -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $installDir -Force -ErrorAction SilentlyContinue
+    }
+
+    if (Remove-FromPath $installDir) {
+        Write-Step "Removed $installDir from your PATH."
+        $script:Removed = $true
+    }
+
+    if ($Purge) {
+        # LEAFLOW_CONFIG_DIR is someone's own value, and pointed at a home or a
+        # drive root it would turn an uninstall into something unrecoverable.
+        $resolved = $configDir.TrimEnd('\')
+
+        if (-not $resolved -or $resolved -match '^[A-Za-z]:$' -or
+            ($env:USERPROFILE -and $resolved -ieq $env:USERPROFILE.TrimEnd('\'))) {
+            Stop-Install "refusing to remove $configDir"
+        }
+
+        Remove-Target $configDir
+    }
+
+    if (-not $script:Removed) {
+        Write-Step "Nothing to remove: no leaflow installation in $installDir."
+        return
     }
 
     Write-Step ''
+    Write-Step 'Uninstalled.'
 
-    if ($added) {
-        Write-Step "Added $installDir to your PATH."
-        Write-Step 'Open a new terminal for it to apply everywhere, then run: leaflow login'
-    } else {
-        Write-Step 'Run: leaflow login'
+    if (-not $Purge -and (Test-Path -LiteralPath $configDir)) {
+        Write-Step "Kept $configDir. Pass -Purge to remove it and sign out."
     }
 
-    # Printed, not written. PowerShell scans no directory for completion, so the
-    # only place it can go is the profile, and that runs on every shell start.
-    Write-Step ''
-    Write-Step 'For tab completion, add to $PROFILE:'
-    Write-Step '  leaflow completion powershell | Out-String | Invoke-Expression'
-} finally {
-    Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Step 'If you added the completion line to $PROFILE, remove it there.'
+}
+
+if ($env:LEAFLOW_UNINSTALL) { $Uninstall = $true }
+if ($env:LEAFLOW_PURGE) { $Purge = $true }
+
+# Purging on its own would be an installation that begins by deleting the
+# credentials it is about to want.
+if ($Purge) { $Uninstall = $true }
+
+if ($Uninstall) {
+    Invoke-Uninstall
+} else {
+    Invoke-Install
 }

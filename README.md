@@ -24,6 +24,8 @@ to `%LOCALAPPDATA%\Programs\leaflow` and adds it to your PATH.
 | `LEAFLOW_INSTALL_DIR` | where to put the binary |
 | `LEAFLOW_NO_COMPLETION` | skip completion (install.sh) |
 | `LEAFLOW_NO_PATH` | skip the PATH change (install.ps1) |
+| `LEAFLOW_UNINSTALL` | same as `--uninstall` |
+| `LEAFLOW_PURGE` | same as `--purge` |
 
 With Go:
 
@@ -43,6 +45,22 @@ Later, update in place:
 ```sh
 leaflow update
 ```
+
+## Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.sh | sh -s -- --uninstall
+```
+
+In PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/LeaflowNET/leaflow/main/install.ps1))) -Uninstall
+```
+
+This removes the binary and the completion, and keeps `~/.config/leaflow`. Pass
+`--purge`, or `-Purge` in PowerShell, to sign out and remove the configuration
+as well.
 
 ## Sign in
 
