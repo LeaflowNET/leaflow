@@ -1821,6 +1821,21 @@ components:
           type:
           - array
           - 'null'
+        clientContext:
+          description: |-
+            The context blocks the client attached to this message.
+
+            **Not part of what the operator wrote** — `text` is. Render the message from `text` and
+            leave these out of the bubble; they are here so a client that did not send them, or one
+            that reloaded, can still read what the assistant was given.
+
+            The actions declared alongside them are not returned: they are re-declared as they
+            change and would make every fetch of the conversation carry them again.
+          items:
+            $ref: '#/components/schemas/ClientContextPart'
+          type:
+          - array
+          - 'null'
         createdAt:
           format: date-time
           type: string
@@ -2073,26 +2088,59 @@ components:
     SendMessageRequestBody:
       additionalProperties: false
       properties:
-        attachmentIds:
-          description: Ids of attachments uploaded earlier that are not yet bound to any message
-          items:
-            type: string
-          type:
-          - array
-          - 'null'
         client:
           $ref: '#/components/schemas/ClientContextRequest'
+        parts:
+          description: |-
+            The message, in the order it was written. A message with nothing but text is a single
+            text part; that is the ordinary case and nothing else is required.
+          items:
+            $ref: '#/components/schemas/MessagePart'
+          minItems: 1
+          type: array
+      required:
+      - parts
+      type: object
+    MessagePart:
+      additionalProperties: false
+      description: |-
+        One piece of a message. `type` says which of the fields below carries it:
+
+        - `text` — the words, in `text`
+        - `file` — an attachment uploaded earlier, by id in `attachmentId`
+        - `data-<something>` — context from the client, in `data`. The name after `data-` is yours;
+          it is shown to the assistant so it can tell one kind of block from another.
+
+        Order matters: an image belongs where it was written, not at the end.
+      properties:
+        attachmentId:
+          description: For `file` parts. The attachment must have been uploaded and not yet bound to another message.
+          type:
+          - string
+          - 'null'
+        data:
+          additionalProperties: true
+          description: For `data-*` parts. Any object; its keys reach the assistant as they are.
+          type:
+          - object
+          - 'null'
         text:
+          description: For `text` parts.
+          type:
+          - string
+          - 'null'
+        type:
           minLength: 1
+          maxLength: 64
           type: string
       required:
-      - text
+      - type
       type: object
     ClientContextRequest:
       additionalProperties: false
       description: |-
-        What this client is and what it can do, so the assistant can ask it to do those things while
-        it answers.
+        Which client this is and what it can do, so the assistant can ask it to do those things
+        while it answers. What the operator is looking at travels as `data-*` parts on the message.
 
         Send `actions` only when they differ from the last message on this conversation. Sending the
         block without `actions` keeps whatever was declared before.
@@ -2110,19 +2158,6 @@ components:
           minLength: 1
           maxLength: 128
           type: string
-        context:
-          description: |-
-            What the operator is looking at or working on, as typed blocks. Each one is shown to the
-            assistant as it was sent.
-
-            These travel with this message only and stay in the conversation, so they add up: send
-            what the assistant needs to answer, not everything on hand. At most 64 KiB in total.
-          items:
-            $ref: '#/components/schemas/ClientContextPart'
-          maxItems: 8
-          type:
-          - array
-          - 'null'
         label:
           description: 'How the client calls itself, for example "Leaflow console (web)".'
           maxLength: 64
@@ -2132,17 +2167,12 @@ components:
       type: object
     ClientContextPart:
       additionalProperties: false
-      description: |-
-        One block of context. `type` names what it is so the assistant can tell blocks apart —
-        `page`, `selection`, `open_file`, `working_directory`, whatever this client has.
+      description: A `data-*` part as it was sent.
       properties:
         data:
           additionalProperties: true
-          description: The block itself. Any object; its keys are shown to the assistant as they are.
           type: object
         type:
-          minLength: 1
-          maxLength: 64
           type: string
       required:
       - type
