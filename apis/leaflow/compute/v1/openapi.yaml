@@ -764,7 +764,9 @@ paths:
 
         Instances are created one by one in order. If the sequence stops part way through, because of a quota limit for example, **the instances already created are kept** and `failure` states why it stopped. A failure on the first instance is treated as a failure of the whole request and no instance is created.
 
-        Exactly one image source must be given: `image_id` for a platform image, `private_image_id` for a private image. Supplying both or neither is rejected.
+        Exactly one source must be given: `image_id` for a platform image, `private_image_id` for a private image, or `boot_disk_id` to boot a disk you already have. Supplying more than one, or none, is rejected.
+
+        `boot_disk_id` recovers an instance that can no longer be repaired from the inside. Snapshot its disk, restore that snapshot into a new disk, attach the new disk to another instance and repair it there, then create an instance from it. That disk is not deleted when the instance is released; it is detached and returned to you.
 
         Instances are created in the availability zone of the instance type. Disks to be attached later must reside in the same zone.
 
@@ -3180,6 +3182,12 @@ components:
         id:
           format: uuid
           type: string
+        boot_disk_id:
+          description: Non-empty when the instance was created from a disk you already had, instead of from an image
+          format: uuid
+          type:
+            - string
+            - 'null'
         image_id:
           description: Non-empty when the instance was created from a platform image
           format: uuid
@@ -3296,6 +3304,7 @@ components:
         - pending_instance_type_id
         - image_id
         - private_image_id
+        - boot_disk_id
         - status
         - suspended_at
         - created_at
@@ -3325,8 +3334,12 @@ components:
         generate_password:
           description: Have the platform generate a random password, returned only in this response
           type: boolean
+        boot_disk_id:
+          description: Boot a disk you already have instead of installing an image. The disk must be available, unattached, and in the same availability zone as the instance type. Exactly one of this, `image_id` and `private_image_id`
+          format: uuid
+          type: string
         image_id:
-          description: A platform image. Exactly one of this and `private_image_id`
+          description: A platform image. Exactly one of this, `private_image_id` and `boot_disk_id`
           format: uuid
           maxLength: 64
           type: string
@@ -3334,12 +3347,16 @@ components:
           format: uuid
           maxLength: 64
           type: string
+        login_username:
+          description: The account the disk lets you log in as. Required with `boot_disk_id`, and rejected without it since an image states its own
+          maxLength: 32
+          type: string
         name:
           maxLength: 128
           minLength: 1
           type: string
         password:
-          description: Root password. Only the SSH public keys of the project are used when omitted
+          description: The password to set, on the login account and on root. Only the SSH public keys of the project are used when omitted
           maxLength: 128
           type: string
         port_id:
@@ -3347,11 +3364,11 @@ components:
           format: uuid
           type: string
         private_image_id:
-          description: A private image. Exactly one of this and `image_id`
+          description: A private image. Exactly one of this, `image_id` and `boot_disk_id`
           format: uuid
           type: string
         root_disk_gb:
-          description: System disk capacity in GB. Chosen automatically from the requirement of the image and the platform minimum when omitted
+          description: System disk capacity in GB. Chosen automatically from the requirement of the image and the platform minimum when omitted. Ignored with `boot_disk_id`, since that disk already has its capacity
           format: int64
           maximum: 32768
           minimum: 0
