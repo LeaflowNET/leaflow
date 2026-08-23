@@ -1882,6 +1882,145 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/web-checks/{checkId}:
+    parameters:
+      - in: path
+        name: checkId
+        required: true
+        schema:
+          format: uuid
+          type: string
+    get:
+      summary: Get a project-level web check
+      operationId: get-project-web-check
+      tags:
+        - WebCheck
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebCheckResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Create a web check that is not tied to a machine, or replace it by the same id
+      description: |-
+        **Create or replace**: to modify a check, call this endpoint again with the same id.
+
+        Unlike `/servers/{serverId}/web-checks/{checkId}`, this check does not belong to any machine — use it when the target is simply a URL. Nothing needs to be enrolled first.
+
+        A check bound to a machine is removed together with that machine; a project-level check is not. Where a check belongs cannot be changed afterwards: move it by deleting and recreating it.
+      operationId: put-project-web-check
+      tags:
+        - WebCheck
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutWebCheckRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebCheckResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a project-level web check
+      description: The corresponding check task and trigger are removed from the monitoring system as well.
+      operationId: delete-project-web-check
+      tags:
+        - WebCheck
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/status-page/domain:
+    get:
+      summary: Get the custom domain and its certificate state
+      description: |-
+        Reports whether the domain currently resolves to the status page and where its certificate stands.
+
+        `expected_cname` is the value the domain must point at. `observed_cname` is what it currently resolves to, which is what to show the user when verification fails — "verification failed" on its own tells them nothing about what to fix.
+      operationId: get-status-page-domain
+      tags:
+        - StatusPage
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageDomainResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    put:
+      summary: Bind a custom domain to this status page
+      description: |-
+        The domain must already point at the status page by CNAME. Binding is rejected until it does, and the error carries both the expected and the observed target.
+
+        Ownership is verified before the domain is stored, and it is verified again before each certificate is issued: a domain whose CNAME is later removed stops being served.
+
+        A certificate is requested in the background — this call does not wait for it. Poll GET on this endpoint to follow its progress; until a certificate is active, the domain does not serve HTTPS while the page remains reachable at its shared address.
+      operationId: put-status-page-domain
+      tags:
+        - StatusPage
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutStatusPageDomainRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusPageDomainResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Unbind the custom domain
+      description: The page stays reachable at its shared address. Certificate renewal for the domain stops; the certificate already issued is left to expire.
+      operationId: delete-status-page-domain
+      tags:
+        - StatusPage
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
 components:
   securitySchemes:
     bearerAuth:
@@ -3077,6 +3216,7 @@ components:
         server_id:
           format: uuid
           type: string
+          description: The machine this check is attached to. Empty for a project-level check, which is not tied to any machine
         steps:
           items:
             $ref: '#/components/schemas/WebCheckStepResource'
@@ -3400,7 +3540,7 @@ components:
         name:
           type: string
         public_url:
-          description: The current public address of this page. It is returned even while unpublished, in which case opening it returns 404
+          description: 'The address this page is served at: the custom domain if one is bound, otherwise the shared domain with the slug, otherwise the shared domain with the project id'
           type: string
         published:
           type: boolean
@@ -3409,6 +3549,7 @@ components:
           type: boolean
         slug:
           type: string
+          description: The readable address segment, empty when none is set. The page is always reachable at /<project id> regardless
         status_page_id:
           format: uuid
           type: string
@@ -3430,6 +3571,9 @@ components:
           description: Number of days covered by the availability bar
           format: int64
           type: integer
+        support_label:
+          description: The text shown on the support link. Empty means the page default is used
+          type: string
       required:
         - status_page_id
         - slug
@@ -3448,6 +3592,7 @@ components:
         - public_url
         - created_at
         - updated_at
+        - support_label
       type: object
     PutStatusPageRequestBody:
       additionalProperties: false
@@ -3458,7 +3603,7 @@ components:
           pattern: '^(#[0-9a-fA-F]{6})?$'
           type: string
         custom_domain:
-          description: Your own domain, such as status.acme.com. Empty binds none. Globally unique
+          description: Read-only here. Bind a custom domain through PUT /status-page/domain, which verifies ownership first; a value sent here is ignored
           maxLength: 253
           type: string
         footer_text:
@@ -3486,7 +3631,7 @@ components:
           description: Not indexed by default. Once a page has been crawled, switching back does not remove copies already held in third-party indexes
           type: boolean
         slug:
-          description: The address segment under the shared domain. Lowercase letters, digits and hyphens. Globally unique
+          description: An optional readable address segment under the shared domain. Lowercase letters, digits and hyphens; globally unique. Leave it empty and the page is served at /<project id>, which needs no configuration and cannot be taken by anyone else
           maxLength: 63
           minLength: 1
           pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
@@ -3511,8 +3656,11 @@ components:
           maximum: 365
           minimum: 30
           type: integer
+        support_label:
+          description: The text shown on the support link. Empty uses the page default. Different products call this different things — help centre, submit a ticket, support
+          maxLength: 32
+          type: string
       required:
-        - slug
         - name
       type: object
     PutStatusPageOrderRequestBody:
@@ -4127,4 +4275,67 @@ components:
         - scheduled_for
         - scheduled_until
         - components
+      type: object
+    StatusPageDomainResource:
+      additionalProperties: false
+      properties:
+        certificate_not_after:
+          description: When the current certificate expires
+          format: date-time
+          type:
+            - string
+            - 'null'
+        certificate_status:
+          description: NONE means no certificate has been requested for this domain yet
+          enum:
+            - NONE
+            - PENDING
+            - ACTIVE
+            - FAILED
+          type: string
+        domain:
+          description: The bound custom domain. Empty means none is bound
+          type: string
+        expected_cname:
+          description: The value the domain must point at
+          type: string
+        last_error:
+          description: Why the most recent issuance attempt failed. Empty when it did not
+          type: string
+        observed_cname:
+          description: What the domain currently resolves to. Empty when it resolves to nothing
+          type: string
+        public_url:
+          description: The address this page is served at, taking the custom domain into account
+          type: string
+        verified:
+          description: Whether the domain currently points at the status page
+          type: boolean
+        verified_at:
+          description: When ownership was last confirmed
+          format: date-time
+          type:
+            - string
+            - 'null'
+      required:
+        - domain
+        - expected_cname
+        - observed_cname
+        - verified
+        - verified_at
+        - certificate_status
+        - certificate_not_after
+        - last_error
+        - public_url
+      type: object
+    PutStatusPageDomainRequestBody:
+      additionalProperties: false
+      properties:
+        domain:
+          description: Your own domain, such as status.acme.com. It must already point at the status page by CNAME
+          maxLength: 253
+          minLength: 1
+          type: string
+      required:
+        - domain
       type: object
