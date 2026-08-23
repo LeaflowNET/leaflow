@@ -21,8 +21,8 @@ info:
       name and a type form one set — for example, three A records pointing at three addresses. This
       API exposes no per-record identifier, because provider-assigned identifiers are neither
       portable across providers nor guaranteed to be stable within one.
-    - **`PUT` replaces an entire record set.** See the operation description; this is the single
-      most consequential distinction in this API.
+    - **`PUT` replaces an entire record set; `PATCH` names individual values.** See below; this is
+      the single most consequential distinction in this API.
     - **Confirm which credential owns a domain before writing to it.** The same domain can exist in
       more than one provider account — most commonly while a domain is being migrated and the old
       account still holds it — and only one of them is actually serving queries.
@@ -33,18 +33,18 @@ info:
       returns the values that were submitted. A credential that was entered incorrectly must be
       deleted and registered again.
 
-    ## Changing a single record
+    ## PUT or PATCH
 
-    There is no operation that edits one record in place; there is only one that states what a
-    record set should contain. To add a second address to `blog`:
+    `PUT` states what a record set should contain. `PATCH` names values to add or remove and leaves
+    the rest alone. The distinction is concurrency.
 
-    1. `GET /api/v1/zones/example.com/records/blog/A` to retrieve the current values.
-    2. Add the new address to `values`.
-    3. `PUT` the complete list back.
+    Changing part of a set with `PUT` means reading it and submitting a modified list. That is a
+    read-modify-write: a value added in between — by a concurrent certificate issuance, by another
+    automation, or from the provider's own console — is absent from the submitted list and is
+    therefore removed. Every request in that sequence returns 2xx.
 
-    Sending a `PUT` whose `values` contains only the new address removes the previous ones. The
-    request succeeds and returns 200; the difference is visible only in where traffic subsequently
-    goes. To add values without first reading the set, use `POST /records`, which only adds.
+    `PATCH` reads nothing. It is the only operation on a record set safe to issue concurrently, and
+    the one certificate issuance must use.
   title: Leaflow DNS API
   version: 1.0.0
 servers:
@@ -408,64 +408,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-    post:
-      summary: Add records to a record set
-      description: |-
-        **Adds values only.** Records already present under the same name and type are left in
-        place, and the submitted values are added alongside them.
-
-        `PUT` states the final contents of a record set, so two concurrent `PUT` requests against
-        the same set can discard one another's changes. This operation only adds, and is therefore
-        safe to issue concurrently. **Certificate issuance, which places several TXT records under
-        `_acme-challenge` at once, must use this operation**: issuing two certificates concurrently
-        with `PUT` causes one challenge record to displace the other.
-
-        The cost is that duplicate values can be created. Use `PUT` to state what a record set
-        should contain.
-      operationId: append-records
-      tags:
-        - Record
-      parameters:
-        - description: The domain. A trailing dot is optional
-          in: path
-          name: zone
-          required: true
-          schema:
-            description: The domain. A trailing dot is optional
-            maxLength: 253
-            minLength: 1
-            type: string
-        - description: >-
-            Which credential to use. When omitted, the credential is determined from the domain;
-            see ZONE_AMBIGUOUS
-          explode: false
-          in: query
-          name: credential_id
-          schema:
-            description: >-
-              Which credential to use. When omitted, the credential is determined from the domain;
-              see ZONE_AMBIGUOUS
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AppendRecordsRequestBody'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RecordSetResource'
-          description: Created
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
   /api/v1/zones/{zone}/records/{name}/{type}:
     get:
       summary: Get a record set
@@ -513,6 +455,93 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+    patch:
+      summary: Add or remove values in a record set
+      description: |-
+        **Names values to add and remove; anything not named is left in place.** Nothing is read
+        first, so this is the only operation on a record set safe to issue concurrently. The set is
+        created if it does not exist.
+
+        Certificate issuance must use this operation for both the challenge record and its cleanup.
+        `PUT` and `DELETE` state or remove the whole set, so a concurrent issuance's challenge
+        record is discarded — with every request returning 2xx, and the failure surfacing as the
+        second certificate failing validation.
+
+        `add` is applied before `remove`, so a request carrying both changes a value without the
+        name ever resolving without it: the set briefly holds one value too many rather than one too
+        few. The reverse order, as two requests, leaves a window in which the value is absent — for
+        a single-valued set, the name does not resolve at all — and an addition that then fails
+        leaves it gone.
+
+        A value appearing in both `add` and `remove` is rejected rather than resolved in one
+        direction.
+
+        Values in `remove` that are absent are skipped, so a retried cleanup reaches the same
+        result. Values in `add` that are already present are rejected by the provider: a record set
+        cannot hold the same value twice.
+
+        Removing every value leaves an empty set, reported as `values: []`, not `RECORD_SET_NOT_FOUND`.
+      operationId: modify-record-set
+      tags:
+        - Record
+      parameters:
+        - description: The domain. A trailing dot is optional
+          in: path
+          name: zone
+          required: true
+          schema:
+            description: The domain. A trailing dot is optional
+            maxLength: 253
+            minLength: 1
+            type: string
+        - description: >-
+            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+          in: path
+          name: name
+          required: true
+          schema:
+            description: >-
+              The name, given relative to the domain. `@` denotes the domain itself and `*` a
+              wildcard
+            maxLength: 253
+            minLength: 1
+            type: string
+        - in: path
+          name: type
+          required: true
+          schema:
+            $ref: '#/components/schemas/RecordType'
+        - description: >-
+            Which credential to use. When omitted, the credential is determined from the domain;
+            see ZONE_AMBIGUOUS
+          explode: false
+          in: query
+          name: credential_id
+          schema:
+            description: >-
+              Which credential to use. When omitted, the credential is determined from the domain;
+              see ZONE_AMBIGUOUS
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModifyRecordSetRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordSetResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
     put:
       summary: Replace a record set
       description: |-
@@ -520,14 +549,15 @@ paths:
         name and type are the ones listed in `values`; any value present beforehand and absent here
         is removed.
 
-        To add a value, retrieve the set with `GET`, append to the values it returns, and submit the
-        complete list. Submitting only the new value removes the others; both forms return 200.
-
-        The record set is created if it does not yet exist, so this operation both creates and
-        replaces, and is idempotent.
+        The record set is created if it does not exist, so this operation both creates and replaces,
+        and is idempotent.
 
         Two concurrent requests against the same domain conflict; the second receives `ZONE_BUSY`
-        and may be retried. To add values concurrently, use `POST /records`.
+        and may be retried.
+
+        **Use `PATCH` to add or remove individual values.** Reading the set and submitting a
+        modified list is a read-modify-write: values added by anything else between those two steps
+        are stated to be absent, and are therefore removed, with both requests returning 200.
       operationId: set-record-set
       tags:
         - Record
@@ -592,8 +622,8 @@ paths:
     delete:
       summary: Delete a record set
       description: |-
-        Removes every record under this name and type. To remove one value from a set, `PUT` the
-        values that should remain.
+        Removes every record under this name and type. **To remove part of a set, use `PATCH`**,
+        which is safe to issue concurrently; this operation and `PUT` are not.
 
         Providers reject removal of the last NS record set at the apex of a domain, which would
         withdraw the domain from DNS entirely.
@@ -1014,25 +1044,16 @@ components:
       required:
         - values
       type: object
-    AppendRecordsRequestBody:
+    ModifyRecordSetRequestBody:
       additionalProperties: false
+      description: >-
+        Names the values to add and to remove. Anything not named is left in place. At least one of
+        `add` and `remove` is required, and no value may appear in both.
       properties:
-        name:
-          description: The name relative to the domain. `@` denotes the domain itself
-          maxLength: 253
-          minLength: 1
-          type: string
-        ttl:
-          default: 300
-          description: Time to live, in seconds. 0 leaves the choice to the provider
-          format: int64
-          maximum: 604800
-          minimum: 0
-          type: integer
-        type:
-          $ref: '#/components/schemas/RecordType'
-        values:
-          description: The values to add. Syntax as described on RecordSetResource.values
+        add:
+          description: >-
+            The values to add. Values already present are rejected by the provider. Syntax as
+            described on RecordSetResource.values
           items:
             maxLength: 4096
             minLength: 1
@@ -1040,8 +1061,25 @@ components:
           maxItems: 100
           minItems: 1
           type: array
-      required:
-        - name
-        - type
-        - values
+        remove:
+          description: >-
+            The values to remove. Values that are not present are skipped. Syntax as described on
+            RecordSetResource.values
+          items:
+            maxLength: 4096
+            minLength: 1
+            type: string
+          maxItems: 100
+          minItems: 1
+          type: array
+        ttl:
+          default: 300
+          description: >-
+            Time to live, in seconds, applied to the values in `add`. 0 leaves the choice to the
+            provider. The time to live of values already in the set is not changed; use `PUT` for
+            that
+          format: int64
+          maximum: 604800
+          minimum: 0
+          type: integer
       type: object
