@@ -1,25 +1,31 @@
 openapi: 3.1.0
 info:
-  description: '控制台里的 AI 助手：对话、消息、工具调用与审批、附件，以及把助手接到微信、飞书、Telegram 等即时通讯平台上。
+  description: 'The AI assistant inside the console: conversations, messages, tool calls and their
+    approval, attachments, and connecting the assistant to instant messaging platforms such as WeChat,
+    Feishu and Telegram.
 
 
-    ## 一次对话
+    ## A conversation
 
 
-    1. `POST /v1/threads` 创建对话；
+    1. `POST /v1/threads` creates one;
 
-    2. `POST /v1/threads/{thread}/messages` 发送消息，立即返回 `turnId`，助手的执行在后台进行；
+    2. `POST /v1/threads/{thread}/messages` sends a message and returns a `turnId` at once; the
+    assistant runs in the background;
 
-    3. `GET /v1/threads/{thread}` 取回对话文档用于渲染，并按其中的 `stream` 连上实时输出；
+    3. `GET /v1/threads/{thread}` returns the conversation document to render, whose `stream` is where
+    live output arrives;
 
-    4. 助手需要用户参与时，文档中的 `wait` 会说明是哪一种：审批一批工具调用（`POST /v1/threads/{thread}/approvals/{batch}`），或回答几个问题（`POST
-    /v1/threads/{thread}/questions/{item}`）。处理完成后助手自动继续。
+    4. When the assistant needs the user, the document''s `wait` says which kind: approving a batch of
+    tool calls (`POST /v1/threads/{thread}/approvals/{batch}`), or answering a few questions (`POST
+    /v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
 
 
-    发送图片分两步：先 `POST /v1/attachments` 上传拿到 id，发送消息时放进 `attachmentIds`。
+    Sending an image takes two steps: `POST /v1/attachments` for an id, then put that id in
+    `attachmentIds` when sending the message.
 
 
-    ## 实时输出
+    ## Live output
 
 
     ```
@@ -29,19 +35,24 @@ info:
     ```
 
 
-    这是一条 Server-Sent Events 流，因此不在下方的接口列表中。
+    This is a Server-Sent Events stream, which is why it is not in the operation list below.
 
 
-    - `path` 与 `ticket` 都取自对话文档的 `stream`。`path` 是相对路径，按取回文档的地址解析；
+    - `path` and `ticket` both come from the conversation document''s `stream`. `path` is relative,
+    resolved against the address the document was fetched from;
 
-    - `cursor` 是起始位置，取自对话文档的 `cursor`。不传则从可用范围的开头开始；
+    - `cursor` is where to start, from the document''s `cursor`. Omit it to start at the beginning of
+    what is still available;
 
-    - 推送的每一条都是对那份对话文档的一次增量编辑，套用同一套渲染逻辑即可；
+    - every event is one incremental edit to that same document, so the same rendering logic applies;
 
-    - 连接有生存期，到时会正常关闭。使用 `EventSource` 时浏览器会自动携带 `Last-Event-ID` 重连并从断点续传，无需额外处理；
+    - the connection has a lifetime and closes cleanly when it ends. With `EventSource` the browser
+    reconnects with `Last-Event-ID` and resumes by itself, so nothing needs handling;
 
-    - 三种结束事件：`done` 本次 turn 完成（附带最终状态）、`paused` 助手在等待用户处理（重新取回对话文档读 `wait`）、`stalled` 执行已中断且不会恢复，不要重连。'
-  title: Leaflow Assistant 用户 API
+    - three terminal events: `done` this turn finished (carrying its final status), `paused` the
+    assistant is waiting on the user (fetch the document again and read `wait`), `stalled` execution
+    was interrupted and will not resume — do not reconnect.'
+  title: Leaflow Assistant User API
   version: 1.0.0
 servers:
   - url: https://assistant.leaflow.cloud
@@ -51,8 +62,8 @@ security:
 paths:
   /api/v1/attachments:
     post:
-      summary: 上传图片
-      description: 请求体直接是文件字节，不使用 multipart 封装，一次上传一个文件。类型由内容判定，与 Content-Type 无关。返回的 id 在发送消息时放进 attachmentIds；从未被任何消息引用的附件会被定期清除。
+      summary: Upload an image
+      description: The body is the file bytes themselves, not multipart, one file per request. The type is determined from the content, not from Content-Type. Put the returned id in attachmentIds when sending a message; attachments never referenced by any message are cleared periodically.
       operationId: upload-attachment
       tags:
       - Attachment
@@ -79,8 +90,8 @@ paths:
           description: Error
   /api/v1/attachments/{attachment}:
     get:
-      summary: 取回图片
-      description: 按附件 id 取回原始字节，可直接作为 <img> 的地址使用。响应带长期缓存头，附件内容不会变化。附件不存在或不属于当前用户时返回 404。
+      summary: Fetch an image
+      description: Returns the original bytes for an attachment id, usable directly as the address of an <img>. The response carries long-lived cache headers because the content never changes. Returns 404 when the attachment does not exist or does not belong to the current user.
       operationId: download-attachment
       tags:
       - Attachment
@@ -100,7 +111,7 @@ paths:
           description: OK
           headers:
             Cache-Control:
-              description: 私有而且长缓存：这些字节按 id 寻址而 id 永不复用，所以它们永远不会变；而它们属于一个人，所以不能进任何共享缓存。
+              description: 'Private and long-lived: these bytes are addressed by an id that is never reused, so they never change; and they belong to one person, so they must not enter any shared cache.'
               schema:
                 type: string
         default:
@@ -111,29 +122,29 @@ paths:
           description: Error
   /api/v1/bindings:
     get:
-      summary: 列出绑定
-      description: 接入面那张表按通道列出各自绑了谁时用 channelId 过滤。
+      summary: List bindings
+      description: Filter by channelId to show, per channel, who is bound to it.
       operationId: list-bindings
       tags:
       - Onboarding
       parameters:
-      - description: 这一页最多返回多少条
+      - description: How many entries this page returns at most
         explode: false
         in: query
         name: limit
         schema:
           default: 50
-          description: 这一页最多返回多少条
+          description: How many entries this page returns at most
           format: int64
           maximum: 200
           minimum: 1
           type: integer
-      - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+      - description: How many to skip. To page deeper, use the cursor-paged operation instead
         explode: false
         in: query
         name: offset
         schema:
-          description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          description: How many to skip. To page deeper, use the cursor-paged operation instead
           format: int64
           maximum: 10000
           minimum: 0
@@ -149,12 +160,12 @@ paths:
         schema:
           format: uuid
           type: string
-      - description: 仅返回处于活跃状态的绑定
+      - description: Return only bindings that are active
         explode: false
         in: query
         name: active
         schema:
-          description: 仅返回处于活跃状态的绑定
+          description: Return only bindings that are active
           type: boolean
       responses:
         '200':
@@ -171,7 +182,7 @@ paths:
           description: Error
   /api/v1/bindings/{binding}:
     delete:
-      summary: 解除绑定
+      summary: Remove a binding
       operationId: delete-binding
       tags:
       - Onboarding
@@ -192,7 +203,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查看绑定
+      summary: Get a binding
       operationId: get-binding
       tags:
       - Onboarding
@@ -218,28 +229,28 @@ paths:
           description: Error
   /api/v1/channels:
     get:
-      summary: 列出通道
+      summary: List channels
       operationId: list-channels
       tags:
       - Onboarding
       parameters:
-      - description: 这一页最多返回多少条
+      - description: How many entries this page returns at most
         explode: false
         in: query
         name: limit
         schema:
           default: 50
-          description: 这一页最多返回多少条
+          description: How many entries this page returns at most
           format: int64
           maximum: 200
           minimum: 1
           type: integer
-      - description: 跳过多少条。要翻得更深请改用游标翻页的接口
+      - description: How many to skip. To page deeper, use the cursor-paged operation instead
         explode: false
         in: query
         name: offset
         schema:
-          description: 跳过多少条。要翻得更深请改用游标翻页的接口
+          description: How many to skip. To page deeper, use the cursor-paged operation instead
           format: int64
           maximum: 10000
           minimum: 0
@@ -249,12 +260,12 @@ paths:
         name: platform
         schema:
           type: string
-      - description: 仅返回处于启用状态的通道
+      - description: Return only channels that are enabled
         explode: false
         in: query
         name: active
         schema:
-          description: 仅返回处于启用状态的通道
+          description: Return only channels that are enabled
           type: boolean
       responses:
         '200':
@@ -270,9 +281,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     post:
-      summary: 创建通道
-      description: 回调密钥归谁定由平台决定，见 list-platforms 的 secretSource：generated 的平台不要传 webhookSecret，我们生成的那把仅在本次响应中返回一次、之后无法再次取回，错过了只能调轮换接口换一把新的；supplied
-        的平台必须把平台后台那把传进来，此时响应里的webhookSecret 为 null。
+      summary: Create a channel
+      description: 'Which side owns the webhook secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, do not send webhookSecret — the one we generate is returned exactly once in this response and cannot be retrieved again; miss it and the only way forward is rotating to a new one. For a `supplied` platform you must pass the secret from that platform''s own console, and webhookSecret in the response is null.'
       operationId: create-channel
       tags:
       - Onboarding
@@ -297,8 +307,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}:
     delete:
-      summary: 删除通道
-      description: 删除后该通道不再接收入站消息，其上的绑定一并失效。项目处于停服或清理状态时本接口仍然可用。
+      summary: Delete a channel
+      description: The channel stops accepting inbound messages and every binding on it stops working. This operation remains available while the project is suspended or being cleaned up.
       operationId: delete-channel
       tags:
       - Onboarding
@@ -319,7 +329,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     get:
-      summary: 查看通道
+      summary: Get a channel
       operationId: get-channel
       tags:
       - Onboarding
@@ -344,8 +354,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     patch:
-      summary: 修改通道
-      description: 只修改传了的字段。senderPolicy 与 allowFrom 是一对，由 senderPolicy 决定是否替换；改动对常驻连接要等连接重建后才生效，回调型平台立即生效。
+      summary: Update a channel
+      description: Only the fields present are changed. senderPolicy and allowFrom go together, and senderPolicy decides whether they are replaced. For platforms held open by a long-lived connection the change applies once that connection is rebuilt; for webhook platforms it applies at once.
       operationId: update-channel
       tags:
       - Onboarding
@@ -377,8 +387,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}/binding-codes:
     post:
-      summary: 签发绑定码
-      description: 生成一个一次性绑定码交给待绑定的人，他在该平台上用自己的账号把这个码发给助手即完成绑定。绑定只能由本人以这种方式建立，不能直接指定平台账号。绑定码有有效期，过期后需重新签发。
+      summary: Issue a binding code
+      description: Produces a single-use code to hand to the person being bound. They send that code to the assistant from their own account on that platform, which completes the binding. A binding can only be established this way, by the person themselves — a platform account cannot be named directly. Codes expire and have to be reissued.
       operationId: create-binding-code
       tags:
       - Onboarding
@@ -404,8 +414,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}/rejections:
     get:
-      summary: 查看最近被拒绝的入站消息
-      description: 排查「发了消息但助手没有响应」时使用。按时间倒序返回最近被这条通道拒绝的入站消息及其拒绝原因，最常见的原因是发送方尚未绑定。
+      summary: List recently rejected inbound messages
+      description: For diagnosing "I sent a message and the assistant never answered". Returns the inbound messages this channel rejected most recently, newest first, each with its reason. The most common reason is that the sender is not bound yet.
       operationId: list-channel-rejections
       tags:
       - Onboarding
@@ -440,9 +450,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}/secret:
     post:
-      summary: 轮换回调密钥
-      description: 换一把新的回调密钥，旧的立即失效，通道降回待平台确认状态。密钥归谁定由平台决定，见 list-platforms 的 secretSource：generated 的平台不要传请求体，新密钥仅在本次响应中返回、之后无法再次取回；supplied
-        的平台必须把平台后台那把新密钥传进来。
+      summary: Rotate the webhook secret
+      description: 'Replaces the webhook secret. The old one stops working immediately and the channel drops back to awaiting confirmation from the platform. Which side owns the secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, send no body — the new secret is returned in this response only and cannot be retrieved again. For a `supplied` platform you must pass the new secret from that platform''s own console.'
       operationId: rotate-channel-secret
       tags:
       - Onboarding
@@ -473,8 +482,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}/sender-check:
     get:
-      summary: 推演一个发件人会不会被放行
-      description: 改完发件人策略之后用来自查，不发送任何消息、也不改变任何状态：它走的是和真实入站完全相同的那份判定，并说明结论由哪一条规则得出。无法推演绑定码那一条——是否是绑定码取决于对方发来的内容。
+      summary: Test whether a sender would be let through
+      description: 'For checking a sender policy after changing it. Sends nothing and changes nothing: it runs exactly the same decision a real inbound message goes through, and says which rule produced the answer. The binding-code rule cannot be tested this way — whether something is a binding code depends on what the sender actually wrote.'
       operationId: check-sender
       tags:
       - Onboarding
@@ -485,20 +494,20 @@ paths:
         schema:
           format: uuid
           type: string
-      - description: 平台上那个人的 id，和绑定、被拒记录里的是同一个值
+      - description: That person's id on the platform, the same value that appears in bindings and rejections
         explode: false
         in: query
         name: peerId
         required: true
         schema:
-          description: 平台上那个人的 id，和绑定、被拒记录里的是同一个值
+          description: That person's id on the platform, the same value bindings and rejections carry
           type: string
-      - description: 仅 Telegram 这类有用户名的平台填得出来，不带 @。留空即当作没有用户名
+      - description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Leave it empty to mean there is no username
         explode: false
         in: query
         name: username
         schema:
-          description: 仅 Telegram 这类有用户名的平台填得出来，不带 @。留空即当作没有用户名
+          description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Empty means there is no username
           type: string
       responses:
         '200':
@@ -515,9 +524,8 @@ paths:
           description: Error
   /api/v1/channels/{channel}/weixin-logins:
     post:
-      summary: 发起微信扫码登录
-      description: 微信个人号通道需要本人扫码登录后才能收发消息。本接口返回二维码，之后轮询 `GET /v1/weixin-logins/{login}` 获取进度；状态提示需要验证码时，调用
-        `POST /v1/weixin-logins/{login}/verify-code` 补交。
+      summary: Begin a WeChat QR login
+      description: 'A personal WeChat channel can only send and receive once its owner has signed in by scanning a QR code. This returns that code; poll `GET /v1/weixin-logins/{login}` for progress, and when the status asks for a verification code, submit it with `POST /v1/weixin-logins/{login}/verify-code`.'
       operationId: begin-weixin-login
       tags:
       - Onboarding
@@ -543,9 +551,8 @@ paths:
           description: Error
   /api/v1/platforms:
     get:
-      summary: 列出可接入的平台
-      description: 返回本平台当前支持接入的即时通讯平台，以及各自建通道时要走的流程和要填的凭据字段。新建通道表单完全由这份响应驱动：setupMethod 决定展示录入表单还是扫码流程，credentialFields
-        是要填的字段，secretSource 决定要不要有回调密钥那一栏。
+      summary: List platforms that can be connected
+      description: 'The instant messaging platforms that can currently be connected, along with the flow and the credential fields each one needs. The create-channel form is driven entirely by this response: setupMethod decides between a credential form and a QR flow, credentialFields is what to ask for, and secretSource decides whether there is a webhook secret field at all.'
       operationId: list-platforms
       tags:
       - Onboarding
@@ -564,8 +571,8 @@ paths:
           description: Error
   /api/v1/weixin-logins/{login}:
     get:
-      summary: 查询扫码登录状态
-      description: 轮询本接口直到状态变为成功或失败。状态提示需要验证码时，调用补交验证码接口。
+      summary: Get the state of a QR login
+      description: Poll this until the status is success or failure. When the status asks for a verification code, submit it with the verification-code operation.
       operationId: get-weixin-login
       tags:
       - Onboarding
@@ -591,8 +598,8 @@ paths:
           description: Error
   /api/v1/weixin-logins/{login}/verify-code:
     post:
-      summary: 补交登录验证码
-      description: 微信在扫码后要求短信或设备验证码时使用。验证码由登录发起人在自己手机上获取。
+      summary: Submit a login verification code
+      description: For when WeChat asks for an SMS or device code after the scan. The person who started the login gets that code on their own phone.
       operationId: submit-weixin-verify-code
       tags:
       - Onboarding
@@ -624,8 +631,8 @@ paths:
           description: Error
   /api/v1/memories:
     get:
-      summary: 列出助手记住的事
-      description: 助手在这个项目里为当前账号记下的事实，它们会出现在之后每一次对话的开头。同一个项目里的不同成员各记各的，这里只返回当前账号的那些。不分页：条数有上限，一次全部返回。
+      summary: List what the assistant remembers
+      description: 'Facts the assistant has written down for the current account in this project. They appear at the start of every later conversation. Members of the same project each have their own, and this returns only the current account''s. Not paginated: there is a cap on how many there can be, and all of them come back at once.'
       operationId: list-memories
       tags:
       - Thread
@@ -644,8 +651,8 @@ paths:
           description: Error
   /api/v1/memories/{memory}:
     delete:
-      summary: 删掉一条记忆
-      description: 助手不再记得这件事。删除立即生效，下一次对话就不会再带上它。助手可能会重新学到同一件事。
+      summary: Delete one memory
+      description: The assistant stops remembering this. It takes effect at once, so the next conversation will not carry it. The assistant may well learn the same thing again.
       operationId: delete-memory
       tags:
       - Thread
@@ -666,8 +673,8 @@ paths:
           description: Error
   /api/v1/models:
     get:
-      summary: 列出可用模型
-      description: 返回本平台当前提供的模型及其上下文窗口、推理档位和支持的输入类型。用于填充对话设置里的模型选择。
+      summary: List available models
+      description: The models currently offered, with their context window, reasoning levels and supported input types. Use it to populate the model picker in conversation settings.
       operationId: list-models
       tags:
       - Thread
@@ -686,26 +693,26 @@ paths:
           description: Error
   /api/v1/threads:
     get:
-      summary: 列出对话
-      description: 按最近活动排序，只返回当前账号在当前项目里的对话。archived 是一个二选一的开关而不是「包含归档」：归档的对话不出现在默认列表里，要看它们就把这个参数打开。
+      summary: List conversations
+      description: 'Ordered by most recent activity, limited to the current account''s conversations in the current project. `archived` selects between two sets rather than widening one: archived conversations are absent from the default list, and turning the flag on shows those instead.'
       operationId: list-threads
       tags:
       - Thread
       parameters:
-      - description: 按标题搜索，大小写不敏感。留空则返回最近的对话
+      - description: Search titles, case-insensitively. Leave it empty for the most recent conversations
         explode: false
         in: query
         name: q
         schema:
-          description: 按标题搜索，大小写不敏感。留空则返回最近的对话
+          description: Search titles, case-insensitively. Empty returns the most recent conversations
           maxLength: 100
           type: string
-      - description: 为真时**只**返回已归档的对话，否则只返回未归档的
+      - description: When true, returns **only** archived conversations; otherwise only unarchived ones
         explode: false
         in: query
         name: archived
         schema:
-          description: 为真时**只**返回已归档的对话，否则只返回未归档的
+          description: When true, returns **only** archived conversations; otherwise only unarchived ones
           type: boolean
       - explode: false
         in: query
@@ -729,7 +736,7 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     post:
-      summary: 创建对话
+      summary: Create a conversation
       operationId: create-thread
       tags:
       - Thread
@@ -754,8 +761,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}:
     get:
-      summary: 取回对话文档
-      description: 对话的完整当前状态，用于首屏渲染。文档中的 stream 给出实时输出地址和入场票据，流推送的是对这份文档的增量编辑，可直接套用同一套渲染逻辑。
+      summary: Fetch the conversation document
+      description: The complete current state of a conversation, for the first render. Its `stream` gives the address and admission ticket for live output, and what that stream pushes are incremental edits to this same document, so the same rendering logic applies.
       operationId: get-thread
       tags:
       - Thread
@@ -779,9 +786,8 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Error
     patch:
-      summary: 修改对话设置
-      description: 可修改模型、推理档位、审批模式和归档状态。改动从下一次 turn 起生效，正在执行的 turn 沿用它启动时的设置。reasoningEffort 仅在同时提供 model
-        时生效。
+      summary: Update conversation settings
+      description: 'Changes the model, reasoning level, approval mode and archived state. A change takes effect from the next turn; a turn already running keeps the settings it started with. reasoningEffort only applies when model is given as well.'
       operationId: update-thread
       tags:
       - Thread
@@ -812,8 +818,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/approvals/{batch}:
     post:
-      summary: 批准或拒绝一批工具调用
-      description: 批次 id 来自对话文档的 wait 字段。本接口是幂等的：重复提交同一批次不会改变已经生效的决定，也不会报错。批次不属于该对话时返回 404。
+      summary: Approve or decline a batch of tool calls
+      description: 'The batch id comes from the conversation document''s `wait`. This is idempotent: submitting the same batch again neither changes a decision already in effect nor reports an error. Returns 404 when the batch does not belong to that conversation.'
       operationId: decide-approval
       tags:
       - Thread
@@ -845,9 +851,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/earlier:
     get:
-      summary: 取回更早的对话内容
-      description: 首屏只给对话最新的那一段，再往上的内容用本接口按需取回，一次一段。before 用文档里的 earlier.before，响应里的 earlier 是再往上那一段的游标，为
-        null 表示已经到顶。返回的条目和文档里的 items 是同一种形状，顺序也一样（由旧到新），直接接在现有内容前面即可。
+      summary: Fetch earlier parts of a conversation
+      description: 'The first render only carries the latest stretch of a conversation; anything above it is fetched here, one stretch at a time. Pass the document''s earlier.before as `before`; the `earlier` in the response is the cursor for the stretch above that, and null means the top has been reached. The entries have the same shape and the same order (oldest first) as `items` in the document, so they can be prepended as they are.'
       operationId: list-earlier-items
       tags:
       - Thread
@@ -857,13 +862,13 @@ paths:
         required: true
         schema:
           type: string
-      - description: 来自文档里的 earlier.before，取这个序号之前的条目
+      - description: From the document's earlier.before; returns entries before this ordinal
         explode: false
         in: query
         name: before
         required: true
         schema:
-          description: 来自文档里的 earlier.before，取这个序号之前的条目
+          description: From the document's earlier.before; returns entries before this ordinal
           format: int64
           minimum: 0
           type: integer
@@ -882,8 +887,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/interrupt:
     post:
-      summary: 中断正在执行的 turn
-      description: 对没有正在执行的 turn 的对话调用同样返回 204，不视为错误——用户点击停止与 turn 自然结束之间存在竞争，两种结果一致。项目处于停服或清理状态时本接口仍然可用。
+      summary: Interrupt a running turn
+      description: Calling this on a conversation with no running turn also returns 204 rather than an error — the user pressing stop races with the turn finishing on its own, and both outcomes are the same. This operation remains available while the project is suspended or being cleaned up.
       operationId: interrupt-thread
       tags:
       - Thread
@@ -904,8 +909,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/messages:
     post:
-      summary: 发送消息并触发一次 turn
-      description: 立即返回 turnId，不等待执行完成——一次 turn 可能持续数十分钟。执行进度通过对话文档中 stream 指向的实时流获取，不在本响应里。
+      summary: Send a message and start a turn
+      description: Returns a turnId immediately without waiting for execution — a turn can run for tens of minutes. Progress arrives on the live stream the conversation document's `stream` points at, not in this response.
       operationId: send-message
       tags:
       - Thread
@@ -936,8 +941,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/questions/{item}:
     post:
-      summary: 回答助手提出的问题
-      description: 问题 id 来自对话文档的 wait 字段。已被回答过的问题同样返回 204——可能是另一个页面提交在先，也可能是自动应答窗口已到期，两种情况下 turn 都已带着答案继续执行。
+      summary: Answer the assistant's questions
+      description: The question id comes from the conversation document's `wait`. An already-answered question also returns 204 — another tab may have submitted first, or the auto-answer window may have expired, and in both cases the turn has already continued with an answer.
       operationId: answer-question
       tags:
       - Thread
@@ -969,7 +974,7 @@ paths:
           description: Error
   /api/v1/threads/{thread}/read:
     post:
-      summary: 标记对话已读
+      summary: Mark a conversation as read
       operationId: mark-thread-read
       tags:
       - Thread
@@ -990,8 +995,8 @@ paths:
           description: Error
   /api/v1/threads/{thread}/revert:
     post:
-      summary: 从指定位置起撤回
-      description: 撤回 ordinal 及其之后的全部条目。被撤回的条目仍留在逐字稿中并标记 reverted，序号不会重排。返回实际撤回的条目数。
+      summary: Revert from a given point
+      description: Reverts the entry at `ordinal` and everything after it. Reverted entries stay in the transcript marked `reverted`, and ordinals are not renumbered. Returns how many were actually reverted.
       operationId: revert-thread
       tags:
       - Thread
@@ -1024,7 +1029,7 @@ components:
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
-      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
+      description: A project token. Sign in at auth.leaflow.net for an account token, then exchange it with IAM for a project token (POST /account/v1/projects/{projectId}/token) — one project token states both the current user and the current project.
       scheme: bearer
       type: http
   schemas:
@@ -1094,20 +1099,20 @@ components:
       additionalProperties: false
       properties:
         items:
-          description: 这一页的内容
+          description: The entries on this page
           items:
             $ref: '#/components/schemas/BindingResource'
           type: array
         limit:
-          description: 这一页最多几条，回显请求里的值
+          description: The page size, echoing what was requested
           format: int64
           type: integer
         offset:
-          description: 跳过了多少条，回显请求里的值
+          description: How many were skipped, echoing what was requested
           format: int64
           type: integer
         total:
-          description: 命中的总条数，不只是这一页
+          description: How many match in total, not just on this page
           format: int64
           type: integer
       required:
@@ -1126,7 +1131,7 @@ components:
           - array
           - 'null'
         connState:
-          description: 平台接入状态。只有 online 才收得到消息、也才签得出绑定码
+          description: How far this channel is from working. Only `online` receives messages and can issue binding codes
           enum:
           - logged_out
           - qr_pending
@@ -1144,7 +1149,7 @@ components:
         platform:
           type: string
         runtimeState:
-          description: 常驻连接此刻的状态。回调型平台恒为 stopped
+          description: The state of the long-lived connection right now. Always `stopped` for webhook platforms
           enum:
           - stopped
           - running
@@ -1164,10 +1169,10 @@ components:
           format: date-time
           type: string
         webhookPath:
-          description: 回调路径，网关配置和排查时用
+          description: The webhook path, for gateway configuration and for diagnosis
           type: string
         webhookUrl:
-          description: 填到平台后台的回调地址。部署未声明公网入口时为 null
+          description: The webhook address to paste into that platform's console. Null when the deployment declares no public entry point
           type:
           - string
           - 'null'
@@ -1189,20 +1194,20 @@ components:
       additionalProperties: false
       properties:
         items:
-          description: 这一页的内容
+          description: The entries on this page
           items:
             $ref: '#/components/schemas/ChannelResource'
           type: array
         limit:
-          description: 这一页最多几条，回显请求里的值
+          description: The page size, echoing what was requested
           format: int64
           type: integer
         offset:
-          description: 跳过了多少条，回显请求里的值
+          description: How many were skipped, echoing what was requested
           format: int64
           type: integer
         total:
-          description: 命中的总条数，不只是这一页
+          description: How many match in total, not just on this page
           format: int64
           type: integer
       required:
@@ -1223,7 +1228,7 @@ components:
         credentials:
           additionalProperties:
             type: string
-          description: 平台侧凭据。只写不读，创建后无法取回
+          description: 'Credentials for that platform. Write-only: they cannot be read back after creation'
           type: object
         name:
           minLength: 1
@@ -1238,8 +1243,7 @@ components:
           - open
           type: string
         webhookSecret:
-          description: 平台生成密钥的平台（secretSource=supplied）必须传；我们生成的（generated）不能传，那把会在本次响应的 webhookSecret
-            里返回一次
+          description: 'Required for platforms that generate the secret themselves (secretSource=supplied). Must be absent for `generated` ones, where the secret we make is returned once in webhookSecret on this response'
           type: string
       required:
       - platform
@@ -1255,7 +1259,7 @@ components:
           - array
           - 'null'
         connState:
-          description: 平台接入状态。只有 online 才收得到消息、也才签得出绑定码
+          description: How far this channel is from working. Only `online` receives messages and can issue binding codes
           enum:
           - logged_out
           - qr_pending
@@ -1273,7 +1277,7 @@ components:
         platform:
           type: string
         runtimeState:
-          description: 常驻连接此刻的状态。回调型平台恒为 stopped
+          description: The state of the long-lived connection right now. Always `stopped` for webhook platforms
           enum:
           - stopped
           - running
@@ -1293,16 +1297,15 @@ components:
           format: date-time
           type: string
         webhookPath:
-          description: 回调路径，网关配置和排查时用
+          description: The webhook path, for gateway configuration and for diagnosis
           type: string
         webhookSecret:
-          description: 我们生成的那把回调密钥，拿去粘到平台后台。**之后无法再次取回**，只能轮换出新的一把。密钥由平台生成（secretSource=supplied）或该平台不走回调时为
-            null
+          description: 'The webhook secret we generated, to paste into that platform''s console. **It cannot be retrieved again** — the only way forward is rotating to a new one. Null when the platform generates the secret (secretSource=supplied) or does not use webhooks at all'
           type:
           - string
           - 'null'
         webhookUrl:
-          description: 填到平台后台的回调地址。部署未声明公网入口时为 null
+          description: The webhook address to paste into that platform's console. Null when the deployment declares no public entry point
           type:
           - string
           - 'null'
@@ -1325,7 +1328,7 @@ components:
       additionalProperties: false
       properties:
         allowFrom:
-          description: 放行名单。仅在同时传了 senderPolicy 时生效
+          description: The allow list. Only applied when senderPolicy is sent as well
           items:
             type: string
           type:
@@ -1334,7 +1337,7 @@ components:
         credentials:
           additionalProperties:
             type: string
-          description: 整份替换而不是逐键合并。不传表示不动
+          description: Replaced wholesale rather than merged key by key. Absent means unchanged
           type: object
         enabled:
           type: boolean
@@ -1342,7 +1345,7 @@ components:
           maxLength: 128
           type: string
         senderPolicy:
-          description: 传了才会连同 allowFrom 一起替换
+          description: Only when this is sent is allowFrom replaced along with it
           enum:
           - bound_only
           - open
@@ -1404,7 +1407,7 @@ components:
       additionalProperties: false
       properties:
         webhookSecret:
-          description: 平台生成密钥的平台（secretSource=supplied）必须传新的那把；我们生成的（generated）不能传
+          description: Required for platforms that generate the secret themselves (secretSource=supplied). Must be absent for `generated` ones
           type: string
       type: object
     WebhookSecretResponseBody:
@@ -1450,17 +1453,17 @@ components:
       additionalProperties: false
       properties:
         expiresAt:
-          description: 这条登录流的截止时间。到点之后不要再轮询，重新发起一次
+          description: When this login flow expires. Past that, stop polling and start a new one
           format: date-time
           type: string
         id:
           format: uuid
           type: string
         qrcodeData:
-          description: 二维码的内容，由客户端编码成二维码图形渲染（不是图片地址，也不是 data URI）。码过期时这条流会自己换一张接着等，所以每次轮询拿到的可能是新的一串
+          description: The text to encode and render as a QR code by the client — not an image address and not a data URI. When a code expires this flow issues another and keeps waiting, so each poll may return a new string
           type: string
         reason:
-          description: 失败原因。仅在 status 为 error 或 expired 时有内容
+          description: Why it failed. Present only when status is error or expired
           type: string
         status:
           enum:
@@ -1529,10 +1532,10 @@ components:
           - scan
           type: string
         webhookPath:
-          description: 回调路径模板，{channel} 处替换为通道 id
+          description: The webhook path template; {channel} is replaced with the channel id
           type: string
         webhookUrlTemplate:
-          description: 完整回调地址模板。部署未声明公网入口时为 null
+          description: The full webhook address template. Null when the deployment declares no public entry point
           type:
           - string
           - 'null'
@@ -1607,7 +1610,7 @@ components:
       additionalProperties: false
       properties:
         body:
-          description: 记住的那件事
+          description: The fact itself
           type: string
         createdAt:
           format: date-time
@@ -1615,10 +1618,10 @@ components:
         id:
           type: string
         name:
-          description: 助手给这件事起的名字，它用这个名字覆盖或者删掉自己写过的东西
+          description: The name the assistant gave this fact; it overwrites or deletes its own entries by that name
           type: string
         sourceThreadId:
-          description: 助手是在哪次对话里记下它的。那次对话可能已经被删掉了
+          description: Which conversation the assistant learned it in. That conversation may since have been deleted
           type: string
         updatedAt:
           format: date-time
@@ -1695,7 +1698,7 @@ components:
       additionalProperties: false
       properties:
         approvalMode:
-          description: 不传则使用平台默认审批模式
+          description: Absent uses the platform's default approval mode
           enum:
           - guardian
           - manual
@@ -1799,7 +1802,7 @@ components:
         id:
           type: string
         model:
-          description: 产出这一条的模型。用户自己发的消息为 null
+          description: The model that produced this entry. Null for messages the user sent
           type:
           - string
           - 'null'
@@ -1832,7 +1835,7 @@ components:
           - string
           - 'null'
         type:
-          description: 决定这一条包含哪些字段
+          description: Determines which fields this entry carries
           enum:
           - user_message
           - agent_message
@@ -2032,7 +2035,7 @@ components:
       additionalProperties: false
       properties:
         attachmentIds:
-          description: 此前上传、尚未绑定到任何消息的附件 id
+          description: Ids of attachments uploaded earlier that are not yet bound to any message
           items:
             type: string
           type:
@@ -2058,7 +2061,7 @@ components:
         answers:
           additionalProperties:
             type: string
-          description: 问题 id 到所选答案的映射
+          description: A map from question id to the answer chosen
           type: object
       required:
       - answers
@@ -2067,7 +2070,7 @@ components:
       additionalProperties: false
       properties:
         ordinal:
-          description: 起始序号，该条及其之后的全部条目都会被撤回
+          description: The starting ordinal; that entry and everything after it is reverted
           format: int64
           type: integer
       required:
