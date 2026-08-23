@@ -705,26 +705,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-  /api/v1/models:
-    get:
-      summary: List available models
-      description: The models currently offered, with their context window, reasoning levels and supported input types. Use it to populate the model picker in conversation settings.
-      operationId: list-models
-      tags:
-      - Thread
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelListResponseBody'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
   /api/v1/skills:
     get:
       summary: List the skills this project can use
@@ -961,7 +941,7 @@ paths:
           description: Error
     patch:
       summary: Update conversation settings
-      description: 'Changes the model, reasoning level, approval mode and archived state. A change takes effect from the next turn; a turn already running keeps the settings it started with. Model and reasoning level change independently: sending one leaves the other alone.'
+      description: 'Changes the approval mode and archived state. A change takes effect from the next turn; a turn already running keeps the settings it started with.'
       operationId: update-thread
       tags:
       - Thread
@@ -1744,81 +1724,6 @@ components:
       required:
       - code
       type: object
-    ModelResource:
-      additionalProperties: false
-      properties:
-        contextWindow:
-          format: int64
-          type: integer
-        inputModalities:
-          items:
-            type: string
-          type:
-          - array
-          - 'null'
-        key:
-          type: string
-        reasoningTiers:
-          items:
-            type: string
-          type:
-          - array
-          - 'null'
-      required:
-      - key
-      - contextWindow
-      - reasoningTiers
-      - inputModalities
-      type: object
-    MemoryListResponseBody:
-      additionalProperties: false
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/MemoryResource'
-          type: array
-      required:
-      - items
-      type: object
-    MemoryResource:
-      additionalProperties: false
-      properties:
-        body:
-          description: The fact itself
-          type: string
-        createdAt:
-          format: date-time
-          type: string
-        id:
-          type: string
-        name:
-          description: The name the assistant gave this fact; it overwrites or deletes its own entries by that name
-          type: string
-        sourceThreadId:
-          description: Which conversation the assistant learned it in. That conversation may since have been deleted
-          type: string
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-      - id
-      - name
-      - body
-      - createdAt
-      - updatedAt
-      type: object
-    ModelListResponseBody:
-      additionalProperties: false
-      properties:
-        models:
-          items:
-            $ref: '#/components/schemas/ModelResource'
-          type:
-          - array
-          - 'null'
-      required:
-      - models
-      type: object
     SkillResource:
       additionalProperties: false
       properties:
@@ -1926,11 +1831,6 @@ components:
     ThreadSummaryResource:
       additionalProperties: false
       properties:
-        reasoningEffort:
-          description: The tier this conversation runs at, or null when it follows the model's own default.
-          type:
-          - string
-          - 'null'
         approvalMode:
           enum:
           - guardian
@@ -1959,7 +1859,6 @@ components:
       - id
       - title
       - model
-      - reasoningEffort
       - createdAt
       - updatedAt
       - archived
@@ -1992,11 +1891,6 @@ components:
     ContextResource:
       additionalProperties: false
       properties:
-        reasoningEffort:
-          description: The tier this conversation runs at, or null when it follows the model's own default.
-          type:
-          - string
-          - 'null'
         compactAt:
           format: int64
           type:
@@ -2019,7 +1913,6 @@ components:
           - 'null'
       required:
       - model
-      - reasoningEffort
       - used
       - window
       - compactAt
@@ -2311,17 +2204,6 @@ components:
           type: string
         archived:
           type: boolean
-        model:
-          type: string
-        reasoningEffort:
-          description: |-
-            Which reasoning tier to run at, from the model's `reasoningTiers`. Null puts it back to
-            the model's own default; leaving it out keeps whatever is set.
-
-            Independent of `model` — sending one does not touch the other.
-          type:
-          - string
-          - 'null'
       type: object
     DecideRequestBody:
       additionalProperties: false
@@ -2363,6 +2245,43 @@ components:
           type: array
       required:
       - parts
+      type: object
+    MemoryListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MemoryResource'
+          type: array
+      required:
+      - items
+      type: object
+    MemoryResource:
+      additionalProperties: false
+      properties:
+        body:
+          description: The fact itself
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          description: The name the assistant gave this fact; it overwrites or deletes its own entries by that name
+          type: string
+        sourceThreadId:
+          description: Which conversation the assistant learned it in. That conversation may since have been deleted
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - id
+      - name
+      - body
+      - createdAt
+      - updatedAt
       type: object
     MessagePart:
       additionalProperties: false
