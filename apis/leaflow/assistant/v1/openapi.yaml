@@ -725,6 +725,146 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/skills:
+    get:
+      summary: List the skills this project can use
+      description: |-
+        Everything the assistant can reach in this project, including the ones that are turned off —
+        an entry that disappeared once it was switched off could not be switched back on.
+
+        `origin` says whether a skill can be edited here. Skills belonging to the project are
+        visible to everyone in it, whoever wrote them.
+      operationId: list-skills
+      tags:
+      - Skill
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Write a skill for this project
+      description: |-
+        Creates it, or replaces the project's skill of that name. The whole package goes in each
+        time: files left out of a write are removed, so the stored skill is what was sent and not
+        what accumulated.
+
+        A project skill takes precedence over a built-in one of the same name for this project only.
+        The built-in is untouched and reappears if the project's is deleted.
+      operationId: put-skill
+      tags:
+      - Skill
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/skills/{skill}:
+    get:
+      summary: Read one skill, with its files
+      description: Works for built-in skills too; they simply cannot be written.
+      operationId: get-skill
+      tags:
+      - Skill
+      parameters:
+      - description: The skill's name, as `list-skills` returned it.
+        in: path
+        name: skill
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: Turn a skill on or off
+      description: |-
+        Separate from writing it, because this is the frequent one: a skill that is off costs
+        nothing and stays where it is.
+
+        Only skills belonging to the project can be switched. To keep a built-in one out of the
+        way, write a project skill of the same name and turn that off.
+      operationId: set-skill-enabled
+      tags:
+      - Skill
+      parameters:
+      - in: path
+        name: skill
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillEnabledRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete this project's skill
+      description: A built-in skill of the same name, if there was one, becomes visible again.
+      operationId: delete-skill
+      tags:
+      - Skill
+      parameters:
+      - in: path
+        name: skill
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/threads:
     get:
       summary: List conversations
@@ -1678,6 +1818,100 @@ components:
           - 'null'
       required:
       - models
+      type: object
+    SkillResource:
+      additionalProperties: false
+      properties:
+        description:
+          description: Why the assistant would open this skill. It sits in every request, so it is the one field worth writing carefully.
+          type: string
+        enabled:
+          type: boolean
+        files:
+          additionalProperties:
+            type: string
+          description: 'Path to contents, `SKILL.md` among them. Only returned by `get-skill`; the list leaves it out.'
+          type:
+          - object
+          - 'null'
+        name:
+          type: string
+        origin:
+          description: |-
+            `builtin` — provided by the platform and read-only here.
+            `project` — written for this project and editable by anyone in it.
+          enum:
+          - builtin
+          - project
+          type: string
+        shortDescription:
+          type:
+          - string
+          - 'null'
+        updatedAt:
+          description: Null for built-in skills, which have no edit history here.
+          format: date-time
+          type:
+          - string
+          - 'null'
+      required:
+      - name
+      - description
+      - shortDescription
+      - origin
+      - enabled
+      - updatedAt
+      type: object
+    SkillListResponseBody:
+      additionalProperties: false
+      properties:
+        skills:
+          items:
+            $ref: '#/components/schemas/SkillResource'
+          type: array
+      required:
+      - skills
+      type: object
+    SkillRequestBody:
+      additionalProperties: false
+      properties:
+        description:
+          description: Why the assistant would open this skill. It sits in every request; write it as the answer to "when do I need this", not "what does it contain".
+          maxLength: 1024
+          minLength: 1
+          type: string
+        enabled:
+          default: true
+          type: boolean
+        files:
+          additionalProperties:
+            type: string
+          description: |-
+            Path to contents. `SKILL.md` is required; anything else it references goes alongside it.
+
+            Paths are relative to the skill and cannot leave it. At most 32 files, 256 KiB each and
+            1 MiB in total.
+          type: object
+        name:
+          description: Also how the assistant refers to it, so renaming is deleting and writing again.
+          maxLength: 64
+          minLength: 1
+          type: string
+        shortDescription:
+          maxLength: 1024
+          type: string
+      required:
+      - name
+      - description
+      - files
+      type: object
+    SkillEnabledRequestBody:
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+      required:
+      - enabled
       type: object
     ThreadSummaryResource:
       additionalProperties: false
