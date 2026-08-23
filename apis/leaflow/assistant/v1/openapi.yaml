@@ -2091,7 +2091,8 @@ components:
     ClientContextRequest:
       additionalProperties: false
       description: |-
-        What this client can do, so the assistant can ask it to do those things while it answers.
+        What this client is and what it can do, so the assistant can ask it to do those things while
+        it answers.
 
         Send `actions` only when they differ from the last message on this conversation. Sending the
         block without `actions` keeps whatever was declared before.
@@ -2105,18 +2106,47 @@ components:
           - array
           - 'null'
         clientId:
-          description: Identifies this client while it stays open. Any stable string; one per tab.
+          description: Identifies this client while it stays open. Any stable string; one per tab or process.
           minLength: 1
           maxLength: 128
           type: string
+        context:
+          description: |-
+            What the operator is looking at or working on, as typed blocks. Each one is shown to the
+            assistant as it was sent.
+
+            These travel with this message only and stay in the conversation, so they add up: send
+            what the assistant needs to answer, not everything on hand. At most 64 KiB in total.
+          items:
+            $ref: '#/components/schemas/ClientContextPart'
+          maxItems: 8
+          type:
+          - array
+          - 'null'
         label:
           description: 'How the client calls itself, for example "Leaflow console (web)".'
           maxLength: 64
           type: string
-        page:
-          $ref: '#/components/schemas/ClientPageRequest'
       required:
       - clientId
+      type: object
+    ClientContextPart:
+      additionalProperties: false
+      description: |-
+        One block of context. `type` names what it is so the assistant can tell blocks apart —
+        `page`, `selection`, `open_file`, `working_directory`, whatever this client has.
+      properties:
+        data:
+          additionalProperties: true
+          description: The block itself. Any object; its keys are shown to the assistant as they are.
+          type: object
+        type:
+          minLength: 1
+          maxLength: 64
+          type: string
+      required:
+      - type
+      - data
       type: object
     ClientActionRequest:
       additionalProperties: false
@@ -2170,17 +2200,6 @@ components:
       required:
       - name
       - description
-      type: object
-    ClientPageRequest:
-      additionalProperties: false
-      description: What the operator is looking at.
-      properties:
-        title:
-          maxLength: 200
-          type: string
-        url:
-          maxLength: 2000
-          type: string
       type: object
     DynamicCallResultRequestBody:
       additionalProperties: false
