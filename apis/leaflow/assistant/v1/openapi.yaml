@@ -629,6 +629,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/dynamic-calls/{call}/result:
+    post:
+      summary: Report what an action produced
+      description: |-
+        The assistant asks the client to run an action by adding a tool call to the conversation
+        with the namespace `dynamic`; the client acts when that entry turns in_progress and reports
+        back here.
+
+        The first result wins. A second one — from another tab, or a retried request — is refused
+        rather than replacing it, because the action already ran once.
+      operationId: submit-dynamic-call-result
+      tags:
+      - Thread
+      parameters:
+      - description: The id of the tool call entry in the conversation.
+        in: path
+        name: call
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamicCallResultRequestBody'
+        required: true
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/memories:
     get:
       summary: List what the assistant remembers
@@ -2046,11 +2081,108 @@ components:
           type:
           - array
           - 'null'
+        client:
+          $ref: '#/components/schemas/ClientContextRequest'
         text:
           minLength: 1
           type: string
       required:
       - text
+      type: object
+    ClientContextRequest:
+      additionalProperties: false
+      description: |-
+        What this client can do, so the assistant can ask it to do those things while it answers.
+
+        Send `actions` only when they differ from what was sent last — the list is repeated to the
+        model on every step of the turn, so an unchanged list costs more to resend than to omit.
+        Sending the block without `actions` keeps whatever was declared before.
+      properties:
+        actions:
+          description: The actions on offer right now. Omit when unchanged since the last message.
+          items:
+            $ref: '#/components/schemas/ClientActionRequest'
+          maxItems: 32
+          type:
+          - array
+          - 'null'
+        clientId:
+          description: Identifies this client while it stays open. Any stable string is fine; a fresh one per tab is expected.
+          minLength: 1
+          maxLength: 128
+          type: string
+        label:
+          description: How the client calls itself, shown to the model so it can name it — for example "Leaflow console (web)".
+          maxLength: 64
+          type: string
+        page:
+          $ref: '#/components/schemas/ClientPageRequest'
+      required:
+      - clientId
+      type: object
+    ClientActionRequest:
+      additionalProperties: false
+      properties:
+        description:
+          description: What the action does, written for the model. An action without one can only be guessed at from its name.
+          minLength: 1
+          maxLength: 500
+          type: string
+        name:
+          minLength: 1
+          maxLength: 64
+          type: string
+        parameters:
+          description: JSON Schema for the arguments. Omit for an action that takes none.
+          type:
+          - object
+          - 'null'
+        readOnly:
+          description: True when the action changes nothing outside the client. Anything else goes through this conversation's approval before it runs.
+          type: boolean
+        timeoutMs:
+          description: How long the assistant should wait for this action. 0 uses the default; longer values are capped.
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+      - name
+      - description
+      type: object
+    ClientPageRequest:
+      additionalProperties: false
+      description: What the operator is looking at. The address alone answers most questions about context.
+      properties:
+        title:
+          maxLength: 200
+          type: string
+        url:
+          maxLength: 2000
+          type: string
+      type: object
+    DynamicCallResultRequestBody:
+      additionalProperties: false
+      properties:
+        clientId:
+          description: The same value sent with the message. A result from a client that is no longer the attached one is refused.
+          minLength: 1
+          type: string
+        error:
+          description: Why it failed, when `ok` is false. This reaches the model, so write it for a reader who cannot see the screen.
+          maxLength: 2000
+          type: string
+        nextCursor:
+          description: Pass back when there is more to read. The assistant will call again with it.
+          maxLength: 500
+          type: string
+        ok:
+          type: boolean
+        output:
+          description: What the action produced. At most 64 KiB; paginate anything larger rather than truncating it.
+          type: string
+      required:
+      - clientId
+      - ok
       type: object
     TodoResource:
       additionalProperties: false
