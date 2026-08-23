@@ -729,9 +729,19 @@ paths:
   /api/v1/instances:
     get:
       summary: List instances
+      description: Every instance in the project, newest first. This endpoint does not query backend state; for the accurate state of one instance, use the retrieve endpoint.
       operationId: list-instances
       tags:
         - Instance
+      parameters:
+        - description: 'Only instances carrying this label, written as `key:value` — for example `env:prod`. Matched exactly on both halves. A key never contains a colon, so the split is at the first one; anything after it is the value, and `env:` means the key `env` with an empty value rather than "any value"'
+          explode: false
+          in: query
+          name: label
+          schema:
+            description: 'A label to filter by, written as `key:value`'
+            maxLength: 128
+            type: string
       responses:
         '200':
           content:
@@ -979,6 +989,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConsoleOutputResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/labels:
+    put:
+      summary: Replace an instance's labels
+      description: |-
+        Records what this instance is for, as key-value pairs, so that a person or an assistant can tell later. Nothing on the platform reads them: no scheduling, quota or billing decision keys off a label, which is what makes editing one safe.
+
+        **The whole set is replaced.** Whatever is absent from the request is removed — a merge could not express deleting a key, and it makes retrying the same request produce a different result each time.
+
+        Do not put credentials here. Labels appear in listings, in support tickets and in the operator console.
+      operationId: set-instance-labels
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetInstanceLabelsRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/instances/{instanceId}/notes:
+    put:
+      summary: Replace an instance's note
+      description: |-
+        A free-text note: what this instance runs, and what to be careful about before touching it — "primary database, fail over before rebooting". It is read by whoever opens the instance next, including an assistant acting on your behalf.
+
+        **The whole note is replaced**; send an empty string to clear it.
+
+        Do not put credentials here. The note appears in the operator console.
+      operationId: set-instance-notes
+      tags:
+        - Instance
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetInstanceNotesRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceResource'
           description: OK
         default:
           content:
@@ -3104,7 +3190,18 @@ components:
           type:
             - string
             - 'null'
+        labels:
+          additionalProperties:
+            maxLength: 63
+            type: string
+          description: Your own classification of this instance, as key-value pairs. Nothing on the platform reads these — they are recorded so that a person, or an assistant acting on your behalf, can tell what an instance is for. Empty when never set
+          maxProperties: 20
+          type: object
         name:
+          type: string
+        notes:
+          description: A free-text note about this instance — what it runs, and what to be careful about before touching it. Empty when never set
+          maxLength: 4096
           type: string
         pending_instance_type_id:
           description: Non-empty while a resize awaits confirmation. Confirming puts this type into effect, reverting discards it
@@ -3176,6 +3273,8 @@ components:
         - id
         - name
         - hostname
+        - labels
+        - notes
         - region_code
         - availability_zone
         - private_network_id
@@ -3286,6 +3385,29 @@ components:
         - instances
         - password
         - failure
+      type: object
+    SetInstanceLabelsRequestBody:
+      additionalProperties: false
+      properties:
+        labels:
+          additionalProperties:
+            maxLength: 63
+            type: string
+          description: The complete set of labels. Whatever is absent here is removed, so this is also how one is deleted; send an empty object to clear them all. A key may not contain a colon, whitespace or control characters — the colon because it separates key from value in the `label` filter
+          maxProperties: 20
+          type: object
+      required:
+        - labels
+      type: object
+    SetInstanceNotesRequestBody:
+      additionalProperties: false
+      properties:
+        notes:
+          description: The complete note. Send an empty string to clear it
+          maxLength: 4096
+          type: string
+      required:
+        - notes
       type: object
     RenameInstanceRequestBody:
       additionalProperties: false
