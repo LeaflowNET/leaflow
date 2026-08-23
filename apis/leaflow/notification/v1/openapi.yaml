@@ -27,9 +27,10 @@ info:
     - **Text is rendered at read time from the language on your preferences.** Changing the
       language changes the text of everything already in the inbox. Messages already delivered by
       email or to an outbound channel are not rewritten, because they have already been sent.
-    - **Some types cannot be turned off.** Those types announce something irreversible, or carry
-      the only route to something that cannot be obtained again. They are marked `mandatory` in
-      the catalogue, and configuring them returns `NOTIFICATION_TYPE_MANDATORY`.
+    - **Some types must reach you, and those cannot be muted or removed from email.** They are
+      marked `mandatory` in the catalogue: types you would only find out about by signing in, when
+      not finding out costs you something — a suspension, a deletion, a credential that expires.
+      Everything else about them is still configurable, including adding channels of your own.
     - **Deleting a preference restores the default; it does not turn the type off.** To stop
       receiving a type, set `muted` on it.
     - **Outbound channels deliver nothing until they are verified.** Registering a channel does not
@@ -394,8 +395,12 @@ paths:
         Omitting `project_id` configures every project. Naming one configures that project alone
         and takes precedence there.
 
-        Configuring a type marked `mandatory` returns `NOTIFICATION_TYPE_MANDATORY`. Naming a
-        channel the type does not support returns `NOTIFICATION_CHANNEL_UNSUPPORTED`.
+        On a type marked `mandatory`, setting `muted` or omitting `email` from `channels` returns
+        `NOTIFICATION_TYPE_MANDATORY`. Everything else about such a type is configurable, including
+        adding channels and raising `min_severity`.
+
+        Naming a channel the type does not support returns `NOTIFICATION_CHANNEL_UNSUPPORTED`.
+        `inbox` is accepted but has no effect: every notification is in the inbox regardless.
       operationId: update-type-preference
       tags:
         - Preference
@@ -1004,8 +1009,8 @@ components:
           type: array
         mandatory:
           description: |-
-            True when this type cannot be configured or turned off. Such types announce something
-            irreversible, or carry the only route to something that cannot be obtained again
+            True when this type must reach you: it cannot be muted, and email cannot be removed
+            from its channels. Everything else about it is still configurable
           type: boolean
         params:
           description: The names of the facts this type carries, as they appear on NotificationResource.params
@@ -1102,7 +1107,7 @@ components:
           description: True when nothing has been configured and these are the defaults from the catalogue
           type: boolean
         mandatory:
-          description: True when this type cannot be configured; muting it is rejected
+          description: True when this type cannot be muted and email cannot be removed from it
           type: boolean
         min_severity:
           description: |-
@@ -1147,7 +1152,10 @@ components:
         States how this type should be delivered, replacing whatever was configured before.
       properties:
         channels:
-          description: Where to deliver this type. An empty list delivers to the inbox only
+          description: |-
+            Where to deliver this type, beyond the inbox. An empty list delivers to the inbox only.
+            `inbox` may be listed and is accepted, but has no effect: every notification is in the
+            inbox whatever this says
           items:
             $ref: '#/components/schemas/NotificationChannel'
           maxItems: 8

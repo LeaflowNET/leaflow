@@ -910,7 +910,7 @@ paths:
   /api/v1/threads/{thread}/messages:
     post:
       summary: Send a message and start a turn
-      description: Returns a turnId immediately without waiting for execution — a turn can run for tens of minutes. Progress arrives on the live stream the conversation document's `stream` points at, not in this response.
+      description: 'Returns a turnId immediately without waiting for execution — a turn can run for tens of minutes. Progress arrives on the live stream the conversation document''s `stream` points at, not in this response. Sending while the assistant is still working is allowed: the message is put in line and `queued` comes back true, to be read at the next step of the turn already running — so the editor should stay open rather than blocking on a busy conversation.'
       operationId: send-message
       tags:
       - Thread
@@ -2050,10 +2050,19 @@ components:
     TurnIDResponseBody:
       additionalProperties: false
       properties:
+        queued:
+          description: 'True when the assistant was already busy and this message was put in line instead of starting a turn. It is read at the next step of the turn already running, so there is nothing further to do — and turnId is empty in this case.'
+          type: boolean
+        queuedAhead:
+          description: 'How many messages were already waiting ahead of this one. Only meaningful when queued is true.'
+          format: int64
+          type: integer
         turnId:
+          description: 'The turn this message started. Empty when the message was queued instead.'
           type: string
       required:
       - turnId
+      - queued
       type: object
     AnswerRequestBody:
       additionalProperties: false
