@@ -2122,12 +2122,53 @@ components:
       type: object
     ClientActionRequest:
       additionalProperties: false
+      description: |-
+        The same shape as a tool in the OpenAI Chat Completions API, plus the two things that API
+        has no place for: whether the action changes anything, and how long to wait for it.
+
+        A client that already holds a tools array can forward it with one field added per entry.
+      properties:
+        function:
+          $ref: '#/components/schemas/ClientFunctionRequest'
+        readOnly:
+          description: |-
+            True when the action changes nothing outside the client. Anything else goes through this
+            conversation's approval before it runs.
+
+            There is no safe default, so it is required. Assuming false puts a confirmation in front
+            of every read, which teaches the reader to approve without looking; assuming true lets an
+            undeclared write run unseen.
+          type: boolean
+        timeoutMs:
+          description: How long the assistant should wait for this action. Omit for the default; longer values are capped.
+          format: int64
+          minimum: 0
+          type: integer
+        type:
+          default: function
+          description: Present so an OpenAI tools entry can be forwarded unchanged. Only functions are supported today.
+          enum:
+          - function
+          type: string
+      required:
+      - function
+      - readOnly
+      type: object
+    ClientFunctionRequest:
+      additionalProperties: false
+      description: The function object from the OpenAI tools format, with the MCP spelling of the schema field also accepted.
       properties:
         description:
           description: What the action does, written for the model. An action without one can only be guessed at from its name.
           minLength: 1
           maxLength: 500
           type: string
+        inputSchema:
+          additionalProperties: true
+          description: 'What MCP and the Anthropic API call `parameters`. Sending both is an error rather than a guess about which one is current.'
+          type:
+          - object
+          - 'null'
         name:
           minLength: 1
           maxLength: 64
@@ -2138,14 +2179,6 @@ components:
           type:
           - object
           - 'null'
-        readOnly:
-          description: True when the action changes nothing outside the client. Anything else goes through this conversation's approval before it runs.
-          type: boolean
-        timeoutMs:
-          description: How long the assistant should wait for this action. 0 uses the default; longer values are capped.
-          format: int64
-          minimum: 0
-          type: integer
       required:
       - name
       - description
