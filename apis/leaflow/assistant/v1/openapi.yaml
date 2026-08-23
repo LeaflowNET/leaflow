@@ -622,6 +622,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/memories:
+    get:
+      summary: 列出助手记住的事
+      description: 助手在这个项目里为当前账号记下的事实，它们会出现在之后每一次对话的开头。同一个项目里的不同成员各记各的，这里只返回当前账号的那些。不分页：条数有上限，一次全部返回。
+      operationId: list-memories
+      tags:
+      - Thread
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/memories/{memory}:
+    delete:
+      summary: 删掉一条记忆
+      description: 助手不再记得这件事。删除立即生效，下一次对话就不会再带上它。助手可能会重新学到同一件事。
+      operationId: delete-memory
+      tags:
+      - Thread
+      parameters:
+      - in: path
+        name: memory
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/models:
     get:
       summary: 列出可用模型
@@ -1550,6 +1592,43 @@ components:
       - contextWindow
       - reasoningTiers
       - inputModalities
+      type: object
+    MemoryListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MemoryResource'
+          type: array
+      required:
+      - items
+      type: object
+    MemoryResource:
+      additionalProperties: false
+      properties:
+        body:
+          description: 记住的那件事
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          description: 助手给这件事起的名字，它用这个名字覆盖或者删掉自己写过的东西
+          type: string
+        sourceThreadId:
+          description: 助手是在哪次对话里记下它的。那次对话可能已经被删掉了
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - id
+      - name
+      - body
+      - createdAt
+      - updatedAt
       type: object
     ModelListResponseBody:
       additionalProperties: false
