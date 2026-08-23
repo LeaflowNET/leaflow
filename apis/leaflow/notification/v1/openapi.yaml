@@ -1,0 +1,1452 @@
+openapi: 3.1.0
+info:
+  description: |-
+    Read the notifications this platform has sent you, and choose where each kind of notification
+    is delivered.
+
+    Every service on the platform reports events here rather than contacting you directly. This
+    API is the single place where those events are read, and the single place where delivery is
+    configured.
+
+    ## Authentication
+
+    Every request carries a project token; see the `bearerAuth` security scheme.
+
+    **Neither the path nor the headers carry a `project_id`**: the current project is determined by
+    the token. Listing operations return everything addressed to you across every project by
+    default, because a notification is addressed to a person rather than to a project; pass
+    `scope=current_project` to narrow the result to the project in the token.
+
+    ## Conventions
+
+    - **Notifications are typed, and the type determines who receives it.** A type such as
+      `compute.instance.provisioned` is addressed to whoever created the instance, while
+      `monitoring.alert.raised` is addressed to every member of the project. The full catalogue is
+      available from `GET /api/v1/notification-types` and is stable: a type identifier is never
+      reused for a different event.
+    - **Text is rendered at read time from the language on your preferences.** Changing the
+      language changes the text of everything already in the inbox. Messages already delivered by
+      email or to an outbound channel are not rewritten, because they have already been sent.
+    - **Some types cannot be turned off.** Those types announce something irreversible, or carry
+      the only route to something that cannot be obtained again. They are marked `mandatory` in
+      the catalogue, and configuring them returns `NOTIFICATION_TYPE_MANDATORY`.
+    - **Deleting a preference restores the default; it does not turn the type off.** To stop
+      receiving a type, set `muted` on it.
+    - **Outbound channels deliver nothing until they are verified.** Registering a channel does not
+      contact it. Verification is a separate operation that sends one message, and only a channel
+      that has acknowledged it receives anything afterwards.
+    - **Channel endpoints are never returned.** No operation, including the one that registers
+      them, returns the address that was submitted. A channel entered incorrectly must be deleted
+      and registered again.
+
+    ## Rate and volume
+
+    Delivery to outbound channels is limited per channel, and bursts of alerts about one server are
+    summarised rather than sent individually. Nothing is summarised in the inbox: it always holds
+    every notification. A notification that was summarised or suppressed is still readable here.
+
+    ## One-time credentials
+
+    Some notifications carry a reference to a credential rather than the credential itself — the
+    initial password of a newly created instance, for example. That credential is readable exactly
+    once, expires on its own, and is destroyed as soon as it has been read. Requesting it a second
+    time returns `CREDENTIAL_TICKET_CONSUMED`.
+  title: Leaflow Notification API
+  version: 1.0.0
+servers:
+  - url: https://notification.leaflow.cloud
+    description: Inbox, delivery preferences and outbound channels
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/notifications:
+    get:
+      summary: List notifications addressed to you
+      description: |-
+        Returns notifications in reverse chronological order, newest first.
+
+        Announcements published to the whole platform appear here alongside notifications
+        addressed to you individually and are distinguished by `kind`. They are read and archived
+        through the same operations.
+      operationId: list-notifications
+      tags:
+        - Notification
+      parameters:
+        - description: Maximum number of items to return in this page
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            description: Maximum number of items to return in this page
+            format: int64
+            maximum: 200
+            minimum: 1
+            type: integer
+        - description: Number of items to skip
+          explode: false
+          in: query
+          name: offset
+          schema:
+            description: Number of items to skip
+            format: int64
+            maximum: 10000
+            minimum: 0
+            type: integer
+        - description: Which projects to include; defaults to every project
+          explode: false
+          in: query
+          name: scope
+          schema:
+            $ref: '#/components/schemas/NotificationScope'
+        - description: Return only notifications of this type; omit for all types
+          explode: false
+          in: query
+          name: type
+          schema:
+            maxLength: 128
+            type: string
+        - description: Return only notifications at or above this severity; omit for all severities
+          explode: false
+          in: query
+          name: min_severity
+          schema:
+            $ref: '#/components/schemas/NotificationSeverity'
+        - description: Restrict to unread, to read, or to neither; omit for both
+          explode: false
+          in: query
+          name: read
+          schema:
+            description: Restrict to unread, to read, or to neither; omit for both
+            type: boolean
+        - description: Include archived notifications; they are excluded by default
+          explode: false
+          in: query
+          name: include_archived
+          schema:
+            default: false
+            description: Include archived notifications; they are excluded by default
+            type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LengthAwarePageNotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notifications/read:
+    post:
+      summary: Mark several notifications as read
+      description: |-
+        Marks every listed notification as read. Notifications already read are left alone, and the
+        operation succeeds whether or not any of them changed.
+
+        Passing an empty list marks everything currently unread as read.
+      operationId: mark-notifications-read
+      tags:
+        - Notification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkNotificationsReadRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notifications/unread-count:
+    get:
+      summary: Count unread notifications
+      description: |-
+        Returns the number of unread notifications. This is the value behind the badge in the
+        console, and it is also carried on every realtime event, so it does not normally need to be
+        requested on its own.
+      operationId: count-unread-notifications
+      tags:
+        - Notification
+      parameters:
+        - description: Which projects to include; defaults to every project
+          explode: false
+          in: query
+          name: scope
+          schema:
+            $ref: '#/components/schemas/NotificationScope'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCountResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notifications/{notificationId}:
+    get:
+      summary: Get one notification
+      description: |-
+        A notification addressed to someone else returns `NOTIFICATION_NOT_FOUND`, the same answer
+        as one that does not exist.
+      operationId: get-notification
+      tags:
+        - Notification
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notifications/{notificationId}/read:
+    post:
+      summary: Mark one notification as read
+      description: Marking a notification that is already read succeeds and changes nothing.
+      operationId: mark-notification-read
+      tags:
+        - Notification
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notifications/{notificationId}/archive:
+    post:
+      summary: Archive one notification
+      description: |-
+        Archiving removes a notification from the default listing without deleting it; pass
+        `include_archived` to see it again. Archiving also marks it read.
+      operationId: archive-notification
+      tags:
+        - Notification
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/notification-types:
+    get:
+      summary: List every notification type
+      description: |-
+        The catalogue of everything this platform can notify about, with the default delivery for
+        each type and whether it can be configured. It is the source for a settings interface.
+
+        This operation does not require authentication: the catalogue is the same for everyone and
+        describes the product rather than any account.
+      operationId: list-notification-types
+      tags:
+        - Notification
+      security: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTypeListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/preferences:
+    get:
+      summary: Get your delivery preferences
+      description: |-
+        Returns the account-wide settings: the language notifications are written in, the time zone
+        times are stated in, and the address email is delivered to.
+
+        A person who has never configured anything receives the defaults rather than an error.
+      operationId: get-notification-preferences
+      tags:
+        - Preference
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: Update your delivery preferences
+      description: |-
+        Fields that are omitted are left alone.
+
+        Setting `email_override` starts verification of that address: email continues to be
+        delivered to the address on the account until the new one is confirmed. Setting it to null
+        returns delivery to the account address.
+      operationId: update-notification-preferences
+      tags:
+        - Preference
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/preferences/types:
+    get:
+      summary: List your per-type preferences
+      description: |-
+        Returns one entry per notification type, whether or not it has been configured. Entries
+        that have never been configured are reported with `inherited: true` and carry the defaults
+        from the catalogue.
+
+        A preference applies either to one project or to every project. Both are returned; the one
+        naming a project takes precedence for that project.
+      operationId: list-type-preferences
+      tags:
+        - Preference
+      parameters:
+        - description: Return preferences for this project in addition to the account-wide ones; omit for the account-wide ones only
+          explode: false
+          in: query
+          name: project_id
+          schema:
+            description: Return preferences for this project in addition to the account-wide ones
+            format: uuid
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TypePreferenceListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/preferences/types/{type}:
+    put:
+      summary: Set the preference for one type
+      description: |-
+        States how this type should be delivered, replacing whatever was configured before.
+
+        Omitting `project_id` configures every project. Naming one configures that project alone
+        and takes precedence there.
+
+        Configuring a type marked `mandatory` returns `NOTIFICATION_TYPE_MANDATORY`. Naming a
+        channel the type does not support returns `NOTIFICATION_CHANNEL_UNSUPPORTED`.
+      operationId: update-type-preference
+      tags:
+        - Preference
+      parameters:
+        - $ref: '#/components/parameters/NotificationType'
+        - $ref: '#/components/parameters/PreferenceProjectId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTypePreferenceRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TypePreferenceResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Restore the default for one type
+      description: |-
+        Removes the configured preference so the type follows the default in the catalogue again.
+
+        **This does not stop the type from being delivered.** To stop receiving it, set `muted`
+        instead. Deleting a preference that was never configured succeeds and changes nothing.
+      operationId: delete-type-preference
+      tags:
+        - Preference
+      parameters:
+        - $ref: '#/components/parameters/NotificationType'
+        - $ref: '#/components/parameters/PreferenceProjectId'
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels:
+    get:
+      summary: List outbound channels
+      description: |-
+        Returns the channels you have registered, and the channels registered for the project in
+        the token. The address of each is not included.
+      operationId: list-user-channels
+      tags:
+        - Channel
+      parameters:
+        - description: Return only channels of this scope; omit for both
+          explode: false
+          in: query
+          name: channel_scope
+          schema:
+            $ref: '#/components/schemas/ChannelScope'
+        - description: Return only channels of this kind; omit for all kinds
+          explode: false
+          in: query
+          name: kind
+          schema:
+            $ref: '#/components/schemas/ChannelKind'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Register an outbound channel
+      description: |-
+        Registering a channel does not contact it and does not make it deliver anything: a new
+        channel is unverified, and unverified channels are skipped. Call verify to send it one
+        message and make it usable.
+
+        A `project` channel is shared with everyone in the project and requires
+        `notification:channels.manage`. A `user` channel is yours alone.
+
+        The endpoint must be reachable over the public internet. Addresses that resolve to private
+        or link-local ranges are rejected with `CHANNEL_ENDPOINT_NOT_PUBLIC`, both here and again
+        at delivery time. Registering an endpoint already registered in the same scope returns
+        `CHANNEL_DUPLICATE`.
+
+        The submitted endpoint is not returned by this or any other operation.
+      operationId: create-user-channel
+      tags:
+        - Channel
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channelId}:
+    patch:
+      summary: Rename or re-enable an outbound channel
+      description: |-
+        Fields that are omitted are left alone.
+
+        A channel disabled after repeated failures is re-enabled by setting `enabled` to true,
+        which also clears the failure count. It remains verified, so it starts delivering again
+        immediately — verify it first if the cause of the failures is not known to be resolved.
+
+        Changing the endpoint is not possible; register a new channel and delete this one.
+      operationId: update-user-channel
+      tags:
+        - Channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete an outbound channel
+      description: |-
+        Deleting a channel stops delivery to it and destroys the stored endpoint. Deliveries
+        already queued for it are abandoned.
+      operationId: delete-user-channel
+      tags:
+        - Channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/channels/{channelId}/verify:
+    post:
+      summary: Verify an outbound channel
+      description: |-
+        Sends one message to the channel and marks it verified if the endpoint accepted it.
+
+        **The endpoint accepting the message is not proof that it arrived where it was meant to.**
+        A webhook URL belonging to the wrong group answers exactly the same way. Confirm the
+        message appeared before relying on the channel.
+
+        A channel that fails verification is not marked verified and continues to be skipped. The
+        reason is reported in `last_error`; it is the provider's own wording and is not translated.
+      operationId: verify-user-channel
+      tags:
+        - Channel
+      parameters:
+        - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/credentials/{ticketId}:
+    get:
+      summary: Describe a one-time credential
+      description: |-
+        Reports whether the credential is still available without consuming it. It never contains
+        the credential itself.
+
+        A ticket addressed to someone else returns `CREDENTIAL_TICKET_NOT_FOUND`, the same answer
+        as one that does not exist.
+      operationId: describe-credential-ticket
+      tags:
+        - Credential
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialTicketResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/credentials/{ticketId}/reveal:
+    post:
+      summary: Reveal a one-time credential
+      description: |-
+        Returns the credential and destroys it in the same step. **This is the only operation that
+        ever returns it, and it succeeds only once.**
+
+        Every subsequent request returns `CREDENTIAL_TICKET_CONSUMED`, including one issued
+        concurrently with the first: exactly one caller receives the credential.
+
+        A ticket that has expired returns `CREDENTIAL_TICKET_EXPIRED`, and one withdrawn by the
+        service that created it returns `CREDENTIAL_TICKET_REVOKED`. In all three cases the
+        credential is already gone and cannot be recovered; obtain a new one from the service that
+        owns the resource.
+
+        This operation is a POST rather than a GET because a GET would be followed by link
+        scanners in mail clients and by browser prefetching, either of which would consume the
+        credential before the recipient opened it.
+      operationId: reveal-credential
+      tags:
+        - Credential
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevealedCredentialResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/realtime:
+    get:
+      summary: Describe the realtime connection
+      description: |-
+        Returns everything needed to open a realtime connection, and the names of the channels to
+        subscribe to. The parameters are not constants: they differ between environments, so they
+        must be requested rather than compiled in.
+
+        Realtime delivery is an optimisation. Everything it announces is also readable through the
+        listing operations, so a client that cannot connect stays correct by polling or by
+        refreshing.
+      operationId: describe-realtime-connection
+      tags:
+        - Realtime
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeConnectionResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/realtime/auth:
+    post:
+      summary: Authorize a realtime channel subscription
+      description: |-
+        Authorizes one subscription. Realtime clients call this on their own while subscribing; it
+        is not normally called directly.
+
+        Only two channels are authorized: the one naming you, and the one naming the project in
+        the token. Any other channel returns `REALTIME_CHANNEL_FORBIDDEN`.
+
+        **Authorization is evaluated once, when the subscription is established.** A subscription
+        already open is not revoked when project membership changes, so realtime events carry
+        identifiers and counts only, never the contents of a notification.
+      operationId: authorize-realtime-channel
+      tags:
+        - Realtime
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRealtimeChannelRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeAuthResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Project token. Sign in at auth.leaflow.net to obtain an account token, then exchange it with IAM for a project token (POST /account/v1/projects/{projectId}/token). A project token identifies both the current user and the current project.
+      scheme: bearer
+      type: http
+  parameters:
+    NotificationId:
+      description: The notification, or the announcement when kind is announcement
+      in: path
+      name: notificationId
+      required: true
+      schema:
+        format: uuid
+        type: string
+    NotificationType:
+      description: A notification type identifier, as listed by list-notification-types
+      in: path
+      name: type
+      required: true
+      schema:
+        maxLength: 128
+        minLength: 3
+        pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$'
+        type: string
+    PreferenceProjectId:
+      description: Apply to this project alone; omit to apply to every project
+      explode: false
+      in: query
+      name: project_id
+      schema:
+        description: Apply to this project alone; omit to apply to every project
+        format: uuid
+        type: string
+    ChannelId:
+      description: The outbound channel
+      in: path
+      name: channelId
+      required: true
+      schema:
+        format: uuid
+        type: string
+    TicketId:
+      description: The one-time credential
+      in: path
+      name: ticketId
+      required: true
+      schema:
+        format: uuid
+        type: string
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    NotificationScope:
+      description: |-
+        `all` covers every project you belong to as well as notifications that belong to no
+        project. `current_project` covers only the project in the token.
+      enum:
+        - all
+        - current_project
+      type: string
+    NotificationSeverity:
+      description: |-
+        How much attention a notification asks for. It is assigned by the type and by the event,
+        not by the recipient.
+
+        `critical` announces something that is either irreversible or actively costing the
+        recipient something.
+      enum:
+        - info
+        - warning
+        - error
+        - critical
+      type: string
+    NotificationKind:
+      description: |-
+        `notification` is addressed to you. `announcement` was published to the whole platform and
+        appears in everyone's inbox.
+      enum:
+        - notification
+        - announcement
+      type: string
+    NotificationChannel:
+      description: |-
+        Where a notification is delivered.
+
+        `inbox` is this API. `email` is the address on your preferences. `webhook` covers every
+        outbound channel you have registered — the message is shaped for each one.
+      enum:
+        - inbox
+        - email
+        - webhook
+      type: string
+    ChannelScope:
+      description: |-
+        `user` is yours alone. `project` is shared with everyone in the project and requires
+        `notification:channels.manage` to register or delete.
+      enum:
+        - user
+        - project
+      type: string
+    ChannelKind:
+      description: |-
+        The kind of endpoint, which determines both how the message is shaped and what the
+        endpoint is.
+
+        `lark_webhook` and `wecom_webhook` are group robot webhook URLs and receive a card.
+        `bark` is a Bark server URL including the device key and receives a short line of text.
+        `generic_webhook` receives a JSON document and is the option for anything else.
+      enum:
+        - lark_webhook
+        - wecom_webhook
+        - bark
+        - generic_webhook
+      type: string
+    NotificationAudience:
+      description: |-
+        Who a type is addressed to. It is a property of the type, so it is the same for every
+        occurrence.
+
+        `explicit` is whoever the reporting service names, usually the person who asked for the
+        action. `account` is one person, independently of any project. `address` is an email
+        address belonging to someone who may not have an account yet. `broadcast` is everyone.
+      enum:
+        - explicit
+        - account
+        - address
+        - project_members
+        - project_owner
+        - project_admins
+        - broadcast
+      type: string
+    NotificationResource:
+      additionalProperties: false
+      description: |-
+        One notification, with its text rendered in the language on your preferences at the moment
+        it was read.
+      properties:
+        archived_at:
+          description: When you archived it; null if you did not
+          format: date-time
+          type:
+            - string
+            - 'null'
+        body:
+          description: The text, as a fragment of HTML. Contains formatting and links, no scripts and no styles
+          type: string
+        body_text:
+          description: The same text without markup, for clients that cannot render HTML
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/NotificationKind'
+        locale:
+          description: The language this text was rendered in
+          type: string
+        occurred_at:
+          description: When the event itself happened, which precedes created_at
+          format: date-time
+          type: string
+        params:
+          additionalProperties: {}
+          description: |-
+            The facts the text was rendered from, for clients that want to link to the resource the
+            notification is about. The names are documented per type in the catalogue.
+          type: object
+        project_id:
+          description: The project the event belongs to; null for events that belong to no project
+          format: uuid
+          type:
+            - string
+            - 'null'
+        read_at:
+          description: When you read it; null if you have not
+          format: date-time
+          type:
+            - string
+            - 'null'
+        severity:
+          $ref: '#/components/schemas/NotificationSeverity'
+        title:
+          description: A single line, without markup
+          type: string
+        type:
+          description: The type identifier; empty for announcements, which have no type
+          type: string
+      required:
+        - id
+        - kind
+        - type
+        - severity
+        - project_id
+        - title
+        - body
+        - body_text
+        - params
+        - locale
+        - occurred_at
+        - created_at
+        - read_at
+        - archived_at
+      type: object
+    LengthAwarePageNotificationResource:
+      additionalProperties: false
+      properties:
+        items:
+          description: The contents of this page
+          items:
+            $ref: '#/components/schemas/NotificationResource'
+          type: array
+        limit:
+          description: Maximum items per page, echoing the value in the request
+          format: int64
+          type: integer
+        offset:
+          description: Items skipped, echoing the value in the request
+          format: int64
+          type: integer
+        total:
+          description: Total number of matching items, not only those in this page
+          format: int64
+          type: integer
+        unread_count:
+          description: Unread notifications in the same scope, not only in this page
+          format: int64
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+        - unread_count
+      type: object
+    UnreadCountResource:
+      additionalProperties: false
+      properties:
+        unread_count:
+          format: int64
+          type: integer
+      required:
+        - unread_count
+      type: object
+    MarkNotificationsReadRequestBody:
+      additionalProperties: false
+      description: An empty list marks everything currently unread as read.
+      properties:
+        notification_ids:
+          items:
+            format: uuid
+            type: string
+          maxItems: 500
+          type: array
+      required:
+        - notification_ids
+      type: object
+    NotificationTypeDescriptor:
+      additionalProperties: false
+      description: One entry in the catalogue of everything the platform can notify about.
+      properties:
+        audience:
+          $ref: '#/components/schemas/NotificationAudience'
+        available_channels:
+          description: The channels this type may be delivered on. Configuring any other channel is rejected
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+          type: array
+        default_channels:
+          description: The channels this type is delivered on when nothing has been configured
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+          type: array
+        mandatory:
+          description: |-
+            True when this type cannot be configured or turned off. Such types announce something
+            irreversible, or carry the only route to something that cannot be obtained again
+          type: boolean
+        params:
+          description: The names of the facts this type carries, as they appear on NotificationResource.params
+          items:
+            type: string
+          type: array
+        service:
+          description: The service that reports this type
+          type: string
+        severity:
+          $ref: '#/components/schemas/NotificationSeverity'
+        type:
+          type: string
+      required:
+        - type
+        - service
+        - audience
+        - severity
+        - default_channels
+        - available_channels
+        - mandatory
+        - params
+      type: object
+    NotificationTypeListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/NotificationTypeDescriptor'
+          type: array
+      required:
+        - items
+      type: object
+    PreferencesResource:
+      additionalProperties: false
+      properties:
+        email_address:
+          description: Where email is delivered right now, which is the account address unless a verified override replaces it
+          type: string
+        email_override:
+          description: An address to receive email instead of the account address; null when the account address is used
+          type:
+            - string
+            - 'null'
+        email_override_verified_at:
+          description: When the override was confirmed; null while it is pending, during which email still goes to the account address
+          format: date-time
+          type:
+            - string
+            - 'null'
+        locale:
+          description: The language notifications are written in, as an IETF language tag
+          type: string
+        timezone:
+          description: The IANA time zone times in notifications are stated in
+          type: string
+      required:
+        - locale
+        - timezone
+        - email_address
+        - email_override
+        - email_override_verified_at
+      type: object
+    UpdatePreferencesRequestBody:
+      additionalProperties: false
+      description: Fields that are omitted are left alone.
+      properties:
+        email_override:
+          description: An address to receive email instead of the account address. Null returns delivery to the account address
+          maxLength: 320
+          type:
+            - string
+            - 'null'
+        locale:
+          description: An IETF language tag. A language that is not supported is rejected rather than approximated
+          maxLength: 16
+          minLength: 2
+          type: string
+        timezone:
+          description: An IANA time zone name, such as Asia/Shanghai
+          maxLength: 64
+          minLength: 1
+          type: string
+      type: object
+    TypePreferenceResource:
+      additionalProperties: false
+      properties:
+        channels:
+          description: Where this type is delivered
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+          type: array
+        inherited:
+          description: True when nothing has been configured and these are the defaults from the catalogue
+          type: boolean
+        mandatory:
+          description: True when this type cannot be configured; muting it is rejected
+          type: boolean
+        min_severity:
+          description: |-
+            Deliver only at or above this severity. Null delivers every severity. It applies to the
+            channels named here and not to the inbox, which always holds everything
+          anyOf:
+            - $ref: '#/components/schemas/NotificationSeverity'
+            - type: 'null'
+        muted:
+          description: True when this type is not delivered anywhere except the inbox
+          type: boolean
+        project_id:
+          description: The project this preference applies to; null when it applies to every project
+          format: uuid
+          type:
+            - string
+            - 'null'
+        type:
+          type: string
+      required:
+        - type
+        - project_id
+        - channels
+        - muted
+        - min_severity
+        - inherited
+        - mandatory
+      type: object
+    TypePreferenceListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TypePreferenceResource'
+          type: array
+      required:
+        - items
+      type: object
+    UpdateTypePreferenceRequestBody:
+      additionalProperties: false
+      description: |-
+        States how this type should be delivered, replacing whatever was configured before.
+      properties:
+        channels:
+          description: Where to deliver this type. An empty list delivers to the inbox only
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+          maxItems: 8
+          type: array
+        min_severity:
+          description: Deliver only at or above this severity. Null delivers every severity
+          anyOf:
+            - $ref: '#/components/schemas/NotificationSeverity'
+            - type: 'null'
+        muted:
+          default: false
+          description: Stop delivering this type anywhere except the inbox
+          type: boolean
+      required:
+        - channels
+      type: object
+    ChannelResource:
+      additionalProperties: false
+      description: A registered outbound channel. The endpoint itself is never included.
+      properties:
+        channel_scope:
+          $ref: '#/components/schemas/ChannelScope'
+        consecutive_failures:
+          description: Deliveries that have failed in a row. Reset by a success, and by re-enabling the channel
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        disabled_at:
+          description: When the channel was disabled after repeated failures; null if it is enabled
+          format: date-time
+          type:
+            - string
+            - 'null'
+        disabled_reason:
+          description: Why it was disabled; null if it is enabled
+          type:
+            - string
+            - 'null'
+        id:
+          format: uuid
+          type: string
+        kind:
+          $ref: '#/components/schemas/ChannelKind'
+        last_error:
+          description: Why the most recent attempt failed, in the endpoint's own wording; null if the most recent attempt succeeded
+          type:
+            - string
+            - 'null'
+        last_failure_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        last_success_at:
+          format: date-time
+          type:
+            - string
+            - 'null'
+        name:
+          type: string
+        project_id:
+          description: The project this channel is shared with; null for a channel of scope user
+          format: uuid
+          type:
+            - string
+            - 'null'
+        redacted:
+          description: A partially masked fragment of the endpoint, for visual identification only
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        verified_at:
+          description: When the endpoint last acknowledged a verification message; null while it never has, during which the channel is skipped
+          format: date-time
+          type:
+            - string
+            - 'null'
+      required:
+        - id
+        - channel_scope
+        - project_id
+        - kind
+        - name
+        - redacted
+        - verified_at
+        - last_success_at
+        - last_failure_at
+        - last_error
+        - consecutive_failures
+        - disabled_at
+        - disabled_reason
+        - created_at
+        - updated_at
+      type: object
+    ChannelListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ChannelResource'
+          type: array
+      required:
+        - items
+      type: object
+    CreateChannelRequestBody:
+      additionalProperties: false
+      properties:
+        channel_scope:
+          $ref: '#/components/schemas/ChannelScope'
+        endpoint:
+          description: |-
+            The address messages are sent to. It must be an https URL reachable over the public
+            internet.
+
+            For `lark_webhook` and `wecom_webhook` this is the group robot webhook URL. For `bark`
+            it is the push URL including the device key, such as
+            `https://api.day.app/your-device-key`. For `generic_webhook` it is any endpoint
+            accepting a JSON POST.
+          maxLength: 2048
+          minLength: 1
+          type: string
+        kind:
+          $ref: '#/components/schemas/ChannelKind'
+        name:
+          description: A display name for this channel
+          maxLength: 128
+          minLength: 1
+          type: string
+        secret:
+          description: |-
+            The signing secret, where the endpoint has one. It is required for a Lark group robot
+            configured with signature verification, and optional for `generic_webhook`, where it
+            signs the request so the receiver can confirm the message came from this platform.
+
+            It is not returned by any operation.
+          maxLength: 512
+          type: string
+      required:
+        - channel_scope
+        - kind
+        - name
+        - endpoint
+      type: object
+    UpdateChannelRequestBody:
+      additionalProperties: false
+      description: Fields that are omitted are left alone.
+      properties:
+        enabled:
+          description: Set true to re-enable a channel that was disabled after repeated failures, clearing the failure count
+          type: boolean
+        name:
+          maxLength: 128
+          minLength: 1
+          type: string
+      type: object
+    CredentialSubjectKind:
+      description: What the credential belongs to.
+      enum:
+        - compute_instance
+      type: string
+    CredentialTicketResource:
+      additionalProperties: false
+      description: A one-time credential, described without being consumed.
+      properties:
+        available:
+          description: |-
+            True when the credential can still be revealed. False once it has been revealed, has
+            expired, or was withdrawn — in all three cases it is already destroyed
+          type: boolean
+        expires_at:
+          description: After this moment the credential is destroyed whether or not it was read
+          format: date-time
+          type: string
+        id:
+          format: uuid
+          type: string
+        revealed_at:
+          description: When it was revealed; null if it has not been
+          format: date-time
+          type:
+            - string
+            - 'null'
+        revoked_at:
+          description: When the service that issued it withdrew it; null if it did not
+          format: date-time
+          type:
+            - string
+            - 'null'
+        subject_id:
+          description: The resource the credential belongs to
+          type: string
+        subject_kind:
+          $ref: '#/components/schemas/CredentialSubjectKind'
+      required:
+        - id
+        - subject_kind
+        - subject_id
+        - available
+        - expires_at
+        - revealed_at
+        - revoked_at
+      type: object
+    RevealedCredentialResource:
+      additionalProperties: false
+      description: |-
+        The credential itself. This shape is returned by exactly one operation, and that operation
+        succeeds at most once per ticket.
+      properties:
+        revealed_at:
+          format: date-time
+          type: string
+        secret:
+          description: The credential. It is destroyed as this response is produced and cannot be obtained again
+          type: string
+        subject_id:
+          type: string
+        subject_kind:
+          $ref: '#/components/schemas/CredentialSubjectKind'
+        username:
+          description: The account the credential belongs to, where the resource has one; null otherwise
+          type:
+            - string
+            - 'null'
+      required:
+        - subject_kind
+        - subject_id
+        - secret
+        - username
+        - revealed_at
+      type: object
+    RealtimeConnectionResource:
+      additionalProperties: false
+      description: |-
+        Everything needed to open a realtime connection. The connection speaks the Pusher channels
+        protocol, so any client library for it works.
+      properties:
+        auth_path:
+          description: The path a client posts to while subscribing, relative to this API
+          type: string
+        cluster:
+          description: The cluster name some client libraries require; empty when the deployment does not use one
+          type: string
+        enabled:
+          description: False when realtime delivery is not configured in this deployment. Every other field is empty and clients should not attempt to connect
+          type: boolean
+        host:
+          type: string
+        key:
+          description: The application key, which is public and identifies the deployment rather than the caller
+          type: string
+        port:
+          format: int64
+          type: integer
+        project_channel:
+          description: The channel carrying events about the project in the token; empty when the token names no project
+          type: string
+        secure:
+          description: Whether to connect over TLS
+          type: boolean
+        user_channel:
+          description: The channel carrying events addressed to you
+          type: string
+      required:
+        - enabled
+        - key
+        - host
+        - port
+        - secure
+        - cluster
+        - auth_path
+        - user_channel
+        - project_channel
+      type: object
+    AuthorizeRealtimeChannelRequestBody:
+      additionalProperties: false
+      properties:
+        channel_name:
+          description: The channel being subscribed to
+          maxLength: 255
+          minLength: 1
+          type: string
+        socket_id:
+          description: The connection identifier the realtime server assigned to this client
+          maxLength: 128
+          minLength: 1
+          type: string
+      required:
+        - socket_id
+        - channel_name
+      type: object
+    RealtimeAuthResource:
+      additionalProperties: false
+      properties:
+        auth:
+          description: The authorization token for this subscription, passed back to the realtime server by the client library
+          type: string
+      required:
+        - auth
+      type: object
