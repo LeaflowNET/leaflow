@@ -27,6 +27,10 @@ info:
     - **Text is rendered at read time from the language on your preferences.** Changing the
       language changes the text of everything already in the inbox. Messages already delivered by
       email or to an outbound channel are not rewritten, because they have already been sent.
+    - **Times inside rendered text are stated in UTC and say so.** There is no time zone setting.
+      Clients that can determine the reader's time zone should present `created_at`, `occurred_at`
+      and the timestamps in `params` — all of which are RFC 3339 — in local time instead. Email
+      cannot do this, which is why the text it carries is explicit about being UTC.
     - **Some types must reach you, and those cannot be muted or removed from email.** They are
       marked `mandatory` in the catalogue: types you would only find out about by signing in, when
       not finding out costs you something — a suspension, a deletion, a credential that expires.
@@ -1064,12 +1068,8 @@ components:
         locale:
           description: The language notifications are written in, as an IETF language tag
           type: string
-        timezone:
-          description: The IANA time zone times in notifications are stated in
-          type: string
       required:
         - locale
-        - timezone
         - email_address
         - email_override
         - email_override_verified_at
@@ -1088,11 +1088,6 @@ components:
           description: An IETF language tag. A language that is not supported is rejected rather than approximated
           maxLength: 16
           minLength: 2
-          type: string
-        timezone:
-          description: An IANA time zone name, such as Asia/Shanghai
-          maxLength: 64
-          minLength: 1
           type: string
       type: object
     TypePreferenceResource:
