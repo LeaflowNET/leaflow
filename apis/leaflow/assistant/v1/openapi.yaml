@@ -1517,6 +1517,36 @@ components:
       - code
       - expiresAt
       type: object
+    PartResource:
+      additionalProperties: false
+      properties:
+        attachmentId:
+          description: For `file` parts. Points at one of this entry's `attachments`.
+          type:
+          - string
+          - 'null'
+        id:
+          description: |-
+            Addresses this part in the live stream — text arrives as `append` frames pointing at
+            `/items/{item}/parts/{id}/text`.
+
+            Not an array index. It looks like one today because parts are only ever appended, and a
+            client that treats it as one keeps working right up until that stops being true.
+          type: string
+        text:
+          description: For `text` parts. Grows as the answer is written.
+          type:
+          - string
+          - 'null'
+        type:
+          enum:
+          - text
+          - file
+          type: string
+      required:
+      - id
+      - type
+      type: object
     RejectionResource:
       additionalProperties: false
       properties:
@@ -2026,8 +2056,18 @@ components:
           type:
           - string
           - 'null'
-        text:
-          type: string
+        parts:
+          description: |-
+            The content of this entry, in the order it was written. A message that is only text is a
+            single part, which is most of them.
+
+            An image belongs where it was written, so render these in order rather than putting
+            attachments at the end.
+          items:
+            $ref: '#/components/schemas/PartResource'
+          type:
+          - array
+          - 'null'
         tool:
           type:
           - string
