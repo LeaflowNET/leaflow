@@ -75,37 +75,78 @@ function Get-ConfigDir {
     return Join-Path $env:USERPROFILE '.config\leaflow'
 }
 
+# Invoke-WebRequest cannot read a redirect portably. Told not to follow one,
+# Windows PowerShell 5.1 throws an InvalidOperationException that carries no
+# Response at all, so the Location header it has just been handed is
+# unreachable — which made every install on 5.1, the PowerShell that ships with
+# Windows, end at "cannot determine the latest version". HttpWebRequest with
+# redirects switched off returns the 3xx as an ordinary response, the same way
+# on both editions.
+function Get-RedirectLocation($url) {
+    $request = [Net.WebRequest]::Create($url)
+    $request.Method = 'HEAD'
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 30000
+
+    # GitHub answers a caller that sends no User-Agent with a 403.
+    $request.UserAgent = 'leaflow-install'
+
+    $response = $null
+
+    try {
+        $response = $request.GetResponse()
+    } catch [Net.WebException] {
+        # A 4xx or 5xx arrives as an exception with the response attached, and
+        # that response can still name a Location.
+        $response = $_.Exception.Response
+    } catch {
+        return $null
+    }
+
+    if (-not $response) { return $null }
+
+    try {
+        return $response.Headers['Location']
+    } finally {
+        $response.Close()
+    }
+}
+
+# The API as a fallback rather than the first move: unauthenticated callers
+# share one 60-request hourly budget per address, and behind a shared NAT that
+# is not much. It earns its place where the redirect does not survive the trip —
+# a proxy that answers the HEAD itself, or drops the header.
+function Get-LatestVersionFromApi {
+    try {
+        $response = Invoke-WebRequest -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+            -UseBasicParsing -ErrorAction Stop
+
+        return ($response.Content | ConvertFrom-Json).tag_name
+    } catch {
+        return $null
+    }
+}
+
 # The redirect target of /releases/latest names the tag, which avoids both a
 # JSON parser and the API's rate limit for unauthenticated callers.
 function Get-LatestVersion {
-    $url = "https://github.com/$Repo/releases/latest"
-
-    $location = $null
-
-    try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
-        $location = $response.Headers['Location']
-    } catch {
-        # PowerShell 7 raises on a 3xx when redirects are off; 5.1 raises a
-        # WebException. The header is on the response either way.
-        $failed = $_.Exception.Response
-        if ($failed) {
-            try { $location = $failed.Headers['Location'] } catch { }
-
-            if (-not $location -and $failed.Headers.Location) {
-                $location = $failed.Headers.Location.ToString()
-            }
-        }
-    }
+    $location = Get-RedirectLocation "https://github.com/$Repo/releases/latest"
 
     if ($location -is [array]) { $location = $location[0] }
 
-    if (-not $location) { Stop-Install 'cannot determine the latest version' }
-
-    $version = ($location.ToString() -split '/')[-1]
+    $version = $null
+    if ($location) { $version = ($location.ToString() -split '/')[-1] }
 
     if (-not $version -or $version -eq 'latest') {
-        Stop-Install 'cannot determine the latest version'
+        $version = Get-LatestVersionFromApi
+    }
+
+    if (-not $version -or $version -eq 'latest') {
+        Stop-Install (
+            "cannot determine the latest version`n" +
+            "       Name one instead and run this again:`n" +
+            "       `$env:LEAFLOW_VERSION = 'v0.0.0'   # a tag from https://github.com/$Repo/releases"
+        )
     }
 
     return $version
@@ -234,7 +275,14 @@ function Invoke-Install {
     $architecture = Get-Architecture
 
     $version = $env:LEAFLOW_VERSION
-    if (-not $version) { $version = Get-LatestVersion }
+    if (-not $version) {
+        $version = Get-LatestVersion
+    } elseif ($version -notmatch '^v') {
+        # Release tags carry the v. A version named without it would build a
+        # download URL for a tag that does not exist, and report it as a
+        # download failure rather than as the typo it is.
+        $version = "v$version"
+    }
 
     $installDir = Get-InstallDir
 
