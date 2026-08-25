@@ -63,6 +63,13 @@ paths:
           schema:
             description: Restrict to a single machine
             type: string
+        - description: Restrict to a single web check
+          explode: false
+          in: query
+          name: web_check_id
+          schema:
+            description: Restrict to a single web check. Combines with server_id rather than replacing it
+            type: string
         - explode: false
           in: query
           name: incident_status
@@ -2181,9 +2188,13 @@ components:
         resolved_trigger_expression:
           type: string
         server_id:
+          description: The machine this alert is about. Null when the alert is not about a machine
           format: uuid
-          type: string
+          type:
+            - string
+            - 'null'
         server_name:
+          description: Empty when server_id is null
           type: string
         severity:
           enum:
@@ -2205,6 +2216,14 @@ components:
             - 'null'
         trigger_expression:
           type: string
+        web_check_id:
+          description: >-
+            The web check that reported this alert. Null when the alert did not come from a web
+            check. Both this and server_id are set when the check runs on one of your machines
+          format: uuid
+          type:
+            - string
+            - 'null'
         zabbix_event_id:
           type: string
       required:
@@ -2212,6 +2231,7 @@ components:
         - project_id
         - server_id
         - server_name
+        - web_check_id
         - name
         - severity
         - incident_status
