@@ -2022,6 +2022,10 @@ components:
           type:
           - string
           - 'null'
+        presentation:
+          anyOf:
+          - $ref: '#/components/schemas/PresentationResource'
+          - type: 'null'
         durationMs:
           format: int64
           type:
@@ -2091,6 +2095,69 @@ components:
       - createdAt
       - reverted
       - model
+      type: object
+    PresentationResource:
+      additionalProperties: false
+      description: |-
+        Structured detail produced by a tool call, in addition to the single-line `detail`. Null
+        when the call produced none.
+
+        `kind` determines which of the remaining fields is populated.
+      properties:
+        fileDiff:
+          anyOf:
+          - $ref: '#/components/schemas/FileDiffResource'
+          - type: 'null'
+        kind:
+          description: Determines which of the remaining fields is populated
+          enum:
+          - file_diff
+          type: string
+      required:
+      - kind
+      type: object
+    FileDiffResource:
+      additionalProperties: false
+      description: |-
+        The change a tool call applied to a single file.
+
+        Populated once the call has completed successfully. It is absent while the call is pending
+        or awaiting approval, as the file's prior contents are read during execution. To preview an
+        edit awaiting approval, derive it from the call's `old_string` and `new_string` arguments.
+      properties:
+        added:
+          description: Lines added. Complete even when `unified` is null
+          format: int64
+          type: integer
+        path:
+          description: Absolute path of the file on the instance
+          type: string
+        removed:
+          description: Lines removed. Complete even when `unified` is null
+          format: int64
+          type: integer
+        status:
+          description: What the call did to the file
+          enum:
+          - added
+          - modified
+          - deleted
+          type: string
+        unified:
+          description: |-
+            The change as a unified diff with three lines of context. A file created by the call is
+            diffed against `/dev/null`.
+
+            Null when the change exceeds the service's size limit. The diff is omitted in full
+            rather than truncated; `added` and `removed` remain complete.
+          type:
+          - string
+          - 'null'
+      required:
+      - path
+      - status
+      - added
+      - removed
       type: object
     StreamResource:
       additionalProperties: false
