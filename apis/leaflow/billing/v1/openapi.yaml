@@ -1,0 +1,1146 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Billing API
+  version: 1.0.0
+  description: |-
+    The billing centre: where a person creates a billing account, sees what is left on it, and
+    decides which project it pays for.
+
+    ## Identity
+
+    This face takes the **account token** — the one obtained by signing in at auth.leaflow.net, the
+    same token `/account/v1/` on IAM accepts. A project token is not accepted, and that is why every
+    path here sits under `/account/v1/` rather than `/api/v1/`: on this platform the prefix states
+    which credential to present.
+
+    A billing account belongs to a *person*, not to a project, so nothing weaker would do. Minting a
+    project token requires a project that exists and that the caller already belongs to, and somebody
+    who has just signed up has no project yet — they still have to be able to open this page and pay.
+
+    **A valid token is not on its own enough.** Every request re-checks that the account behind it is
+    still usable, so a token that verifies but belongs to an account that has been suspended, banned
+    or is being deleted is refused with `403` and `IAM_USER_UNUSABLE`. Signing in again will not
+    clear it.
+
+    ## Concepts
+
+    - **An account is addressed by its key, and the key states who owns it.** The key has the shape
+      `u_<user_id>_<seq>`, so an account can only be read by the person who owns it; anyone else is
+      refused. `seq` is what lets one person hold several accounts — a personal one and a team one,
+      say.
+    - **A project is paid for by at most one account; an account pays for any number of projects.**
+      Binding is therefore a `PUT` on the account, and binding a project that already belongs to
+      another account moves it.
+    - **A project with no billing account cannot allocate anything.** Attaching one is not a
+      formality to be completed later; until it is done, every other service refuses.
+    - **This API is the only way in.** Balances, credit, invoices and ledger entries are reachable
+      through it and nowhere else.
+    - **No card data is held here, anywhere, ever.** Only a reference to the payment provider's own
+      record of the customer.
+
+    ## Hard constraints
+
+    - **Amounts are decimal strings, never numbers.** `"10.25"`, not `10.25`. A JSON number is a
+      double in most parsers, and a double cannot hold every value money takes. The loss is silent,
+      and it is in the direction of charging the wrong amount.
+    - **Rebinding a project only affects what follows.** What has already been billed stays on the
+      account that was bound at the time, and so does the money: a balance does not follow a project.
+      Making it follow would turn every rebinding into a transfer between accounts, which needs a
+      full refund-and-reissue path and hands out an arbitrage opportunity.
+    - **`USD` is the only currency.** The field is carried nonetheless, wherever an amount is,
+      so that an amount is never ambiguous about what it is denominated in.
+    - **Creating an account is idempotent in `(user, seq)`.** Sending the same request twice returns
+      the same account rather than a second one, so a retry is safe.
+security:
+  - bearerAuth: []
+paths:
+  /account/v1/billing-accounts:
+    get:
+      summary: List my billing accounts
+      description: |-
+        Every billing account belonging to the caller, with the projects each one currently pays for.
+
+        Not paginated: how many accounts one person holds is bounded by how many they bothered to
+        create, and that is a small number.
+      operationId: list-billing-accounts
+      tags:
+        - BillingAccount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccountList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a billing account
+      description: |-
+        Creates a billing account for the caller.
+
+        **`seq` is supplied by the client, not assigned here.** Assigning it would mean reading the
+        existing accounts and adding one, which is a read-modify-write race: two concurrent "create"
+        clicks compute the same `seq`. Having the client name it turns that race into a plain
+        idempotent repeat — the second request returns the first account instead of failing.
+
+        The new account pays for nothing. Binding a project is a separate, deliberate act; doing it
+        here would quietly turn "I want to add a card" into "I have changed who pays".
+      operationId: create-billing-account
+      tags:
+        - BillingAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBillingAccountRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/balance:
+    get:
+      summary: Read an account's balance
+      description: |-
+        What is left on the account.
+
+        The figure is the **live** balance: usage that has been reported but not yet settled is
+        already subtracted. The settled figure is larger, and the difference is precisely what the
+        holder has just spent — showing that instead would tell them they can afford something they
+        cannot.
+
+        An account that has never been topped up reports `"0"` — not an absent field, and not an
+        empty string.
+      operationId: read-billing-account-balance
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/projects/{projectId}:
+    put:
+      summary: Make this account pay for a project
+      description: |-
+        Binds a project to this account. A project bound to another account is moved.
+
+        **Both the account and the project must belong to the caller.** Either one failing refuses the
+        request. Requiring the project as well as the account is what stops somebody attaching a
+        project that is not theirs — which sounds generous, since they would be paying for it, but it
+        would also expose that project's usage to them, and let them detach it again at any moment,
+        leaving the project with no account and therefore unable to allocate anything.
+
+        Idempotent: binding a project already bound to this account changes nothing.
+
+        Only subsequent usage is affected; see the hard constraint on rebinding.
+      operationId: bind-project-to-billing-account
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: projectId
+          in: path
+          required: true
+          description: The project this account should pay for
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBinding'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/top-ups:
+    post:
+      summary: Start a top-up
+      description: |-
+        Begins adding money to this account. Returns a URL to send the browser to; the card is
+        entered there, on the payment provider's own page.
+
+        **No card data ever reaches this platform**, in any field, in any log. That is the entire
+        reason this returns a redirect instead of accepting card details.
+
+        **Credit is not added here.** It is added once the payment provider confirms the money
+        arrived, which happens out of band and usually within seconds. The balance is unchanged when
+        this call returns, and polling it immediately will show the old figure.
+
+        That ordering is deliberate. Credit is spendable as soon as it exists, so anything added
+        before the charge succeeds is money the holder can spend against a payment that then fails.
+
+        Abandoning the page costs nothing; nothing is created on the account until the money arrives.
+      operationId: start-top-up
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTopUpRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopUpSession'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/charges:
+    get:
+      summary: What this period has run up so far
+      description: |-
+        The itemised version of `unsettled`: what has been used this period and not yet billed.
+
+        It has to come from charges rather than from invoices. An invoice only exists once a period has
+        been billed, and the one for the period in progress is in a state that does not appear in the
+        invoice list at all — reading invoices would show nothing and suggest the account has used
+        nothing, while the spend keeps climbing.
+      operationId: list-charges
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChargeList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/invoices:
+    get:
+      summary: List this account's invoices
+      description: |-
+        Past periods, most recent first. The period in progress is not here — see the charges
+        endpoint for that.
+      operationId: list-invoices
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/invoices/{invoiceId}:
+    get:
+      summary: Read one invoice with its lines
+      description: |-
+        A total does not answer "why is it this much", and that is the question a bill provokes. Each
+        line carries its service period, without which lines of the same name — hundreds of them on an
+        hourly bill — cannot be told apart, and how much of it credit covered, which is the answer to
+        "I have a balance, why am I being charged".
+      operationId: get-invoice
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: invoiceId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetail'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/subscription:
+    get:
+      summary: Which plan this account is on
+      description: |-
+        `404` means no plan, which is worth showing rather than hiding: an account without one is
+        refused admission, so nothing can be allocated in it.
+
+        A subscription that has been cancelled but has not reached the end of its period still counts
+        as being on a plan — it is still serving, still billing, and the period has already been paid
+        for.
+      operationId: read-subscription
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/subscription/cancel:
+    post:
+      summary: Come off the paid plan
+      description: |-
+        Moves the account off whatever plan it is on.
+
+        Where a default plan is configured this is a switch to it rather than a cancellation — an
+        account with no plan is refused admission, so cancelling outright would cut off someone who
+        only meant to drop back to the free tier. Without a default plan it is a real cancellation and
+        the account is left with no plan on purpose.
+
+        `timing` has to be stated. Ending immediately on an account that has already paid for the
+        current period takes back what they paid for; ending at the end of the period does not. There
+        is no default because the two are materially different and picking one silently would make the
+        wrong one happen whenever the field is forgotten.
+
+        Without this, someone who bought a paid plan can only stop paying by contacting support —
+        which is how a cancellation becomes a chargeback.
+      operationId: cancel-subscription
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: timing
+          in: query
+          required: true
+          description: When it takes effect
+          schema:
+            type: string
+            enum:
+              - immediate
+              - next_billing_cycle
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/top-ups/{paymentId}:
+    get:
+      summary: How far along a top-up is
+      description: |-
+        Credit arrives asynchronously, shortly after the payment provider confirms the money. Coming
+        back from the payment page the balance has usually not moved yet, and without this there is no
+        way to tell "it is on its way" from "it failed" — the only recourse is refreshing the balance
+        and guessing.
+
+        `settled` means the credit has landed. `pending` means the money arrived and the credit has
+        not been issued yet, or the payment method is an asynchronous one and the money itself is
+        still in transit.
+      operationId: read-top-up
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: paymentId
+          in: path
+          required: true
+          description: The payment id returned when the top-up was started
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopUpStatus'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/card:
+    post:
+      summary: Add or replace the card on file
+      description: |-
+        Begins adding a card. Returns a URL to send the browser to; the card is entered there, on the
+        payment provider's own page, and **no card data ever reaches this platform**.
+
+        ## This is a prerequisite for buying a plan, not a convenience
+
+        A plan is charged by invoice, and the invoice is collected from the card on file. The billing
+        a subscription cannot start for an account that has none — so "add a card, then
+        buy" is the order the system requires, not a flow that was chosen.
+
+        It is *not* a prerequisite for topping up: a top-up collects the money there and then.
+
+        Replacing the card uses the same operation. The new card becomes the default and the old one
+        stops being used; nothing else about the account changes.
+      operationId: start-card-setup
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardSetupSession'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/offers:
+    get:
+      summary: List the offers this account can buy
+      description: |-
+        Lists what is actually purchasable by this account, right now.
+
+        ## Every offer here has passed the full eligibility check
+
+        The list is not "everything on sale" filtered by status. A promotion whose places are gone, a
+        first-month discount this person already used, a beta price they are not on the list for —
+        none of them appear. Returning them and rejecting the purchase afterwards reads as a broken
+        system rather than as a rule.
+
+        The price is not here, and not because it was left out: an offer states **who may buy, and
+        when**. What it costs comes from the plan it points at, and is reported by the offers list.
+      operationId: list-offers
+      tags:
+        - Offer
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/offers/{offerKey}/purchase:
+    post:
+      summary: Buy an offer
+      description: |-
+        Puts the account on the plan this offer points at, taking one of its places if it has a limit.
+
+        ## A card has to be on file first
+
+        Unless the offer points at a free plan. A paid plan is collected from the card on file
+        and refuses to start the subscription without one; that refusal arrives here as a
+        precondition error rather than as a conflict.
+
+        ## `timing` is required only when the account already has a plan
+
+        Moving between plans immediately is what an upgrade wants — the customer paid more and wants
+        it now. Waiting for the end of the period is what a downgrade wants — they already paid for
+        this one. Neither is a safe default, and picking one silently gets the money wrong whenever
+        the field is forgotten.
+
+        ## Being refused says which rule refused
+
+        Places gone, window closed, already used, not on the list — each needs the customer to do
+        something different, and several of them need them to do nothing at all. A single "not
+        eligible" sends everyone to support.
+
+        ## Retrying is safe
+
+        A place is taken before the subscription is created, so a failure in between leaves the place
+        held rather than the discount given away. Retrying the same purchase finishes it instead of
+        taking a second place.
+      operationId: purchase-offer
+      tags:
+        - Offer
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: offerKey
+          in: path
+          required: true
+          description: Which offer
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: timing
+          in: query
+          required: false
+          description: |-
+            When the switch takes effect. Required if the account already has a plan, ignored otherwise
+          schema:
+            $ref: '#/components/schemas/PlanChangeTiming'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Purchase'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |-
+        The account token: the one obtained by signing in at auth.leaflow.net. It says who you are
+        and names no project, which is what this API needs — a billing account belongs to a person,
+        not to a project. A project token is never accepted here.
+  parameters:
+    AccountKey:
+      name: accountKey
+      in: path
+      required: true
+      description: |-
+        The account's key, of the form `u_<user_id>_<seq>`. Ownership is stated by the key itself,
+        which is why the key is what addresses the account.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 128
+        pattern: '^u_.+_[0-9]+$'
+  schemas:
+    PlanChangeTiming:
+      description: |-
+        When a plan change takes effect. There is no default: an upgrade and a downgrade want opposite
+        answers, and the difference is money
+      type: string
+      enum:
+        - immediate
+        - next_billing_cycle
+    OfferList:
+      type: object
+      additionalProperties: false
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Offer'
+      required:
+        - offers
+    Offer:
+      description: |-
+        One thing this account can buy. It carries no price — the price is on the plan it points at,
+        recorded in exactly one place
+      type: object
+      additionalProperties: false
+      properties:
+        offer_key:
+          description: The stable identifier operations and support use for this offer
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        badge:
+          description: A short label for the pricing page, e.g. the one marking the recommended tier
+          type: string
+        valid_until:
+          description: When this offer stops being purchasable. Absent means it does not expire
+          type: string
+          format: date-time
+        pricing:
+          description: Present on offers that sell a plan
+          $ref: '#/components/schemas/Pricing'
+        top_up:
+          description: Present on offers that sell credit
+          $ref: '#/components/schemas/TopUpPricing'
+      required:
+        - offer_key
+        - name
+    Pricing:
+      description: |-
+        What this offer costs, as a structure rather than a number.
+
+        A plan is rarely one number: an introductory period at one price followed by another, a monthly
+        fee alongside metered usage, an allowance of free units before metering starts. Flattening that
+        into a single figure means deciding which part to show, and every such decision is wrong for
+        some plan.
+
+        This is read on each request rather than stored alongside the offer. The plan owns
+        prices; a second copy would be a second answer, and the two would drift without anything saying
+        so — the visible symptom being a pricing page that disagrees with the invoice.
+      type: object
+      additionalProperties: false
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        billing_period:
+          description: How often this recurs, as an ISO 8601 duration. `P1M` is monthly
+          type: string
+        phases:
+          description: |-
+            In order. A phase with no `duration` runs until the subscription ends, and there is at most
+            one of those, last
+          type: array
+          items:
+            $ref: '#/components/schemas/PricingPhase'
+      required:
+        - currency
+        - phases
+    PricingPhase:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        duration:
+          description: How long this phase lasts, as an ISO 8601 duration. Absent means "until the end"
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PricingLine'
+      required:
+        - name
+        - lines
+    PricingLine:
+      description: One charge within a phase — a fee, or a rate for something metered
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        type:
+          description: |-
+            `free` costs nothing. `flat` is charged once per period regardless of use. `unit` is charged
+            per unit consumed
+          type: string
+          enum:
+            - free
+            - flat
+            - unit
+        amount:
+          description: A decimal string. Money is never a float
+          type: string
+        units_per_charge:
+          description: |-
+            For `unit` lines whose meter counts something finer than what is charged for: how many
+            metered units one charge covers. A price of `10` with `units_per_charge` of `1000000` is
+            ten currency units per million.
+
+            Absent means one for one. **Showing the amount without this is wrong by whatever this
+            factor is**, which for token pricing is six orders of magnitude
+          type: string
+        free_units:
+          description: How many units are not charged for before charging starts
+          type: string
+        percent_off:
+          description: A reduction applied to this line, 0 to 100
+          type: number
+          format: float
+        one_time:
+          description: |-
+            True when this is charged once at the start rather than every period. Absent or false means
+            it recurs
+          type: boolean
+      required:
+        - name
+        - type
+    TopUpPricing:
+      description: |-
+        What a top-up bundle costs and what it grants. Present only on offers that sell credit.
+
+        Unlike a plan price, this is stated on the bundle itself: credit is granted per
+        transaction and has no catalog of bundles to read from. There is no second copy to drift
+        against, because there is no first one anywhere else
+      type: object
+      additionalProperties: false
+      properties:
+        pay:
+          description: What is charged, as a decimal string
+          type: string
+        credit:
+          description: How much credit is granted. Equal to `pay` when there is no bonus
+          type: string
+      required:
+        - pay
+        - credit
+    Purchase:
+      type: object
+      additionalProperties: false
+      properties:
+        offer_key:
+          type: string
+        subscription_id:
+          description: |-
+            The subscription now serving this account. When the change was set to take effect at the
+            end of the period, this is the one that takes over then, and its status says `scheduled`
+          type: string
+      required:
+        - offer_key
+        - subscription_id
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    BillingAccount:
+      description: |-
+        A billing account.
+
+        Any internal identifier is deliberately absent: the key addresses everything on
+        this API, and a second identifier is one more thing a client can pass in the wrong place, for
+        no benefit to anyone reading the page.
+      type: object
+      additionalProperties: false
+      properties:
+        key:
+          description: Addresses the account and states who owns it. Of the form `u_<user_id>_<seq>`
+          type: string
+        display_name:
+          description: What the holder called it. Not unique, and it addresses nothing
+          type: string
+        currency:
+          $ref: '#/components/schemas/Currency'
+        project_ids:
+          description: The projects this account pays for. Empty when it pays for none, never `null`
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - key
+        - display_name
+        - currency
+        - project_ids
+    BillingAccountList:
+      type: object
+      additionalProperties: false
+      properties:
+        accounts:
+          description: Every account belonging to the caller. Empty when they hold none
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingAccount'
+      required:
+        - accounts
+    CreateBillingAccountRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        seq:
+          description: |-
+            Which of the caller's accounts this is. Two requests carrying the same `seq` describe the
+            same account, so a retry is safe; a different `seq` creates a different account.
+
+            It is not optional. Defaulting it would mean that a client which forgot the field
+            silently receives the account it already had, and reads that as a successful creation.
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 99
+        display_name:
+          description: A name for the holder's own benefit
+          type: string
+          minLength: 1
+          maxLength: 100
+        currency:
+          $ref: '#/components/schemas/Currency'
+        offer_key:
+          description: |-
+            Buy one of the top-up bundles from `/offers` instead of an arbitrary amount. When given,
+            `amount` is ignored: the bundle says what is charged and how much credit it grants.
+
+            How much credit arrives is decided when the money does, not now — and only if the amount
+            collected matches what the bundle costs. A bundle whose places ran out, or whose window
+            closed, in between still grants what was paid for; it just does not grant the bonus.
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+        - seq
+        - display_name
+    Balance:
+      description: |-
+        The three numbers a billing page needs, which are not the same number.
+
+        `balance` answers "can I start another one" and is floored at zero, so it cannot express
+        being past zero. `unsettled` is what the current period has run up. `available` is the
+        difference between the two and **may be negative**.
+
+        Reporting only the first would make an account that has overspent indistinguishable from one
+        that spent exactly what it had, and those two call for different actions.
+      type: object
+      additionalProperties: false
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          description: |-
+            What is spendable right now, with usage reported but not yet settled already subtracted.
+            Never negative — it is floored at zero, so it answers "can I start another machine" but
+            not "how much do I owe". A decimal string; `"0"` when the account has never been topped up
+          type: string
+        cash:
+          description: The amount booked to the ledger, before this period's usage is taken off
+          type: string
+        unsettled:
+          description: |-
+            What this period has run up and not yet been billed for. It keeps growing past the cash
+            balance, which is precisely the case the live figure cannot show
+          type: string
+        available:
+          description: |-
+            `cash` minus `unsettled`. **Negative means already in arrears**, and being able to say that
+            is the whole reason this field exists — the positive range is already covered by `balance`
+          type: string
+      required:
+        - currency
+        - balance
+        - cash
+        - unsettled
+        - available
+    ProjectBinding:
+      description: Which account pays for which project, as it stands once the request has been applied
+      type: object
+      additionalProperties: false
+      properties:
+        account_key:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+      required:
+        - account_key
+        - project_id
+    StartTopUpRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          description: |-
+            How much to add, as a decimal string — `"20"`, `"19.99"`.
+
+            **Anything below one cent is rejected rather than rounded.** Rounding up overcharges and
+            rounding down undercharges; both alter the amount somewhere the payer cannot see it, and
+            this is the one number on this API where being wrong means money is wrong.
+          type: string
+          minLength: 1
+          maxLength: 32
+        currency:
+          $ref: '#/components/schemas/Currency'
+        offer_key:
+          description: |-
+            Buy one of the top-up bundles from `/offers` instead of an arbitrary amount. When given,
+            `amount` is ignored: the bundle says what is charged and how much credit it grants.
+
+            How much credit arrives is decided when the money does, not now — and only if the amount
+            collected matches what the bundle costs. A bundle whose places ran out, or whose window
+            closed, in between still grants what was paid for; it just does not grant the bonus.
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+        - amount
+    CardSetupSession:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          description: Send the browser here. It expires, so do not store it
+          type: string
+          format: uri
+      required:
+        - url
+    TopUpSession:
+      type: object
+      additionalProperties: false
+      properties:
+        payment_id:
+          description: |-
+            Identifies this attempt. Quote it in a support conversation — it is what ties the payment
+            provider's record to the credit that was granted
+          type: string
+        url:
+          description: Send the browser here. It expires, so do not store it
+          type: string
+          format: uri
+      required:
+        - payment_id
+        - url
+    Charge:
+      description: One thing this period has been charged for
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        total:
+          description: |-
+            Decimal string, the real-time figure. The booked figure would show a machine that only
+            just started as zero
+          type: string
+      required:
+        - id
+        - name
+        - total
+    ChargeList:
+      type: object
+      additionalProperties: false
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        charges:
+          type: array
+          items:
+            $ref: '#/components/schemas/Charge'
+        total:
+          description: The sum, which is the same number as `unsettled` on the balance
+          type: string
+      required:
+        - currency
+        - charges
+        - total
+    InvoiceStatus:
+      type: string
+      enum:
+        - draft
+        - issuing
+        - issued
+        - payment_processing
+        - overdue
+        - paid
+        - uncollectible
+        - voided
+    Invoice:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        total:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+        issued_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - status
+        - currency
+        - total
+        - created_at
+    InvoiceList:
+      type: object
+      additionalProperties: false
+      properties:
+        invoices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+      required:
+        - invoices
+    InvoiceLine:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        period_from:
+          description: |-
+            Required. Lines of the same name repeat many times on one invoice — hundreds on an hourly
+            bill — and without the period they cannot be told apart
+          type: string
+          format: date-time
+        period_to:
+          type: string
+          format: date-time
+        amount:
+          description: Before discounts and credit
+          type: string
+        discounts_total:
+          type: string
+        credits_total:
+          description: How much of this line credit covered
+          type: string
+        total:
+          type: string
+      required:
+        - name
+        - period_from
+        - period_to
+        - amount
+        - total
+    InvoiceDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        total:
+          type: string
+        charges_total:
+          type: string
+        discounts_total:
+          type: string
+        credits_total:
+          type: string
+        taxes_total:
+          type: string
+        period_from:
+          type: string
+          format: date-time
+        period_to:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        issued_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceLine'
+      required:
+        - id
+        - status
+        - currency
+        - total
+        - created_at
+        - lines
+    Subscription:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        plan_key:
+          type: string
+        plan_version:
+          type: integer
+        status:
+          description: |-
+            `canceled` still counts as being on a plan — it is serving until the end of the period,
+            which has already been paid for
+          type: string
+      required:
+        - id
+        - plan_key
+        - status
+    TopUpStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        payment_id:
+          type: string
+        state:
+          description: |-
+            `settled` means the credit has landed. `pending` means it has not yet — the payment is
+            still being confirmed, or the money itself is still in transit
+          type: string
+          enum:
+            - settled
+            - pending
+        amount:
+          description: The credit that was issued, present once settled
+          type: string
+        currency:
+          $ref: '#/components/schemas/Currency'
+      required:
+        - payment_id
+        - state
+    Currency:
+      description: |-
+        ISO 4217. `USD` is the only value the platform issues today; the field is carried so that an
+        amount is never ambiguous about what it is denominated in.
+      type: string
+      enum:
+        - USD

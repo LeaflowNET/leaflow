@@ -209,6 +209,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/members:batchGet:
+    post:
+      summary: Resolve members by id, including those who have left
+      description: >-
+        Resolves a set of account ids to the people behind them, scoped to the current project and
+        **including members who have since left it**.
+
+
+        This is what turns the ids held elsewhere in the product — who created a machine, who
+        performed a logged operation — into names. The current member list cannot answer for
+        somebody who has left, and those rows are exactly the ones a reader most often needs
+        explained.
+
+
+        Only ids that have belonged to the current project resolve; anything else is omitted, as
+        are ids that do not resolve at all. Match the response against the request by id; the order
+        is not significant.
+      operationId: batch-get-members
+      tags:
+        - Member
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchGetMembersRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchGetMembersResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/members:
     get:
       summary: 列出项目成员
@@ -881,6 +920,60 @@ components:
       required:
         - invitation
         - token
+      type: object
+    BatchGetMembersRequestBody:
+      additionalProperties: false
+      properties:
+        ids:
+          description: The account ids to resolve. Blank entries are ignored.
+          items:
+            maxLength: 255
+            type: string
+          maxItems: 100
+          type: array
+      required:
+        - ids
+      type: object
+    BatchGetMembersResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          description: >-
+            The people that resolved. Ids that never belonged to this project are absent, as are
+            ids that do not resolve at all.
+          items:
+            $ref: '#/components/schemas/ResolvedMemberResource'
+          type: array
+      required:
+        - items
+      type: object
+    ResolvedMemberResource:
+      additionalProperties: false
+      description: >-
+        A person referred to by an id held elsewhere in the project. Carries who they are, not what
+        they may do — a member who has left holds nothing, and this shape has no grant to say so.
+      properties:
+        avatar_hash:
+          description: MD5 hash of the lowercased, trimmed email address, for use with Gravatar-compatible avatar services. Empty if the account has no email address.
+          type: string
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        left:
+          description: True when this person is no longer a member of the project.
+          type: boolean
+        user_id:
+          type: string
+      required:
+        - user_id
+        - email
+        - first_name
+        - last_name
+        - avatar_hash
+        - left
       type: object
     MemberResource:
       additionalProperties: false
