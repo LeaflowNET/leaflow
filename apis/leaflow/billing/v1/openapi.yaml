@@ -112,6 +112,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}:
+    get:
+      summary: Read one of my billing accounts
+      description: |-
+        One account, with the projects it currently pays for.
+
+        The list returns the same objects, so this exists for the case the list cannot serve: a link
+        straight to one account. Making the caller fetch every account and filter turns a bookmarked
+        page into a request whose cost grows with how many accounts they hold.
+      operationId: get-billing-account
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      summary: Rename a billing account
+      description: |-
+        Changes the display name. Nothing else about the account can be changed here.
+
+        The key is not among the fields and never will be: ownership is stated by the key, and
+        invoices already issued refer to it. The name is what tells two accounts apart in a list, so
+        a mistake made while creating one is otherwise permanent.
+      operationId: update-billing-account
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBillingAccountRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/credit-transactions:
+    get:
+      summary: How the balance got to where it is
+      description: |-
+        Every movement of credit on this account: what was added, what was spent, what expired, what
+        was voided. Newest first.
+
+        The balance on its own is a number with no account of itself. Asked why it is lower than
+        expected, it cannot answer, and the holder is left to guess between "I was charged" and
+        "something expired" — which lead to different next steps.
+      operationId: list-credit-transactions
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditTransactionList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/balance:
     get:
       summary: Read an account's balance
@@ -183,7 +270,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    delete:
+      summary: Stop paying for a project
+      description: |-
+        Unbinds the project from this account. Nothing pays for it afterwards, and **everything in it
+        is refused admission** until some account takes it on — no new machines, no forwarded
+        requests.
+
+        That consequence is the reason this exists rather than an argument against it: a project
+        bound to the wrong account has no other way out, and moving it to another of the caller's
+        accounts is not a correction when the answer is that this account should not be paying for
+        it at all.
+
+        Charges already accrued stay where they are. They were incurred while this account held the
+        project, and an invoice has to keep pointing at what it was based on.
+      operationId: unbind-project-from-billing-account
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: projectId
+          in: path
+          required: true
+          description: The project to stop paying for
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Unbound
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/top-ups:
+    get:
+      summary: My top-ups
+      description: |-
+        Every top-up this account has made, newest first.
+
+        Reading one top-up requires already holding its identifier, and the only place that
+        identifier appears is the redirect that started it — so without this list a top-up becomes
+        unfindable the moment the browser tab is closed, which is exactly when somebody wants to
+        check whether their money arrived.
+      operationId: list-top-ups
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopUpList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       summary: Start a top-up
       description: |-
@@ -711,6 +860,73 @@ components:
       required:
         - name
         - type
+    UpdateBillingAccountRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - display_name
+    TopUpList:
+      type: object
+      additionalProperties: false
+      properties:
+        top_ups:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopUpStatus'
+      required:
+        - top_ups
+    CreditTransactionList:
+      type: object
+      additionalProperties: false
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditTransaction'
+      required:
+        - transactions
+    CreditTransaction:
+      description: |-
+        One movement of credit. Immutable — a correction is another movement, never an edit of this
+        one, which is what lets the balance be recomputed from the list at any time
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        type:
+          $ref: '#/components/schemas/CreditTransactionType'
+        amount:
+          description: A decimal string. Never a float — a balance that rounds is a balance that drifts
+          type: string
+        currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+      required:
+        - id
+        - type
+        - amount
+        - currency
+        - created_at
+    CreditTransactionType:
+      description: |-
+        `funded` is credit arriving, `consumed` is it being spent, `expired` is a grant reaching the
+        end of its life unspent, and `voided` is one cancelled — a refund, or a correction
+      type: string
+      enum:
+        - funded
+        - consumed
+        - expired
+        - voided
     TopUpPricing:
       description: |-
         What a top-up bundle costs and what it grants. Present only on offers that sell credit.
