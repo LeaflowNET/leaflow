@@ -82,9 +82,15 @@ paths:
           type: string
       requestBody:
         content:
-          application/octet-stream:
+          # 任意类型，因为这个接口按内容判定而不是按声明判定——上面那句话说的就是这件事。
+          #
+          # 只声明 application/octet-stream 的话，服务端的解码器会拿 Content-Type 做准入，而
+          # 浏览器是从 File 对象上取那个值的：一个 .md 文件带着 text/markdown 上来，一张 PNG
+          # 带着 image/png。于是「类型由内容判定」和「只收一种 Content-Type」互相矛盾，而赢的
+          # 是后者——上传一个 Markdown 文件会被拒在解码器上，错误里说的是 unexpected
+          # Content-Type，一个和这个接口的语义完全无关的理由。
+          '*/*':
             schema:
-              contentMediaType: application/octet-stream
               format: binary
               type: string
         required: true
