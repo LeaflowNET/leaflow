@@ -464,9 +464,14 @@ paths:
       description: |-
         Fields that are omitted are left alone.
 
-        Setting `email_override` starts verification of that address: email continues to be
-        delivered to the address on the account until the new one is confirmed. Setting it to null
-        returns delivery to the account address.
+        Setting `email_override` records it as the pending address; nothing is sent to it until
+        `send-email-override-code` is called, and email keeps going where it went before. Setting
+        it to null clears the pending address and any address in use, returning delivery to the
+        account address.
+
+        An address is never used until somebody proves they can read it. Without that, anybody
+        could point their own notifications at a stranger's mailbox, and the stranger would get
+        mail about an account they have never heard of.
       operationId: update-notification-preferences
       tags:
         - Preference
@@ -475,6 +480,92 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdatePreferencesRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/preferences/email-override/code:
+    post:
+      summary: Send a code to the pending address
+      description: |-
+        Emails a short code to the address waiting to be confirmed. That address receives this and
+        nothing else; every other notification keeps going where it went before.
+
+        The code stops working after a few minutes, and a wrong one can only be tried a handful of
+        times before it is thrown away and a new one has to be sent. Both limits exist for the same
+        reason: a six digit code is guessable if it lives forever and can be tried forever.
+
+        Sending is rate limited per account and per destination address. The second limit is the one
+        that matters to somebody who never asked to be involved: without it, this operation is a way
+        to make the platform mail a stranger repeatedly.
+      operationId: send-email-override-code
+      tags:
+        - Preference
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailOverrideCodeResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Give up on the pending address
+      description: |-
+        Drops the pending address and the code that was sent to it. Nothing else changes: an address
+        that was already confirmed keeps receiving email.
+
+        It exists because starting this and then changing your mind is ordinary, and the alternative
+        is a settings page that shows an address waiting to be confirmed forever.
+      operationId: cancel-email-override
+      tags:
+        - Preference
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferencesResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/preferences/email-override/code/confirm:
+    post:
+      summary: Confirm the pending address with its code
+      description: |-
+        A correct code moves the pending address into use: email starts going there instead of the
+        account address, and the pending slot is emptied.
+
+        A wrong code counts against the attempts on that code. Running out of attempts throws the
+        code away, and a new one has to be sent; the pending address itself is kept, so nobody
+        loses their place by mistyping.
+      operationId: confirm-email-override
+      tags:
+        - Preference
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmEmailOverrideRequestBody'
         required: true
       responses:
         '200':
@@ -1255,12 +1346,30 @@ components:
           description: Where email is delivered right now, which is the account address unless a verified override replaces it
           type: string
         email_override:
-          description: An address to receive email instead of the account address; null when the account address is used
+          description: |-
+            The address email goes to instead of the account address; null when the account address
+            is used. Only ever an address that was confirmed by code
+          type:
+            - string
+            - 'null'
+        email_override_pending:
+          description: |-
+            An address waiting to be confirmed; null when nothing is waiting. It receives nothing but
+            the code, and the address in `email_override` keeps being used until this one is
+            confirmed
+          type:
+            - string
+            - 'null'
+        email_override_pending_expires_at:
+          description: |-
+            When the code last sent to the pending address stops working; null when no code is
+            outstanding, in which case a new one has to be sent before it can be confirmed
+          format: date-time
           type:
             - string
             - 'null'
         email_override_verified_at:
-          description: When the override was confirmed; null while it is pending, during which email still goes to the account address
+          description: When the address in `email_override` was confirmed; null when there is no override
           format: date-time
           type:
             - string
@@ -1273,13 +1382,19 @@ components:
         - email_address
         - email_override
         - email_override_verified_at
+        - email_override_pending
+        - email_override_pending_expires_at
       type: object
     UpdatePreferencesRequestBody:
       additionalProperties: false
       description: Fields that are omitted are left alone.
       properties:
         email_override:
-          description: An address to receive email instead of the account address. Null returns delivery to the account address
+          description: |-
+            An address to receive email instead of the account address. It is stored as pending and
+            receives nothing until it is confirmed by code, so the address in use does not change
+            here. Null clears both the pending address and the one in use, returning delivery to
+            the account address
           maxLength: 320
           type:
             - string
@@ -1289,6 +1404,39 @@ components:
           maxLength: 16
           minLength: 2
           type: string
+      type: object
+    EmailOverrideCodeResource:
+      additionalProperties: false
+      description: What was sent, and when the next one may be asked for.
+      properties:
+        address:
+          description: Where the code went. It is the pending address, echoed so a client can show it
+          type: string
+        expires_at:
+          description: When this code stops working
+          format: date-time
+          type: string
+        resend_available_at:
+          description: |-
+            The earliest another code may be asked for. Asking sooner is refused rather than
+            silently ignored, so a client can show the wait instead of a failure
+          format: date-time
+          type: string
+      required:
+        - address
+        - expires_at
+        - resend_available_at
+      type: object
+    ConfirmEmailOverrideRequestBody:
+      additionalProperties: false
+      properties:
+        code:
+          description: The code from the email, exactly as it appears there
+          maxLength: 16
+          minLength: 4
+          type: string
+      required:
+        - code
       type: object
     TypePreferenceResource:
       additionalProperties: false
