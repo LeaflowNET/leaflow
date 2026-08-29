@@ -275,6 +275,85 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/announcements:
+    get:
+      summary: List platform announcements
+      description: |-
+        Announcements the platform published for everyone, filtered to the ones you can still see:
+        published, not expired, and targeted at you.
+
+        They are not part of `GET /api/v1/notifications`. A notification is addressed to you and has
+        a row per recipient; an announcement is one row for the whole platform and never fans out —
+        a hundred thousand users would be a hundred thousand rows, and almost none of them would
+        ever be read. Whether you have read one is recorded separately, so unread means "no such
+        record" rather than "a record with a null timestamp".
+
+        The list is short by design: expired announcements drop out of it. There is no paging.
+
+        Text comes back in the language on your preferences. An announcement that has no text in
+        that language falls back to the platform default — a readable announcement in the wrong
+        language beats a blank title.
+      operationId: list-announcements
+      tags:
+        - Announcement
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementListResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/announcements/read:
+    post:
+      summary: Mark every visible announcement as read
+      description: Idempotent. Announcements you had already read stay read, and the count only covers the ones this call changed.
+      operationId: read-all-announcements
+      tags:
+        - Announcement
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnouncementReadResultResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/announcements/{announcementId}/read:
+    post:
+      summary: Mark one announcement as read
+      description: |-
+        Idempotent: marking one twice is the same as marking it once. There is no way to mark it
+        unread — having read something is a fact, not a state.
+      operationId: read-announcement
+      tags:
+        - Announcement
+      parameters:
+        - in: path
+          name: announcementId
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/notification-types:
     get:
       summary: List every notification type
@@ -867,6 +946,72 @@ components:
         - project_admins
         - broadcast
       type: string
+    AnnouncementResource:
+      additionalProperties: false
+      description: One announcement, with its text in the language on your preferences.
+      properties:
+        id:
+          format: uuid
+          type: string
+        title:
+          type: string
+        body:
+          description: The text as a fragment of HTML, same rules as a notification body
+          type: string
+        severity:
+          $ref: '#/components/schemas/NotificationSeverity'
+        critical:
+          description: >-
+            You cannot dismiss this one. It is a property of the announcement rather than a second
+            type, because what the operator judges when writing it is "is this important enough to
+            push", and that is the question this asks.
+          type: boolean
+        published_at:
+          format: date-time
+          type: string
+        expires_at:
+          description: When it drops out of this list; null means it stays
+          format: date-time
+          type:
+            - string
+            - 'null'
+        read_at:
+          description: When you read it; null means you have not
+          format: date-time
+          type:
+            - string
+            - 'null'
+      required:
+        - id
+        - title
+        - body
+        - severity
+        - critical
+        - published_at
+      type: object
+    AnnouncementListResource:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AnnouncementResource'
+          type: array
+        unread:
+          description: How many of them you have not read
+          type: integer
+      required:
+        - items
+        - unread
+      type: object
+    AnnouncementReadResultResource:
+      additionalProperties: false
+      properties:
+        marked:
+          description: How many this call changed; already-read ones are not counted
+          type: integer
+      required:
+        - marked
+      type: object
     NotificationResource:
       additionalProperties: false
       description: |-
