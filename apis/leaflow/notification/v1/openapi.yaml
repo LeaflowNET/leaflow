@@ -70,9 +70,10 @@ paths:
       description: |-
         Returns notifications in reverse chronological order, newest first.
 
-        Announcements published to the whole platform appear here alongside notifications
-        addressed to you individually and are distinguished by `kind`. They are read and archived
-        through the same operations.
+        Announcements are not in this list. They are one row for the whole platform rather than
+        one per reader, so they are listed, read and counted by their own operations under
+        `/api/v1/announcements`. `kind` is on every item here for clients that merge the two lists
+        themselves, and it is `notification` for everything this operation returns.
       operationId: list-notifications
       tags:
         - Notification
@@ -251,6 +252,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+    delete:
+      summary: Mark one notification as unread
+      description: |-
+        Puts it back in the unread count, which is what somebody wants after opening a thing by
+        accident and needing it to stay in front of them.
+
+        Marking one that is already unread succeeds and changes nothing.
+      operationId: mark-notification-unread
+      tags:
+        - Notification
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/notifications/{notificationId}/archive:
     post:
       summary: Archive one notification
@@ -258,6 +284,35 @@ paths:
         Archiving removes a notification from the default listing without deleting it; pass
         `include_archived` to see it again. Archiving also marks it read.
       operationId: archive-notification
+      tags:
+        - Notification
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Take one notification out of the archive
+      description: |-
+        Returns it to the default listing. Archiving is one click away from anything in the list,
+        so undoing it has to be too; without this operation a mistaken archive is permanent, and
+        the notification stays reachable only by asking for archived ones.
+
+        It does not mark it unread again: archiving marked it read, and that it was read is still
+        true. Use `mark-notification-unread` for that.
+
+        Unarchiving one that is not archived succeeds and changes nothing.
+      operationId: unarchive-notification
       tags:
         - Notification
       parameters:
