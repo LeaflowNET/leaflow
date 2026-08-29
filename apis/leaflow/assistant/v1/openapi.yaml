@@ -21,8 +21,10 @@ info:
     /v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
 
 
-    Sending an image takes two steps: `POST /v1/attachments` for an id, then put that id in
-    `attachmentIds` when sending the message.
+    Sending a file takes two steps: `POST /v1/attachments` for an id, then put that id in
+    `attachmentIds` when sending the message. Images, text and arbitrary binaries all go through the
+    same two steps; what differs is how the assistant reads them afterwards, which the upload
+    response''s `kind` says.
 
 
     ## Live output
@@ -62,11 +64,22 @@ security:
 paths:
   /api/v1/attachments:
     post:
-      summary: Upload an image
-      description: The body is the file bytes themselves, not multipart, one file per request. The type is determined from the content, not from Content-Type. Put the returned id in attachmentIds when sending a message; attachments never referenced by any message are cleared periodically.
+      summary: Upload a file
+      description: |-
+        The body is the file bytes themselves, not multipart, one file per request. The kind is determined from the content, not from Content-Type or from the name. Put the returned id in attachmentIds when sending a message; attachments never referenced by any message are cleared periodically.
+
+        The returned `kind` says how the assistant will see it. An `image` is read directly, and only by models that accept image input. A small `text` file is placed inline in the message. A large `text` file, and anything `binary`, arrives as a reference the assistant reads on demand — for a binary that usually means downloading it onto one of the project's cloud instances.
       operationId: upload-attachment
       tags:
       - Attachment
+      parameters:
+      - in: query
+        name: filename
+        required: false
+        description: The name to show and to give the assistant. Images do not need one; anything else does, because the name is most of what says what the file is. Falls back to a generated name.
+        schema:
+          maxLength: 255
+          type: string
       requestBody:
         content:
           application/octet-stream:
@@ -90,8 +103,11 @@ paths:
           description: Error
   /api/v1/attachments/{attachment}:
     get:
-      summary: Fetch an image
-      description: Returns the original bytes for an attachment id, usable directly as the address of an <img>. The response carries long-lived cache headers because the content never changes. Returns 404 when the attachment does not exist or does not belong to the current user.
+      summary: Download a file
+      description: |-
+        Returns the original bytes for an attachment id. The response carries long-lived cache headers because the content never changes. Returns 404 when the attachment does not exist or does not belong to the current user.
+
+        Only an attachment whose `kind` is `image` comes back with its own image type and is usable as the address of an `<img>`. Everything else is served as `application/octet-stream` with `Content-Disposition: attachment`, deliberately: an uploaded file is arbitrary bytes under a name its uploader chose, and serving it back inline would run it on this origin.
       operationId: download-attachment
       tags:
       - Attachment
@@ -104,7 +120,7 @@ paths:
       responses:
         '200':
           content:
-            image/*:
+            '*/*':
               schema:
                 format: binary
                 type: string
@@ -112,6 +128,10 @@ paths:
           headers:
             Cache-Control:
               description: 'Private and long-lived: these bytes are addressed by an id that is never reused, so they never change; and they belong to one person, so they must not enter any shared cache.'
+              schema:
+                type: string
+            Content-Disposition:
+              description: Present on everything that is not an image, carrying the original filename. Absent on images, which are meant to be rendered in place.
               schema:
                 type: string
         default:
@@ -1192,16 +1212,43 @@ components:
     UploadedResource:
       additionalProperties: false
       properties:
-        height:
+        byteSize:
+          description: Size of what was stored. For an image that has been resized, this is the resized size, not what was uploaded.
           format: int64
           type: integer
+        filename:
+          type: string
+        height:
+          description: Null unless kind is image.
+          format: int64
+          type:
+          - integer
+          - 'null'
         id:
           type: string
+        kind:
+          description: |-
+            How the assistant will see this file.
+
+            - `image` — read directly, and only by models that accept image input
+            - `text` — placed inline in the message when small enough, otherwise read on demand
+            - `binary` — never read directly; the assistant downloads it onto a cloud instance to work with it
+          enum:
+          - image
+          - text
+          - binary
+          type: string
         width:
+          description: Null unless kind is image.
           format: int64
-          type: integer
+          type:
+          - integer
+          - 'null'
       required:
       - id
+      - kind
+      - filename
+      - byteSize
       - width
       - height
       type: object
@@ -1927,7 +1974,12 @@ components:
           - integer
           - 'null'
         inputModalities:
-          description: 'What kinds of input the model behind this conversation accepts, as modality names: text, image. A client uses this to decide whether a control exists — an attach button on a model that cannot read pictures is a control whose only outcome is a refusal, and the refusal arrives after somebody has chosen a file. An empty list is not a claim that the model reads nothing: it means this deployment has not stated the modalities, or the conversation names a model that has since been retired. Treat empty as unknown and keep the control, because hiding one for a reason nobody can see is worse than a refusal that says why.'
+          description: |-
+            What kinds of input the model behind this conversation accepts, as modality names: text, image.
+
+            This governs images and nothing else. Text and binary attachments reach every model: a small text file is placed inline, a large one is read on demand, and a binary is downloaded onto a cloud instance — none of which asks the model to see a picture. So this decides whether pasting a screenshot does anything, not whether the attach control exists. Hiding file upload on a text-only model takes away something that would have worked.
+
+            An empty list is not a claim that the model reads nothing: it means this deployment has not stated the modalities, or the conversation names a model that has since been retired. Treat empty as unknown and keep the control, because hiding one for a reason nobody can see is worse than a refusal that says why.
           items:
             type: string
           type: array
@@ -1969,16 +2021,37 @@ components:
     AttachmentResource:
       additionalProperties: false
       properties:
-        height:
+        byteSize:
           format: int64
           type: integer
+        filename:
+          type: string
+        height:
+          description: Null unless kind is image. Width and height are here so a client can hold the space before the image itself has loaded.
+          format: int64
+          type:
+          - integer
+          - 'null'
         id:
           type: string
+        kind:
+          description: What this attachment is. A client renders an image in place and everything else as a file to download.
+          enum:
+          - image
+          - text
+          - binary
+          type: string
         width:
+          description: Null unless kind is image.
           format: int64
-          type: integer
+          type:
+          - integer
+          - 'null'
       required:
       - id
+      - kind
+      - filename
+      - byteSize
       - width
       - height
       type: object
@@ -2071,8 +2144,8 @@ components:
             The content of this entry, in the order it was written. A message that is only text is a
             single part, which is most of them.
 
-            An image belongs where it was written, so render these in order rather than putting
-            attachments at the end.
+            An attachment belongs where it was written, so render these in order rather than putting
+            them all at the end.
           items:
             $ref: '#/components/schemas/PartResource'
           type:
@@ -2406,7 +2479,7 @@ components:
         - `data-<something>` — context from the client, in `data`. The name after `data-` is yours;
           it is shown to the assistant so it can tell one kind of block from another.
 
-        Order matters: an image belongs where it was written, not at the end.
+        Order matters: an attachment belongs where it was written, not at the end.
       properties:
         attachmentId:
           description: For `file` parts. The attachment must have been uploaded and not yet bound to another message.
