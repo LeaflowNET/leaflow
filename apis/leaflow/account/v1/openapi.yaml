@@ -46,6 +46,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /account/v1/locales:
+    get:
+      summary: 注册页要用的国家/地区和语言清单
+      description: >-
+        免认证：注册页在还没有账号的时候就要画出这两个下拉框。
+
+        国家名和排序都跟着 `Accept-Language` 走——一个英文用户看到的是 China 而不是「中国」，
+        而顺序按那种语言自己的规则（中文按拼音，英文按字母），不是按码点。头缺失时用简体中文。
+
+        清单来自 CLDR，不是我们自己维护的一份：ISO 3166 每年都改，而抄下来的那份不会跟着改。
+        已经退役的代码（苏联、南斯拉夫）和不是地方的代码（欧盟、联合国）都不在里面。
+      operationId: list-locales
+      tags:
+        - Account
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocaleOptionsResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /account/v1/agreements:
     get:
       summary: 列出注册必须同意的文件
@@ -679,6 +706,48 @@ components:
         - consents
         - country
         - locale
+      type: object
+    LocaleOptionsResource:
+      additionalProperties: false
+      properties:
+        countries:
+          items:
+            $ref: '#/components/schemas/CountryOption'
+          type: array
+        languages:
+          items:
+            $ref: '#/components/schemas/LanguageOption'
+          type: array
+      required:
+        - countries
+        - languages
+      type: object
+    CountryOption:
+      additionalProperties: false
+      properties:
+        code:
+          description: ISO 3166-1 alpha-2，注册时原样回传
+          type: string
+        name:
+          description: 按 Accept-Language 渲染的名字
+          type: string
+      required:
+        - code
+        - name
+      type: object
+    LanguageOption:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/Locale'
+        name:
+          description: >-
+            这种语言的自称，用它自己写（「简体中文」「繁體中文（香港）」「English」）。不跟着
+            Accept-Language 变——一个只看得懂繁体的人，在一个全简体的列表里找不到自己那一项。
+          type: string
+      required:
+        - code
+        - name
       type: object
     Locale:
       description: >-
