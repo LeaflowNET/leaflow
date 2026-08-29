@@ -941,18 +941,46 @@ components:
           items:
             $ref: '#/components/schemas/QuoteUsage'
     QuoteUsage:
+      description: |-
+        One usage to price. Name the thing **either** by its rate card key **or** by the service and
+        product it belongs to — exactly one of the two.
+
+        # Why the second form exists
+
+        A meter's key is a hash of `(service, product_id, variant)`, computed by a function that lives in
+        one place on purpose: get it wrong and usage lands in the wrong bucket, or in none, and nothing
+        reports it. A caller that derived the key itself would be a second copy of that convention.
+
+        So callers that know what they are buying — a machine of a given type, a model's input tokens —
+        give the service and product, and this side derives the key.
       type: object
       additionalProperties: false
       required:
-        - key
         - quantity
       properties:
         key:
           description: |-
             The rate card's key. For a card tied to a meter that is the meter's key, because the engine
-            requires the two to be identical
+            requires the two to be identical.
+
+            Leave it out when giving `service` and `product_id` instead
           type: string
           minLength: 1
+        service:
+          description: The service that owns the product, as it appears in its usage events
+          type: string
+          minLength: 1
+        product_id:
+          description: That service's own catalogue id for the thing being bought
+          type: string
+          minLength: 1
+        variant:
+          description: |-
+            The fixed dimension values that split one product into several meters — canopy's token kind,
+            for instance. Part of the key, so leaving it out names a different meter
+          type: object
+          additionalProperties:
+            type: string
         quantity:
           description: The raw amount, before any conversion. A decimal string
           type: string
