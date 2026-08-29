@@ -305,6 +305,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/orders:
+    get:
+      summary: My orders
+      description: |-
+        Every provisioning request made against the projects this account pays for, newest first.
+
+        An order that never went through stays here on purpose. Removing it would leave nothing to
+        look at in exactly the case someone wants to look: a resource was asked for, was not
+        delivered, and the question is what happened.
+
+        The list carries no lines. An order has only a handful, but shipping them on every page
+        means carrying data no column shows.
+      operationId: list-orders
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/orders/{orderId}:
+    get:
+      summary: One order, with its lines
+      description: |-
+        Each line names what was asked for and how much of it. This is the only route that carries
+        them.
+      operationId: get-order
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/top-ups:
     get:
       summary: My top-ups
@@ -961,6 +1021,72 @@ components:
           maxLength: 128
       required:
         - display_name
+    Order:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        placed_by:
+          type: string
+        state:
+          description: |-
+            Whether the request went through. It is not the state of what was provisioned: that
+            belongs to each resource and outlives the order.
+          type: string
+          enum: [pending, fulfilled, failed]
+        failure_reason:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        lines:
+          description: Only present on the single-order route.
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+      required:
+        - id
+        - project_id
+        - placed_by
+        - state
+        - created_at
+    OrderLine:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum: [add, renew, modify, remove]
+        service:
+          description: Which service holds the thing, for example `compute`.
+          type: string
+        product_id:
+          description: That service's own catalogue identifier for what was asked for.
+          type: string
+        quantity:
+          type: integer
+          format: int64
+      required:
+        - id
+        - action
+        - service
+        - product_id
+        - quantity
+    OrderList:
+      type: object
+      additionalProperties: false
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+      required:
+        - orders
     TopUpList:
       type: object
       additionalProperties: false
