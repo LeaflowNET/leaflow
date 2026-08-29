@@ -475,15 +475,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-  /api/v1/attachments/{attachmentId}/download-url:
+  /api/v1/attachments/{attachmentId}/content:
     get:
-      summary: Get a download address for an attachment
+      summary: Download an attachment
       description: |-
-        Returns a temporary address that serves the file. The address expires; request a new one
-        rather than storing it.
+        Serves the file itself. The bytes are proxied by this API; the object store is not reachable
+        from outside, and no address to it is ever handed out.
 
-        Returns 404 for an attachment uploaded in another project.
-      operationId: describe-attachment-download
+        `Content-Type` is the type determined from the content at upload time, not the one the
+        client claimed. `Content-Disposition` is `attachment` unless `inline` is requested **and**
+        the content type is one that can be rendered safely, in which case it is `inline`. Asking
+        for `inline` on anything else still yields a download.
+      operationId: download-attachment
       tags:
         - Attachment
       parameters:
@@ -493,13 +496,27 @@ paths:
           schema:
             format: uuid
             type: string
+        - description: Render in the browser instead of downloading, where the content type allows it
+          explode: false
+          in: query
+          name: inline
+          schema:
+            type: boolean
       responses:
         '200':
           content:
-            application/json:
+            '*/*':
               schema:
-                $ref: '#/components/schemas/AttachmentDownloadResource'
+                format: binary
+                type: string
           description: OK
+          headers:
+            Content-Disposition:
+              description: >-
+                `inline` when the content type can be rendered safely and `inline` was asked for,
+                `attachment` otherwise. Carries the original file name
+              schema:
+                type: string
         default:
           content:
             application/json:
@@ -985,20 +1002,6 @@ components:
         - scheduled_until
         - started_at
         - components
-      type: object
-    AttachmentDownloadResource:
-      additionalProperties: false
-      properties:
-        expires_at:
-          description: After this moment the address stops working; request a new one
-          format: date-time
-          type: string
-        url:
-          description: A temporary address serving the file
-          type: string
-      required:
-        - url
-        - expires_at
       type: object
     CreateTicketRequestBody:
       additionalProperties: false
