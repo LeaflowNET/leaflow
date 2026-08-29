@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   description: |-
-    Support tickets, platform announcements and scheduled maintenance notices.
+    Support tickets and scheduled maintenance notices.
 
     ## Authentication
 
@@ -41,31 +41,30 @@ info:
     The content type is determined from the content itself, not from the `Content-Type` header.
     Files whose determined type is not accepted are rejected with `TICKET_ATTACHMENT_TYPE_REJECTED`.
 
-    ## Announcements and maintenance are read-only here
+    ## Maintenance is read-only here
 
-    Both are published by platform operators. Announcements can be marked as read, per person rather
-    than per project — reading one in a project marks it read everywhere.
+    Scheduled maintenance is published by platform operators. Platform announcements are not part of
+    this API; they belong to the notification service.
   title: Leaflow Support API
   version: 1.0.0
 servers:
   - url: https://support.leaflow.cloud
-    description: Tickets, announcements and maintenance notices
+    description: Tickets and maintenance notices
 security:
   - bearerAuth: []
 paths:
   /api/v1/notices:
     get:
-      summary: List announcements and maintenance in effect right now
+      summary: List the maintenance in effect right now
       description: |-
-        Returns the announcements published for general visibility and the maintenance windows that
-        have not finished yet.
+        Returns the maintenance windows that have not finished yet.
 
         **This operation requires no credentials.** It is intended for sign-in pages and status
         pages, which are reached before a project has been selected. It returns a narrower shape
         than the authenticated operations and is not paginated.
 
-        Announcements appear here only when an operator has published them for general visibility;
-        the authenticated `GET /api/v1/announcements` returns more of them.
+        Platform announcements are not served here. They belong to the notification service, which
+        owns announcements for the whole platform.
       operationId: list-notices
       tags:
         - Notice
@@ -507,130 +506,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-  /api/v1/announcements:
-    get:
-      summary: List announcements
-      description: |-
-        Returns the announcements in effect for the current user, most recently published first.
-        Announcements that are scheduled but not yet published, and those that have expired, are
-        omitted.
-
-        `read_at` is null when this user has not marked the announcement as read.
-      operationId: list-announcements
-      tags:
-        - Announcement
-      parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
-          in: query
-          name: limit
-          schema:
-            default: 20
-            description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
-            type: integer
-        - description: Number of items to skip
-          explode: false
-          in: query
-          name: offset
-          schema:
-            description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
-            type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageAnnouncementResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
-  /api/v1/announcements/unread-count:
-    get:
-      summary: Count the announcements this user has not read
-      operationId: count-unread-announcements
-      tags:
-        - Announcement
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UnreadCountResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
-  /api/v1/announcements/{announcementId}:
-    get:
-      summary: Get an announcement
-      description: Returns 404 for an announcement that is not in effect for this user.
-      operationId: get-announcement
-      tags:
-        - Announcement
-      parameters:
-        - in: path
-          name: announcementId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnouncementResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
-  /api/v1/announcements/{announcementId}/read:
-    post:
-      summary: Mark an announcement as read
-      description: |-
-        Marking an announcement that is already marked succeeds and changes nothing; `read_at` keeps
-        its original value.
-
-        Read state is per person, not per project.
-      operationId: mark-announcement-read
-      tags:
-        - Announcement
-      parameters:
-        - in: path
-          name: announcementId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnouncementResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
   /api/v1/maintenances:
     get:
       summary: List maintenance notices
@@ -798,13 +673,6 @@ components:
       enum:
         - USER
         - OPERATOR
-      type: string
-    AnnouncementSeverity:
-      description: How prominently an announcement should be presented.
-      enum:
-        - INFO
-        - WARNING
-        - CRITICAL
       type: string
     MaintenanceStatus:
       description: |-
@@ -980,37 +848,6 @@ components:
         - comment
         - created_at
       type: object
-    AnnouncementResource:
-      additionalProperties: false
-      description: A platform announcement.
-      properties:
-        body:
-          description: Markdown
-          type: string
-        id:
-          format: uuid
-          type: string
-        published_at:
-          format: date-time
-          type: string
-        read_at:
-          description: When this user marked the announcement as read; null when they have not
-          format: date-time
-          type:
-            - string
-            - 'null'
-        severity:
-          $ref: '#/components/schemas/AnnouncementSeverity'
-        title:
-          type: string
-      required:
-        - id
-        - title
-        - body
-        - severity
-        - published_at
-        - read_at
-      type: object
     MaintenanceResource:
       additionalProperties: false
       description: A scheduled maintenance notice published by platform operators.
@@ -1101,40 +938,12 @@ components:
         This shape is deliberately narrower than the authenticated resources and carries no read
         state.
       properties:
-        announcements:
-          items:
-            $ref: '#/components/schemas/NoticeAnnouncementResource'
-          type: array
         maintenances:
           items:
             $ref: '#/components/schemas/NoticeMaintenanceResource'
           type: array
       required:
-        - announcements
         - maintenances
-      type: object
-    NoticeAnnouncementResource:
-      additionalProperties: false
-      properties:
-        body:
-          description: Markdown
-          type: string
-        id:
-          format: uuid
-          type: string
-        published_at:
-          format: date-time
-          type: string
-        severity:
-          $ref: '#/components/schemas/AnnouncementSeverity'
-        title:
-          type: string
-      required:
-        - id
-        - title
-        - body
-        - severity
-        - published_at
       type: object
     NoticeMaintenanceResource:
       additionalProperties: false
@@ -1190,15 +999,6 @@ components:
       required:
         - url
         - expires_at
-      type: object
-    UnreadCountResource:
-      additionalProperties: false
-      properties:
-        count:
-          format: int64
-          type: integer
-      required:
-        - count
       type: object
     CreateTicketRequestBody:
       additionalProperties: false
@@ -1316,29 +1116,6 @@ components:
           description: The contents of this page
           items:
             $ref: '#/components/schemas/TicketCategoryResource'
-          type: array
-        limit:
-          format: int64
-          type: integer
-        offset:
-          format: int64
-          type: integer
-        total:
-          format: int64
-          type: integer
-      required:
-        - items
-        - total
-        - limit
-        - offset
-      type: object
-    LengthAwarePageAnnouncementResource:
-      additionalProperties: false
-      properties:
-        items:
-          description: The contents of this page
-          items:
-            $ref: '#/components/schemas/AnnouncementResource'
           type: array
         limit:
           format: int64
