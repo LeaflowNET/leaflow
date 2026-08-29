@@ -167,6 +167,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+    patch:
+      summary: 改当前账号的国家/地区和语言
+      description: >-
+        姓名和邮箱不在这里改：它们来自身份提供方，改了会在下一次登录同步时被覆盖回去。
+      operationId: update-account
+      tags:
+        - Account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /account/v1/me/identity-verification:
     get:
       summary: 查看实名核验状态
@@ -598,6 +624,14 @@ components:
         last_name:
           description: 来自登录信息，可能为空
           type: string
+        country:
+          description: >-
+            ISO 3166-1 alpha-2。这两个字段是后加的，注册时才开始要求填——已经注册过的人这里
+            是空串，让他们在设置里补，补之前一切照常。
+          type: string
+        locale:
+          description: 为空表示没设过，那时按请求头（Accept-Language）走，两者都没有才用平台默认
+          type: string
         pending_agreements:
           items:
             $ref: '#/components/schemas/AgreementResource'
@@ -631,8 +665,43 @@ components:
           type:
             - array
             - 'null'
+        country:
+          description: >-
+            ISO 3166-1 alpha-2（CN、HK、US）。必须是现实世界里真实存在的国家或地区——EU、ZZ
+            这类在标准里有位置但不是国家的代码会被拒。存代码不存名字：名字是本地化的，存下来
+            的那份只会是某一种语言的。
+          maxLength: 2
+          minLength: 2
+          type: string
+        locale:
+          $ref: '#/components/schemas/Locale'
       required:
         - consents
+        - country
+        - locale
+      type: object
+    Locale:
+      description: >-
+        界面和邮件用哪种语言。它和 country 是两件事，不能互相推——一个在香港的人可能读简体，
+        一个在美国的人可能读繁体。
+      enum:
+        - zh-Hans
+        - zh-Hant-HK
+        - en
+      type: string
+    UpdateAccountRequestBody:
+      additionalProperties: false
+      description: >-
+        两个字段都是「不传就不动」。设置页上它们是两个独立的控件，用户可能只改其中一个；做成
+        整体替换的话，一次只想改语言的提交会把国家清掉，而那种丢失不报错。
+      properties:
+        country:
+          description: 同注册时那个 country
+          maxLength: 2
+          minLength: 2
+          type: string
+        locale:
+          $ref: '#/components/schemas/Locale'
       type: object
     IdentityVerificationResource:
       additionalProperties: false
