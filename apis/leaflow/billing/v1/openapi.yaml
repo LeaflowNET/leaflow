@@ -518,6 +518,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/quote:
+    post:
+      summary: What a usage would cost on this account's plan
+      description: |-
+        Prices a set of usages against whatever plan this account is currently on, and returns **every
+        intermediate step** rather than a single number.
+
+        # What it is for
+
+        Showing someone what a machine will cost before they create it. The console asks for the usage a
+        machine of that shape produces in an hour, and gets back what that hour costs them — on their
+        plan, with their discounts.
+
+        # Quantities are raw
+
+        Seconds, token counts, GiB-seconds: the amount a service reports. Conversion happens here, which
+        is why services keep no conversion tables of their own and why the console must not do the
+        arithmetic itself.
+
+        # It is an estimate
+
+        The engine computes the real amount; this reproduces the same rules. Every step comes back for
+        that reason — a single number that disagrees with the bill says nothing about which step was
+        wrong.
+
+        `404` means this account is not on any plan, and there is therefore nothing to price against.
+      operationId: quote-usage
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/subscription:
     get:
       summary: Which plan this account is on
@@ -874,6 +924,118 @@ components:
         maxLength: 128
         pattern: '^u_.+_[0-9]+$'
   schemas:
+    QuoteRequest:
+      description: |-
+        The usages to price. Quantities are the **raw amounts a service reports** — seconds, token
+        counts, GiB-seconds. Conversion happens on the billing side, which is why services keep no
+        conversion tables of their own.
+      type: object
+      additionalProperties: false
+      required:
+        - lines
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/QuoteUsage'
+    QuoteUsage:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - quantity
+      properties:
+        key:
+          description: |-
+            The rate card's key. For a card tied to a meter that is the meter's key, because the engine
+            requires the two to be identical
+          type: string
+          minLength: 1
+        quantity:
+          description: The raw amount, before any conversion. A decimal string
+          type: string
+          pattern: '^[0-9]+(\.[0-9]+)?$'
+    QuoteLine:
+      description: |-
+        One rate card priced, with every intermediate step.
+
+        Each step is here on purpose: a single total that disagrees with the bill says nothing about
+        which step went wrong, and this is a second implementation of the engine's rules
+      type: object
+      required:
+        - key
+        - name
+        - metered
+        - raw
+        - converted
+        - billable
+        - free_units
+        - charged
+        - unit_price
+        - gross
+        - discount
+        - total
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        metered:
+          description: False for a flat fee, which ignores usage entirely
+          type: boolean
+        raw:
+          description: The quantity as given
+          type: string
+        converted:
+          description: After unit conversion, before rounding
+          type: string
+        billable:
+          description: |-
+            After rounding. `unit_config.rounding` applies to this step only — entitlement uses the
+            exact converted value, which is the engine's documented behaviour
+          type: string
+        free_units:
+          description: Units covered by the usage discount
+          type: string
+        charged:
+          type: string
+        unit_price:
+          type: string
+        gross:
+          description: Before the percentage discount
+          type: string
+        discount:
+          type: string
+        total:
+          description: |-
+            Rounded to the currency's minor unit, **per line**. Not by rounding the sum: the engine
+            rounds each line, and the difference grows with the number of lines
+          type: string
+    Quote:
+      type: object
+      required:
+        - lines
+        - total
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteLine'
+        total:
+          description: The sum of the already-rounded lines
+          type: string
+        unpriced:
+          description: |-
+            Keys that were given a usage but have no rate card on this plan.
+
+            **Reported rather than ignored**, because ignoring them yields a smaller but entirely
+            normal-looking number — and that is the most expensive misconfiguration there is: usage
+            lands, the usage chart shows it, and the bill has no line for it
+          type: array
+          items:
+            type: string
     PlanChangeTiming:
       description: |-
         When a plan change takes effect. There is no default: an upgrade and a downgrade want opposite
