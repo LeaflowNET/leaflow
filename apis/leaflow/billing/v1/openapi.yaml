@@ -960,6 +960,153 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets:
+    get:
+      summary: What I bought outright, and when it runs out
+      description: |-
+        Everything this account paid a term for, across every product, soonest to expire first.
+
+        ## Why this is one list rather than a page inside each product
+
+        Renewal is the one thing a customer forgets, and forgetting it stops the machine. Splitting
+        the list per product means the instance about to lapse tomorrow is only visible to someone
+        who thought to go and look at instances. Sorting by expiry rather than by purchase date is
+        the same reason: the row that matters is the one at the top.
+
+        ## Metered resources are not here
+
+        There is no term to run out. Listing them with an empty expiry would invite renewing
+        something that is already billed by the hour until it is deleted.
+
+        ## `state` and `desired_state` are both reported
+
+        A machine stopped because its term lapsed reads `suspended` for both. One that has just been
+        renewed reads `suspended` and `active` — it is on its way back. Without the second field
+        those look identical, and a customer who just paid concludes it did not work and pays again.
+      operationId: list-prepaid-assets
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrepaidAssetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets/{provisionId}/renewal-quote:
+    get:
+      summary: What renewing this would cost
+      description: |-
+        Priced the same way the charge is, from the same table, so the number shown is the number
+        taken. Quoting separately from charging is what lets a customer see the price before
+        committing; computing it twice in two places is what makes the two disagree, and a bill that
+        disagrees with the page that sold it is a complaint rather than a bug report.
+
+        ## Both the current and the resulting expiry are returned
+
+        Renewing early adds the term to what is left, not to today — otherwise renewing a month
+        ahead throws that month away, and everyone learns to wait until the last moment. Something
+        that lapsed long ago is counted from now instead, because adding to a date in the past
+        produces an expiry that is still in the past.
+
+        Reporting only the new date leaves the customer unable to tell which of those happened.
+
+        ## A withdrawn price still quotes
+
+        Taking a product off sale means stop selling new ones. Refusing renewals as well would stop
+        a batch of existing machines on their expiry date, which is not what the operator pressed
+        that button for.
+      operationId: quote-renewal
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/ProvisionId'
+        - name: term
+          in: query
+          required: true
+          description: |-
+            How long to renew for, as an ISO 8601 duration (P1M, P1Y). A duration rather than a
+            number of months: months are not the same length.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 16
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenewalQuote'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets/{provisionId}/renew:
+    post:
+      summary: Renew it
+      description: |-
+        Takes the money from the balance and pushes the expiry out. The resource itself is not
+        touched — nothing is rebuilt, nothing restarts, the id stays the same.
+
+        ## An idempotency key is required, not optional
+
+        Renewal is a pure charge. Unlike creating something, there is no resource whose uniqueness
+        catches a repeat, so a double click is two charges and twice the term — and both calls
+        return success. Letting the field be omitted would mean losing that protection silently, in
+        the one case that looks completely normal until the books are reconciled.
+
+        Sending the same key again returns the order that was already placed. It does not charge
+        again, and it is not an error: reporting a repeat as a failure makes the caller retry
+        forever, and makes the customer press the button a second time with a fresh key.
+
+        ## What happens if the balance is short
+
+        The order is recorded as failed and nothing else changes: no money moves, the expiry stays
+        where it was, and the resource keeps running until its existing term ends. Retrying with the
+        same key after topping up goes through.
+
+        ## Renewing something that already lapsed brings it back
+
+        Its term is counted from now, and it is asked to start again. Coming back is the
+        reconciliation loop's job, so it is not instant — which is what `desired_state` on the asset
+        list is for.
+      operationId: renew-prepaid-asset
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/ProvisionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenewRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     bearerAuth:
@@ -971,6 +1118,14 @@ components:
         and names no project, which is what this API needs — a billing account belongs to a person,
         not to a project. A project token is never accepted here.
   parameters:
+    ProvisionId:
+      name: provisionId
+      in: path
+      required: true
+      description: Which asset, from the prepaid list
+      schema:
+        type: string
+        format: uuid
     AccountKey:
       name: accountKey
       in: path
@@ -1289,6 +1444,19 @@ components:
           enum: [pending, fulfilled, failed]
         failure_reason:
           type: string
+        amount:
+          description: |-
+            What was taken, as a decimal string. Absent on a metered order, where the amount is not
+            known when the order is placed: it comes from usage afterwards. Absent must be read as
+            "billed by usage" — writing zero would make a metered order and a genuinely free one
+            look the same.
+          type: string
+        currency:
+          type: string
+        payment_state:
+          description: Always `none` on a metered order.
+          type: string
+          enum: [none, paid, refunded]
         created_at:
           format: date-time
           type: string
@@ -1327,6 +1495,114 @@ components:
         - service
         - product_id
         - quantity
+    PrepaidAsset:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          description: Use this to quote and to renew.
+          type: string
+        project_id:
+          type: string
+        service:
+          description: Which service holds it. Also which console it is managed from.
+          type: string
+        product_id:
+          description: |-
+            That service's own catalogue id, not a billing sku. The price of a machine is made of
+            finer parts than the machine type — the type does not appear in the rate card at all.
+          type: string
+        resource_id:
+          description: The id that service knows it by, so the two consoles can be lined up.
+          type: string
+        quantity:
+          description: GiB for a disk, 1 for a machine or an address.
+          type: integer
+          format: int64
+        term_end:
+          description: Paid up to this instant. It stops being served after it, not before.
+          format: date-time
+          type: string
+        state:
+          type: string
+          enum: [pending, active, suspended, terminated]
+        desired_state:
+          description: |-
+            What it is being moved to. Differs from `state` while a change is still being applied —
+            in particular right after a renewal, which is the moment a customer is most likely to
+            conclude that nothing happened.
+          type: string
+          enum: [active, suspended, terminated]
+      required:
+        - id
+        - project_id
+        - service
+        - product_id
+        - quantity
+        - term_end
+        - state
+        - desired_state
+    PrepaidAssetList:
+      type: object
+      additionalProperties: false
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrepaidAsset'
+      required:
+        - assets
+    RenewalQuote:
+      type: object
+      additionalProperties: false
+      properties:
+        provision_id:
+          type: string
+        term:
+          type: string
+        amount:
+          description: |-
+            A decimal string, not a float. Money that survives a round trip through binary floating
+            point is money that stops adding up.
+          type: string
+        currency:
+          type: string
+        current_term_end:
+          description: What it is paid up to now.
+          format: date-time
+          type: string
+        term_end:
+          description: What it would be paid up to after renewing.
+          format: date-time
+          type: string
+      required:
+        - provision_id
+        - term
+        - amount
+        - currency
+        - current_term_end
+        - term_end
+    RenewRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        term:
+          description: |-
+            How long to renew for, as an ISO 8601 duration (P1M, P1Y). It does not have to match the
+            term originally bought.
+          type: string
+          minLength: 2
+          maxLength: 16
+        idempotency_key:
+          description: |-
+            Generate one per renewal the customer starts — when the dialog opens, not when it is
+            submitted — and send the same one on every retry of that renewal.
+          type: string
+          minLength: 8
+          maxLength: 255
+      required:
+        - term
+        - idempotency_key
     OrderList:
       type: object
       additionalProperties: false
