@@ -376,6 +376,29 @@ paths:
               $ref: '#/components/schemas/CreateDiskRequestBody'
         required: true
       responses:
+        '402':
+          description: |-
+            Payment required: **nothing was created.**
+
+            Returned when `payment_method` is `online`. `meta.checkout_url` is where to send the
+            customer; `meta.order_id` is the order waiting on it.
+
+            ## Why this is a status and not a field on a 200
+
+            A field on a success response is something a client can forget to read, and forgetting it
+            means treating "we created nothing and are waiting for money" as "created" — which looks
+            identical from the outside until the bill does not add up. A 402 fails loudly in any
+            client that handles errors at all.
+
+            ## What happens after they pay
+
+            The money lands in the balance and the order is settled from it. The resource is **not**
+            created automatically: placing it again is the customer's move, because between paying
+            and coming back they may have changed their mind. The balance is theirs either way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '201':
           content:
             application/json:
@@ -781,6 +804,29 @@ paths:
               $ref: '#/components/schemas/LaunchInstanceRequestBody'
         required: true
       responses:
+        '402':
+          description: |-
+            Payment required: **nothing was created.**
+
+            Returned when `payment_method` is `online`. `meta.checkout_url` is where to send the
+            customer; `meta.order_id` is the order waiting on it.
+
+            ## Why this is a status and not a field on a 200
+
+            A field on a success response is something a client can forget to read, and forgetting it
+            means treating "we created nothing and are waiting for money" as "created" — which looks
+            identical from the outside until the bill does not add up. A 402 fails loudly in any
+            client that handles errors at all.
+
+            ## What happens after they pay
+
+            The money lands in the balance and the order is settled from it. The resource is **not**
+            created automatically: placing it again is the customer's move, because between paying
+            and coming back they may have changed their mind. The balance is theirs either way.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '201':
           content:
             application/json:
@@ -3095,6 +3141,33 @@ components:
           description: Restore from this snapshot. When given, the capacity need only be no smaller than the snapshot
           format: uuid
           type: string
+        term:
+          description: |-
+            Buy the disk outright for this long, as an ISO 8601 duration (P1M, P1Y). Billed by the
+            hour when omitted.
+
+            A disk bought outright can still be expanded: the difference is prorated over the days
+            left in the term, and the expiry date does not move. It is stopped, not deleted, when the
+            term runs out — the data stays and comes back once renewed.
+          maxLength: 16
+          minLength: 2
+          type: string
+        payment_method:
+          description: |-
+            How to pay for a term bought outright. Only meaningful together with `term`.
+
+            `balance` takes it from the account balance and either succeeds or refuses on the spot.
+            `online` returns a `checkout_url` instead and **creates nothing** — the resource is only
+            created once the money arrives and the customer comes back to place it again. That last
+            part is deliberate: a successful payment should not silently turn into a machine, because
+            between paying and returning they may have changed their mind.
+
+            Online payment is not a second wallet. What arrives lands in the balance first and the
+            order is settled from there, so money topped up and money paid at checkout are the same
+            pool.
+          type: string
+          enum: [balance, online]
+          default: balance
       required:
         - disk_type_id
         - name
@@ -3423,6 +3496,22 @@ components:
           description: A private image. Exactly one of this, `image_id` and `boot_disk_id`
           format: uuid
           type: string
+        payment_method:
+          description: |-
+            How to pay for a term bought outright. Only meaningful together with `term`.
+
+            `balance` takes it from the account balance and either succeeds or refuses on the spot.
+            `online` returns a `checkout_url` instead and **creates nothing** — the resource is only
+            created once the money arrives and the customer comes back to place it again. That last
+            part is deliberate: a successful payment should not silently turn into a machine, because
+            between paying and returning they may have changed their mind.
+
+            Online payment is not a second wallet. What arrives lands in the balance first and the
+            order is settled from there, so money topped up and money paid at checkout are the same
+            pool.
+          type: string
+          enum: [balance, online]
+          default: balance
         term:
           description: |-
             Buy the instance outright for this long, as an ISO 8601 duration (P1M, P1Y). Billed by the
@@ -3483,6 +3572,15 @@ components:
             - 'null'
         password:
           description: Returned only in this response; store it immediately. All instances of a batch share it
+          type: string
+        checkout_url:
+          description: |-
+            Present only when `payment_method` was `online`: **nothing was created**. Send the
+            customer here to pay.
+
+            What comes back is not a resource but a bill to settle. Treating this response as a
+            success and moving on is how something gets handed over without the money arriving —
+            and it looks exactly like a normal creation from the outside.
           type: string
       required:
         - instances
