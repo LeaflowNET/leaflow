@@ -1041,6 +1041,18 @@ paths:
           description: A folder id, or empty for the conversations in no folder
           maxLength: 64
           type: string
+      - description: |-
+          Where the previous page ended, from its `nextCursor`. Omit it for the first page.
+
+          It is a position, not an offset, and that matters here: this list is ordered by recent activity, and the activity happens while it is being read. An offset would hand back a conversation twice when one moves up in between, and skip one when it moves down — silently, because a conversation that was skipped simply is not there.
+
+          Pass the same `q`, `archived` and `folder` along with it. A cursor carries a position, not the question that produced it, so changing the filters mid-scroll walks a range nobody asked for.
+        explode: false
+        in: query
+        name: cursor
+        schema:
+          maxLength: 128
+          type: string
       - explode: false
         in: query
         name: limit
@@ -2143,6 +2155,11 @@ components:
     ThreadListResponseBody:
       additionalProperties: false
       properties:
+        nextCursor:
+          description: 'Pass this back as `cursor` for the next page. Null means this was the last one — it is only set when there is genuinely more, so an empty final page never happens.'
+          type:
+          - string
+          - 'null'
         threads:
           items:
             $ref: '#/components/schemas/ThreadSummaryResource'
@@ -2151,6 +2168,7 @@ components:
           - 'null'
       required:
       - threads
+      - nextCursor
       type: object
     CreateThreadRequestBody:
       additionalProperties: false
