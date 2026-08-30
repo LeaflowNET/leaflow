@@ -8,20 +8,25 @@ info:
     ## A conversation
 
 
-    1. `POST /v1/threads` creates one;
+    The path one conversation takes, end to end. It names the operations that path needs, not all of
+    them — the full list is below, and it also covers folders, attachments, memories, skills and the
+    instant messaging side.
 
-    2. `POST /v1/threads/{thread}/messages` sends a message and returns a `turnId` at once; the
+
+    1. `POST /api/v1/threads` creates one;
+
+    2. `POST /api/v1/threads/{thread}/messages` sends a message and returns a `turnId` at once; the
     assistant runs in the background;
 
-    3. `GET /v1/threads/{thread}` returns the conversation document to render, whose `stream` is where
+    3. `GET /api/v1/threads/{thread}` returns the conversation document to render, whose `stream` is where
     live output arrives;
 
     4. When the assistant needs the user, the document''s `wait` says which kind: approving a batch of
-    tool calls (`POST /v1/threads/{thread}/approvals/{batch}`), or answering a few questions (`POST
-    /v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
+    tool calls (`POST /api/v1/threads/{thread}/approvals/{batch}`), or answering a few questions (`POST
+    /api/v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
 
 
-    Sending a file takes two steps: `POST /v1/attachments` for an id, then put that id in
+    Sending a file takes two steps: `POST /api/v1/attachments` for an id, then put that id in
     `attachmentIds` when sending the message. Images, text and arbitrary binaries all go through the
     same two steps; what differs is how the assistant reads them afterwards, which the upload
     response''s `kind` says.
@@ -32,12 +37,15 @@ info:
 
     ```
 
-    GET /v1/turns/{turn}/stream?ticket=<ticket>&cursor=<cursor>
+    GET /api/v1/turns/{turn}/stream?ticket=<ticket>&cursor=<cursor>
 
     ```
 
 
-    This is a Server-Sent Events stream, which is why it is not in the operation list below.
+    This is a Server-Sent Events stream, which is why it is not in the operation list below and why
+    generated clients have no method for it. Open it with `EventSource`, or any SSE client. It is how
+    live output arrives; polling the document on a timer is not the intended way to follow a
+    conversation.
 
 
     - `path` and `ticket` both come from the conversation document''s `stream`. `path` is relative,
@@ -689,6 +697,135 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
+  /api/v1/folders:
+    get:
+      summary: List folders
+      description: 'The current account''s folders in this project, oldest first. That order is fixed and does not react to what happens inside a folder: a folder is a place on the screen, and a place that moves whenever something is put into it is not one anybody can aim at. Not paginated — there is a cap on how many there can be, and all of them come back at once.'
+      operationId: list-folders
+      tags:
+      - Folder
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    post:
+      summary: Create a folder
+      description: |-
+        A folder groups conversations in the sidebar and does nothing else. The assistant is never told which folder a conversation is in, and a conversation behaves exactly the same inside one as outside: no shared instructions, no shared files, no shared memory.
+
+        Names are unique within an account's folders in this project, because the only way to aim at a folder is to read its name.
+      operationId: create-folder
+      tags:
+      - Folder
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequestBody'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderResource'
+          description: Created
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/folders/{folder}:
+    get:
+      summary: Fetch one folder
+      description: 'The list returns every folder at once, so this is for the case the list does not cover: a page opened straight at a folder, holding nothing but the id from the address bar. Its conversations are a separate request — `GET /api/v1/threads?folder=<id>`.'
+      operationId: get-folder
+      tags:
+      - Folder
+      parameters:
+      - in: path
+        name: folder
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    patch:
+      summary: Rename a folder
+      description: The conversations in it are untouched, and none of them move in the list — a folder's name is not part of what any conversation is about.
+      operationId: update-folder
+      tags:
+      - Folder
+      parameters:
+      - in: path
+        name: folder
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFolderRequestBody'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderResource'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+    delete:
+      summary: Delete a folder
+      description: |-
+        The conversations inside are **not** deleted. They leave the folder and go back to the ungrouped list, where they can be filed again. Emptying a shelf is not the same as throwing out what was on it, and deleting a conversation is a different request.
+
+        Idempotent: deleting a folder that is already gone succeeds and changes nothing.
+      operationId: delete-folder
+      tags:
+      - Folder
+      parameters:
+      - in: path
+        name: folder
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
   /api/v1/memories:
     get:
       summary: List what the assistant remembers
@@ -894,6 +1031,14 @@ paths:
         schema:
           description: When true, returns **only** archived conversations; otherwise only unarchived ones
           type: boolean
+      - description: 'Narrow the list to one folder. Omitting it returns conversations from every folder and from none; a folder id returns that folder''s; the empty value (`?folder=`) returns the ones that are in no folder at all. Empty is not the same as omitted, and a sidebar needs both: "chats" is exactly the ungrouped set, and asking for everything would let filed conversations crowd it out of the limit.'
+        explode: false
+        in: query
+        name: folder
+        schema:
+          description: A folder id, or empty for the conversations in no folder
+          maxLength: 64
+          type: string
       - explode: false
         in: query
         name: limit
@@ -1956,6 +2101,11 @@ components:
         createdAt:
           format: date-time
           type: string
+        folderId:
+          description: The folder this conversation is filed under, or null when it is in none
+          type:
+          - string
+          - 'null'
         id:
           type: string
         model:
@@ -1978,6 +2128,7 @@ components:
       - archived
       - unread
       - approvalMode
+      - folderId
       type: object
     ThreadListResponseBody:
       additionalProperties: false
@@ -2427,6 +2578,15 @@ components:
           type: string
         archived:
           type: boolean
+        folderId:
+          description: |-
+            File this conversation into a folder, or `null` to take it out of the one it is in. Omit the field to leave it where it is.
+
+            Filing does not move the conversation in the list. The order answers "which conversation has something new in it", and putting one away is not that.
+          maxLength: 64
+          type:
+          - string
+          - 'null'
         title:
           description: |-
             Rename this conversation.
@@ -2742,4 +2902,60 @@ components:
           type: integer
       required:
       - reverted
+      type: object
+    FolderResource:
+      additionalProperties: false
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        threadCount:
+          description: 'How many conversations are filed here and would show up in the default list. Archived and deleted ones are not counted, so this is exactly what `GET /api/v1/threads?folder=<id>` returns.'
+          format: int64
+          type: integer
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+      - id
+      - name
+      - threadCount
+      - createdAt
+      - updatedAt
+      type: object
+    FolderListResponseBody:
+      additionalProperties: false
+      properties:
+        folders:
+          items:
+            $ref: '#/components/schemas/FolderResource'
+          type:
+          - array
+          - 'null'
+      required:
+      - folders
+      type: object
+    CreateFolderRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - name
+      type: object
+    UpdateFolderRequestBody:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - name
       type: object
