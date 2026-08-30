@@ -74,7 +74,9 @@ paths:
     post:
       summary: Upload a file
       description: |-
-        The body is the file bytes themselves, not multipart, one file per request. The kind is determined from the content, not from Content-Type or from the name. Put the returned id in attachmentIds when sending a message; attachments never referenced by any message are cleared periodically.
+        The body is the file bytes themselves, not multipart, one file per request. The kind is determined from the content, not from Content-Type or from the name. Put the returned id in attachmentIds when sending a message.
+
+        An upload that no message ever references is a draft, and drafts are collected — `draftExpiresAt` in the response says when this one goes. Sending a message with the id makes it permanent.
 
         The returned `kind` says how the assistant will see it. An `image` is read directly, and only by models that accept image input. A small `text` file is placed inline in the message. A large `text` file, and anything `binary`, arrives as a reference the assistant reads on demand — for a binary that usually means downloading it onto one of the project's cloud instances.
       operationId: upload-attachment
@@ -1398,6 +1400,13 @@ components:
           description: Size of what was stored. For an image that has been resized, this is the resized size, not what was uploaded.
           format: int64
           type: integer
+        draftExpiresAt:
+          description: |-
+            When this upload gets cleared if no message ever references it. Sending a message with this id makes it permanent and this stops applying — a file that belongs to a conversation is kept as long as the conversation is.
+
+            It is here so the editor can say so before it happens. An attachment chip that quietly stops working a week later reads as a bug, and the person who hits it has no way to tell that what they are seeing is a draft being collected.
+          format: date-time
+          type: string
         filename:
           type: string
         height:
@@ -1433,6 +1442,7 @@ components:
       - byteSize
       - width
       - height
+      - draftExpiresAt
       type: object
     BindingResource:
       additionalProperties: false
