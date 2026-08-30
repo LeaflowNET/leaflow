@@ -449,6 +449,26 @@ paths:
         - Billing
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number; the first page when omitted.
+          schema:
+            type: integer
+            minimum: 1
+        - name: page_size
+          in: query
+          required: false
+          description: |-
+            How many charges per page. Defaults to a full page.
+
+            Charge count grows with resource count — an account running dozens of machines produces
+            hundreds of lines in a period, and a screen shows a dozen. Fetching all of them on every
+            visit carries data nothing displays.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
       responses:
         '200':
           description: OK
@@ -2224,8 +2244,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Charge'
+        total_count:
+          description: |-
+            How many charges there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         total:
-          description: The sum, which is the same number as `unsettled` on the balance
+          description: |-
+            The sum over the **whole period**, not this page — it is the same number as `unsettled`
+            on the balance, and paging must not change it. A page-scoped sum would disagree with the
+            balance card sitting next to it, and there would be no way to tell which one to believe.
           type: string
       required:
         - currency
