@@ -1140,6 +1140,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets/{provisionId}/renewal:
+    put:
+      summary: Choose what happens when it expires
+      description: |-
+        Three choices, not two.
+
+        ## Why automatic renewal has to be opted into
+
+        Charging someone automatically has to be something they chose. Defaulting to it means a
+        person who wanted to try one month is charged for a second they never agreed to — and that
+        is where chargebacks come from. So a resource bought outright starts on `manual`.
+
+        ## And why "let it expire" is its own choice, not just "not automatic"
+
+        `manual` keeps reminding: the notice before expiry is mandatory, because expiry stops the
+        resource. Someone who has decided to let it go does not want those, and the cost of sending
+        them anyway is not annoyance — it is that the reminders get filtered away, taking the ones
+        that mattered with them.
+
+        ## Turning it on needs a known cycle
+
+        Renewing automatically has to know for how long, which comes from the last purchase or
+        renewal. A resource adopted into billing, or bought before this was recorded, has no cycle
+        yet: renew it manually once and the cycle is written down.
+      operationId: set-renewal-status
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/ProvisionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRenewalStatusRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrepaidAsset'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/prepaid-assets/{provisionId}/renewal-quote:
     get:
       summary: What renewing this would cost
@@ -1672,6 +1721,19 @@ components:
             conclude that nothing happened.
           type: string
           enum: [active, suspended, terminated]
+        billing_cycle:
+          description: |-
+            How long one renewal buys, as an ISO 8601 duration (P1M, P1Y). Empty on something adopted
+            into billing rather than bought through it — automatic renewal cannot be turned on until
+            one manual renewal records it.
+          type: string
+        renewal_status:
+          description: |-
+            What happens at expiry. `manual` is where everything starts: charging automatically has
+            to be chosen. `none` also stops the reminders, which is a different thing from `manual`
+            — see the route that sets it.
+          type: string
+          enum: [manual, auto, none]
       required:
         - id
         - project_id
@@ -1681,6 +1743,7 @@ components:
         - term_end
         - state
         - desired_state
+        - renewal_status
     PrepaidAssetList:
       type: object
       additionalProperties: false
@@ -1721,6 +1784,15 @@ components:
         - currency
         - current_term_end
         - term_end
+    SetRenewalStatusRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [manual, auto, none]
+      required:
+        - status
     RenewRequestBody:
       type: object
       additionalProperties: false
