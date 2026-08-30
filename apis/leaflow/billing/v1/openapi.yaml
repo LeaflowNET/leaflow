@@ -518,6 +518,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/projects/{projectId}/billing-account:
+    get:
+      summary: Which account pays for this project
+      description: |-
+        The account a project's resources are charged to, resolved from the project rather than
+        guessed.
+
+        ## Why a console needs this
+
+        Everything in a console happens inside a project, while billing accounts belong to a person —
+        and a person can have many. Showing "the first one" next to a sentence like *you are
+        overdrawn, new resources will be refused* pairs one account's balance with another account's
+        rule. Both directions are wrong and one of them is silent: the figures look healthy while
+        creating anything is refused, and the refusal names a reason the page just contradicted.
+
+        ## Being a member is enough to ask, but not to see the money
+
+        The answer is the account's identity, not its balance. A project's members are not
+        necessarily the people paying for it — a company account can pay for a project someone else
+        works in — and their balance is not those members' business. Whoever owns the account reads
+        the figures from the balance route as before; `owned_by_me` says which case this is, so a
+        page can tell "you are overdrawn" apart from "ask whoever pays for this project".
+
+        ## A project with no account is a normal state, and it answers 404
+
+        A project nobody has bound yet cannot create resources at all — admission refuses it. That is
+        worth saying plainly ("this project has no billing account, bind one") rather than falling
+        back to some other account of theirs, which is how the wrong-account problem started.
+      operationId: read-project-billing-account
+      tags:
+        - BillingAccount
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: The project being worked in
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectBillingAccount'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/projects/{projectId}/quote:
     post:
       summary: What a usage would cost in this project
@@ -1827,6 +1879,31 @@ components:
         - cash
         - unsettled
         - available
+    ProjectBillingAccount:
+      description: The account a project's resources are charged to
+      type: object
+      additionalProperties: false
+      properties:
+        account_key:
+          type: string
+        project_id:
+          type: string
+        display_name:
+          type: string
+        currency:
+          $ref: '#/components/schemas/Currency'
+        owned_by_me:
+          description: |-
+            Whether the caller owns this account, and therefore whether the balance routes will
+            answer for it. False means someone else pays for this project: the figures are theirs,
+            not the caller's, and a page should say so rather than showing nothing.
+          type: boolean
+      required:
+        - account_key
+        - project_id
+        - display_name
+        - currency
+        - owned_by_me
     ProjectBinding:
       description: Which account pays for which project, as it stands once the request has been applied
       type: object
@@ -1945,10 +2022,55 @@ components:
             Decimal string, the real-time figure. The booked figure would show a machine that only
             just started as zero
           type: string
+        feature_key:
+          description: |-
+            Which meter it is for, when the charge came from usage. A hash, not something to show —
+            it is here so two rows can be told apart programmatically and so support can line a row
+            up with the catalogue.
+          type: string
+        type:
+          description: |-
+            Whether this figure moves. A usage charge climbs through the period; a flat fee does not.
+            Without it, the same number on two refreshes could mean "nobody used it" or "it never
+            moves", and those need different next steps.
+          type: string
+          enum: [usage_based, flat_fee]
+        period_from:
+          description: |-
+            Start of the service period this charge covers.
+
+            This is what tells two same-named rows apart. Something billed by the hour produces
+            hundreds of identically named charges in a month, and a list carrying only a name and an
+            amount shows them as a wall of duplicates — which is what it looks like today.
+          format: date-time
+          type: string
+        period_to:
+          description: End of the service period this charge covers.
+          format: date-time
+          type: string
+        credits:
+          description: |-
+            How much of this charge was covered by credit, as a decimal string.
+
+            It is the answer to "I have a balance, why am I still being charged". Without it the
+            customer sees a number that disagrees with what they expected and the only thing that
+            explains it is on our side.
+          type: string
+        discounts:
+          description: |-
+            How much was taken off by a discount, as a decimal string. A usage allowance (the first N
+            units free) lands here too.
+          type: string
+        description:
+          description: Free text from the charge, usually empty. Set on charges raised by hand.
+          type: string
       required:
         - id
         - name
         - total
+        - type
+        - period_from
+        - period_to
     ChargeList:
       type: object
       additionalProperties: false
