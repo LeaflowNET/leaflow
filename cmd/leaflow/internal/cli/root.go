@@ -130,7 +130,8 @@ Both name parts come from the contract: the tag and the operationId. The same
 identifier names the operation in the SDKs, so there is no second vocabulary to
 learn or to keep in sync.
 
-Contracts ship with this binary and can be refreshed: leaflow spec update`),
+Contracts are embedded at build time, so a service or operation added upstream
+arrives with a new release rather than at the next run: leaflow update`),
 		Version:       formatVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
