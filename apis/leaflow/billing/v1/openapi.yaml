@@ -65,6 +65,9 @@ paths:
       operationId: list-billing-accounts
       tags:
         - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -186,6 +189,8 @@ paths:
         - BillingAccount
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -224,6 +229,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Balance'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/balance/movement:
+    get:
+      summary: How the balance moved this month
+      description: |-
+        Opening balance, money in, money out, closing balance — for the current calendar month.
+
+        **The four add up**: `closing = opening + income - spending`. That is the point of the
+        endpoint. The balance alone answers "how much is left" and cannot answer "how did it get
+        there", which is what somebody watching their balance shrink is actually asking. Four
+        figures that add up can be checked by the holder; a single figure can only be taken on
+        faith or queried with support.
+
+        `closing` is computed from the other three rather than read separately. Reading the current
+        balance for it would leave the equation off by whatever was booked between the two reads —
+        and an equation that is off by a few cents is worse than no equation, because it puts the
+        ledger itself in doubt.
+
+        The window is the **calendar** month, not the engine's billing period. This is the month a
+        person means when they say "this month"; the billing anchor is an internal recurrence that
+        happens to line up.
+
+        A month with no movement reports opening equal to closing and zero on both sides — not all
+        zeroes, which would read as "your money is gone".
+      operationId: read-billing-account-balance-movement
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceMovement'
         default:
           description: Error
           content:
@@ -315,13 +361,15 @@ paths:
         look at in exactly the case someone wants to look: a resource was asked for, was not
         delivered, and the question is what happened.
 
-        The list carries no lines. An order has only a handful, but shipping them on every page
-        means carrying data no column shows.
+        Lines come with each order. A list showing only identifiers and amounts is a page nobody can
+        read — recognising one ("which of these was last week's machine") is why it gets opened.
       operationId: list-orders
       tags:
         - BillingAccount
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -339,8 +387,8 @@ paths:
     get:
       summary: One order, with its lines
       description: |-
-        Each line names what was asked for and how much of it. This is the only route that carries
-        them.
+        Each line names what was asked for, how much of it, and what it produced. The list route
+        carries lines too; this one exists for a permanent link to a single transaction.
       operationId: get-order
       tags:
         - BillingAccount
@@ -380,6 +428,8 @@ paths:
         - BillingAccount
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -449,26 +499,8 @@ paths:
         - Billing
       parameters:
         - $ref: '#/components/parameters/AccountKey'
-        - name: page
-          in: query
-          required: false
-          description: 1-based page number; the first page when omitted.
-          schema:
-            type: integer
-            minimum: 1
-        - name: page_size
-          in: query
-          required: false
-          description: |-
-            How many charges per page. Defaults to a full page.
-
-            Charge count grows with resource count — an account running dozens of machines produces
-            hundreds of lines in a period, and a screen shows a dozen. Fetching all of them on every
-            visit carries data nothing displays.
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -560,6 +592,8 @@ paths:
         - Billing
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -795,16 +829,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/subscription/keep:
+    post:
+      summary: Undo an end-of-period cancellation
+      description: |-
+        Takes back a cancellation that was set for the end of the period, so the plan carries on.
+
+        **It only works on a cancellation, not on a scheduled downgrade.** Scheduling a change to
+        another plan leaves a second, scheduled subscription holding the customer's one slot, and the
+        engine offers no way to remove it: unscheduling is refused with a conflict and the scheduled
+        subscription cannot be deleted over HTTP. So a downgrade becomes final the moment it is
+        scheduled, and saying so up front is the only honest thing to do — this endpoint answers
+        `BILLING_NO_SCHEDULED_CHANGE` rather than pretending to undo it.
+
+        Without this, someone who cancels by accident has to wait out the period and buy the tier
+        again, losing whatever the tier had accumulated.
+      operationId: keep-subscription
+      tags:
+        - Billing
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /account/v1/billing-accounts/{accountKey}/subscription/cancel:
     post:
       summary: Come off the paid plan
       description: |-
-        Moves the account off whatever plan it is on.
+        Takes the account off its paid plan and back to the free tier.
 
-        Where a default plan is configured this is a switch to it rather than a cancellation — an
-        account with no plan is refused admission, so cancelling outright would cut off someone who
-        only meant to drop back to the free tier. Without a default plan it is a real cancellation and
-        the account is left with no plan on purpose.
+        Ending immediately lands on the free tier straight away. Ending at the end of the period is a
+        plain cancellation that can still be undone (`subscription/keep`) — it deliberately does not
+        schedule a switch, because a scheduled switch holds the customer's one subscription slot and
+        the engine gives no way to cancel it afterwards. The free tier is applied once the period
+        actually ends, by the sweep that keeps every account on some plan.
 
         `timing` has to be stated. Ending immediately on an account that has already paid for the
         current period takes back what they paid for; ending at the end of the period does not. There
@@ -904,6 +972,8 @@ paths:
         - BillingAccount
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -1042,6 +1112,8 @@ paths:
         - Offer
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -1124,16 +1196,19 @@ paths:
       description: |-
         Everything this account holds on a term, across every product.
 
-        ## Nothing here expires on its own
+        ## Every one of these expires
 
-        A term renews for as long as the seat is held: the engine charges the next period, prorates
-        any change to the second, and stops the moment the seat is given up. So there is no renewal
-        to remember and no expiry to warn about — giving it up means deleting the resource, in the
-        console that owns it.
+        A term is paid for once, up front, and buys exactly the period named by `term`. Nothing
+        renews it on its own: `expires_at` is when it runs out, and after that the machine is
+        stopped and — once the retention window is over — released.
 
-        What the next period costs and when it falls due is on the charges route. That is read
-        straight from the engine rather than copied here, because a copy is a second answer that
-        drifts without saying so.
+        This route used to say the opposite. It described an engine that charged the next period by
+        itself for as long as the seat was held, which is how this worked before the money became a
+        single up-front charge. Reading the old text, a customer would have had no reason to renew
+        anything, and the first sign of trouble would have been a stopped machine.
+
+        Turn on `auto_renew` to have billing place the renewal order itself while there is balance
+        to pay for it. That is the only thing that makes a term continue.
 
         ## Metered resources are not here
 
@@ -1150,6 +1225,8 @@ paths:
         - Prepaid
       parameters:
         - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
       responses:
         '200':
           description: OK
@@ -1157,6 +1234,188 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PrepaidAssetList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets/{assetId}/renew:
+    post:
+      summary: Buy another period
+      description: |-
+        Extends a term by one more period, paid for out of the account's balance right now.
+
+        **The new expiry is the old one plus the term, not now plus the term.** Renewing three days
+        early would otherwise throw those three days away, and renewing after the expiry would
+        quietly reward the delay. Neither shows up as an error — the date on the account looks
+        self-consistent either way, and only the customer notices.
+
+        `term` does not have to match what was bought originally: a monthly machine can be renewed
+        for a year.
+
+        Refused when the balance does not cover it. The alternative — placing the order and letting
+        the account go negative — turns a renewal the customer chose into a debt they did not.
+      operationId: renew-prepaid-asset
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: assetId
+          in: path
+          required: true
+          description: Which asset, from the prepaid list
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenewRequestBody'
+      responses:
+        '200':
+          description: Renewed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrepaidAsset'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/prepaid-assets/{assetId}/auto-renew:
+    put:
+      summary: Turn automatic renewal on or off
+      description: |-
+        With it on, billing places the renewal order itself a few days before the period runs out,
+        paying from the account's balance.
+
+        **Not enough balance is not an error here.** The switch only says what to attempt; whether
+        the money is there is settled at renewal time, and the customer is told either way — told it
+        renewed, or told it could not and by when it will expire.
+      operationId: set-prepaid-auto-renew
+      tags:
+        - Prepaid
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - name: assetId
+          in: path
+          required: true
+          description: Which asset, from the prepaid list
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoRenewRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrepaidAsset'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/promotion-codes/preview:
+    post:
+      summary: See what a code takes off before committing
+      description: |-
+        Runs the same checks and the same arithmetic that placing the order will run, so the price
+        shown here and the price charged agree. Writing the calculation twice — once for the page and
+        once for the order — means they drift, and the visible form of that drift is a page saying
+        "20 off" while the full amount is taken.
+
+        Nothing is redeemed. The allowance is only consumed when the order is actually placed.
+
+        A code that cannot be used is rejected here with the reason, so the user learns it before
+        filling in the rest of the form rather than at the moment they press buy.
+
+        **Metered orders are rejected.** They have no amount at this point — the money is worked out
+        later from usage. Applying a discount to a nil amount leaves the user believing they saved
+        something while the bill is unchanged.
+      operationId: preview-promotion-code
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewPromotionCodeRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionPreview'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/vouchers:
+    get:
+      summary: List this account's vouchers
+      description: |-
+        Credit received from campaigns, most recent first. Not the credit ledger — this says which
+        campaign each amount came from, which is the question "where did this 50 come from" that the
+        ledger cannot answer.
+      operationId: list-account-vouchers
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /account/v1/billing-accounts/{accountKey}/refunds:
+    get:
+      summary: List this account's refunds
+      description: |-
+        Each refund carries how it was split. A customer asking "I was refunded 100, why is only 60
+        back on my card" is answered here and nowhere else.
+      operationId: list-account-refunds
+      tags:
+        - BillingAccount
+      parameters:
+        - $ref: '#/components/parameters/AccountKey'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountRefundList'
         default:
           description: Error
           content:
@@ -1174,6 +1433,30 @@ components:
         and names no project, which is what this API needs — a billing account belongs to a person,
         not to a project. A project token is never accepted here.
   parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number; the first page when omitted.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: |-
+        How many entries per page, at most 100.
+
+        Every list here grows without bound — charges with resources, transactions with time. A list
+        that returns everything works on the account it was written against and quietly turns into a
+        multi-megabyte response on the one that has been running for a year.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
     ProvisionId:
       name: provisionId
       in: path
@@ -1327,13 +1610,43 @@ components:
           type: string
         unpriced:
           description: |-
-            Keys that were given a usage but have no rate card on this plan.
+            The usages that have no rate card on this plan.
 
             **Reported rather than ignored**, because ignoring them yields a smaller but entirely
             normal-looking number — and that is the most expensive misconfiguration there is: usage
-            lands, the usage chart shows it, and the bill has no line for it
+            lands, the usage chart shows it, and the bill has no line for it.
+
+            ## Each entry carries the caller's own naming, not only the key
+
+            A meter key is a hash, and callers are told not to compute it (see `QuoteUsage`). An answer
+            that named the unpriced usages by key alone was therefore unusable whenever more than one
+            usage was priced at a time: the caller could see that something was unsold but not which of
+            the things it asked about. That is the case a catalogue page needs — pricing thirty machine
+            types in one call and marking the ones this plan does not sell — so the answer echoes the
+            `service` and `product_id` that were given
           type: array
           items:
+            $ref: '#/components/schemas/UnpricedUsage'
+    UnpricedUsage:
+      description: One usage that has no rate card on the plan it was priced against.
+      type: object
+      additionalProperties: false
+      required:
+        - key
+      properties:
+        key:
+          description: The meter key this usage resolved to
+          type: string
+        service:
+          description: Echoed from the request when the usage was named by service and product
+          type: string
+        product_id:
+          description: Echoed from the request when the usage was named by service and product
+          type: string
+        variant:
+          description: Echoed from the request
+          type: object
+          additionalProperties:
             type: string
     PlanChangeTiming:
       description: |-
@@ -1347,6 +1660,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         offers:
           type: array
           items:
@@ -1374,6 +1696,15 @@ components:
           description: When this offer stops being purchasable. Absent means it does not expire
           type: string
           format: date-time
+        plan_key:
+          description: |-
+            The plan this offer sells, matching `plan_key` on the subscription. Present on offers
+            that sell a plan.
+
+            It is here so the pricing page can mark the tier the account is already on. Without it
+            the current tier looks like every other one, and the obvious thing to do — buy it — is
+            refused as a switch to the same plan
+          type: string
         pricing:
           description: Present on offers that sell a plan
           $ref: '#/components/schemas/Pricing'
@@ -1410,6 +1741,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PricingPhase'
+        included_credit:
+          description: |-
+            Credit handed out at the start of every period, as a decimal string in `currency`. Absent
+            when the tier comes with none.
+
+            It is what makes a paid tier worth buying — "$200 a month, and $200 of credit to spend" —
+            so leaving it off the pricing page turns that tier into a fee with nothing visibly
+            attached to it
+          type: string
+        included_credit_expires:
+          description: |-
+            Whether unused credit is voided at the end of the period. Only meaningful alongside
+            `included_credit`, and worth showing either way: carried over, it accumulates, which is a
+            materially different offer at the same price
+          type: boolean
       required:
         - currency
         - phases
@@ -1509,15 +1855,36 @@ components:
           type: string
         currency:
           type: string
-        payment_state:
-          description: Always `none` on a metered order.
+        paid_at:
+          description: |-
+            When the money for this order arrived. Absent on an order nothing was charged for, and on
+            one still waiting to be paid.
+
+            Separate from `created_at` because the two can be far apart: an order paid online is
+            created first and paid whenever the customer gets round to it. Merged into one field,
+            "how long did this sit unpaid" has no answer anywhere — and that is the number chasing
+            payment looks at.
+          format: date-time
           type: string
-          enum: [none, paid, refunded]
+        payment_state:
+          description: |-
+            Always `none` on a metered order.
+
+            `pending` is an order paid for online whose money has not arrived yet: the checkout
+            session is open and nothing has been created. It was missing from this enum while the
+            column had it and the handler passed it through unchanged, so such an order read back
+            a value outside the enum — the one state where the caller most needs to know not to
+            expect the resource yet.
+          type: string
+          enum: [none, pending, paid, refunded]
         created_at:
           format: date-time
           type: string
         lines:
-          description: Only present on the single-order route.
+          description: |-
+            What this order was for. Present on the list route too — an order list that shows only
+            numbers and amounts is a page of identifiers with no content, and recognising one
+            ("which of these was last week's machine") is the reason anyone opens it.
           type: array
           items:
             $ref: '#/components/schemas/OrderLine'
@@ -1527,6 +1894,52 @@ components:
         - placed_by
         - state
         - created_at
+    BalanceMovement:
+      type: object
+      additionalProperties: false
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        from:
+          description: Start of the window — the first instant of the current calendar month, UTC.
+          format: date-time
+          type: string
+        to:
+          description: End of the window, which is **now** rather than the month's end. The month is not over.
+          format: date-time
+          type: string
+        opening:
+          description: |-
+            The balance when the window opened, as a decimal string.
+
+            Taken from the earliest transaction in the window rather than read separately: every
+            transaction carries the balance before and after it, so this figure and the totals below
+            come from one read of one ledger and therefore agree.
+          type: string
+        income:
+          description: What came in — top-ups and credit issued by operations. Never negative.
+          type: string
+        spending:
+          description: |-
+            What went out — consumption and expiry. **Never negative**: the direction is in the
+            name, not in the sign. Signed, a client would have to handle both `-20` and `20` meaning
+            the same thing.
+          type: string
+        closing:
+          description: '`opening + income - spending`. Computed, not read separately — see the endpoint.'
+          type: string
+        present:
+          description: False when this account has no balance record in this currency at all, which is not the same as a zero balance.
+          type: boolean
+      required:
+        - currency
+        - from
+        - to
+        - opening
+        - income
+        - spending
+        - closing
+        - present
     OrderLine:
       type: object
       additionalProperties: false
@@ -1542,15 +1955,70 @@ components:
         product_id:
           description: That service's own catalogue identifier for what was asked for.
           type: string
+        product_name:
+          description: |-
+            What this was called when it was ordered.
+
+            A snapshot, not a lookup. `product_id` is usually a uuid, and an order page that shows it
+            shows a string of hex. Asking the owning service for the name later is worse: it is a
+            cross-service call per row, and by then the product may have been renamed or withdrawn —
+            a bill has to answer "what did I buy", and that answer has to be in the words used at the
+            time.
+
+            Empty on orders placed before this was recorded, and on the rare call that omits it.
+            Fall back to `product_id`.
+          type: string
+        configuration:
+          description: |-
+            What was configured on this line at the moment of sale, as key–value pairs meant for a
+            person to read.
+
+            **Free-form, not fixed fields.** Every service's products have their own dimensions — a
+            machine has cores and memory, a disk has capacity and medium, an address has bandwidth.
+            Fixed fields would mean adding more of them for every service that comes along, or
+            squeezing one service's answers into another's boxes.
+
+            Do not parse it. The keys are written for the reader, in the reader's language, and they
+            change when the wording changes. Anything a program needs to decide on is in
+            `product_id` and `quantity`.
+          additionalProperties:
+            type: string
+          type: object
         quantity:
           type: integer
           format: int64
+        term:
+          description: |-
+            How this line is paid for: empty is by the hour, an ISO 8601 duration (`P1M`, `P1Y`) is
+            bought outright for that long.
+
+            Fixed at the moment of sale. The asset's own term can move afterwards (renewing can
+            change the period); this one cannot, because an order is a transaction that already
+            happened.
+          type: string
+        service_period_from:
+          description: |-
+            Start of the period this line bought. **Absent when billed by the hour** — that has no
+            service period, and filling in "today to today" would state a term that does not exist.
+          format: date-time
+          type: string
+        service_period_to:
+          description: End of the period this line bought. Absent when billed by the hour.
+          format: date-time
+          type: string
+        resource_id:
+          description: |-
+            The resource this line produced, in the owning service's own identifiers. Absent until
+            that service reports it back, which is also the moment the line starts being billed.
+          type: string
       required:
         - id
         - action
         - service
         - product_id
+        - product_name
         - quantity
+        - term
     PrepaidAsset:
       type: object
       additionalProperties: false
@@ -1578,11 +2046,30 @@ components:
           description: |-
             How long one period buys, as an ISO 8601 duration (P1M, P1Y).
 
-            There is no expiry to report. The engine keeps renewing this for as long as the seat is
-            held, so what runs out is not the term but the customer's decision to keep it. What the
-            next period costs, and when it is charged, is on the charges route — that is the engine's
-            own answer rather than a copy of it.
+            It is paid for once at purchase. Read it next to `expires_at`, which is when the period
+            actually runs out — the two are settled when the order is placed and neither moves on
+            its own.
           type: string
+        expires_at:
+          description: |-
+            When the paid-for period runs out.
+
+            Settled when the order is placed, not when the resource lands, so a purchase paid for
+            online does not get a longer period by being paid later.
+
+            Absent means it was never settled — a row that has not finished being created. It is not
+            "does not expire": everything on this route does.
+          type: string
+          format: date-time
+        auto_renew:
+          description: |-
+            Whether billing places the renewal order itself as the period runs out.
+
+            Off by default, and deliberately so: renewing charges the account, and a charge nobody
+            asked for is worse than an expiry that was warned about. With it on, the renewal is
+            placed only while there is balance to pay for it — when there is not, the customer is
+            told rather than put into debt.
+          type: boolean
         state:
           type: string
           enum: [pending, active, suspended, terminated]
@@ -1599,12 +2086,22 @@ components:
         - product_id
         - quantity
         - term
+        - auto_renew
         - state
         - desired_state
     PrepaidAssetList:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         assets:
           type: array
           items:
@@ -1632,10 +2129,27 @@ components:
       required:
         - term
         - idempotency_key
+    AutoRenewRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        auto_renew:
+          type: boolean
+      required:
+        - auto_renew
     OrderList:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         orders:
           type: array
           items:
@@ -1646,6 +2160,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         top_ups:
           type: array
           items:
@@ -1656,6 +2179,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         transactions:
           type: array
           items:
@@ -1725,6 +2257,24 @@ components:
         - pay
         - credit
     Purchase:
+      description: |-
+        The result of buying an offer — either it is done, or the money has to arrive first.
+
+        ## A paid tier is never granted before the money lands
+
+        A tier that charges a fee is paid for by card, not from the credit balance. Two reasons, and
+        the second is the one that decides it:
+
+        1. The engine bills a plan's fee **in arrears** — subscribing only records an unsettled
+           charge, while the tier's credit is handed over at once. Without payment first, an account
+           can subscribe, spend the credit, and walk away from an invoice nobody will pay.
+        2. Paying for the membership out of credit is a loop: the tier hands back credit of the same
+           value, so nothing the platform can bank ever enters. The membership fee is where real
+           money is supposed to arrive.
+
+        So `checkout_url` comes back instead of `subscription_id`, and the switch happens when the
+        payment does. The place on the offer is already held, so returning to it later finishes the
+        same purchase rather than starting a second one.
       type: object
       additionalProperties: false
       properties:
@@ -1733,11 +2283,26 @@ components:
         subscription_id:
           description: |-
             The subscription now serving this account. When the change was set to take effect at the
-            end of the period, this is the one that takes over then, and its status says `scheduled`
+            end of the period, this is the one that takes over then, and its status says `scheduled`.
+
+            Absent when payment is still needed — see `checkout_url`
           type: string
+        checkout_url:
+          description: |-
+            Where to send the buyer to pay. Present exactly when the tier charges a fee and the
+            payment has not been made yet.
+
+            The switch is performed by the payment callback, so a client that ignores this and reads
+            `subscription_id` gets nothing — which is the intended failure: pretending the tier is
+            active before the money arrives is the thing this whole route exists to prevent
+          type: string
+        amount_due:
+          description: What the buyer is being sent to pay, in `currency`. Present with `checkout_url`
+          type: string
+        currency:
+          $ref: '#/components/schemas/Currency'
       required:
         - offer_key
-        - subscription_id
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     BillingAccount:
@@ -1773,6 +2338,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         accounts:
           description: Every account belonging to the caller. Empty when they hold none
           type: array
@@ -2004,6 +2578,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         payment_methods:
           type: array
           items:
@@ -2238,6 +2821,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        total_count:
+          description: |-
+            How many entries there are in total, across every page.
+
+            Without it, "is there another page" has to be guessed from whether this one came back
+            full — and that guess turns into one extra fetch of an empty page whenever the last page
+            happens to be exactly full.
+          type: integer
+          format: int64
         invoices:
           type: array
           items:
@@ -2359,6 +2951,9 @@ components:
           type: string
         plan_key:
           type: string
+        plan_name:
+          description: What this tier is called on the pricing page
+          type: string
         plan_version:
           type: integer
         status:
@@ -2366,10 +2961,63 @@ components:
             `canceled` still counts as being on a plan — it is serving until the end of the period,
             which has already been paid for
           type: string
+        current_period_start:
+          description: |-
+            Start of the period being served. Absent for the moment right after subscribing, while
+            the engine is still writing the charge this is read from — absent means "not known yet"
+            rather than "no period"
+          type: string
+          format: date-time
+        current_period_end:
+          description: |-
+            End of the period being served, which is also when the next charge falls and when
+            anything scheduled takes effect
+          type: string
+          format: date-time
+        scheduled:
+          description: |-
+            What takes over at the end of the period, when a downgrade has been scheduled.
+
+            Absent when nothing is pending. Leaving it out entirely would show someone who has
+            already scheduled a downgrade the tier they are on today, so they would schedule it
+            again.
+          allOf:
+            - $ref: '#/components/schemas/ScheduledPlan'
+        cancels_at_period_end:
+          description: |-
+            True once the account has been taken off its paid plan at the end of the period. It is
+            still being served until then, and this can still be undone — unlike a scheduled
+            downgrade
+          type: boolean
+        is_default_plan:
+          description: |-
+            True when this is the free tier every account starts on.
+
+            Coming off it is not a thing that can happen: cancelling puts the account back on it, so
+            offering that as an action is at best a no-op and at worst a gap — between the period
+            ending and the sweep putting the tier back, the account has no plan at all and admission
+            refuses it. A console reads this to leave the action out.
+          type: boolean
       required:
         - id
         - plan_key
         - status
+    ScheduledPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        plan_key:
+          type: string
+        plan_name:
+          type: string
+        plan_version:
+          type: integer
+        starts_at:
+          description: When it takes over, which is the end of the current period
+          type: string
+          format: date-time
+      required:
+        - plan_key
     TopUpStatus:
       type: object
       additionalProperties: false
@@ -2406,3 +3054,188 @@ components:
       pattern: ^[A-Z]{3}$
       minLength: 3
       maxLength: 3
+    PreviewPromotionCodeRequestBody:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Case and surrounding whitespace do not matter.
+        project_id:
+          type: string
+          format: uuid
+          description: Which project the order will be placed against — the price depends on its plan.
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PromotionPreviewLine'
+          description: |-
+            The same lines the order will carry. The discount is computed over the ones in scope,
+            not the whole order, so leaving lines out changes the answer.
+      required:
+        - code
+        - project_id
+        - lines
+    PromotionPreviewLine:
+      type: object
+      description: |-
+        One line of the order being previewed. Only what pricing and scope need — this is not the
+        order itself, and carrying the whole order here would mean two places that have to agree on
+        what an order looks like.
+      properties:
+        service:
+          type: string
+          maxLength: 64
+        product_id:
+          type: string
+          maxLength: 128
+        term:
+          type: string
+          maxLength: 32
+          description: |-
+            ISO 8601 duration for a prepaid line. Empty means metered, and a metered line
+            contributes nothing to the discount — it has no amount at this point.
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+      required:
+        - service
+        - product_id
+    PromotionPreview:
+      type: object
+      properties:
+        code:
+          type: string
+          description: The code as stored, upper-cased.
+        name:
+          type: string
+          description: The campaign's name, to show next to the price.
+        kind:
+          type: string
+          enum: [voucher, discount]
+        benefit_amount:
+          type: string
+          description: How much comes off this order, or how much credit is granted.
+        discount_base:
+          type: string
+          description: |-
+            The part of the order the discount applies to. Shown so "why did only 12 come off a 200
+            order" has an answer on the page rather than in a support ticket.
+        original_amount:
+          type: string
+        payable_amount:
+          type: string
+          description: What will actually be charged. This is the number to show as the price.
+        currency:
+          type: string
+      required:
+        - code
+        - kind
+        - benefit_amount
+        - original_amount
+        - payable_amount
+        - currency
+    Voucher:
+      type: object
+      properties:
+        redemption_id:
+          type: string
+          format: uuid
+        promotion_key:
+          type: string
+        name:
+          type: string
+        amount:
+          type: string
+        currency:
+          type: string
+        granted_at:
+          type: string
+          format: date-time
+      required:
+        - redemption_id
+        - promotion_key
+        - amount
+        - currency
+        - granted_at
+    VoucherList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Voucher'
+        total_count:
+          type: integer
+      required:
+        - items
+    AccountRefund:
+      type: object
+      properties:
+        refund_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+          nullable: true
+        total_amount:
+          type: string
+        currency:
+          type: string
+        state:
+          type: string
+          enum: [pending, settled, partial]
+          description: |-
+            `partial` means some of it is back and some is not. Showing it as "refunded" would have
+            the customer looking for money that has not moved.
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountRefundLeg'
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - refund_id
+        - total_amount
+        - currency
+        - state
+        - legs
+        - created_at
+    AccountRefundLeg:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [cash, voucher, balance]
+        amount:
+          type: string
+        currency:
+          type: string
+        state:
+          type: string
+          enum: [pending, done, failed]
+        settled_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - kind
+        - amount
+        - currency
+        - state
+    AccountRefundList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountRefund'
+        total_count:
+          type: integer
+      required:
+        - items
