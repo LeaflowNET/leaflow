@@ -2003,7 +2003,7 @@ components:
 
     Quote:
       type: object
-      required: [total, currency]
+      required: [currency]
       properties:
         lines:
           type: array
@@ -2013,7 +2013,13 @@ components:
           items: { $ref: '#/components/schemas/QuoteChangeResult' }
         total:
           allOf: [{ $ref: '#/components/schemas/Money' }]
-          description: What would be owed in total. Amounts to be returned are not netted off it.
+          nullable: true
+          description: |-
+            What would be owed in total. Amounts to be returned are not netted off it.
+
+            Null when any line could not be priced. What would be owed is not knowable then, and a
+            total that silently left the unpriced lines out would read as a smaller bill rather than
+            an incomplete one — the per-line `priced` flag is easy to skip, a missing total is not.
         total_refundable:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: What would be returned in total.
