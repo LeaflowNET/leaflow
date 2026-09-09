@@ -91,12 +91,20 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CatalogProductList' }
+        '304': { $ref: '#/components/responses/NotModified' }
         default: { $ref: '#/components/responses/Error' }
 
   /catalog/v1/products/{productId}/plans:
@@ -110,12 +118,20 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CatalogPlanList' }
+        '304': { $ref: '#/components/responses/NotModified' }
         default: { $ref: '#/components/responses/Error' }
 
   /catalog/v1/plans/{planId}/prices:
@@ -132,6 +148,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: currency
           in: query
           required: false
@@ -139,9 +156,16 @@ paths:
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CatalogPriceList' }
+        '304': { $ref: '#/components/responses/NotModified' }
         default: { $ref: '#/components/responses/Error' }
 
   /catalog/v1/rate-cards/{rateCardId}/rules:
@@ -158,6 +182,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/IfNoneMatch'
         - name: meter_key
           in: query
           required: false
@@ -170,9 +195,16 @@ paths:
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CatalogRateList' }
+        '304': { $ref: '#/components/responses/NotModified' }
         default: { $ref: '#/components/responses/Error' }
 
   /catalog/v1/estimates:
@@ -1408,6 +1440,17 @@ components:
         `/api/v1/projects/{projectId}/`.
 
   parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |-
+        The `ETag` from an earlier reply. When the catalogue has not changed since, the
+        answer is `304` with no body.
+
+        Worth sending on every catalogue read: the listings are public, unauthenticated and
+        cached at the edge, so a repeat read costs one round trip and no transfer.
+      schema: { type: string }
     Page:
       name: page
       in: query
@@ -1495,6 +1538,13 @@ components:
       description: Exclusive. One month is `[2026-09-01, 2026-10-01)`.
       schema: { type: string, format: date-time }
   responses:
+    NotModified:
+      description: |-
+        Unchanged since the `ETag` that was sent. No body.
+      headers:
+        ETag:
+          description: The same entity tag that was sent.
+          schema: { type: string }
     Error:
       description: Error
       content:
@@ -1680,8 +1730,14 @@ components:
           type: object
           additionalProperties: { type: string }
           description: |-
-            The attributes the price depends on. Required for metered prices. A combination with
-            no rate covering it is refused rather than priced at zero.
+            The attributes the price depends on — region, instance type, token kind.
+
+            Required when the price draws its rates from a price list, which is how anything
+            sold by region or by machine type is priced. A price that carries a single unit
+            amount, or a ladder, has no attributes to give and takes none.
+
+            Every attribute the meter declares must be present. A combination with no rate
+            covering it is refused rather than priced at zero.
         price_type:
           type: string
           enum: [metered, prepaid, one_time]
