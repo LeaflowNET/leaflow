@@ -726,6 +726,33 @@ paths:
         default: { $ref: '#/components/responses/Error' }
 
   /account/v1/refunds:
+    post:
+      tags: [account]
+      operationId: request-refund
+      summary: Ask for a refund
+      description: |-
+        Refunding ends the subscription and reclaims whatever it provisioned. That is the
+        difference from letting a period lapse: a lapsed period keeps the machine around
+        for a while so that topping up brings it back, whereas a refund returns the money
+        and therefore cannot leave the thing running.
+
+        What can be refunded, for how long, and how much, is decided here rather than by
+        the caller. A request outside those bounds is refused with the reason.
+
+        The money goes back the way it came: card charges to the card, balance to the
+        balance, credit to credit. A grant never turns into cash.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+      responses:
+        '201':
+          description: Accepted for processing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        default: { $ref: '#/components/responses/Error' }
     get:
       tags: [billing-history]
       operationId: list-refunds
@@ -1826,15 +1853,36 @@ components:
 
     QuoteLineResult:
       type: object
-      required: [index, price_id, amount, currency]
+      required: [index, priced, currency]
       properties:
         index: { type: integer, description: Which line of the request this answers. }
+        priced:
+          type: boolean
+          description: |-
+            Whether a price was found for this line. Read this before anything else.
+
+            A single item with no price no longer fails the whole request. A catalogue
+            almost always has something not yet priced, and refusing the request would
+            leave no way to render a list in which a few entries are simply not on sale.
+
+            When false, `price_id`, `unit_amount` and `amount` are absent and
+            `unpriced_reason` states what is missing.
+        unpriced_reason:
+          type: string
+          enum: [none, no_price, no_rate_card, no_meter, no_dimensions, no_effective_rule]
+          description: |-
+            Why no price was found; `none` while `priced` is true.
+
+            The last four are told apart because their remedies differ: the price points
+            at no price list, the list holds no rate for that meter, that exact combination
+            of attributes is not configured, or it is configured but nothing is in effect
+            at the moment asked about.
         price_id:
           type: string
           format: uuid
           description: |-
-            The price selected. Always returned, including when the request identified the item
-            indirectly, so that the choice can be confirmed.
+            The price selected. Returned whenever `priced` is true, including when the
+            request identified the item indirectly, so that the choice can be confirmed.
         plan_name: { type: string }
         unit_amount: { $ref: '#/components/schemas/Money' }
         quantity: { type: string }
@@ -2087,7 +2135,15 @@ components:
         billing_account_id: { type: integer, format: int64 }
         amount:
           allOf: [{ $ref: '#/components/schemas/Money' }]
-          description: In the account's currency.
+          description: |-
+            In the account's currency, and no finer than that currency's smallest unit:
+            two decimals for most, none for the yen. A finer amount is refused here rather
+            than at the checkout page, where the payer would see the provider's own wording
+            instead of an explanation.
+
+            There is a minimum, which differs by currency. Below it the provider's fee
+            exceeds the top-up itself, so such a payment costs more to accept than it brings.
+            The minimum in force is returned with the rejection.
         payment_method_id:
           type: string
           format: uuid
@@ -2242,7 +2298,7 @@ components:
 
     Invoice:
       type: object
-      required: [id, billing_account_id, invoice_no, currency, status, total, period_start, period_end]
+      required: [id, billing_account_id, number, currency, status, total, period_start, period_end]
       properties:
         id: { type: string, format: uuid }
         billing_account_id: { type: integer, format: int64 }
@@ -2421,9 +2477,36 @@ components:
           items: { $ref: '#/components/schemas/Allocation' }
         total_count: { type: integer, format: int64 }
 
+    RefundRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, idempotency_key]
+      description: |-
+        Name exactly one of the three targets. Naming none leaves the amount undecided;
+        naming two leaves it ambiguous, and both would have to be resolved by guessing.
+      properties:
+        invoice_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        subscription_period_id:
+          type: string
+          format: uuid
+          description: |-
+            The period to end early. Use this to give back a prepaid term that still has
+            time left on it.
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            How much to give back. Absent asks for everything still refundable on the target.
+
+            More than what remains is refused rather than reduced to the remainder: a caller
+            asking for more than it can have has miscounted, and quietly giving it less
+            hides that.
+        reason: { type: string, minLength: 8, maxLength: 1024 }
+        idempotency_key: { type: string, minLength: 8, maxLength: 255 }
+
     Refund:
       type: object
-      required: [id, amount, currency, status, created_at]
+      required: [id, currency, status, created_at, requested_amount]
       properties:
         id: { type: string, format: uuid }
         billing_account_id: { type: integer, format: int64 }
