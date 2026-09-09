@@ -499,8 +499,9 @@ paths:
       operationId: create-payment-method-setup
       summary: Begin adding a payment method
       description: |-
-        Returns an address at which the payment provider collects the card details. Nothing is
-        charged. The method appears in the list once the provider confirms it.
+        Returns what is needed to hand the browser over to the payment provider's own card
+        form. Nothing is charged, and the method appears in the list once the provider
+        confirms it.
 
         Card numbers are never sent to or stored by this service.
       requestBody:
@@ -654,6 +655,28 @@ paths:
               schema: { $ref: '#/components/schemas/InvoiceItemList' }
         default: { $ref: '#/components/responses/Error' }
 
+  /account/v1/invoices/{invoiceId}/refund-quote:
+    parameters:
+      - $ref: '#/components/parameters/InvoiceId'
+    get:
+      tags: [billing-history]
+      operationId: get-invoice-refund-quote
+      summary: What refunding this invoice would give back
+      description: |-
+        Show this before asking for a refund. Nothing is recorded and nothing is reserved; the
+        answer follows from what has been paid and what has already been returned, so it may
+        be read as often as required.
+
+        `refundable_amount` is `"0"` once nothing is left, which is also the answer for an
+        invoice already refunded in full.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefundQuote' }
+        default: { $ref: '#/components/responses/Error' }
+
   /account/v1/transactions:
     get:
       tags: [billing-history]
@@ -688,7 +711,7 @@ paths:
         - name: status
           in: query
           required: false
-          schema: { type: string, enum: [active, exhausted, expired, voided] }
+          schema: { type: string, enum: [active, depleted, expired, voided] }
       responses:
         '200':
           description: OK
@@ -705,10 +728,19 @@ paths:
       description: |-
         Give `source_id` to follow one top-up or grant through to everything it paid for. Give
         `target_id` to see which sources paid for one line of an invoice.
+
+        Give `source_type` on its own to separate what cash paid for from what granted credit
+        paid for.
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PageSize'
         - $ref: '#/components/parameters/AccountIdQuery'
+        - name: source_type
+          in: query
+          required: false
+          description: |-
+            `transaction` is money paid in, `credit_grant` is granted credit or a voucher.
+          schema: { type: string, enum: [transaction, credit_grant] }
         - name: source_id
           in: query
           required: false
@@ -784,6 +816,11 @@ paths:
           in: query
           required: false
           schema: { type: string, format: uuid }
+        - name: product_key
+          in: query
+          required: false
+          description: 'Restrict to one service, such as `compute`.'
+          schema: { type: string }
         - name: resource_id
           in: query
           required: false
@@ -1023,6 +1060,14 @@ paths:
         - name: resource_id
           in: query
           required: false
+          schema: { type: string }
+        - name: product_key
+          in: query
+          required: false
+          description: |-
+            Restrict to one service, such as `compute`. Give it alongside `meter_key`: a meter
+            name is unique only within its own service, and more than one service may measure
+            `traffic_bytes`, so `meter_key` on its own can return charges from several.
           schema: { type: string }
         - name: meter_key
           in: query
@@ -1336,6 +1381,31 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrderItemList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /account/v1/orders/{orderId}/refund-quote:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [billing-history]
+      operationId: get-order-refund-quote
+      summary: What refunding this order would give back
+      description: |-
+        Show this before asking for a refund. Nothing is recorded and nothing is reserved; the
+        answer follows from what has been paid and what has already been returned, so it may
+        be read as often as required.
+
+        `refundable_amount` is `"0"` once nothing is left, which is also the answer for an
+        order already refunded in full.
+
+        Refunding an order also ends what it bought and reclaims whatever it provisioned. That
+        is not reflected in the amounts here.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefundQuote' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/v1/projects/{projectId}/orders/{orderId}/items:
@@ -1662,10 +1732,12 @@ components:
           description: Present for `per_unit`.
         tiers_mode:
           type: string
-          enum: [graduated, volume]
+          enum: [none, graduated, volume]
           description: |-
-            Present for `tiered`. `graduated` charges each band at its own rate; `volume`
-            charges everything at the rate of the band the total falls in.
+            `none` for a price that is not tiered, which is most of them.
+
+            Otherwise `graduated` charges each band at its own rate, and `volume` charges
+            everything at the rate of the band the total falls in.
         tiers:
           type: array
           description: Present for `tiered`, in ascending order.
@@ -2115,17 +2187,49 @@ components:
       properties:
         id: { type: string, format: uuid }
         billing_account_id: { type: integer, format: int64 }
-        amount: { $ref: '#/components/schemas/Money' }
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: What is credited to the account, in the account's own currency.
         currency: { type: string }
+        remaining_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            How much of this top-up has not been spent yet. This is the part that can still be
+            returned to where it was paid from.
         status:
           type: string
           enum: [pending, succeeded, failed]
           description: |-
             `pending` until the payment provider confirms. The balance increases on `succeeded`.
+
+            A checkout the payer abandoned ends up `failed` too, with `failure_reason` saying
+            so. Nothing was charged in that case.
+        provider: { type: string, description: Which payment provider collected it. }
+        presentment_currency:
+          type: string
+          description: |-
+            The currency the payer was actually charged in, when the checkout page collected a
+            local one. Absent when it was the same as the account's.
+        presentment_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            What was charged, in `presentment_currency`. It will not equal `amount`, and it is
+            the figure that appears on the payer's card or wallet statement.
+        failure_reason:
+          type: string
+          description: Why it did not go through. Present with `failed`.
         checkout_url:
           type: string
           description: Where the payer completes the payment. Absent once it has completed.
         created_at: { type: string, format: date-time }
+        settled_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |-
+            When the funds arrived. Later than `created_at` — by days for a bank transfer — so
+            reconciling against a statement uses this rather than the moment it was started.
+            Absent until the payment completes.
 
     TopUpCreate:
       type: object
@@ -2199,9 +2303,27 @@ components:
 
     PaymentMethodSetupResult:
       type: object
-      required: [setup_url]
+      required: [setup_id, client_secret, publishable_key]
+      description: |-
+        What the payment provider's browser library needs in order to collect a card. There is
+        no address to redirect to: the form is rendered in the page, and the card goes straight
+        from the browser to the provider.
       properties:
-        setup_url: { type: string, description: Where the payer enters their card details. }
+        setup_id:
+          type: string
+          description: |-
+            The provider's identifier for this attempt. Use it to tell a reloaded page apart
+            from a second attempt.
+        client_secret:
+          type: string
+          description: |-
+            Authorises this one attempt with the provider, and nothing else. Pass it to the
+            provider's library; it is not an API credential and grants no access here.
+        publishable_key:
+          type: string
+          description: |-
+            The provider's public key to initialise its library with. It differs between test
+            and live, so read it from here rather than compiling it in.
         expires_at: { type: string, format: date-time }
 
     PayRequest:
@@ -2405,10 +2527,14 @@ components:
         order_id: { type: string, format: uuid, nullable: true }
         status:
           type: string
-          enum: [pending, succeeded, failed, canceled]
+          enum: [pending, succeeded, failed]
           description: |-
             `pending` is a payment still with the provider. Only one may be pending against any
             one invoice or order.
+
+            `failed` covers a payment the provider refused and one the payer walked away from
+            alike; `failure_reason` says which. There is no separate cancelled state, because
+            what to do next is the same either way — start a new one.
         created_at: { type: string, format: date-time }
 
     TransactionList:
@@ -2426,7 +2552,12 @@ components:
       properties:
         id: { type: string, format: uuid }
         billing_account_id: { type: integer, format: int64 }
-        source_type: { type: string, enum: [promotional, voucher, compensation, membership] }
+        source_type:
+          type: string
+          enum: [promotion, voucher, manual, membership]
+          description: |-
+            Where it came from. `voucher` was redeemed from a code and carries its own
+            restrictions; `manual` was issued directly, typically to put something right.
         name: { type: string }
         amount: { $ref: '#/components/schemas/Money' }
         remaining_amount: { $ref: '#/components/schemas/Money' }
@@ -2437,7 +2568,7 @@ components:
         applies_to_summary:
           type: string
           description: The restrictions in one sentence, ready to display.
-        status: { type: string, enum: [active, exhausted, expired, voided] }
+        status: { type: string, enum: [active, depleted, expired, voided] }
         valid_from: { type: string, format: date-time }
         valid_until: { type: string, format: date-time, nullable: true }
 
@@ -2457,12 +2588,8 @@ components:
         id: { type: string, format: uuid }
         source_type: { type: string, enum: [transaction, credit_grant] }
         source_id: { type: string, format: uuid }
-        source_description:
-          type: string
-          description: 'A readable line, such as "Top-up of 100.00 on 3 September".'
         target_type: { type: string, enum: [hold, order_item, invoice_item] }
         target_id: { type: string, format: uuid }
-        target_description: { type: string }
         amount: { $ref: '#/components/schemas/Money' }
         currency: { type: string }
         allocated_at: { type: string, format: date-time }
@@ -2516,12 +2643,27 @@ components:
         settled_amount:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: What has actually been returned.
+        fee_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            Withheld from what reaches the payer. It applies only to cash returned to a payment
+            method, so it is zero when `destination` is `balance`, and it is never taken out of
+            credit or a voucher.
+
+            `settled_amount` is the amount put back against what was paid; the payer receives
+            that less this.
         currency: { type: string }
         destination:
           type: string
           enum: [balance, provider]
           description: Where the cash went.
-        status: { type: string, enum: [pending, succeeded, failed] }
+        status:
+          type: string
+          enum: [pending, processing, succeeded, failed]
+          description: |-
+            `pending` — accepted, not yet sent to the payment provider. `processing` — with the
+            provider and awaiting its answer, which takes days for some methods. Neither is
+            final, and neither means the money has moved.
         reason: { type: string }
         created_at: { type: string, format: date-time }
 
@@ -2533,6 +2675,62 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Refund' }
         total_count: { type: integer, format: int64 }
+
+    RefundSource:
+      type: object
+      required: [type, amount]
+      properties:
+        type:
+          type: string
+          enum: [cash, credit, voucher]
+          description: |-
+            Where this part of the money came from, and therefore where it goes back to.
+            Only `cash` can reach a card or a spendable balance; credit and vouchers return
+            to themselves and never become cash.
+        amount: { $ref: '#/components/schemas/Money' }
+
+    RefundQuote:
+      type: object
+      required: [refundable_amount, fee_amount, net_amount, currency, destination, sources]
+      description: |-
+        What a full refund would return, and where each part of it would go.
+      properties:
+        refundable_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: The most that can still be returned, before any fee.
+        fee_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            Withheld from the cash part. Zero when `destination` is `balance`, and never taken
+            out of credit or a voucher.
+        net_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: '`refundable_amount` less `fee_amount`.'
+        currency: { type: string }
+        destination:
+          type: string
+          enum: [balance, provider]
+          description: |-
+            Where the cash part would go. `provider` returns it to the method it was paid
+            with; `balance` credits the account instead, which is the answer whenever the cash
+            came from more than one place or never went through a provider at all.
+        sources:
+          type: array
+          description: |-
+            How `refundable_amount` splits by where the money came from. The amounts sum to it.
+
+            Show this rather than a single figure. A part returned as credit or as a voucher
+            does not appear on a card statement, so a customer told only the net amount will
+            ask why less than that arrived.
+          items: { $ref: '#/components/schemas/RefundSource' }
+        self_service_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: |-
+            The last moment a refund can be asked for here. Measured from when the purchase was
+            paid for, not from today. Absent when this cannot be refunded without support at
+            all — metered usage, for one, which is never self-service.
 
     UsageCharge:
       type: object
@@ -2619,7 +2817,12 @@ components:
         billing_account_id: { type: integer, format: int64 }
         product_id: { type: string, format: uuid }
         product_key: { type: string }
-        status: { type: string, enum: [active, suspended, cancelled] }
+        status:
+          type: string
+          enum: [pending, active, suspended, canceled, terminated]
+          description: |-
+            `pending` is a subscription created by an order that has not completed, so it
+            appears in the list before anything under it is running.
         item_count: { type: integer, format: int64 }
 
     SubscriptionList:
@@ -2656,7 +2859,7 @@ components:
           nullable: true
           description: Present for prepaid items. Absent for metered ones, which have no end date.
         auto_renew: { type: boolean }
-        status: { type: string, enum: [pending, active, suspended, cancelled, terminated] }
+        status: { type: string, enum: [pending, active, suspended, canceled, terminated] }
         started_at: { type: string, format: date-time, nullable: true }
         ended_at: { type: string, format: date-time, nullable: true }
 
@@ -2999,10 +3202,16 @@ components:
 
     Allowance:
       type: object
-      required: [id, meter_key, source_type, name, quantity, remaining_quantity, status, valid_from]
+      required: [id, product_key, meter_key, source_type, name, quantity, remaining_quantity, status, valid_from]
       properties:
         id: { type: string, format: uuid }
         billing_account_id: { type: integer, format: int64 }
+        product_key:
+          type: string
+          description: |-
+            Which service it covers, such as `compute`. Read it alongside `meter_key`: a meter
+            name is unique only within its own service, so two allowances for `egress_bytes`
+            may belong to different services and cover different traffic.
         meter_key: { type: string, description: 'What it covers, such as `egress_bytes`.' }
         unit: { type: string, description: 'The unit it is counted in, such as `MiB`.' }
         source_type:
