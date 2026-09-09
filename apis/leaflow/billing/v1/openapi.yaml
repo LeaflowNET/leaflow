@@ -574,6 +574,38 @@ paths:
               schema: { $ref: '#/components/schemas/PaymentResult' }
         default: { $ref: '#/components/responses/Error' }
 
+  /account/v1/payments:
+    post:
+      tags: [payments]
+      operationId: pay-together
+      summary: Pay several outstanding invoices and orders at once
+      description: |-
+        All of them or none. Nothing is settled unless everything named here can be, so a
+        partial result is not a state this can leave behind.
+
+        The balance is not split across the two cases: either it covers the whole total and
+        everything is settled from it, or it is left untouched and the full total is collected
+        through the provider. It is never partly spent against an unpaid remainder.
+
+        When the provider is needed, this returns a checkout address and settles nothing.
+        Call it again once the payment has landed — the balance then covers the total and the
+        same call settles everything.
+
+        Anything already paid is skipped rather than refused, so a repeated call after a
+        partial success is safe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayTogetherRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResult' }
+        default: { $ref: '#/components/responses/Error' }
+
   /account/v1/orders/{orderId}/pay:
     parameters:
       - $ref: '#/components/parameters/OrderId'
@@ -2353,6 +2385,29 @@ components:
             Whether to apply the account balance first. Set it to `false` to charge the full
             amount to a payment method.
         return_url: { type: string }
+
+    PayTogetherRequest:
+      type: object
+      additionalProperties: false
+      description: |-
+        Name at least one invoice or order. They must all belong to the same account and share
+        its currency; anything else is refused rather than partly paid.
+      properties:
+        invoice_ids:
+          type: array
+          items: { type: string, format: uuid }
+          maxItems: 100
+        order_ids:
+          type: array
+          items: { type: string, format: uuid }
+          maxItems: 100
+        return_url: { type: string }
+        idempotency_key:
+          type: string
+          maxLength: 255
+          description: |-
+            Required when the provider is involved, because that is where the money moves. The
+            same key returns the same checkout address instead of opening a second one.
 
     PaymentStatus:
       type: string
