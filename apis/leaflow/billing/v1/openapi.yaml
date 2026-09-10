@@ -29,7 +29,7 @@ tags:
 paths:
   /catalog/v1/products:
     get:
-      summary: The services the platform sells
+      summary: List catalog products
       operationId: list-catalog-products
       tags:
         - catalog
@@ -60,7 +60,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProductId"
     get:
-      summary: What can be bought under one service
+      summary: List catalog plans
       operationId: list-catalog-plans
       tags:
         - catalog
@@ -91,7 +91,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PlanId"
     get:
-      summary: The ways one plan can be bought
+      summary: List catalog prices
       description: |-
         Public list prices only. An account holding a negotiated agreement may be charged less;
         it is never charged more.
@@ -130,7 +130,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/RateCardId"
     get:
-      summary: The rates on a published price list
+      summary: List catalog rates
       description: |-
         Only public price lists are readable here. A list written for a single agreement is not,
         and its identifier cannot be used to reach it.
@@ -174,7 +174,7 @@ paths:
           $ref: "#/components/responses/Error"
   /catalog/v1/estimates:
     post:
-      summary: Estimate a purchase without signing in
+      summary: Estimate a basket
       description: |-
         Uses public list prices. Nothing is reserved and nothing is recorded, so this may be
         called as often as required.
@@ -205,7 +205,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/billing-accounts:
     get:
-      summary: The billing accounts you own
+      summary: List billing accounts
       operationId: list-billing-accounts
       tags:
         - accounts
@@ -222,7 +222,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     post:
-      summary: Open a billing account
+      summary: Create billing account
       description: |-
         The currency is chosen here and cannot be changed afterwards. Everything charged to the
         account — prices, orders, invoices, balance — is denominated in it.
@@ -250,6 +250,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/AccountId"
     get:
+      summary: Get billing account
       operationId: get-billing-account
       tags:
         - accounts
@@ -263,7 +264,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     patch:
-      summary: Change the account's details
+      summary: Update billing account
       description: |-
         The legal name, address and tax identifier are copied onto each invoice when it is
         issued. Changing them here affects invoices issued afterwards, not those already sent.
@@ -291,7 +292,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/AccountId"
     get:
-      summary: What the account holds and what it can still spend
+      summary: Get account balance
       operationId: get-account-balance
       tags:
         - accounts
@@ -306,7 +307,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/projects:
     get:
-      summary: The projects your accounts pay for
+      summary: List paid projects
       operationId: list-paid-projects
       tags:
         - accounts
@@ -332,7 +333,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Which account pays for a project
+      summary: Find project payer
       description: Returns 404 when no account pays for it. No resources can be created until one does.
       operationId: find-project-payer
       tags:
@@ -347,7 +348,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     put:
-      summary: Choose which account pays for a project
+      summary: Set project payer
       description: |-
         Charges already recorded remain with the account that was paying when they occurred, and
         are still invoiced to it. Metered resources are settled up to the moment of the change.
@@ -375,7 +376,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     delete:
-      summary: Stop paying for a project
+      summary: Unbind project payer
       description: |-
         Permitted only when the project has nothing left to charge: no resources accruing
         charges, no subscriptions still running, no usage awaiting invoicing, and no unpaid
@@ -397,7 +398,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     post:
-      summary: Invoice a project's outstanding usage now
+      summary: Settle project usage
       description: |-
         Metered usage is normally invoiced at the end of the month. This issues an invoice for
         everything charged to the project so far, to the account currently paying for it.
@@ -418,6 +419,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/top-ups:
     get:
+      summary: List top ups
       operationId: list-top-ups
       tags:
         - payments
@@ -435,7 +437,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     post:
-      summary: Add funds to an account
+      summary: Create top up
       description: |-
         Returns a checkout address. The balance increases when the payment provider confirms the
         payment, which may be after this call returns.
@@ -469,7 +471,7 @@ paths:
           type: string
           format: uuid
     get:
-      summary: Whether a payment has completed
+      summary: Get top up
       operationId: get-top-up
       tags:
         - payments
@@ -484,6 +486,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/payment-methods:
     get:
+      summary: List payment methods
       operationId: list-payment-methods
       tags:
         - payments
@@ -502,7 +505,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/payment-methods/setup:
     post:
-      summary: Begin adding a payment method
+      summary: Create payment method setup
       description: |-
         Returns what is needed to hand the browser over to the payment provider's own card
         form. Nothing is charged, and the method appears in the list once the provider
@@ -531,7 +534,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PaymentMethodId"
     put:
-      summary: Choose which method is used automatically
+      summary: Set default payment method
       operationId: set-default-payment-method
       tags:
         - payments
@@ -548,7 +551,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PaymentMethodId"
     delete:
-      summary: Remove a payment method
+      summary: Delete payment method
       description: |-
         Refused when it is the only method on an account that has resources billed by the hour,
         as there would be nothing left to charge when the balance runs out.
@@ -564,7 +567,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/InvoiceId"
     post:
-      summary: Pay an outstanding invoice
+      summary: Pay invoice
       description: |-
         Applies the account balance first, then charges the remainder to a payment method. Give
         `payment_method_id` to choose one, or omit it to use the default.
@@ -593,7 +596,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/payments:
     post:
-      summary: Pay several outstanding invoices and orders at once
+      summary: Pay together
       description: |-
         All of them or none. Nothing is settled unless everything named here can be, so a
         partial result is not a state this can leave behind.
@@ -630,7 +633,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     post:
-      summary: Complete payment for an order
+      summary: Pay order
       description: |-
         Use this to resume an order whose checkout was interrupted.
 
@@ -657,6 +660,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/invoices:
     get:
+      summary: List invoices
       operationId: list-invoices
       tags:
         - billing-history
@@ -684,6 +688,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/InvoiceId"
     get:
+      summary: Get invoice
       operationId: get-invoice
       tags:
         - billing-history
@@ -700,7 +705,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/InvoiceId"
     get:
-      summary: What an invoice is made up of
+      summary: List invoice items
       operationId: list-invoice-items
       tags:
         - billing-history
@@ -720,7 +725,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/InvoiceId"
     get:
-      summary: What refunding this invoice would give back
+      summary: Get invoice refund quote
       description: |-
         Show this before asking for a refund. Nothing is recorded and nothing is reserved; the
         answer follows from what has been paid and what has already been returned, so it may
@@ -742,7 +747,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/transactions:
     get:
-      summary: Every movement of funds on the account
+      summary: List transactions
       operationId: list-transactions
       tags:
         - billing-history
@@ -763,7 +768,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/credit-grants:
     get:
-      summary: Credit and vouchers held on the account
+      summary: List credit grants
       description: |-
         Each grant shows what remains and what it may be used for. Credit is spent before cash
         and cannot be withdrawn.
@@ -795,7 +800,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/allocations:
     get:
-      summary: Where each amount went
+      summary: List allocations
       description: |-
         Give `source_id` to follow one top-up or grant through to everything it paid for. Give
         `target_id` to see which sources paid for one line of an invoice.
@@ -841,6 +846,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/refunds:
     get:
+      summary: List refunds
       operationId: list-refunds
       tags:
         - billing-history
@@ -858,7 +864,7 @@ paths:
         default:
           $ref: "#/components/responses/Error"
     post:
-      summary: Ask for a refund
+      summary: Request refund
       description: |-
         Refunding ends the subscription and reclaims whatever it provisioned. That is the
         difference from letting a period lapse: a lapsed period keeps the machine around
@@ -890,7 +896,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/usage-charges:
     get:
-      summary: Metered charges, line by line
+      summary: List usage charges
       description: |-
         Includes charges that have not been invoiced yet, which is how the current month's
         spending is seen before the invoice is issued.
@@ -931,6 +937,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/subscriptions:
     get:
+      summary: List subscriptions
       operationId: list-subscriptions
       tags:
         - subscriptions
@@ -955,7 +962,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/subscription-items:
     get:
-      summary: What has been bought, and when each renews
+      summary: List subscription items
       operationId: list-subscription-items
       tags:
         - subscriptions
@@ -988,7 +995,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ItemId"
     post:
-      summary: Renew now rather than waiting for the renewal date
+      summary: Renew subscription item
       description: |-
         Extends the paid period from its current end, not from today, so renewing early does not
         shorten what has already been paid for.
@@ -1017,7 +1024,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ItemId"
     put:
-      summary: Turn automatic renewal on or off
+      summary: Set auto renew
       description: |-
         When on, the account balance is charged at the renewal date. Turning it off lets the
         current period run to its end and stops the resource afterwards.
@@ -1041,7 +1048,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/codes/preview:
     post:
-      summary: Check what a code would give you
+      summary: Preview code
       description: |-
         Nothing is recorded and the code is not consumed. Use it to show the customer the effect
         before they commit.
@@ -1065,7 +1072,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/codes/redeem:
     post:
-      summary: Redeem a code
+      summary: Redeem code
       description: |-
         A voucher code adds credit to the account. A discount code records the entitlement, which
         is then applied to the next qualifying purchase.
@@ -1094,7 +1101,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Who pays for this project, and how much is left
+      summary: Get project billing account
       description: |-
         A deliberately narrow view: the payer's identity, its currency, and how much can still
         be spent. Cards, invoices and transaction history are not included; they belong to the
@@ -1120,7 +1127,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: What this project spent, grouped
+      summary: List project spend
       description: |-
         Covers a closed time range. Both bounds are required: a total without a stated period
         cannot be reconciled against an invoice.
@@ -1169,7 +1176,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Metered charges for this project, line by line
+      summary: List project usage charges
       description: |-
         The individual charges behind the figures in `/spend`. Amounts here sum to the totals
         reported there over the same period.
@@ -1215,7 +1222,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Which services this project has enabled
+      summary: List project subscriptions
       operationId: list-project-subscriptions
       tags:
         - projects
@@ -1237,7 +1244,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: What this project has bought, and when each renews
+      summary: List project subscription items
       operationId: list-project-subscription-items
       tags:
         - projects
@@ -1266,7 +1273,7 @@ paths:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/ItemId"
     put:
-      summary: Turn automatic renewal on or off
+      summary: Set project auto renew
       description: |-
         Automatic renewal draws on the paying account's balance, which a project member may
         commit. Paying by card requires the account owner and is done from the billing centre.
@@ -1294,7 +1301,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Purchases made for this project
+      summary: List project orders
       description: |-
         An order awaiting payment shows what is outstanding. Paying it is done from the billing
         centre by the account owner.
@@ -1327,6 +1334,7 @@ paths:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/OrderId"
     get:
+      summary: Get project order
       operationId: get-project-order
       tags:
         - projects
@@ -1345,7 +1353,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: What is accruing charges right now
+      summary: List project active resources
       description: A resource that is running but does not appear here is not being charged for.
       operationId: list-project-active-resources
       tags:
@@ -1373,7 +1381,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     post:
-      summary: Price a purchase before making it
+      summary: Quote for a project
       description: |-
         Priced in the paying account's currency, and at any rate negotiated for that account.
         Nothing is reserved and nothing is recorded, so this may be called as often as required.
@@ -1405,7 +1413,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/allowances:
     get:
-      summary: Included and purchased quantities, and what is left
+      summary: List allowances
       description: |-
         A quantity rather than an amount of money: bytes, seconds or tokens that are used before
         anything is charged for.
@@ -1458,7 +1466,7 @@ paths:
           type: string
           format: uuid
     get:
-      summary: What has been used from one quantity
+      summary: List allowance consumptions
       description: |-
         Each entry names the charge it covered, so the granted amount, what has been used and
         what remains all reconcile.
@@ -1479,7 +1487,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/orders:
     get:
-      summary: Purchases made against your accounts
+      summary: List orders
       description: |-
         An order in `pending` still owes money; `amount_due` states how much and
         `reservation_expires_at` states how long it can still be paid.
@@ -1516,6 +1524,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     get:
+      summary: Get order
       operationId: get-order
       tags:
         - billing-history
@@ -1532,7 +1541,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     post:
-      summary: Call off a plan change that has not taken effect yet
+      summary: Cancel scheduled change
       description: |-
         Only for a change scheduled for the end of the period, and only while it is still
         pending. An immediate change has already happened by the time it is placed, and there is
@@ -1556,7 +1565,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     get:
-      summary: What an order is made up of
+      summary: List order items
       description: One entry per item bought, with the price charged and the period it covers.
       operationId: list-order-items
       tags:
@@ -1577,7 +1586,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     get:
-      summary: What refunding this order would give back
+      summary: Get order refund quote
       description: |-
         Show this before asking for a refund. Nothing is recorded and nothing is reserved; the
         answer follows from what has been paid and what has already been returned, so it may
@@ -1605,7 +1614,7 @@ paths:
       - $ref: "#/components/parameters/ProjectId"
       - $ref: "#/components/parameters/OrderId"
     get:
-      summary: What an order is made up of
+      summary: List project order items
       operationId: list-project-order-items
       tags:
         - projects
@@ -1627,7 +1636,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: Quantities this project can draw on
+      summary: List project allowances
       description: |-
         These belong to the paying account and are shared with every other project it pays for,
         so what is left here may be consumed elsewhere.
@@ -1655,7 +1664,7 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/entitlements:
     get:
-      summary: What your accounts can currently use
+      summary: List entitlements
       description: |-
         Capabilities that come with what has been bought. A capability that is not held simply
         does not appear, so that "this does not exist" and "this has not been bought" cannot be
@@ -1692,7 +1701,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
     get:
-      summary: What this project can currently use
+      summary: List project entitlements
       description: |-
         Includes capabilities bought for this project and those the paying account holds at
         account level.
