@@ -1,74 +1,39 @@
 openapi: 3.1.0
 info:
-  description: 'The AI assistant inside the console: conversations, messages, tool calls and their
-    approval, attachments, and connecting the assistant to instant messaging platforms such as WeChat,
-    Feishu and Telegram.
-
+  title: Leaflow Assistant API
+  version: 1.0.0
+  description: |-
+    The AI assistant inside the console: conversations, messages, tool calls and their approval, attachments, and connecting the assistant to instant messaging platforms such as WeChat, Feishu and Telegram.
 
     ## A conversation
 
-
-    The path one conversation takes, end to end. It names the operations that path needs, not all of
-    them — the full list is below, and it also covers folders, attachments, memories, skills and the
-    instant messaging side.
-
+    The path one conversation takes, end to end. It names the operations that path needs, not all of them — the full list is below, and it also covers folders, attachments, memories, skills and the instant messaging side.
 
     1. `POST /api/v1/threads` creates one;
+    2. `POST /api/v1/threads/{thread}/messages` sends a message and returns a `turnId` at once; the assistant runs in the background;
+    3. `GET /api/v1/threads/{thread}` returns the conversation document to render, whose `stream` is where live output arrives;
+    4. When the assistant needs the user, the document's `wait` says which kind: approving a batch of tool calls (`POST /api/v1/threads/{thread}/approvals/{batch}`), or answering a few questions (`POST /api/v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
 
-    2. `POST /api/v1/threads/{thread}/messages` sends a message and returns a `turnId` at once; the
-    assistant runs in the background;
-
-    3. `GET /api/v1/threads/{thread}` returns the conversation document to render, whose `stream` is where
-    live output arrives;
-
-    4. When the assistant needs the user, the document''s `wait` says which kind: approving a batch of
-    tool calls (`POST /api/v1/threads/{thread}/approvals/{batch}`), or answering a few questions (`POST
-    /api/v1/threads/{thread}/questions/{item}`). It continues on its own once that is handled.
-
-
-    Sending a file takes two steps: `POST /api/v1/attachments` for an id, then put that id in
-    `attachmentIds` when sending the message. Images, text and arbitrary binaries all go through the
-    same two steps; what differs is how the assistant reads them afterwards, which the upload
-    response''s `kind` says.
-
+    Sending a file takes two steps: `POST /api/v1/attachments` for an id, then put that id in `attachmentIds` when sending the message. Images, text and arbitrary binaries all go through the same two steps; what differs is how the assistant reads them afterwards, which the upload response's `kind` says.
 
     ## Live output
 
-
     ```
-
     GET /api/v1/turns/{turn}/stream?ticket=<ticket>&cursor=<cursor>
-
     ```
 
+    This is a Server-Sent Events stream, which is why it is not in the operation list below and why generated clients have no method for it. Open it with `EventSource`, or any SSE client. It is how live output arrives; polling the document on a timer is not the intended way to follow a conversation.
 
-    This is a Server-Sent Events stream, which is why it is not in the operation list below and why
-    generated clients have no method for it. Open it with `EventSource`, or any SSE client. It is how
-    live output arrives; polling the document on a timer is not the intended way to follow a
-    conversation.
-
-
-    - `path` and `ticket` both come from the conversation document''s `stream`. `path` is relative,
-    resolved against the address the document was fetched from;
-
-    - `cursor` is where to start, from the document''s `cursor`. Omit it to start at the beginning of
-    what is still available;
-
+    - `path` and `ticket` both come from the conversation document's `stream`. `path` is relative, resolved against the address the document was fetched from;
+    - `cursor` is where to start, from the document's `cursor`. Omit it to start at the beginning of what is still available;
     - every event is one incremental edit to that same document, so the same rendering logic applies;
-
-    - the connection has a lifetime and closes cleanly when it ends. With `EventSource` the browser
-    reconnects with `Last-Event-ID` and resumes by itself, so nothing needs handling;
-
-    - three terminal events: `done` this turn finished (carrying its final status), `paused` the
-    assistant is waiting on the user (fetch the document again and read `wait`), `stalled` execution
-    was interrupted and will not resume — do not reconnect.'
-  title: Leaflow Assistant API
-  version: 1.0.0
+    - the connection has a lifetime and closes cleanly when it ends. With `EventSource` the browser reconnects with `Last-Event-ID` and resumes by itself, so nothing needs handling;
+    - three terminal events: `done` this turn finished (carrying its final status), `paused` the assistant is waiting on the user (fetch the document again and read `wait`), `stalled` execution was interrupted and will not resume — do not reconnect.
 servers:
   - url: https://assistant.leaflow.cloud
     description: Threads, messages and tool calls
 security:
-- bearerAuth: []
+  - bearerAuth: []
 paths:
   /api/v1/attachments:
     post:
@@ -81,35 +46,35 @@ paths:
         The returned `kind` says how the assistant will see it. An `image` is read directly, and only by models that accept image input. A small `text` file is placed inline in the message. A large `text` file, and anything `binary`, arrives as a reference the assistant reads on demand — for a binary that usually means downloading it onto one of the project's cloud instances.
       operationId: upload-attachment
       tags:
-      - Attachment
+        - Attachment
       parameters:
-      - in: query
-        name: filename
-        required: false
-        description: The name to show and to give the assistant. Images do not need one; anything else does, because the name is most of what says what the file is. Falls back to a generated name.
-        schema:
-          maxLength: 255
-          type: string
+        - name: filename
+          in: query
+          required: false
+          description: The name to show and to give the assistant. Images do not need one; anything else does, because the name is most of what says what the file is. Falls back to a generated name.
+          schema:
+            type: string
+            maxLength: 255
       requestBody:
-        content:
-          '*/*':
-            schema:
-              format: binary
-              type: string
         required: true
+        content:
+          "*/*":
+            schema:
+              type: string
+              format: binary
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UploadedResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/UploadedResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/attachments/{attachment}:
     get:
       summary: Download a file
@@ -119,545 +84,545 @@ paths:
         Only an attachment whose `kind` is `image` comes back with its own image type and is usable as the address of an `<img>`. Everything else is served as `application/octet-stream` with `Content-Disposition: attachment`, deliberately: an uploaded file is arbitrary bytes under a name its uploader chose, and serving it back inline would run it on this origin.
       operationId: download-attachment
       tags:
-      - Attachment
+        - Attachment
       parameters:
-      - in: path
-        name: attachment
-        required: true
-        schema:
-          type: string
+        - name: attachment
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
-          content:
-            '*/*':
-              schema:
-                format: binary
-                type: string
+        "200":
           description: OK
           headers:
             Cache-Control:
-              description: 'Private and long-lived: these bytes are addressed by an id that is never reused, so they never change; and they belong to one person, so they must not enter any shared cache.'
+              description: "Private and long-lived: these bytes are addressed by an id that is never reused, so they never change; and they belong to one person, so they must not enter any shared cache."
               schema:
                 type: string
             Content-Disposition:
               description: Present on everything that is not an image, carrying the original filename. Absent on images, which are meant to be rendered in place.
               schema:
                 type: string
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/bindings:
     get:
       summary: List bindings
       description: Filter by channelId to show, per channel, who is bound to it.
       operationId: list-bindings
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - description: How many entries this page returns at most
-        explode: false
-        in: query
-        name: limit
-        schema:
-          default: 50
+        - name: limit
+          in: query
           description: How many entries this page returns at most
-          format: int64
-          maximum: 200
-          minimum: 1
-          type: integer
-      - description: How many to skip. To page deeper, use the cursor-paged operation instead
-        explode: false
-        in: query
-        name: offset
-        schema:
+          explode: false
+          schema:
+            description: How many entries this page returns at most
+            type: integer
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
           description: How many to skip. To page deeper, use the cursor-paged operation instead
-          format: int64
-          maximum: 10000
-          minimum: 0
-          type: integer
-      - explode: false
-        in: query
-        name: platform
-        schema:
-          type: string
-      - explode: false
-        in: query
-        name: channelId
-        schema:
-          format: uuid
-          type: string
-      - description: Return only bindings that are active
-        explode: false
-        in: query
-        name: active
-        schema:
+          explode: false
+          schema:
+            description: How many to skip. To page deeper, use the cursor-paged operation instead
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: platform
+          in: query
+          explode: false
+          schema:
+            type: string
+        - name: channelId
+          in: query
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: active
+          in: query
           description: Return only bindings that are active
-          type: boolean
+          explode: false
+          schema:
+            description: Return only bindings that are active
+            type: boolean
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageBindingResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageBindingResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/bindings/{binding}:
-    delete:
-      summary: Remove a binding
-      operationId: delete-binding
-      tags:
-      - Onboarding
-      parameters:
-      - in: path
-        name: binding
-        required: true
-        schema:
-          format: uuid
-          type: string
-      responses:
-        '204':
-          description: No Content
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
     get:
       summary: Get a binding
       operationId: get-binding
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: binding
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: binding
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BindingResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/BindingResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove a binding
+      operationId: delete-binding
+      tags:
+        - Onboarding
+      parameters:
+        - name: binding
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels:
     get:
       summary: List channels
       operationId: list-channels
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - description: How many entries this page returns at most
-        explode: false
-        in: query
-        name: limit
-        schema:
-          default: 50
+        - name: limit
+          in: query
           description: How many entries this page returns at most
-          format: int64
-          maximum: 200
-          minimum: 1
-          type: integer
-      - description: How many to skip. To page deeper, use the cursor-paged operation instead
-        explode: false
-        in: query
-        name: offset
-        schema:
+          explode: false
+          schema:
+            description: How many entries this page returns at most
+            type: integer
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
           description: How many to skip. To page deeper, use the cursor-paged operation instead
-          format: int64
-          maximum: 10000
-          minimum: 0
-          type: integer
-      - explode: false
-        in: query
-        name: platform
-        schema:
-          type: string
-      - description: Return only channels that are enabled
-        explode: false
-        in: query
-        name: active
-        schema:
+          explode: false
+          schema:
+            description: How many to skip. To page deeper, use the cursor-paged operation instead
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: platform
+          in: query
+          explode: false
+          schema:
+            type: string
+        - name: active
+          in: query
           description: Return only channels that are enabled
-          type: boolean
+          explode: false
+          schema:
+            description: Return only channels that are enabled
+            type: boolean
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageChannelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Create a channel
-      description: 'Which side owns the webhook secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, do not send webhookSecret — the one we generate is returned exactly once in this response and cannot be retrieved again; miss it and the only way forward is rotating to a new one. For a `supplied` platform you must pass the secret from that platform''s own console, and webhookSecret in the response is null.'
+      description: Which side owns the webhook secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, do not send webhookSecret — the one we generate is returned exactly once in this response and cannot be retrieved again; miss it and the only way forward is rotating to a new one. For a `supplied` platform you must pass the secret from that platform's own console, and webhookSecret in the response is null.
       operationId: create-channel
       tags:
-      - Onboarding
+        - Onboarding
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChannelRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateChannelRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelWithSecretResponseBody'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelWithSecretResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}:
-    delete:
-      summary: Delete a channel
-      description: The channel stops accepting inbound messages and every binding on it stops working. This operation remains available while the project is suspended or being cleaned up.
-      operationId: delete-channel
-      tags:
-      - Onboarding
-      parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
-      responses:
-        '204':
-          description: No Content
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
     get:
       summary: Get a channel
       operationId: get-channel
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Update a channel
       description: Only the fields present are changed. senderPolicy and allowFrom go together, and senderPolicy decides whether they are replaced. For platforms held open by a long-lived connection the change applies once that connection is rebuilt; for webhook platforms it applies at once.
       operationId: update-channel
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateChannelRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdateChannelRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a channel
+      description: The channel stops accepting inbound messages and every binding on it stops working. This operation remains available while the project is suspended or being cleaned up.
+      operationId: delete-channel
+      tags:
+        - Onboarding
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}/binding-codes:
     post:
       summary: Issue a binding code
       description: Produces a single-use code to hand to the person being bound. They send that code to the assistant from their own account on that platform, which completes the binding. A binding can only be established this way, by the person themselves — a platform account cannot be named directly. Codes expire and have to be reissued.
       operationId: create-binding-code
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BindingCodeResponseBody'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/BindingCodeResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}/rejections:
     get:
       summary: List recently rejected inbound messages
       description: For diagnosing "I sent a message and the assistant never answered". Returns the inbound messages this channel rejected most recently, newest first, each with its reason. The most common reason is that the sender is not bound yet.
       operationId: list-channel-rejections
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
-      - explode: false
-        in: query
-        name: limit
-        schema:
-          default: 50
-          format: int64
-          maximum: 100
-          minimum: 0
-          type: integer
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          explode: false
+          schema:
+            type: integer
+            format: int64
+            default: 50
+            minimum: 0
+            maximum: 100
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RejectionListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RejectionListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}/secret:
     post:
       summary: Rotate the webhook secret
-      description: 'Replaces the webhook secret. The old one stops working immediately and the channel drops back to awaiting confirmation from the platform. Which side owns the secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, send no body — the new secret is returned in this response only and cannot be retrieved again. For a `supplied` platform you must pass the new secret from that platform''s own console.'
+      description: Replaces the webhook secret. The old one stops working immediately and the channel drops back to awaiting confirmation from the platform. Which side owns the secret is decided by the platform; see secretSource on list-platforms. For a `generated` platform, send no body — the new secret is returned in this response only and cannot be retrieved again. For a `supplied` platform you must pass the new secret from that platform's own console.
       operationId: rotate-channel-secret
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RotateSecretRequestBody'
+              $ref: "#/components/schemas/RotateSecretRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookSecretResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/WebhookSecretResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}/sender-check:
     get:
       summary: Test whether a sender would be let through
-      description: 'For checking a sender policy after changing it. Sends nothing and changes nothing: it runs exactly the same decision a real inbound message goes through, and says which rule produced the answer. The binding-code rule cannot be tested this way — whether something is a binding code depends on what the sender actually wrote.'
+      description: "For checking a sender policy after changing it. Sends nothing and changes nothing: it runs exactly the same decision a real inbound message goes through, and says which rule produced the answer. The binding-code rule cannot be tested this way — whether something is a binding code depends on what the sender actually wrote."
       operationId: check-sender
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
-      - description: That person's id on the platform, the same value that appears in bindings and rejections
-        explode: false
-        in: query
-        name: peerId
-        required: true
-        schema:
-          description: That person's id on the platform, the same value bindings and rejections carry
-          type: string
-      - description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Leave it empty to mean there is no username
-        explode: false
-        in: query
-        name: username
-        schema:
-          description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Empty means there is no username
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: peerId
+          in: query
+          required: true
+          description: That person's id on the platform, the same value that appears in bindings and rejections
+          explode: false
+          schema:
+            description: That person's id on the platform, the same value bindings and rejections carry
+            type: string
+        - name: username
+          in: query
+          description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Leave it empty to mean there is no username
+          explode: false
+          schema:
+            description: Only platforms with usernames, such as Telegram, can supply this. Without the @. Empty means there is no username
+            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SenderCheckResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SenderCheckResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channel}/weixin-logins:
     post:
       summary: Begin a WeChat QR login
-      description: 'A personal WeChat channel can only send and receive once its owner has signed in by scanning a QR code. This returns that code; poll `GET /v1/weixin-logins/{login}` for progress, and when the status asks for a verification code, submit it with `POST /v1/weixin-logins/{login}/verify-code`.'
+      description: A personal WeChat channel can only send and receive once its owner has signed in by scanning a QR code. This returns that code; poll `GET /v1/weixin-logins/{login}` for progress, and when the status asks for a verification code, submit it with `POST /v1/weixin-logins/{login}/verify-code`.
       operationId: begin-weixin-login
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: channel
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LoginResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/platforms:
     get:
       summary: List platforms that can be connected
-      description: 'The instant messaging platforms that can currently be connected, along with the flow and the credential fields each one needs. The create-channel form is driven entirely by this response: setupMethod decides between a credential form and a QR flow, credentialFields is what to ask for, and secretSource decides whether there is a webhook secret field at all.'
+      description: "The instant messaging platforms that can currently be connected, along with the flow and the credential fields each one needs. The create-channel form is driven entirely by this response: setupMethod decides between a credential form and a QR flow, credentialFields is what to ask for, and secretSource decides whether there is a webhook secret field at all."
       operationId: list-platforms
       tags:
-      - Onboarding
+        - Onboarding
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlatformListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/PlatformListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/weixin-logins/{login}:
     get:
       summary: Get the state of a QR login
       description: Poll this until the status is success or failure. When the status asks for a verification code, submit it with the verification-code operation.
       operationId: get-weixin-login
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: login
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: login
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LoginResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/weixin-logins/{login}/verify-code:
     post:
       summary: Submit a login verification code
       description: For when WeChat asks for an SMS or device code after the scan. The person who started the login gets that code on their own phone.
       operationId: submit-weixin-verify-code
       tags:
-      - Onboarding
+        - Onboarding
       parameters:
-      - in: path
-        name: login
-        required: true
-        schema:
-          format: uuid
-          type: string
+        - name: login
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/VerifyCodeRequestBody'
-        required: true
+              $ref: "#/components/schemas/VerifyCodeRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LoginResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/dynamic-calls/{call}/result:
     post:
       summary: Report what an action produced
@@ -669,49 +634,49 @@ paths:
         The first result is the one that counts. A later one is refused rather than replacing it.
       operationId: submit-dynamic-call-result
       tags:
-      - Thread
+        - Thread
       parameters:
-      - description: The id of the tool call entry in the conversation.
-        in: path
-        name: call
-        required: true
-        schema:
-          type: string
+        - name: call
+          in: path
+          required: true
+          description: The id of the tool call entry in the conversation.
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DynamicCallResultRequestBody'
-        required: true
+              $ref: "#/components/schemas/DynamicCallResultRequestBody"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/folders:
     get:
       summary: List folders
-      description: 'The current account''s folders in this project, oldest first. That order is fixed and does not react to what happens inside a folder: a folder is a place on the screen, and a place that moves whenever something is put into it is not one anybody can aim at. Not paginated — there is a cap on how many there can be, and all of them come back at once.'
+      description: "The current account's folders in this project, oldest first. That order is fixed and does not react to what happens inside a folder: a folder is a place on the screen, and a place that moves whenever something is put into it is not one anybody can aim at. Not paginated — there is a cap on how many there can be, and all of them come back at once."
       operationId: list-folders
       tags:
-      - Folder
+        - Folder
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FolderListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/FolderListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Create a folder
       description: |-
@@ -720,83 +685,83 @@ paths:
         Names are unique within an account's folders in this project, because the only way to aim at a folder is to read its name.
       operationId: create-folder
       tags:
-      - Folder
+        - Folder
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateFolderRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateFolderRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FolderResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/FolderResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/folders/{folder}:
     get:
       summary: Fetch one folder
-      description: 'The list returns every folder at once, so this is for the case the list does not cover: a page opened straight at a folder, holding nothing but the id from the address bar. Its conversations are a separate request — `GET /api/v1/threads?folder=<id>`.'
+      description: "The list returns every folder at once, so this is for the case the list does not cover: a page opened straight at a folder, holding nothing but the id from the address bar. Its conversations are a separate request — `GET /api/v1/threads?folder=<id>`."
       operationId: get-folder
       tags:
-      - Folder
+        - Folder
       parameters:
-      - in: path
-        name: folder
-        required: true
-        schema:
-          type: string
+        - name: folder
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FolderResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/FolderResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Rename a folder
       description: The conversations in it are untouched, and none of them move in the list — a folder's name is not part of what any conversation is about.
       operationId: update-folder
       tags:
-      - Folder
+        - Folder
       parameters:
-      - in: path
-        name: folder
-        required: true
-        schema:
-          type: string
+        - name: folder
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateFolderRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdateFolderRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FolderResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/FolderResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a folder
       description: |-
@@ -805,64 +770,64 @@ paths:
         Idempotent: deleting a folder that is already gone succeeds and changes nothing.
       operationId: delete-folder
       tags:
-      - Folder
+        - Folder
       parameters:
-      - in: path
-        name: folder
-        required: true
-        schema:
-          type: string
+        - name: folder
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/memories:
     get:
       summary: List what the assistant remembers
-      description: 'Facts the assistant has written down for the current account in this project. They appear at the start of every later conversation. Members of the same project each have their own, and this returns only the current account''s. Not paginated: there is a cap on how many there can be, and all of them come back at once.'
+      description: "Facts the assistant has written down for the current account in this project. They appear at the start of every later conversation. Members of the same project each have their own, and this returns only the current account's. Not paginated: there is a cap on how many there can be, and all of them come back at once."
       operationId: list-memories
       tags:
-      - Thread
+        - Thread
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MemoryListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MemoryListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/memories/{memory}:
     delete:
       summary: Delete one memory
       description: The assistant stops remembering this. It takes effect at once, so the next conversation will not carry it. The assistant may well learn the same thing again.
       operationId: delete-memory
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: memory
-        required: true
-        schema:
-          type: string
+        - name: memory
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/skills:
     get:
       summary: List the skills this project can use
@@ -874,20 +839,20 @@ paths:
         visible to everyone in it, whoever wrote them.
       operationId: list-skills
       tags:
-      - Skill
+        - Skill
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SkillListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Write a skill for this project
       description: |-
@@ -899,53 +864,53 @@ paths:
         The built-in is untouched and reappears if the project's is deleted.
       operationId: put-skill
       tags:
-      - Skill
+        - Skill
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SkillRequestBody'
-        required: true
+              $ref: "#/components/schemas/SkillRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SkillResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/skills/{skill}:
     get:
       summary: Read one skill, with its files
       description: Works for built-in skills too; they simply cannot be written.
       operationId: get-skill
       tags:
-      - Skill
+        - Skill
       parameters:
-      - description: The skill's name, as `list-skills` returned it.
-        in: path
-        name: skill
-        required: true
-        schema:
-          type: string
+        - name: skill
+          in: path
+          required: true
+          description: The skill's name, as `list-skills` returned it.
+          schema:
+            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SkillResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Turn a skill on or off
       description: |-
@@ -956,167 +921,201 @@ paths:
         way, write a project skill of the same name and turn that off.
       operationId: set-skill-enabled
       tags:
-      - Skill
+        - Skill
       parameters:
-      - in: path
-        name: skill
-        required: true
-        schema:
-          type: string
+        - name: skill
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SkillEnabledRequestBody'
-        required: true
+              $ref: "#/components/schemas/SkillEnabledRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SkillResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SkillResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete this project's skill
       description: A built-in skill of the same name, if there was one, becomes visible again.
       operationId: delete-skill
       tags:
-      - Skill
+        - Skill
       parameters:
-      - in: path
-        name: skill
-        required: true
-        schema:
-          type: string
+        - name: skill
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads:
     get:
       summary: List conversations
-      description: 'Ordered by most recent activity, limited to the current account''s conversations in the current project. `archived` selects between two sets rather than widening one: archived conversations are absent from the default list, and turning the flag on shows those instead.'
+      description: "Ordered by most recent activity, limited to the current account's conversations in the current project. `archived` selects between two sets rather than widening one: archived conversations are absent from the default list, and turning the flag on shows those instead."
       operationId: list-threads
       tags:
-      - Thread
+        - Thread
       parameters:
-      - description: Search titles, case-insensitively. Leave it empty for the most recent conversations
-        explode: false
-        in: query
-        name: q
-        schema:
-          description: Search titles, case-insensitively. Empty returns the most recent conversations
-          maxLength: 100
-          type: string
-      - description: When true, returns **only** archived conversations; otherwise only unarchived ones
-        explode: false
-        in: query
-        name: archived
-        schema:
+        - name: q
+          in: query
+          description: Search titles, case-insensitively. Leave it empty for the most recent conversations
+          explode: false
+          schema:
+            description: Search titles, case-insensitively. Empty returns the most recent conversations
+            type: string
+            maxLength: 100
+        - name: archived
+          in: query
           description: When true, returns **only** archived conversations; otherwise only unarchived ones
-          type: boolean
-      - description: 'Narrow the list to one folder. Omitting it returns conversations from every folder and from none; a folder id returns that folder''s; the empty value (`?folder=`) returns the ones that are in no folder at all. Empty is not the same as omitted, and a sidebar needs both: "chats" is exactly the ungrouped set, and asking for everything would let filed conversations crowd it out of the limit.'
-        explode: false
-        in: query
-        name: folder
-        schema:
-          description: A folder id, or empty for the conversations in no folder
-          maxLength: 64
-          type: string
-      - description: |-
-          Where the previous page ended, from its `nextCursor`. Omit it for the first page.
+          explode: false
+          schema:
+            description: When true, returns **only** archived conversations; otherwise only unarchived ones
+            type: boolean
+        - name: folder
+          in: query
+          description: 'Narrow the list to one folder. Omitting it returns conversations from every folder and from none; a folder id returns that folder''s; the empty value (`?folder=`) returns the ones that are in no folder at all. Empty is not the same as omitted, and a sidebar needs both: "chats" is exactly the ungrouped set, and asking for everything would let filed conversations crowd it out of the limit.'
+          explode: false
+          schema:
+            description: A folder id, or empty for the conversations in no folder
+            type: string
+            maxLength: 64
+        - name: cursor
+          in: query
+          description: |-
+            Where the previous page ended, from its `nextCursor`. Omit it for the first page.
 
-          It is a position, not an offset, and that matters here: this list is ordered by recent activity, and the activity happens while it is being read. An offset would hand back a conversation twice when one moves up in between, and skip one when it moves down — silently, because a conversation that was skipped simply is not there.
+            It is a position, not an offset, and that matters here: this list is ordered by recent activity, and the activity happens while it is being read. An offset would hand back a conversation twice when one moves up in between, and skip one when it moves down — silently, because a conversation that was skipped simply is not there.
 
-          Pass the same `q`, `archived` and `folder` along with it. A cursor carries a position, not the question that produced it, so changing the filters mid-scroll walks a range nobody asked for.
-        explode: false
-        in: query
-        name: cursor
-        schema:
-          maxLength: 128
-          type: string
-      - explode: false
-        in: query
-        name: limit
-        schema:
-          format: int64
-          maximum: 200
-          minimum: 0
-          type: integer
+            Pass the same `q`, `archived` and `folder` along with it. A cursor carries a position, not the question that produced it, so changing the filters mid-scroll walks a range nobody asked for.
+          explode: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: limit
+          in: query
+          explode: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            maximum: 200
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ThreadListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ThreadListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Create a conversation
       operationId: create-thread
       tags:
-      - Thread
+        - Thread
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateThreadRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateThreadRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ThreadSummaryResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ThreadSummaryResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}:
     get:
       summary: Fetch the conversation document
       description: The complete current state of a conversation, for the first render. Its `stream` gives the address and admission ticket for live output, and what that stream pushes are incremental edits to this same document, so the same rendering logic applies.
       operationId: get-thread
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DocumentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/DocumentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update conversation settings
+      description: |-
+        Changes the title, the approval mode, and whether the conversation is archived. A change to the approval mode takes effect from the next turn; a turn already running keeps the settings it started with.
+
+        Archiving makes a conversation read-only: it stays in the list under "archived", stays readable, and the assistant can still find it when it searches past conversations — it just takes no new input. Unarchive it to continue. Archiving fails while a turn is running; stop it first.
+      operationId: update-thread
+      tags:
+        - Thread
+      parameters:
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateThreadRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadSummaryResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a conversation
       description: |-
@@ -1129,297 +1128,260 @@ paths:
         Fails while a turn is running: stop it first. Deleting an already deleted conversation succeeds and changes nothing.
       operationId: delete-thread
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
           description: Error
-    patch:
-      summary: Update conversation settings
-      description: |-
-        Changes the title, the approval mode, and whether the conversation is archived. A change to the approval mode takes effect from the next turn; a turn already running keeps the settings it started with.
-
-        Archiving makes a conversation read-only: it stays in the list under "archived", stays readable, and the assistant can still find it when it searches past conversations — it just takes no new input. Unarchive it to continue. Archiving fails while a turn is running; stop it first.
-      operationId: update-thread
-      tags:
-      - Thread
-      parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateThreadRequestBody'
-        required: true
-      responses:
-        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ThreadSummaryResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/approvals/{batch}:
     post:
       summary: Approve or decline a batch of tool calls
-      description: 'The batch id comes from the conversation document''s `wait`. This is idempotent: submitting the same batch again neither changes a decision already in effect nor reports an error. Returns 404 when the batch does not belong to that conversation.'
+      description: "The batch id comes from the conversation document's `wait`. This is idempotent: submitting the same batch again neither changes a decision already in effect nor reports an error. Returns 404 when the batch does not belong to that conversation."
       operationId: decide-approval
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: batch
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: batch
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DecideRequestBody'
-        required: true
+              $ref: "#/components/schemas/DecideRequestBody"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/earlier:
     get:
       summary: Fetch earlier parts of a conversation
-      description: 'The first render only carries the latest stretch of a conversation; anything above it is fetched here, one stretch at a time. Pass the document''s earlier.before as `before`; the `earlier` in the response is the cursor for the stretch above that, and null means the top has been reached. The entries have the same shape and the same order (oldest first) as `items` in the document, so they can be prepended as they are.'
+      description: The first render only carries the latest stretch of a conversation; anything above it is fetched here, one stretch at a time. Pass the document's earlier.before as `before`; the `earlier` in the response is the cursor for the stretch above that, and null means the top has been reached. The entries have the same shape and the same order (oldest first) as `items` in the document, so they can be prepended as they are.
       operationId: list-earlier-items
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
-      - description: From the document's earlier.before; returns entries before this ordinal
-        explode: false
-        in: query
-        name: before
-        required: true
-        schema:
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: before
+          in: query
+          required: true
           description: From the document's earlier.before; returns entries before this ordinal
-          format: int64
-          minimum: 0
-          type: integer
+          explode: false
+          schema:
+            description: From the document's earlier.before; returns entries before this ordinal
+            type: integer
+            format: int64
+            minimum: 0
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EarlierResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/EarlierResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/interrupt:
     post:
       summary: Interrupt a running turn
       description: Calling this on a conversation with no running turn also returns 204 rather than an error — the user pressing stop races with the turn finishing on its own, and both outcomes are the same. This operation remains available while the project is suspended or being cleaned up.
       operationId: interrupt-thread
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/messages:
     post:
       summary: Send a message and start a turn
-      description: 'Returns a turnId immediately without waiting for execution — a turn can run for tens of minutes. Progress arrives on the live stream the conversation document''s `stream` points at, not in this response. Sending while the assistant is still working is allowed: the message is put in line and `queued` comes back true, to be read at the next step of the turn already running — so the editor should stay open rather than blocking on a busy conversation.'
+      description: "Returns a turnId immediately without waiting for execution — a turn can run for tens of minutes. Progress arrives on the live stream the conversation document's `stream` points at, not in this response. Sending while the assistant is still working is allowed: the message is put in line and `queued` comes back true, to be read at the next step of the turn already running — so the editor should stay open rather than blocking on a busy conversation."
       operationId: send-message
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendMessageRequestBody'
-        required: true
+              $ref: "#/components/schemas/SendMessageRequestBody"
       responses:
-        '202':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TurnIDResponseBody'
+        "202":
           description: Accepted
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TurnIDResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/questions/{item}:
     post:
       summary: Answer the assistant's questions
       description: The question id comes from the conversation document's `wait`. An already-answered question also returns 204 — another tab may have submitted first, or the auto-answer window may have expired, and in both cases the turn has already continued with an answer.
       operationId: answer-question
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: item
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AnswerRequestBody'
-        required: true
+              $ref: "#/components/schemas/AnswerRequestBody"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/read:
     post:
       summary: Mark a conversation as read
       operationId: mark-thread-read
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/threads/{thread}/revert:
     post:
       summary: Revert from a given point
       description: Reverts the entry at `ordinal` and everything after it. Reverted entries stay in the transcript marked `reverted`, and ordinals are not renumbered. Returns how many were actually reverted.
       operationId: revert-thread
       tags:
-      - Thread
+        - Thread
       parameters:
-      - in: path
-        name: thread
-        required: true
-        schema:
-          type: string
+        - name: thread
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RevertRequestBody'
-        required: true
+              $ref: "#/components/schemas/RevertRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RevertedCountResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RevertedCountResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: A scoped token. Sign in at auth.leaflow.net for an access token, then exchange it with IAM for a scoped token (POST /account/v1/projects/{projectId}/scoped-tokens) — one scoped token states both the current user and the current project.
-      scheme: bearer
-      type: http
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     UploadedResource:
-      additionalProperties: false
+      type: object
       properties:
         byteSize:
           description: Size of what was stored. For an image that has been resized, this is the resized size, not what was uploaded.
-          format: int64
           type: integer
+          format: int64
         draftExpiresAt:
           description: |-
             When this upload gets cleared if no message ever references it. Sending a message with this id makes it permanent and this stops applying — a file that belongs to a conversation is kept as long as the conversation is.
 
             It is here so the editor can say so before it happens. An attachment chip that quietly stops working a week later reads as a bug, and the person who hits it has no way to tell that what they are seeing is a draft being collected.
-          format: date-time
           type: string
+          format: date-time
         filename:
           type: string
         height:
           description: Null unless kind is image.
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
         id:
           type: string
         kind:
@@ -1429,346 +1391,346 @@ components:
             - `image` — read directly, and only by models that accept image input
             - `text` — placed inline in the message when small enough, otherwise read on demand
             - `binary` — never read directly; the assistant downloads it onto a cloud instance to work with it
-          enum:
-          - image
-          - text
-          - binary
           type: string
+          enum:
+            - image
+            - text
+            - binary
         width:
           description: Null unless kind is image.
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
       required:
-      - id
-      - kind
-      - filename
-      - byteSize
-      - width
-      - height
-      - draftExpiresAt
-      type: object
-    BindingResource:
+        - id
+        - kind
+        - filename
+        - byteSize
+        - width
+        - height
+        - draftExpiresAt
       additionalProperties: false
+    BindingResource:
+      type: object
       properties:
         channelId:
-          format: uuid
           type: string
+          format: uuid
         connState:
+          type: string
           enum:
-          - logged_out
-          - qr_pending
-          - online
-          - expired
-          type: string
+            - logged_out
+            - qr_pending
+            - online
+            - expired
         createdAt:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         peerName:
           type: string
         platform:
           type: string
         status:
-          enum:
-          - pending
-          - active
-          - revoked
           type: string
+          enum:
+            - pending
+            - active
+            - revoked
         verifiedAt:
-          format: date-time
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
+          format: date-time
       required:
-      - id
-      - channelId
-      - platform
-      - peerName
-      - status
-      - connState
-      - verifiedAt
-      - createdAt
-      type: object
-    LengthAwarePageBindingResource:
+        - id
+        - channelId
+        - platform
+        - peerName
+        - status
+        - connState
+        - verifiedAt
+        - createdAt
       additionalProperties: false
+    LengthAwarePageBindingResource:
+      type: object
       properties:
         items:
           description: The entries on this page
-          items:
-            $ref: '#/components/schemas/BindingResource'
           type: array
+          items:
+            $ref: "#/components/schemas/BindingResource"
         limit:
           description: The page size, echoing what was requested
-          format: int64
           type: integer
+          format: int64
         offset:
           description: How many were skipped, echoing what was requested
-          format: int64
           type: integer
+          format: int64
         total:
           description: How many match in total, not just on this page
-          format: int64
           type: integer
+          format: int64
       required:
-      - items
-      - total
-      - limit
-      - offset
-      type: object
-    ChannelResource:
+        - items
+        - total
+        - limit
+        - offset
       additionalProperties: false
+    ChannelResource:
+      type: object
       properties:
         allowFrom:
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         connState:
           description: How far this channel is from working. Only `online` receives messages and can issue binding codes
+          type: string
           enum:
-          - logged_out
-          - qr_pending
-          - online
-          - expired
-          type: string
+            - logged_out
+            - qr_pending
+            - online
+            - expired
         createdAt:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         name:
           type: string
         platform:
           type: string
         runtimeState:
           description: The state of the long-lived connection right now. Always `stopped` for webhook platforms
-          enum:
-          - stopped
-          - running
           type: string
+          enum:
+            - stopped
+            - running
         senderPolicy:
-          enum:
-          - bound_only
-          - open
           type: string
+          enum:
+            - bound_only
+            - open
         status:
+          type: string
           enum:
-          - active
-          - suspended
-          - disabled
-          type: string
+            - active
+            - suspended
+            - disabled
         updatedAt:
-          format: date-time
           type: string
+          format: date-time
         webhookPath:
           description: The webhook path, for gateway configuration and for diagnosis
           type: string
         webhookUrl:
           description: The webhook address to paste into that platform's console. Null when the deployment declares no public entry point
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
       required:
-      - id
-      - platform
-      - name
-      - status
-      - connState
-      - runtimeState
-      - senderPolicy
-      - allowFrom
-      - webhookUrl
-      - webhookPath
-      - createdAt
-      - updatedAt
-      type: object
-    LengthAwarePageChannelResource:
+        - id
+        - platform
+        - name
+        - status
+        - connState
+        - runtimeState
+        - senderPolicy
+        - allowFrom
+        - webhookUrl
+        - webhookPath
+        - createdAt
+        - updatedAt
       additionalProperties: false
+    LengthAwarePageChannelResource:
+      type: object
       properties:
         items:
           description: The entries on this page
-          items:
-            $ref: '#/components/schemas/ChannelResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ChannelResource"
         limit:
           description: The page size, echoing what was requested
-          format: int64
           type: integer
+          format: int64
         offset:
           description: How many were skipped, echoing what was requested
-          format: int64
           type: integer
+          format: int64
         total:
           description: How many match in total, not just on this page
-          format: int64
           type: integer
+          format: int64
       required:
-      - items
-      - total
-      - limit
-      - offset
-      type: object
-    CreateChannelRequestBody:
+        - items
+        - total
+        - limit
+        - offset
       additionalProperties: false
+    CreateChannelRequestBody:
+      type: object
       properties:
         allowFrom:
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         credentials:
+          description: "Credentials for that platform. Write-only: they cannot be read back after creation"
+          type: object
           additionalProperties:
             type: string
-          description: 'Credentials for that platform. Write-only: they cannot be read back after creation'
-          type: object
         name:
+          type: string
           minLength: 1
           maxLength: 128
-          type: string
         platform:
+          type: string
           minLength: 1
-          type: string
         senderPolicy:
-          enum:
-          - bound_only
-          - open
           type: string
+          enum:
+            - bound_only
+            - open
         webhookSecret:
-          description: 'Required for platforms that generate the secret themselves (secretSource=supplied). Must be absent for `generated` ones, where the secret we make is returned once in webhookSecret on this response'
+          description: Required for platforms that generate the secret themselves (secretSource=supplied). Must be absent for `generated` ones, where the secret we make is returned once in webhookSecret on this response
           type: string
       required:
-      - platform
-      - name
-      type: object
-    ChannelWithSecretResponseBody:
+        - platform
+        - name
       additionalProperties: false
+    ChannelWithSecretResponseBody:
+      type: object
       properties:
         allowFrom:
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         connState:
           description: How far this channel is from working. Only `online` receives messages and can issue binding codes
+          type: string
           enum:
-          - logged_out
-          - qr_pending
-          - online
-          - expired
-          type: string
+            - logged_out
+            - qr_pending
+            - online
+            - expired
         createdAt:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         name:
           type: string
         platform:
           type: string
         runtimeState:
           description: The state of the long-lived connection right now. Always `stopped` for webhook platforms
-          enum:
-          - stopped
-          - running
           type: string
+          enum:
+            - stopped
+            - running
         senderPolicy:
-          enum:
-          - bound_only
-          - open
           type: string
+          enum:
+            - bound_only
+            - open
         status:
+          type: string
           enum:
-          - active
-          - suspended
-          - disabled
-          type: string
+            - active
+            - suspended
+            - disabled
         updatedAt:
-          format: date-time
           type: string
+          format: date-time
         webhookPath:
           description: The webhook path, for gateway configuration and for diagnosis
           type: string
         webhookSecret:
-          description: 'The webhook secret we generated, to paste into that platform''s console. **It cannot be retrieved again** — the only way forward is rotating to a new one. Null when the platform generates the secret (secretSource=supplied) or does not use webhooks at all'
+          description: The webhook secret we generated, to paste into that platform's console. **It cannot be retrieved again** — the only way forward is rotating to a new one. Null when the platform generates the secret (secretSource=supplied) or does not use webhooks at all
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         webhookUrl:
           description: The webhook address to paste into that platform's console. Null when the deployment declares no public entry point
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
       required:
-      - webhookSecret
-      - id
-      - platform
-      - name
-      - status
-      - connState
-      - runtimeState
-      - senderPolicy
-      - allowFrom
-      - webhookUrl
-      - webhookPath
-      - createdAt
-      - updatedAt
-      type: object
-    UpdateChannelRequestBody:
+        - webhookSecret
+        - id
+        - platform
+        - name
+        - status
+        - connState
+        - runtimeState
+        - senderPolicy
+        - allowFrom
+        - webhookUrl
+        - webhookPath
+        - createdAt
+        - updatedAt
       additionalProperties: false
+    UpdateChannelRequestBody:
+      type: object
       properties:
         allowFrom:
           description: The allow list. Only applied when senderPolicy is sent as well
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         credentials:
-          additionalProperties:
-            type: string
           description: Replaced wholesale rather than merged key by key. Absent means unchanged
           type: object
+          additionalProperties:
+            type: string
         enabled:
           type: boolean
         name:
-          maxLength: 128
           type: string
+          maxLength: 128
         senderPolicy:
           description: Only when this is sent is allowFrom replaced along with it
-          enum:
-          - bound_only
-          - open
           type: string
-      type: object
-    BindingCodeResponseBody:
+          enum:
+            - bound_only
+            - open
       additionalProperties: false
+    BindingCodeResponseBody:
+      type: object
       properties:
         code:
           type: string
         expiresAt:
-          format: date-time
           type: string
+          format: date-time
       required:
-      - code
-      - expiresAt
-      type: object
-    PartResource:
+        - code
+        - expiresAt
       additionalProperties: false
+    PartResource:
+      type: object
       properties:
         attachmentId:
           description: For `file` parts. Points at one of this entry's `attachments`.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         id:
           description: |-
             Addresses this part in the live stream — text arrives as `append` frames pointing at
@@ -1780,23 +1742,23 @@ components:
         text:
           description: For `text` parts. Grows as the answer is written.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         type:
-          enum:
-          - text
-          - file
           type: string
+          enum:
+            - text
+            - file
       required:
-      - id
-      - type
-      type: object
-    RejectionResource:
+        - id
+        - type
       additionalProperties: false
+    RejectionResource:
+      type: object
       properties:
         at:
-          format: date-time
           type: string
+          format: date-time
         peerId:
           type: string
         peerName:
@@ -1806,87 +1768,87 @@ components:
         platform:
           type: string
         textLength:
-          format: int64
           type: integer
+          format: int64
         verdict:
           type: string
       required:
-      - peerId
-      - peerName
-      - peerUsername
-      - platform
-      - verdict
-      - textLength
-      - at
-      type: object
-    RejectionListResponseBody:
+        - peerId
+        - peerName
+        - peerUsername
+        - platform
+        - verdict
+        - textLength
+        - at
       additionalProperties: false
+    RejectionListResponseBody:
+      type: object
       properties:
         rejections:
-          items:
-            $ref: '#/components/schemas/RejectionResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/RejectionResource"
       required:
-      - rejections
-      type: object
-    RotateSecretRequestBody:
+        - rejections
       additionalProperties: false
+    RotateSecretRequestBody:
+      type: object
       properties:
         webhookSecret:
           description: Required for platforms that generate the secret themselves (secretSource=supplied). Must be absent for `generated` ones
           type: string
-      type: object
-    WebhookSecretResponseBody:
       additionalProperties: false
+    WebhookSecretResponseBody:
+      type: object
       properties:
         webhookSecret:
           type: string
       required:
-      - webhookSecret
-      type: object
-    SenderCheckResource:
+        - webhookSecret
       additionalProperties: false
+    SenderCheckResource:
+      type: object
       properties:
         allowFrom:
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         allowed:
           type: boolean
         bindingId:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         senderPolicy:
           type: string
         verdict:
-          enum:
-          - ALLOWED_BY_BINDING
-          - ALLOWED_BY_ALLOW_FROM
-          - ALLOWED_BY_POLICY
-          - REJECTED_NOT_ALLOWED
           type: string
+          enum:
+            - ALLOWED_BY_BINDING
+            - ALLOWED_BY_ALLOW_FROM
+            - ALLOWED_BY_POLICY
+            - REJECTED_NOT_ALLOWED
       required:
-      - allowed
-      - verdict
-      - senderPolicy
-      - allowFrom
-      - bindingId
-      type: object
-    LoginResource:
+        - allowed
+        - verdict
+        - senderPolicy
+        - allowFrom
+        - bindingId
       additionalProperties: false
+    LoginResource:
+      type: object
       properties:
         expiresAt:
           description: When this login flow expires. Past that, stop polling and start a new one
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         qrcodeData:
           description: The text to encode and render as a QR code by the client — not an image address and not a data URI. When a code expires this flow issues another and keeps waiting, so each poll may return a new string
           type: string
@@ -1894,23 +1856,23 @@ components:
           description: Why it failed. Present only when status is error or expired
           type: string
         status:
-          enum:
-          - wait
-          - scanned
-          - confirmed
-          - expired
-          - error
-          - need_verify_code
           type: string
+          enum:
+            - wait
+            - scanned
+            - confirmed
+            - expired
+            - error
+            - need_verify_code
       required:
-      - id
-      - status
-      - qrcodeData
-      - reason
-      - expiresAt
-      type: object
-    CredentialFieldResource:
+        - id
+        - status
+        - qrcodeData
+        - reason
+        - expiresAt
       additionalProperties: false
+    CredentialFieldResource:
+      type: object
       properties:
         help:
           type: string
@@ -1923,83 +1885,83 @@ components:
         secret:
           type: boolean
       required:
-      - key
-      - label
-      - required
-      - secret
-      - help
-      type: object
-    PlatformResource:
+        - key
+        - label
+        - required
+        - secret
+        - help
       additionalProperties: false
+    PlatformResource:
+      type: object
       properties:
         credentialFields:
-          items:
-            $ref: '#/components/schemas/CredentialFieldResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/CredentialFieldResource"
         name:
           type: string
         resident:
           type: boolean
         secretSource:
-          enum:
-          - generated
-          - supplied
-          - none
           type: string
+          enum:
+            - generated
+            - supplied
+            - none
         setupChallenge:
-          enum:
-          - none
-          - webhook
-          - scan
           type: string
+          enum:
+            - none
+            - webhook
+            - scan
         setupMethod:
-          enum:
-          - credentials
-          - scan
           type: string
+          enum:
+            - credentials
+            - scan
         webhookPath:
           description: The webhook path template; {channel} is replaced with the channel id
           type: string
         webhookUrlTemplate:
           description: The full webhook address template. Null when the deployment declares no public entry point
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
       required:
-      - name
-      - resident
-      - setupMethod
-      - setupChallenge
-      - secretSource
-      - credentialFields
-      - webhookPath
-      - webhookUrlTemplate
-      type: object
-    PlatformListResponseBody:
+        - name
+        - resident
+        - setupMethod
+        - setupChallenge
+        - secretSource
+        - credentialFields
+        - webhookPath
+        - webhookUrlTemplate
       additionalProperties: false
+    PlatformListResponseBody:
+      type: object
       properties:
         platforms:
-          items:
-            $ref: '#/components/schemas/PlatformResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/PlatformResource"
       required:
-      - platforms
-      type: object
-    VerifyCodeRequestBody:
+        - platforms
       additionalProperties: false
+    VerifyCodeRequestBody:
+      type: object
       properties:
         code:
-          minLength: 1
           type: string
+          minLength: 1
       required:
-      - code
-      type: object
-    SkillResource:
+        - code
       additionalProperties: false
+    SkillResource:
+      type: object
       properties:
         authoredByAssistant:
           description: |-
@@ -2016,172 +1978,172 @@ components:
         enabled:
           type: boolean
         files:
+          description: Path to contents, `SKILL.md` among them. Only returned by `get-skill`; the list leaves it out.
+          type:
+            - object
+            - "null"
           additionalProperties:
             type: string
-          description: 'Path to contents, `SKILL.md` among them. Only returned by `get-skill`; the list leaves it out.'
-          type:
-          - object
-          - 'null'
         name:
           type: string
         origin:
           description: |-
             `builtin` — provided by the platform and read-only here.
             `project` — written for this project and editable by anyone in it.
-          enum:
-          - builtin
-          - project
           type: string
+          enum:
+            - builtin
+            - project
         shortDescription:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         updatedAt:
           description: Null for built-in skills, which have no edit history here.
-          format: date-time
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
+          format: date-time
       required:
-      - name
-      - description
-      - shortDescription
-      - origin
-      - enabled
-      - authoredByAssistant
-      - updatedAt
-      type: object
-    SkillListResponseBody:
+        - name
+        - description
+        - shortDescription
+        - origin
+        - enabled
+        - authoredByAssistant
+        - updatedAt
       additionalProperties: false
+    SkillListResponseBody:
+      type: object
       properties:
         skills:
-          items:
-            $ref: '#/components/schemas/SkillResource'
           type: array
+          items:
+            $ref: "#/components/schemas/SkillResource"
       required:
-      - skills
-      type: object
-    SkillRequestBody:
+        - skills
       additionalProperties: false
+    SkillRequestBody:
+      type: object
       properties:
         description:
           description: Why the assistant would open this skill. It sits in every request; write it as the answer to "when do I need this", not "what does it contain".
-          maxLength: 1024
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 1024
         enabled:
-          default: true
           type: boolean
+          default: true
         files:
-          additionalProperties:
-            type: string
           description: |-
             Path to contents. `SKILL.md` is required; anything else it references goes alongside it.
 
             Paths are relative to the skill and cannot leave it. At most 32 files, 256 KiB each and
             1 MiB in total.
           type: object
+          additionalProperties:
+            type: string
         name:
           description: Also how the assistant refers to it, so renaming is deleting and writing again.
-          maxLength: 64
+          type: string
           minLength: 1
-          type: string
+          maxLength: 64
         shortDescription:
-          maxLength: 1024
           type: string
+          maxLength: 1024
       required:
-      - name
-      - description
-      - files
-      type: object
-    SkillEnabledRequestBody:
+        - name
+        - description
+        - files
       additionalProperties: false
+    SkillEnabledRequestBody:
+      type: object
       properties:
         enabled:
           type: boolean
       required:
-      - enabled
-      type: object
-    ThreadSummaryResource:
+        - enabled
       additionalProperties: false
+    ThreadSummaryResource:
+      type: object
       properties:
         approvalMode:
-          enum:
-          - guardian
-          - manual
-          - yolo
           type: string
+          enum:
+            - guardian
+            - manual
+            - yolo
         archived:
           type: boolean
         createdAt:
-          format: date-time
           type: string
+          format: date-time
         folderId:
           description: The folder this conversation is filed under, or null when it is in none
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         id:
           type: string
         model:
           type: string
         title:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         unread:
           type: boolean
         updatedAt:
-          format: date-time
           type: string
+          format: date-time
       required:
-      - id
-      - title
-      - model
-      - createdAt
-      - updatedAt
-      - archived
-      - unread
-      - approvalMode
-      - folderId
-      type: object
-    ThreadListResponseBody:
+        - id
+        - title
+        - model
+        - createdAt
+        - updatedAt
+        - archived
+        - unread
+        - approvalMode
+        - folderId
       additionalProperties: false
+    ThreadListResponseBody:
+      type: object
       properties:
         nextCursor:
-          description: 'Pass this back as `cursor` for the next page. Null means this was the last one — it is only set when there is genuinely more, so an empty final page never happens.'
+          description: Pass this back as `cursor` for the next page. Null means this was the last one — it is only set when there is genuinely more, so an empty final page never happens.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         threads:
-          items:
-            $ref: '#/components/schemas/ThreadSummaryResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ThreadSummaryResource"
       required:
-      - threads
-      - nextCursor
-      type: object
-    CreateThreadRequestBody:
+        - threads
+        - nextCursor
       additionalProperties: false
+    CreateThreadRequestBody:
+      type: object
       properties:
         approvalMode:
           description: Absent uses the platform's default approval mode
-          enum:
-          - guardian
-          - manual
-          - yolo
           type: string
-      type: object
-    ContextResource:
+          enum:
+            - guardian
+            - manual
+            - yolo
       additionalProperties: false
+    ContextResource:
+      type: object
       properties:
         compactAt:
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
         inputModalities:
           description: |-
             What kinds of input the model behind this conversation accepts, as modality names: text, image.
@@ -2189,105 +2151,105 @@ components:
             This governs images and nothing else. Text and binary attachments reach every model: a small text file is placed inline, a large one is read on demand, and a binary is downloaded onto a cloud instance — none of which asks the model to see a picture. So this decides whether pasting a screenshot does anything, not whether the attach control exists. Hiding file upload on a text-only model takes away something that would have worked.
 
             An empty list is not a claim that the model reads nothing: it means this deployment has not stated the modalities, or the conversation names a model that has since been retired. Treat empty as unknown and keep the control, because hiding one for a reason nobody can see is worse than a refusal that says why.
+          type: array
           items:
             type: string
-          type: array
         model:
           type: string
         used:
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
         warnAt:
-          format: int64
           type: integer
-        window:
           format: int64
+        window:
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
       required:
-      - model
-      - used
-      - window
-      - compactAt
-      - warnAt
-      - inputModalities
-      type: object
-    EarlierResource:
+        - model
+        - used
+        - window
+        - compactAt
+        - warnAt
+        - inputModalities
       additionalProperties: false
+    EarlierResource:
+      type: object
       properties:
         before:
-          format: int64
           type: integer
+          format: int64
         foldedAbove:
           type: boolean
       required:
-      - before
-      - foldedAbove
-      type: object
-    AttachmentResource:
+        - before
+        - foldedAbove
       additionalProperties: false
+    AttachmentResource:
+      type: object
       properties:
         byteSize:
-          format: int64
           type: integer
+          format: int64
         filename:
           type: string
         height:
           description: Null unless kind is image. Width and height are here so a client can hold the space before the image itself has loaded.
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
         id:
           type: string
         kind:
           description: What this attachment is. A client renders an image in place and everything else as a file to download.
-          enum:
-          - image
-          - text
-          - binary
           type: string
+          enum:
+            - image
+            - text
+            - binary
         width:
           description: Null unless kind is image.
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
       required:
-      - id
-      - kind
-      - filename
-      - byteSize
-      - width
-      - height
-      type: object
-    ItemResource:
+        - id
+        - kind
+        - filename
+        - byteSize
+        - width
+        - height
       additionalProperties: false
+    ItemResource:
+      type: object
       properties:
         approval:
-          enum:
-          - approved
-          - declined
-          - auto_approved
-          - unreviewed
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
+          enum:
+            - approved
+            - declined
+            - auto_approved
+            - unreviewed
         approvalReason:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         arguments:
           type: string
         attachments:
-          items:
-            $ref: '#/components/schemas/AttachmentResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/AttachmentResource"
         clientContext:
           description: |-
             The context blocks the client attached to this message.
@@ -2298,56 +2260,56 @@ components:
 
             The actions declared alongside them are not returned: they are re-declared as they
             change and would make every fetch of the conversation carry them again.
-          items:
-            $ref: '#/components/schemas/ClientContextPart'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ClientContextPart"
         createdAt:
-          format: date-time
           type: string
+          format: date-time
         detail:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         presentation:
           anyOf:
-          - $ref: '#/components/schemas/PresentationResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/PresentationResource"
+            - type: "null"
         durationMs:
-          format: int64
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
+          format: int64
         id:
           type: string
         model:
           description: The model that produced this entry. Null for messages the user sent
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         namespace:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         ordinal:
-          format: int64
           type: integer
+          format: int64
         reverted:
           type: boolean
         status:
-          enum:
-          - pending
-          - in_progress
-          - completed
-          - failed
-          - declined
-          - interrupted
           type: string
+          enum:
+            - pending
+            - in_progress
+            - completed
+            - failed
+            - declined
+            - interrupted
         target:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         parts:
           description: |-
             The content of this entry, in the order it was written. A message that is only text is a
@@ -2355,82 +2317,82 @@ components:
 
             An attachment belongs where it was written, so render these in order rather than putting
             them all at the end.
-          items:
-            $ref: '#/components/schemas/PartResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/PartResource"
         tool:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         type:
           description: Determines which fields this entry carries
-          enum:
-          - user_message
-          - agent_message
-          - reasoning
-          - dynamic_tool_call
-          - context_compaction
-          - token_budget_reminder
-          - turn_failure
           type: string
+          enum:
+            - user_message
+            - agent_message
+            - reasoning
+            - dynamic_tool_call
+            - context_compaction
+            - token_budget_reminder
+            - turn_failure
       required:
-      - id
-      - ordinal
-      - type
-      - status
-      - createdAt
-      - reverted
-      - model
-      type: object
-    PresentationResource:
+        - id
+        - ordinal
+        - type
+        - status
+        - createdAt
+        - reverted
+        - model
       additionalProperties: false
+    PresentationResource:
       description: |-
         Structured detail produced by a tool call, in addition to the single-line `detail`. Null
         when the call produced none.
 
         `kind` determines which of the remaining fields is populated.
+      type: object
       properties:
         fileDiff:
           anyOf:
-          - $ref: '#/components/schemas/FileDiffResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/FileDiffResource"
+            - type: "null"
         kind:
           description: Determines which of the remaining fields is populated
-          enum:
-          - file_diff
           type: string
+          enum:
+            - file_diff
       required:
-      - kind
-      type: object
-    FileDiffResource:
+        - kind
       additionalProperties: false
+    FileDiffResource:
       description: |-
         The change a tool call applied to a single file.
 
         Populated once the call has completed successfully. It is absent while the call is pending
         or awaiting approval, as the file's prior contents are read during execution. To preview an
         edit awaiting approval, derive it from the call's `old_string` and `new_string` arguments.
+      type: object
       properties:
         added:
           description: Lines added. Complete even when `unified` is null
-          format: int64
           type: integer
+          format: int64
         path:
           description: Absolute path of the file on the instance
           type: string
         removed:
           description: Lines removed. Complete even when `unified` is null
-          format: int64
           type: integer
+          format: int64
         status:
           description: What the call did to the file
-          enum:
-          - added
-          - modified
-          - deleted
           type: string
+          enum:
+            - added
+            - modified
+            - deleted
         unified:
           description: |-
             The change as a unified diff with three lines of context. A file created by the call is
@@ -2439,57 +2401,57 @@ components:
             Null when the change exceeds the service's size limit. The diff is omitted in full
             rather than truncated; `added` and `removed` remain complete.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
       required:
-      - path
-      - status
-      - added
-      - removed
-      type: object
-    StreamResource:
+        - path
+        - status
+        - added
+        - removed
       additionalProperties: false
+    StreamResource:
+      type: object
       properties:
         path:
           type: string
         ticket:
           type: string
       required:
-      - path
-      - ticket
-      type: object
-    TurnResource:
+        - path
+        - ticket
       additionalProperties: false
+    TurnResource:
+      type: object
       properties:
         approvalMode:
-          enum:
-          - guardian
-          - manual
-          - yolo
           type: string
+          enum:
+            - guardian
+            - manual
+            - yolo
       required:
-      - approvalMode
-      type: object
-    Choice:
+        - approvalMode
       additionalProperties: false
+    Choice:
+      type: object
       properties:
         description:
           type: string
         label:
           type: string
       required:
-      - label
-      - description
-      type: object
-    Question:
+        - label
+        - description
       additionalProperties: false
+    Question:
+      type: object
       properties:
         choices:
-          items:
-            $ref: '#/components/schemas/Choice'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/Choice"
         header:
           type: string
         id:
@@ -2497,106 +2459,106 @@ components:
         question:
           type: string
       required:
-      - id
-      - header
-      - question
-      - choices
-      type: object
-    WaitResource:
+        - id
+        - header
+        - question
+        - choices
       additionalProperties: false
+    WaitResource:
+      type: object
       properties:
         autoResolutionMs:
-          format: int64
           type: integer
+          format: int64
         batchId:
           type: string
         itemId:
           type: string
         itemIds:
+          type:
+            - array
+            - "null"
           items:
             type: string
-          type:
-          - array
-          - 'null'
         kind:
-          enum:
-          - tool_approval
-          - user_input
           type: string
+          enum:
+            - tool_approval
+            - user_input
         questions:
-          items:
-            $ref: '#/components/schemas/Question'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/Question"
         turnId:
           type: string
       required:
-      - kind
-      - turnId
-      type: object
-    DocumentResource:
+        - kind
+        - turnId
       additionalProperties: false
+    DocumentResource:
+      type: object
       properties:
         context:
-          $ref: '#/components/schemas/ContextResource'
+          $ref: "#/components/schemas/ContextResource"
         cursor:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         earlier:
           anyOf:
-          - $ref: '#/components/schemas/EarlierResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/EarlierResource"
+            - type: "null"
         items:
-          items:
-            $ref: '#/components/schemas/ItemResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ItemResource"
         status:
           type: string
         stream:
           anyOf:
-          - $ref: '#/components/schemas/StreamResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/StreamResource"
+            - type: "null"
         turn:
           anyOf:
-          - $ref: '#/components/schemas/TurnResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/TurnResource"
+            - type: "null"
         todos:
-          description: 'The assistant''s checklist for the work in this conversation, in the order it intends to do it. Empty when it has not written one — short tasks do not get a list. It is rewritten in full each time, so what is here is the current state.'
-          items:
-            $ref: '#/components/schemas/TodoResource'
+          description: The assistant's checklist for the work in this conversation, in the order it intends to do it. Empty when it has not written one — short tasks do not get a list. It is rewritten in full each time, so what is here is the current state.
           type: array
+          items:
+            $ref: "#/components/schemas/TodoResource"
         turnId:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         wait:
           anyOf:
-          - $ref: '#/components/schemas/WaitResource'
-          - type: 'null'
+            - $ref: "#/components/schemas/WaitResource"
+            - type: "null"
       required:
-      - turnId
-      - stream
-      - status
-      - cursor
-      - earlier
-      - context
-      - items
-      - wait
-      - turn
-      type: object
-    UpdateThreadRequestBody:
+        - turnId
+        - stream
+        - status
+        - cursor
+        - earlier
+        - context
+        - items
+        - wait
+        - turn
       additionalProperties: false
+    UpdateThreadRequestBody:
+      type: object
       properties:
         approvalMode:
-          enum:
-          - guardian
-          - manual
-          - yolo
           type: string
+          enum:
+            - guardian
+            - manual
+            - yolo
         archived:
           type: boolean
         folderId:
@@ -2604,10 +2566,10 @@ components:
             File this conversation into a folder, or `null` to take it out of the one it is in. Omit the field to leave it where it is.
 
             Filing does not move the conversation in the list. The order answers "which conversation has something new in it", and putting one away is not that.
-          maxLength: 64
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
+          maxLength: 64
         title:
           description: |-
             Rename this conversation.
@@ -2615,70 +2577,70 @@ components:
             A conversation names itself: the first message gives it a working title, and the assistant replaces that with a better one once it has answered. Setting this stops both — a name somebody chose is never overwritten by one that was generated.
 
             Renaming does not move the conversation in the list. The order answers "which conversation has something new in it", and editing a title is not that.
-          maxLength: 255
-          minLength: 1
           type: string
-      type: object
-    DecideRequestBody:
+          minLength: 1
+          maxLength: 255
       additionalProperties: false
+    DecideRequestBody:
+      type: object
       properties:
         approved:
           type: boolean
         reason:
           type: string
       required:
-      - approved
-      type: object
-    EarlierResponseBody:
+        - approved
       additionalProperties: false
+    EarlierResponseBody:
+      type: object
       properties:
         earlier:
-          $ref: '#/components/schemas/EarlierResource'
+          $ref: "#/components/schemas/EarlierResource"
         items:
-          items:
-            $ref: '#/components/schemas/ItemResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/ItemResource"
       required:
-      - items
-      - earlier
-      type: object
-    SendMessageRequestBody:
+        - items
+        - earlier
       additionalProperties: false
+    SendMessageRequestBody:
+      type: object
       properties:
         client:
-          $ref: '#/components/schemas/ClientContextRequest'
+          $ref: "#/components/schemas/ClientContextRequest"
         parts:
           description: |-
             The message, in the order it was written. A message with nothing but text is a single
             text part; that is the ordinary case and nothing else is required.
-          items:
-            $ref: '#/components/schemas/MessagePart'
-          minItems: 1
           type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/MessagePart"
       required:
-      - parts
-      type: object
-    MemoryListResponseBody:
+        - parts
       additionalProperties: false
+    MemoryListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/MemoryResource'
           type: array
+          items:
+            $ref: "#/components/schemas/MemoryResource"
       required:
-      - items
-      type: object
-    MemoryResource:
+        - items
       additionalProperties: false
+    MemoryResource:
+      type: object
       properties:
         body:
           description: The fact itself
           type: string
         createdAt:
-          format: date-time
           type: string
+          format: date-time
         id:
           type: string
         name:
@@ -2688,17 +2650,16 @@ components:
           description: Which conversation the assistant learned it in. That conversation may since have been deleted
           type: string
         updatedAt:
-          format: date-time
           type: string
+          format: date-time
       required:
-      - id
-      - name
-      - body
-      - createdAt
-      - updatedAt
-      type: object
-    MessagePart:
+        - id
+        - name
+        - body
+        - createdAt
+        - updatedAt
       additionalProperties: false
+    MessagePart:
       description: |-
         One piece of a message. `type` says which of the fields below carries it:
 
@@ -2708,38 +2669,39 @@ components:
           it is shown to the assistant so it can tell one kind of block from another.
 
         Order matters: an attachment belongs where it was written, not at the end.
+      type: object
       properties:
         attachmentId:
           description: For `file` parts. The attachment must have been uploaded and not yet bound to another message.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         data:
-          additionalProperties: true
           description: For `data-*` parts. Any object; its keys reach the assistant as they are.
           type:
-          - object
-          - 'null'
+            - object
+            - "null"
+          additionalProperties: true
         text:
           description: For `text` parts.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         type:
+          type: string
           minLength: 1
           maxLength: 64
-          type: string
       required:
-      - type
-      type: object
-    ClientContextRequest:
+        - type
       additionalProperties: false
+    ClientContextRequest:
       description: |-
         Which client this is and what it can do, so the assistant can ask it to do those things
         while it answers. What the operator is looking at travels as `data-*` parts on the message.
 
         Send `actions` only when they differ from the last message on this conversation. Sending the
         block without `actions` keeps whatever was declared before.
+      type: object
       properties:
         actions:
           description: |-
@@ -2748,235 +2710,235 @@ components:
             Omit it when nothing changed since the last message. Send `[]` to say there is nothing
             on offer — those are different: a client that moves off the page it was attached to has
             to be able to say so, or the assistant keeps calling actions that no longer make sense.
-          items:
-            $ref: '#/components/schemas/ClientActionRequest'
-          maxItems: 32
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/ClientActionRequest"
         clientId:
           description: Identifies this client while it stays open. Any stable string; one per tab or process.
+          type: string
           minLength: 1
           maxLength: 128
-          type: string
         label:
-          description: 'How the client calls itself, for example "Leaflow console (web)".'
-          maxLength: 64
+          description: How the client calls itself, for example "Leaflow console (web)".
           type: string
+          maxLength: 64
       required:
-      - clientId
-      type: object
-    ClientContextPart:
+        - clientId
       additionalProperties: false
+    ClientContextPart:
       description: A `data-*` part as it was sent.
+      type: object
       properties:
         data:
-          additionalProperties: true
           type: object
+          additionalProperties: true
         type:
           type: string
       required:
-      - type
-      - data
-      type: object
-    ClientActionRequest:
+        - type
+        - data
       additionalProperties: false
+    ClientActionRequest:
       description: The shape of a tool in the OpenAI Chat Completions API, plus `readOnly` and `timeoutMs`.
+      type: object
       properties:
         function:
-          $ref: '#/components/schemas/ClientFunctionRequest'
+          $ref: "#/components/schemas/ClientFunctionRequest"
         readOnly:
           description: True when the action changes nothing outside the client. Anything else goes through this conversation's approval before it runs.
           type: boolean
         timeoutMs:
           description: How long the assistant should wait for this action. Omit for the default; longer values are capped.
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         type:
-          default: function
           description: Only functions are supported.
-          enum:
-          - function
           type: string
+          enum:
+            - function
+          default: function
       required:
-      - function
-      - readOnly
-      type: object
-    ClientFunctionRequest:
+        - function
+        - readOnly
       additionalProperties: false
+    ClientFunctionRequest:
       description: The function object from the OpenAI tools format.
+      type: object
       properties:
         description:
-          description: 'What the action does, written for the model. An action without one can only be guessed at from its name. The 1024 ceiling is OpenAI''s own limit on `tools[].function.description`, not a number chosen here: over it the upstream call fails with `string_above_max_length`, and refusing at submission is the clearer of the two places to refuse. It was 500, which ran out at about six enumerated entries — an action that must list what it accepts had nowhere to put the list.'
+          description: "What the action does, written for the model. An action without one can only be guessed at from its name. The 1024 ceiling is OpenAI's own limit on `tools[].function.description`, not a number chosen here: over it the upstream call fails with `string_above_max_length`, and refusing at submission is the clearer of the two places to refuse. It was 500, which ran out at about six enumerated entries — an action that must list what it accepts had nowhere to put the list."
+          type: string
           minLength: 1
           maxLength: 1024
-          type: string
         inputSchema:
-          additionalProperties: true
-          description: 'The MCP and Anthropic spelling of `parameters`. Give one or the other, not both.'
+          description: The MCP and Anthropic spelling of `parameters`. Give one or the other, not both.
           type:
-          - object
-          - 'null'
+            - object
+            - "null"
+          additionalProperties: true
         name:
+          type: string
           minLength: 1
           maxLength: 64
-          type: string
         parameters:
-          additionalProperties: true
           description: JSON Schema for the arguments. Omit for an action that takes none.
           type:
-          - object
-          - 'null'
+            - object
+            - "null"
+          additionalProperties: true
       required:
-      - name
-      - description
-      type: object
-    DynamicCallResultRequestBody:
+        - name
+        - description
       additionalProperties: false
+    DynamicCallResultRequestBody:
+      type: object
       properties:
         clientId:
           description: The same value sent with the message. A result from a different client is refused.
-          minLength: 1
           type: string
+          minLength: 1
         error:
           description: Why it failed, when `ok` is false. It reaches the assistant, so write it for a reader who cannot see the screen.
-          maxLength: 2000
           type: string
+          maxLength: 2000
         nextCursor:
           description: Pass back when there is more to read. The assistant will call again with it.
-          maxLength: 500
           type: string
+          maxLength: 500
         ok:
           type: boolean
         output:
           description: What the action produced. At most 64 KiB; use `nextCursor` for anything larger.
           type: string
       required:
-      - clientId
-      - ok
-      type: object
-    TodoResource:
+        - clientId
+        - ok
       additionalProperties: false
+    TodoResource:
+      type: object
       properties:
         activeForm:
-          description: 'The same step phrased as happening now — "Installing nginx". Show this one while the item is in progress.'
+          description: The same step phrased as happening now — "Installing nginx". Show this one while the item is in progress.
           type: string
         content:
-          description: 'The step as an instruction — "Install nginx".'
+          description: The step as an instruction — "Install nginx".
           type: string
         status:
-          description: 'Where this step stands. At most one item is in_progress at any time.'
-          enum:
-          - pending
-          - in_progress
-          - completed
+          description: Where this step stands. At most one item is in_progress at any time.
           type: string
+          enum:
+            - pending
+            - in_progress
+            - completed
       required:
-      - content
-      - activeForm
-      - status
-      type: object
-    TurnIDResponseBody:
+        - content
+        - activeForm
+        - status
       additionalProperties: false
+    TurnIDResponseBody:
+      type: object
       properties:
         queued:
-          description: 'True when the assistant was already busy and this message was put in line instead of starting a turn. It is read at the next step of the turn already running, so there is nothing further to do — and turnId is empty in this case.'
+          description: True when the assistant was already busy and this message was put in line instead of starting a turn. It is read at the next step of the turn already running, so there is nothing further to do — and turnId is empty in this case.
           type: boolean
         queuedAhead:
-          description: 'How many messages were already waiting ahead of this one. Only meaningful when queued is true.'
-          format: int64
+          description: How many messages were already waiting ahead of this one. Only meaningful when queued is true.
           type: integer
+          format: int64
         turnId:
-          description: 'The turn this message started. Empty when the message was queued instead.'
+          description: The turn this message started. Empty when the message was queued instead.
           type: string
       required:
-      - turnId
-      - queued
-      type: object
-    AnswerRequestBody:
+        - turnId
+        - queued
       additionalProperties: false
+    AnswerRequestBody:
+      type: object
       properties:
         answers:
-          additionalProperties:
-            type: string
           description: A map from question id to the answer chosen
           type: object
+          additionalProperties:
+            type: string
       required:
-      - answers
-      type: object
-    RevertRequestBody:
+        - answers
       additionalProperties: false
+    RevertRequestBody:
+      type: object
       properties:
         ordinal:
           description: The starting ordinal; that entry and everything after it is reverted
-          format: int64
           type: integer
+          format: int64
       required:
-      - ordinal
-      type: object
-    RevertedCountResponseBody:
+        - ordinal
       additionalProperties: false
+    RevertedCountResponseBody:
+      type: object
       properties:
         reverted:
-          format: int64
           type: integer
+          format: int64
       required:
-      - reverted
-      type: object
-    FolderResource:
+        - reverted
       additionalProperties: false
+    FolderResource:
+      type: object
       properties:
         createdAt:
-          format: date-time
           type: string
+          format: date-time
         id:
           type: string
         name:
           type: string
         threadCount:
-          description: 'How many conversations are filed here and would show up in the default list. Archived and deleted ones are not counted, so this is exactly what `GET /api/v1/threads?folder=<id>` returns.'
-          format: int64
+          description: How many conversations are filed here and would show up in the default list. Archived and deleted ones are not counted, so this is exactly what `GET /api/v1/threads?folder=<id>` returns.
           type: integer
+          format: int64
         updatedAt:
-          format: date-time
           type: string
+          format: date-time
       required:
-      - id
-      - name
-      - threadCount
-      - createdAt
-      - updatedAt
-      type: object
-    FolderListResponseBody:
+        - id
+        - name
+        - threadCount
+        - createdAt
+        - updatedAt
       additionalProperties: false
+    FolderListResponseBody:
+      type: object
       properties:
         folders:
-          items:
-            $ref: '#/components/schemas/FolderResource'
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/FolderResource"
       required:
-      - folders
-      type: object
+        - folders
+      additionalProperties: false
     CreateFolderRequestBody:
-      additionalProperties: false
+      type: object
       properties:
         name:
-          maxLength: 64
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 64
       required:
-      - name
-      type: object
+        - name
+      additionalProperties: false
     UpdateFolderRequestBody:
-      additionalProperties: false
+      type: object
       properties:
         name:
-          maxLength: 64
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 64
       required:
-      - name
-      type: object
+        - name
+      additionalProperties: false

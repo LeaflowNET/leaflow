@@ -1,5 +1,7 @@
 openapi: 3.1.0
 info:
+  title: Leaflow Support API
+  version: 1.0.0
   description: |-
     Support tickets and scheduled maintenance notices.
 
@@ -45,8 +47,6 @@ info:
 
     Scheduled maintenance is published by platform operators and is read-only here. Platform
     announcements are not part of this API; they are owned by the notification service.
-  title: Leaflow Support API
-  version: 1.0.0
 servers:
   - url: https://support.leaflow.cloud
     description: Tickets and maintenance notices
@@ -70,18 +70,18 @@ paths:
         - Notice
       security: []
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NoticeResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NoticeResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/tickets:
     get:
       summary: List tickets in the current project
@@ -90,66 +90,66 @@ paths:
       tags:
         - Ticket
       parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Return only tickets in this state; omit for all states
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: status
           in: query
-          name: status
-          schema:
-            $ref: '#/components/schemas/TicketStatus'
-        - description: Return only tickets at this priority; omit for all priorities
+          description: Return only tickets in this state; omit for all states
           explode: false
-          in: query
-          name: priority
           schema:
-            $ref: '#/components/schemas/TicketPriority'
-        - description: Return only tickets in this category; omit for all categories
+            $ref: "#/components/schemas/TicketStatus"
+        - name: priority
+          in: query
+          description: Return only tickets at this priority; omit for all priorities
           explode: false
-          in: query
-          name: category_id
           schema:
+            $ref: "#/components/schemas/TicketPriority"
+        - name: category_id
+          in: query
+          description: Return only tickets in this category; omit for all categories
+          explode: false
+          schema:
+            type: string
             format: uuid
-            type: string
-        - description: Match against the subject and the ticket number, case-insensitively
-          explode: false
+        - name: keyword
           in: query
-          name: keyword
+          description: Match against the subject and the ticket number, case-insensitively
+          explode: false
           schema:
-            maxLength: 128
             type: string
+            maxLength: 128
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageTicketResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageTicketResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Open a ticket
       description: |-
@@ -166,24 +166,24 @@ paths:
       tags:
         - Ticket
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTicketRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateTicketRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/tickets/{ticketId}:
     get:
       summary: Get a ticket
@@ -192,25 +192,25 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/tickets/{ticketId}/close:
     post:
       summary: Close a ticket
@@ -223,25 +223,25 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/tickets/{ticketId}/messages:
     get:
       summary: List the messages on a ticket
@@ -250,46 +250,46 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - description: Maximum number of items to return in this page
-          explode: false
+            format: uuid
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageTicketMessageResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageTicketMessageResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Post a message on a ticket
       description: |-
@@ -302,31 +302,31 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTicketMessageRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateTicketMessageRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketMessageResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketMessageResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/tickets/{ticketId}/satisfaction:
     get:
       summary: Get the rating submitted for a ticket
@@ -334,25 +334,25 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketSatisfactionResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketSatisfactionResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Rate a ticket
       description: |-
@@ -365,31 +365,31 @@ paths:
       tags:
         - Ticket
       parameters:
-        - in: path
-          name: ticketId
+        - name: ticketId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTicketSatisfactionRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateTicketSatisfactionRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketSatisfactionResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketSatisfactionResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/ticket-categories:
     get:
       summary: List the categories accepting new tickets
@@ -398,40 +398,40 @@ paths:
       tags:
         - Ticket
       parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 100
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 100
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageTicketCategoryResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageTicketCategoryResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/attachments:
     post:
       summary: Upload an attachment
@@ -445,36 +445,36 @@ paths:
       tags:
         - Attachment
       parameters:
-        - description: The file name to record, and the name the file is served under when downloaded
-          explode: false
+        - name: filename
           in: query
-          name: filename
           required: true
+          description: The file name to record, and the name the file is served under when downloaded
+          explode: false
           schema:
-            maxLength: 255
-            minLength: 1
             type: string
+            minLength: 1
+            maxLength: 255
       requestBody:
+        required: true
         content:
           application/octet-stream:
             schema:
-              contentMediaType: application/octet-stream
-              format: binary
               type: string
-        required: true
+              format: binary
+              contentMediaType: application/octet-stream
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TicketAttachmentResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TicketAttachmentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/attachments/{attachmentId}/content:
     get:
       summary: Download an attachment
@@ -490,39 +490,37 @@ paths:
       tags:
         - Attachment
       parameters:
-        - in: path
-          name: attachmentId
+        - name: attachmentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - description: Render in the browser instead of downloading, where the content type allows it
-          explode: false
+            format: uuid
+        - name: inline
           in: query
-          name: inline
+          description: Render in the browser instead of downloading, where the content type allows it
+          explode: false
           schema:
             type: boolean
       responses:
-        '200':
-          content:
-            '*/*':
-              schema:
-                format: binary
-                type: string
+        "200":
           description: OK
           headers:
             Content-Disposition:
-              description: >-
-                `inline` when the content type can be rendered safely and `inline` was asked for,
-                `attachment` otherwise. Carries the original file name
+              description: "`inline` when the content type can be rendered safely and `inline` was asked for, `attachment` otherwise. Carries the original file name"
               schema:
                 type: string
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/maintenances:
     get:
       summary: List maintenance notices
@@ -535,53 +533,53 @@ paths:
       tags:
         - Maintenance
       parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 20
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 20
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Return only maintenance in this state; omit for all states
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: status
           in: query
-          name: status
-          schema:
-            $ref: '#/components/schemas/MaintenanceStatus'
-        - description: Return only maintenance affecting this component; omit for all components
+          description: Return only maintenance in this state; omit for all states
           explode: false
-          in: query
-          name: component
           schema:
-            maxLength: 100
+            $ref: "#/components/schemas/MaintenanceStatus"
+        - name: component
+          in: query
+          description: Return only maintenance affecting this component; omit for all components
+          explode: false
+          schema:
             type: string
+            maxLength: 100
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageMaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/maintenances/{maintenanceId}:
     get:
       summary: Get a maintenance notice
@@ -590,25 +588,25 @@ paths:
       tags:
         - Maintenance
       parameters:
-        - in: path
-          name: maintenanceId
+        - name: maintenanceId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/maintenances/{maintenanceId}/timeline:
     get:
       summary: List the updates posted during a maintenance
@@ -617,53 +615,50 @@ paths:
       tags:
         - Maintenance
       parameters:
-        - in: path
-          name: maintenanceId
+        - name: maintenanceId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - description: Maximum number of items to return in this page
-          explode: false
+            format: uuid
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageMaintenanceTimelineEntryResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageMaintenanceTimelineEntryResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: Scoped token. Sign in at auth.leaflow.net to obtain an access token, then exchange it with IAM for a scoped token (POST /account/v1/projects/{projectId}/scoped-tokens). A scoped token identifies both the current user and the current project.
-      scheme: bearer
-      type: http
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
@@ -672,88 +667,88 @@ components:
         `OPEN` is waiting on us. `AWAITING_USER` is waiting on you. `CLOSED` is finished.
 
         The state follows whoever spoke last and cannot be set directly.
+      type: string
       enum:
         - OPEN
         - AWAITING_USER
         - CLOSED
-      type: string
     TicketPriority:
       description: How urgent the ticket is. It affects the order support works through tickets; it is not a commitment to a response time.
+      type: string
       enum:
         - LOW
         - NORMAL
         - HIGH
         - URGENT
-      type: string
     TicketAuthorType:
       description: Whether a message was written by a project member or by support.
+      type: string
       enum:
         - USER
         - OPERATOR
-      type: string
     MaintenanceStatus:
       description: |-
         `SCHEDULED` has been announced but has not started. `IN_PROGRESS` is under way. `COMPLETED`
         has finished. `CANCELLED` was announced and then called off, and never took place.
+      type: string
       enum:
         - SCHEDULED
         - IN_PROGRESS
         - COMPLETED
         - CANCELLED
-      type: string
     MaintenanceImpact:
       description: What users should expect during the window.
+      type: string
       enum:
         - NONE
         - DEGRADED
         - PARTIAL_OUTAGE
         - MAJOR_OUTAGE
-      type: string
     TicketResource:
-      additionalProperties: false
       description: A support ticket, owned by the project it was opened in.
+      type: object
       properties:
         category:
-          anyOf:
-            - $ref: '#/components/schemas/TicketCategoryResource'
-            - type: 'null'
           description: The category this ticket is in; null when it has none
+          anyOf:
+            - $ref: "#/components/schemas/TicketCategoryResource"
+            - type: "null"
         closed_at:
           description: When the ticket was closed; null while it is open
-          format: date-time
           type:
             - string
-            - 'null'
-        created_at:
+            - "null"
           format: date-time
+        created_at:
           type: string
+          format: date-time
         created_by:
           description: The user who opened the ticket. Every member of the project can read and reply to it regardless
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         last_activity_at:
           description: When someone last spoke on this ticket. Changing the priority or the category does not affect it
-          format: date-time
           type: string
+          format: date-time
         number:
           description: The human-readable identifier to quote when contacting support by other means
           type: string
         priority:
-          $ref: '#/components/schemas/TicketPriority'
+          $ref: "#/components/schemas/TicketPriority"
         satisfaction:
-          anyOf:
-            - $ref: '#/components/schemas/TicketSatisfactionResource'
-            - type: 'null'
           description: The rating submitted for this ticket; null when it has not been rated
+          anyOf:
+            - $ref: "#/components/schemas/TicketSatisfactionResource"
+            - type: "null"
         status:
-          $ref: '#/components/schemas/TicketStatus'
+          $ref: "#/components/schemas/TicketStatus"
         subject:
           type: string
         updated_at:
-          format: date-time
           type: string
+          format: date-time
       required:
         - id
         - number
@@ -767,46 +762,46 @@ components:
         - closed_at
         - created_at
         - updated_at
-      type: object
-    TicketCategoryResource:
       additionalProperties: false
+    TicketCategoryResource:
       description: A ticket category.
+      type: object
       properties:
         description:
           type:
             - string
-            - 'null'
+            - "null"
         id:
-          format: uuid
           type: string
+          format: uuid
         name:
           type: string
       required:
         - id
         - name
         - description
-      type: object
-    TicketMessageResource:
       additionalProperties: false
+    TicketMessageResource:
       description: One message on a ticket.
+      type: object
       properties:
         attachments:
-          items:
-            $ref: '#/components/schemas/TicketAttachmentResource'
           type: array
+          items:
+            $ref: "#/components/schemas/TicketAttachmentResource"
         author_id:
           description: The identifier of whoever wrote the message, interpreted according to author_type
           type: string
         author_type:
-          $ref: '#/components/schemas/TicketAuthorType'
+          $ref: "#/components/schemas/TicketAuthorType"
         body:
           type: string
         created_at:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
       required:
         - id
         - author_type
@@ -814,96 +809,96 @@ components:
         - body
         - attachments
         - created_at
-      type: object
-    TicketAttachmentResource:
       additionalProperties: false
+    TicketAttachmentResource:
       description: A file uploaded for a ticket. The bytes are retrieved separately; see the download-url operation.
+      type: object
       properties:
         content_type:
           description: Determined from the content, which may differ from the Content-Type sent on upload
           type: string
         created_at:
-          format: date-time
           type: string
+          format: date-time
         filename:
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         size_bytes:
-          format: int64
           type: integer
+          format: int64
       required:
         - id
         - filename
         - content_type
         - size_bytes
         - created_at
-      type: object
-    TicketSatisfactionResource:
       additionalProperties: false
+    TicketSatisfactionResource:
       description: The rating submitted for a ticket.
+      type: object
       properties:
         comment:
           type:
             - string
-            - 'null'
+            - "null"
         created_at:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         score:
-          format: int64
-          maximum: 5
-          minimum: 1
           type: integer
+          format: int64
+          minimum: 1
+          maximum: 5
       required:
         - id
         - score
         - comment
         - created_at
-      type: object
-    MaintenanceResource:
       additionalProperties: false
+    MaintenanceResource:
       description: A scheduled maintenance notice published by platform operators.
+      type: object
       properties:
         body:
           description: Markdown
           type: string
         completed_at:
           description: When the maintenance actually finished; null until it does
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         components:
           description: What this maintenance affects. The names are those used by the services concerned
+          type: array
           items:
             type: string
-          type: array
         id:
-          format: uuid
           type: string
+          format: uuid
         impact:
-          $ref: '#/components/schemas/MaintenanceImpact'
+          $ref: "#/components/schemas/MaintenanceImpact"
         scheduled_for:
           description: The announced start
-          format: date-time
           type: string
+          format: date-time
         scheduled_until:
           description: The announced end
-          format: date-time
           type: string
+          format: date-time
         started_at:
           description: When the maintenance actually started; null until it does
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         status:
-          $ref: '#/components/schemas/MaintenanceStatus'
+          $ref: "#/components/schemas/MaintenanceStatus"
         title:
           type: string
       required:
@@ -917,79 +912,79 @@ components:
         - started_at
         - completed_at
         - components
-      type: object
-    MaintenanceTimelineEntryResource:
       additionalProperties: false
+    MaintenanceTimelineEntryResource:
       description: One update posted during a maintenance.
+      type: object
       properties:
         body:
           type: string
         created_at:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         impact:
-          anyOf:
-            - $ref: '#/components/schemas/MaintenanceImpact'
-            - type: 'null'
           description: The impact this update declared; null when the update did not change it
-        status:
           anyOf:
-            - $ref: '#/components/schemas/MaintenanceStatus'
-            - type: 'null'
+            - $ref: "#/components/schemas/MaintenanceImpact"
+            - type: "null"
+        status:
           description: The state this update moved the maintenance to; null when the update did not change it
+          anyOf:
+            - $ref: "#/components/schemas/MaintenanceStatus"
+            - type: "null"
       required:
         - id
         - body
         - status
         - impact
         - created_at
-      type: object
-    NoticeResource:
       additionalProperties: false
+    NoticeResource:
       description: |-
         What is in effect right now, for readers who have not signed in.
 
         This shape is deliberately narrower than the authenticated resources and carries no read
         state.
+      type: object
       properties:
         maintenances:
-          items:
-            $ref: '#/components/schemas/NoticeMaintenanceResource'
           type: array
+          items:
+            $ref: "#/components/schemas/NoticeMaintenanceResource"
       required:
         - maintenances
-      type: object
-    NoticeMaintenanceResource:
       additionalProperties: false
+    NoticeMaintenanceResource:
+      type: object
       properties:
         body:
           description: Markdown
           type: string
         components:
+          type: array
           items:
             type: string
-          type: array
         id:
+          type: string
           format: uuid
-          type: string
         impact:
-          $ref: '#/components/schemas/MaintenanceImpact'
+          $ref: "#/components/schemas/MaintenanceImpact"
         scheduled_for:
-          format: date-time
           type: string
+          format: date-time
         scheduled_until:
-          format: date-time
           type: string
-        started_at:
           format: date-time
+        started_at:
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         status:
-          $ref: '#/components/schemas/MaintenanceStatus'
+          $ref: "#/components/schemas/MaintenanceStatus"
         title:
           type: string
       required:
@@ -1002,182 +997,182 @@ components:
         - scheduled_until
         - started_at
         - components
-      type: object
-    CreateTicketRequestBody:
       additionalProperties: false
+    CreateTicketRequestBody:
+      type: object
       properties:
         attachment_ids:
           description: Attachments to reference from the first message. Each must have been uploaded in this project and not yet referenced
-          items:
-            format: uuid
-            type: string
-          maxItems: 10
           type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
         body:
           description: The first message. Markdown
+          type: string
+          minLength: 1
           maxLength: 20000
-          minLength: 1
-          type: string
         category_id:
+          type: string
           format: uuid
-          type: string
         priority:
-          $ref: '#/components/schemas/TicketPriority'
+          $ref: "#/components/schemas/TicketPriority"
         subject:
-          maxLength: 255
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 255
       required:
         - subject
         - body
-      type: object
-    CreateTicketMessageRequestBody:
       additionalProperties: false
+    CreateTicketMessageRequestBody:
+      type: object
       properties:
         attachment_ids:
           description: Attachments to reference. Each must have been uploaded in this project and not yet referenced
-          items:
-            format: uuid
-            type: string
-          maxItems: 10
           type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
         body:
           description: Markdown
-          maxLength: 20000
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 20000
       required:
         - body
-      type: object
-    CreateTicketSatisfactionRequestBody:
       additionalProperties: false
+    CreateTicketSatisfactionRequestBody:
+      type: object
       properties:
         comment:
-          maxLength: 2000
           type: string
+          maxLength: 2000
         score:
-          format: int64
-          maximum: 5
-          minimum: 1
           type: integer
+          format: int64
+          minimum: 1
+          maximum: 5
       required:
         - score
-      type: object
-    LengthAwarePageTicketResource:
       additionalProperties: false
+    LengthAwarePageTicketResource:
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/TicketResource'
           type: array
+          items:
+            $ref: "#/components/schemas/TicketResource"
         limit:
           description: Maximum items per page, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Items skipped, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matching items, not only those in this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
+      additionalProperties: false
     LengthAwarePageTicketMessageResource:
-      additionalProperties: false
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/TicketMessageResource'
           type: array
+          items:
+            $ref: "#/components/schemas/TicketMessageResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
+      additionalProperties: false
     LengthAwarePageTicketCategoryResource:
-      additionalProperties: false
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/TicketCategoryResource'
           type: array
+          items:
+            $ref: "#/components/schemas/TicketCategoryResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
+      additionalProperties: false
     LengthAwarePageMaintenanceResource:
-      additionalProperties: false
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/MaintenanceResource'
           type: array
+          items:
+            $ref: "#/components/schemas/MaintenanceResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
+      additionalProperties: false
     LengthAwarePageMaintenanceTimelineEntryResource:
-      additionalProperties: false
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/MaintenanceTimelineEntryResource'
           type: array
+          items:
+            $ref: "#/components/schemas/MaintenanceTimelineEntryResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
+      additionalProperties: false

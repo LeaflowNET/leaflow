@@ -1,5 +1,7 @@
 openapi: 3.1.0
 info:
+  title: Leaflow DNS API
+  version: 1.0.0
   description: |-
     Manage DNS records across supported providers through a single API. Register a provider
     credential, and every domain that credential can reach becomes readable and writable here.
@@ -45,8 +47,6 @@ info:
 
     `PATCH` reads nothing. It is the only operation on a record set safe to issue concurrently, and
     the one certificate issuance must use.
-  title: Leaflow DNS API
-  version: 1.0.0
 servers:
   - url: https://dns.leaflow.cloud
     description: DNS credentials, zones and records
@@ -60,46 +60,46 @@ paths:
       tags:
         - Credential
       parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Return only credentials for this provider; omit for all providers
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: provider
           in: query
-          name: provider
+          description: Return only credentials for this provider; omit for all providers
+          explode: false
           schema:
-            $ref: '#/components/schemas/Provider'
+            $ref: "#/components/schemas/Provider"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageCredentialResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageCredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Register a provider credential
       description: |-
@@ -119,24 +119,24 @@ paths:
       tags:
         - Credential
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateCredentialRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateCredentialRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/credentials/{credentialId}:
     get:
       summary: Get a provider credential
@@ -144,25 +144,25 @@ paths:
       tags:
         - Credential
       parameters:
-        - in: path
-          name: credentialId
+        - name: credentialId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Rename a provider credential
       description: |-
@@ -173,31 +173,31 @@ paths:
       tags:
         - Credential
       parameters:
-        - in: path
-          name: credentialId
+        - name: credentialId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RenameCredentialRequestBody'
-        required: true
+              $ref: "#/components/schemas/RenameCredentialRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a provider credential
       description: |-
@@ -210,21 +210,21 @@ paths:
       tags:
         - Credential
       parameters:
-        - in: path
-          name: credentialId
+        - name: credentialId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/credentials/{credentialId}/verification:
     post:
       summary: Re-validate a provider credential
@@ -243,25 +243,25 @@ paths:
       tags:
         - Credential
       parameters:
-        - in: path
-          name: credentialId
+        - name: credentialId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/zones:
     get:
       summary: List domains
@@ -289,39 +289,35 @@ paths:
       tags:
         - Zone
       parameters:
-        - description: Return only domains reachable through this credential
-          explode: false
+        - name: credential_id
           in: query
-          name: credential_id
+          description: Return only domains reachable through this credential
+          explode: false
           schema:
             description: Return only domains reachable through this credential
-            format: uuid
             type: string
-        - description: >-
-            Return the current set of domains rather than a possibly slightly stale one. Slower,
-            and consumes provider API quota
-          explode: false
+            format: uuid
+        - name: refresh
           in: query
-          name: refresh
+          description: Return the current set of domains rather than a possibly slightly stale one. Slower, and consumes provider API quota
+          explode: false
           schema:
-            default: false
-            description: >-
-              Return the current set of domains rather than a possibly slightly stale one. Slower,
-              and consumes provider API quota
+            description: Return the current set of domains rather than a possibly slightly stale one. Slower, and consumes provider API quota
             type: boolean
+            default: false
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ZoneListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ZoneListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/zones/{zone}/records:
     get:
       summary: List record sets
@@ -335,79 +331,71 @@ paths:
       tags:
         - Record
       parameters:
-        - description: The domain. A trailing dot is optional
+        - name: zone
           in: path
-          name: zone
           required: true
+          description: The domain. A trailing dot is optional
           schema:
             description: The domain. A trailing dot is optional
-            maxLength: 253
+            type: string
             minLength: 1
-            type: string
-        - description: >-
-            Which credential to use. When omitted, the credential is determined from the domain;
-            see ZONE_AMBIGUOUS
-          explode: false
-          in: query
-          name: credential_id
-          schema:
-            description: >-
-              Which credential to use. When omitted, the credential is determined from the domain;
-              see ZONE_AMBIGUOUS
-            format: uuid
-            type: string
-        - description: >-
-            Return only record sets with this name, given relative to the domain. `@` denotes the
-            domain itself
-          explode: false
-          in: query
-          name: name
-          schema:
-            description: >-
-              Return only record sets with this name, given relative to the domain. `@` denotes the
-              domain itself
             maxLength: 253
+        - name: credential_id
+          in: query
+          description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
+          explode: false
+          schema:
+            description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
             type: string
-        - description: Return only record sets of this type
-          explode: false
+            format: uuid
+        - name: name
           in: query
-          name: type
-          schema:
-            $ref: '#/components/schemas/RecordType'
-        - description: Maximum number of items to return in this page
+          description: Return only record sets with this name, given relative to the domain. `@` denotes the domain itself
           explode: false
-          in: query
-          name: limit
           schema:
-            default: 100
+            description: Return only record sets with this name, given relative to the domain. `@` denotes the domain itself
+            type: string
+            maxLength: 253
+        - name: type
+          in: query
+          description: Return only record sets of this type
+          explode: false
+          schema:
+            $ref: "#/components/schemas/RecordType"
+        - name: limit
+          in: query
+          description: Maximum number of items to return in this page
+          explode: false
+          schema:
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 500
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 100
+            minimum: 1
+            maximum: 500
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageRecordSetResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageRecordSetResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/zones/{zone}/records/{name}/{type}:
     get:
       summary: Get a record set
@@ -416,45 +404,112 @@ paths:
       tags:
         - Record
       parameters:
-        - description: The domain. A trailing dot is optional
+        - name: zone
           in: path
-          name: zone
           required: true
+          description: The domain. A trailing dot is optional
           schema:
             description: The domain. A trailing dot is optional
-            maxLength: 253
-            minLength: 1
             type: string
-        - description: >-
-            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            minLength: 1
+            maxLength: 253
+        - name: name
           in: path
-          name: name
           required: true
+          description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
           schema:
-            description: >-
-              The name, given relative to the domain. `@` denotes the domain itself and `*` a
-              wildcard
-            maxLength: 253
-            minLength: 1
+            description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
             type: string
-        - in: path
-          name: type
+            minLength: 1
+            maxLength: 253
+        - name: type
+          in: path
           required: true
           schema:
-            $ref: '#/components/schemas/RecordType'
+            $ref: "#/components/schemas/RecordType"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RecordSetResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RecordSetResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Replace a record set
+      description: |-
+        **This replaces the entire record set.** After this request, the only records under this
+        name and type are the ones listed in `values`; any value present beforehand and absent here
+        is removed.
+
+        The record set is created if it does not exist, so this operation both creates and replaces,
+        and is idempotent.
+
+        Two concurrent requests against the same domain conflict; the second receives `ZONE_BUSY`
+        and may be retried.
+
+        **Use `PATCH` to add or remove individual values.** Reading the set and submitting a
+        modified list is a read-modify-write: values added by anything else between those two steps
+        are stated to be absent, and are therefore removed, with both requests returning 200.
+      operationId: set-record-set
+      tags:
+        - Record
+      parameters:
+        - name: zone
+          in: path
+          required: true
+          description: The domain. A trailing dot is optional
+          schema:
+            description: The domain. A trailing dot is optional
+            type: string
+            minLength: 1
+            maxLength: 253
+        - name: name
+          in: path
+          required: true
+          description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+          schema:
+            description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            type: string
+            minLength: 1
+            maxLength: 253
+        - name: type
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/RecordType"
+        - name: credential_id
+          in: query
+          description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
+          explode: false
+          schema:
+            description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetRecordSetRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordSetResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Add or remove values in a record set
       description: |-
@@ -485,140 +540,56 @@ paths:
       tags:
         - Record
       parameters:
-        - description: The domain. A trailing dot is optional
+        - name: zone
           in: path
-          name: zone
           required: true
+          description: The domain. A trailing dot is optional
           schema:
             description: The domain. A trailing dot is optional
-            maxLength: 253
-            minLength: 1
             type: string
-        - description: >-
-            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            minLength: 1
+            maxLength: 253
+        - name: name
           in: path
-          name: name
           required: true
+          description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
           schema:
-            description: >-
-              The name, given relative to the domain. `@` denotes the domain itself and `*` a
-              wildcard
-            maxLength: 253
+            description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            type: string
             minLength: 1
-            type: string
-        - in: path
-          name: type
+            maxLength: 253
+        - name: type
+          in: path
           required: true
           schema:
-            $ref: '#/components/schemas/RecordType'
-        - description: >-
-            Which credential to use. When omitted, the credential is determined from the domain;
-            see ZONE_AMBIGUOUS
-          explode: false
+            $ref: "#/components/schemas/RecordType"
+        - name: credential_id
           in: query
-          name: credential_id
+          description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
+          explode: false
           schema:
-            description: >-
-              Which credential to use. When omitted, the credential is determined from the domain;
-              see ZONE_AMBIGUOUS
-            format: uuid
+            description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ModifyRecordSetRequestBody'
-        required: true
+              $ref: "#/components/schemas/ModifyRecordSetRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RecordSetResource'
+        "200":
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordSetResource"
         default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
           description: Error
-    put:
-      summary: Replace a record set
-      description: |-
-        **This replaces the entire record set.** After this request, the only records under this
-        name and type are the ones listed in `values`; any value present beforehand and absent here
-        is removed.
-
-        The record set is created if it does not exist, so this operation both creates and replaces,
-        and is idempotent.
-
-        Two concurrent requests against the same domain conflict; the second receives `ZONE_BUSY`
-        and may be retried.
-
-        **Use `PATCH` to add or remove individual values.** Reading the set and submitting a
-        modified list is a read-modify-write: values added by anything else between those two steps
-        are stated to be absent, and are therefore removed, with both requests returning 200.
-      operationId: set-record-set
-      tags:
-        - Record
-      parameters:
-        - description: The domain. A trailing dot is optional
-          in: path
-          name: zone
-          required: true
-          schema:
-            description: The domain. A trailing dot is optional
-            maxLength: 253
-            minLength: 1
-            type: string
-        - description: >-
-            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
-          in: path
-          name: name
-          required: true
-          schema:
-            description: >-
-              The name, given relative to the domain. `@` denotes the domain itself and `*` a
-              wildcard
-            maxLength: 253
-            minLength: 1
-            type: string
-        - in: path
-          name: type
-          required: true
-          schema:
-            $ref: '#/components/schemas/RecordType'
-        - description: >-
-            Which credential to use. When omitted, the credential is determined from the domain;
-            see ZONE_AMBIGUOUS
-          explode: false
-          in: query
-          name: credential_id
-          schema:
-            description: >-
-              Which credential to use. When omitted, the credential is determined from the domain;
-              see ZONE_AMBIGUOUS
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetRecordSetRequestBody'
-        required: true
-      responses:
-        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordSetResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a record set
       description: |-
@@ -631,60 +602,50 @@ paths:
       tags:
         - Record
       parameters:
-        - description: The domain. A trailing dot is optional
+        - name: zone
           in: path
-          name: zone
           required: true
+          description: The domain. A trailing dot is optional
           schema:
             description: The domain. A trailing dot is optional
-            maxLength: 253
-            minLength: 1
             type: string
-        - description: >-
-            The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            minLength: 1
+            maxLength: 253
+        - name: name
           in: path
-          name: name
           required: true
+          description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
           schema:
-            description: >-
-              The name, given relative to the domain. `@` denotes the domain itself and `*` a
-              wildcard
-            maxLength: 253
+            description: The name, given relative to the domain. `@` denotes the domain itself and `*` a wildcard
+            type: string
             minLength: 1
-            type: string
-        - in: path
-          name: type
+            maxLength: 253
+        - name: type
+          in: path
           required: true
           schema:
-            $ref: '#/components/schemas/RecordType'
-        - description: >-
-            Which credential to use. When omitted, the credential is determined from the domain;
-            see ZONE_AMBIGUOUS
-          explode: false
+            $ref: "#/components/schemas/RecordType"
+        - name: credential_id
           in: query
-          name: credential_id
+          description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
+          explode: false
           schema:
-            description: >-
-              Which credential to use. When omitted, the credential is determined from the domain;
-              see ZONE_AMBIGUOUS
-            format: uuid
+            description: Which credential to use. When omitted, the credential is determined from the domain; see ZONE_AMBIGUOUS
             type: string
+            format: uuid
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: Scoped token. Sign in at auth.leaflow.net to obtain an access token, then exchange it with IAM for a scoped token (POST /account/v1/projects/{projectId}/scoped-tokens). A scoped token identifies both the current user and the current project.
-      scheme: bearer
-      type: http
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
@@ -694,6 +655,7 @@ components:
 
         The listed types are those this API supports uniformly across every provider. HTTPS and
         SVCB are not yet available.
+      type: string
       enum:
         - A
         - AAAA
@@ -703,67 +665,66 @@ components:
         - NS
         - SRV
         - CAA
-      type: string
     Provider:
       description: A supported DNS provider.
+      type: string
       enum:
         - cloudflare
         - tencentcloud
         - alidns
         - route53
-      type: string
     CredentialStatus:
       description: |-
         `active` is usable. `disabled` means the platform has disabled this credential and requires
         contact with support.
 
         A project that has been suspended is reported separately, in `suspended_at`.
+      type: string
       enum:
         - active
         - disabled
-      type: string
     CredentialResource:
-      additionalProperties: false
       description: A registered provider credential. The credential material itself is never included.
+      type: object
       properties:
         created_at:
-          format: date-time
           type: string
+          format: date-time
         fingerprint:
           description: Equal fingerprints denote the same credential material
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         last_verified_at:
           description: When the credential was last confirmed to work; null if it never has
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         last_verify_error:
           description: Why the most recent check failed; null if the most recent check succeeded
           type:
             - string
-            - 'null'
+            - "null"
         name:
           type: string
         provider:
-          $ref: '#/components/schemas/Provider'
+          $ref: "#/components/schemas/Provider"
         redacted:
           description: A partially masked fragment of the credential, for visual identification only
           type: string
         status:
-          $ref: '#/components/schemas/CredentialStatus'
+          $ref: "#/components/schemas/CredentialStatus"
         suspended_at:
           description: When the credential was suspended because the project was suspended; null if it was not. Cleared when the project is restored
-          format: date-time
           type:
             - string
-            - 'null'
-        updated_at:
+            - "null"
           format: date-time
+        updated_at:
           type: string
+          format: date-time
       required:
         - id
         - name
@@ -776,145 +737,144 @@ components:
         - last_verify_error
         - created_at
         - updated_at
-      type: object
-    CloudflareConfig:
       additionalProperties: false
+    CloudflareConfig:
       description: Cloudflare credentials, created under My Profile then API Tokens
+      type: object
       properties:
         api_token:
           description: An API token with the Zone.DNS edit permission
-          maxLength: 512
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 512
         zone_token:
           description: Optional, and required only when api_token is scoped to a single zone, in which case it is used to enumerate zones
-          maxLength: 512
           type: string
+          maxLength: 512
       required:
         - api_token
-      type: object
-    TencentCloudConfig:
       additionalProperties: false
+    TencentCloudConfig:
       description: Tencent Cloud DNSPod credentials, created under Access Management then Access Keys
+      type: object
       properties:
         secret_id:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
         secret_key:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
       required:
         - secret_id
         - secret_key
-      type: object
-    AliDNSConfig:
       additionalProperties: false
+    AliDNSConfig:
       description: Alibaba Cloud DNS credentials, created under RAM
+      type: object
       properties:
         access_key_id:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
         access_key_secret:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
         region_id:
           description: Defaults to cn-hangzhou
-          maxLength: 64
           type: string
+          maxLength: 64
       required:
         - access_key_id
         - access_key_secret
-      type: object
-    Route53Config:
       additionalProperties: false
+    Route53Config:
       description: AWS Route 53 credentials
+      type: object
       properties:
         access_key_id:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
         region:
           description: Defaults to us-east-1. Route 53 is a global service, so this affects request signing only
+          type: string
           maxLength: 64
-          type: string
         secret_access_key:
-          maxLength: 256
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 256
         session_token:
           description: Optional, and required only for temporary STS credentials. Such credentials expire, after which every operation against this provider fails
-          maxLength: 2048
           type: string
+          maxLength: 2048
       required:
         - access_key_id
         - secret_access_key
-      type: object
-    CreateCredentialRequestBody:
       additionalProperties: false
-      description: |-
-        `provider` selects which configuration block is read. The remaining blocks are ignored.
+    CreateCredentialRequestBody:
+      description: "`provider` selects which configuration block is read. The remaining blocks are ignored."
+      type: object
       properties:
         alidns:
-          $ref: '#/components/schemas/AliDNSConfig'
+          $ref: "#/components/schemas/AliDNSConfig"
         cloudflare:
-          $ref: '#/components/schemas/CloudflareConfig'
+          $ref: "#/components/schemas/CloudflareConfig"
         name:
           description: A display name for this credential
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         provider:
-          $ref: '#/components/schemas/Provider'
+          $ref: "#/components/schemas/Provider"
         route53:
-          $ref: '#/components/schemas/Route53Config'
+          $ref: "#/components/schemas/Route53Config"
         tencentcloud:
-          $ref: '#/components/schemas/TencentCloudConfig'
+          $ref: "#/components/schemas/TencentCloudConfig"
       required:
         - name
         - provider
-      type: object
-    RenameCredentialRequestBody:
       additionalProperties: false
+    RenameCredentialRequestBody:
+      type: object
       properties:
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
       required:
         - name
-      type: object
-    LengthAwarePageCredentialResource:
       additionalProperties: false
+    LengthAwarePageCredentialResource:
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/CredentialResource'
           type: array
+          items:
+            $ref: "#/components/schemas/CredentialResource"
         limit:
           description: Maximum items per page, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Items skipped, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matching items, not only those in this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
-    ZoneResource:
       additionalProperties: false
+    ZoneResource:
+      type: object
       properties:
         authoritative:
           description: |-
@@ -925,13 +885,13 @@ components:
             domain appears more than once, write operations require an explicit `credential_id`.
           type:
             - boolean
-            - 'null'
+            - "null"
         credential_id:
           description: The credential through which this domain is reachable
-          format: uuid
           type: string
+          format: uuid
         provider:
-          $ref: '#/components/schemas/Provider'
+          $ref: "#/components/schemas/Provider"
         zone:
           description: The domain in absolute form, with a trailing dot
           type: string
@@ -940,14 +900,14 @@ components:
         - credential_id
         - provider
         - authoritative
-      type: object
-    ZoneListResponseBody:
       additionalProperties: false
+    ZoneListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/ZoneResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ZoneResource"
         stale:
           description: |-
             True when at least one provider could not be reached while producing this listing, so
@@ -958,20 +918,20 @@ components:
       required:
         - items
         - stale
-      type: object
-    RecordSetResource:
       additionalProperties: false
+    RecordSetResource:
       description: Every record sharing a name and a type.
+      type: object
       properties:
         name:
           description: The name relative to the domain. `@` denotes the domain itself
           type: string
         ttl:
           description: Time to live, in seconds. 0 leaves the choice to the provider
-          format: int64
           type: integer
+          format: int64
         type:
-          $ref: '#/components/schemas/RecordType'
+          $ref: "#/components/schemas/RecordType"
         values:
           description: |-
             Every value in this record set, in unescaped zone-file RDATA syntax:
@@ -982,9 +942,9 @@ components:
             - `MX`: `10 mail.example.com.`
             - `SRV`: `10 20 443 target.example.com.`
             - `CAA`: `0 issue "letsencrypt.org"`
+          type: array
           items:
             type: string
-          type: array
         zone:
           description: The domain in absolute form, with a trailing dot
           type: string
@@ -994,92 +954,83 @@ components:
         - type
         - ttl
         - values
-      type: object
-    LengthAwarePageRecordSetResource:
       additionalProperties: false
+    LengthAwarePageRecordSetResource:
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/RecordSetResource'
           type: array
+          items:
+            $ref: "#/components/schemas/RecordSetResource"
         limit:
           description: Maximum items per page, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Items skipped, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matching items, not only those in this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
-    SetRecordSetRequestBody:
       additionalProperties: false
-      description: '`values` states the final contents of the record set. Values omitted here are removed.'
+    SetRecordSetRequestBody:
+      description: "`values` states the final contents of the record set. Values omitted here are removed."
+      type: object
       properties:
         ttl:
-          default: 300
           description: Time to live, in seconds. 0 leaves the choice to the provider. Providers enforce their own minimum and raise lower values to it
-          format: int64
-          maximum: 604800
-          minimum: 0
           type: integer
+          format: int64
+          default: 300
+          minimum: 0
+          maximum: 604800
         values:
           description: The final contents of the record set. Syntax as described on RecordSetResource.values
-          items:
-            maxLength: 4096
-            minLength: 1
-            type: string
-          maxItems: 100
-          minItems: 1
           type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
       required:
         - values
-      type: object
-    ModifyRecordSetRequestBody:
       additionalProperties: false
-      description: >-
-        Names the values to add and to remove. Anything not named is left in place. At least one of
-        `add` and `remove` is required, and no value may appear in both.
+    ModifyRecordSetRequestBody:
+      description: Names the values to add and to remove. Anything not named is left in place. At least one of `add` and `remove` is required, and no value may appear in both.
+      type: object
       properties:
         add:
-          description: >-
-            The values to add. Values already present are rejected by the provider. Syntax as
-            described on RecordSetResource.values
-          items:
-            maxLength: 4096
-            minLength: 1
-            type: string
-          maxItems: 100
-          minItems: 1
+          description: The values to add. Values already present are rejected by the provider. Syntax as described on RecordSetResource.values
           type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
         remove:
-          description: >-
-            The values to remove. Values that are not present are skipped. Syntax as described on
-            RecordSetResource.values
-          items:
-            maxLength: 4096
-            minLength: 1
-            type: string
-          maxItems: 100
-          minItems: 1
+          description: The values to remove. Values that are not present are skipped. Syntax as described on RecordSetResource.values
           type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
         ttl:
-          default: 300
-          description: >-
-            Time to live, in seconds, applied to the values in `add`. 0 leaves the choice to the
-            provider. The time to live of values already in the set is not changed; use `PUT` for
-            that
-          format: int64
-          maximum: 604800
-          minimum: 0
+          description: Time to live, in seconds, applied to the values in `add`. 0 leaves the choice to the provider. The time to live of values already in the set is not changed; use `PUT` for that
           type: integer
-      type: object
+          format: int64
+          default: 300
+          minimum: 0
+          maximum: 604800
+      additionalProperties: false

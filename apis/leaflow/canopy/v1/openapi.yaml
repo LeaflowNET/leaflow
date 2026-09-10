@@ -1,9 +1,11 @@
 openapi: 3.1.0
 info:
+  title: Leaflow Canopy API
+  version: 1.0.0
   description: |-
-    管理 API Key、查看模型与用量。
+    Management of API keys, together with the models available and the usage recorded against them.
 
-    **这套接口不是推理接口。** 发起对话请用转发地址，它兼容 OpenAI、Anthropic、Gemini 三种调用格式：
+    **These endpoints do not perform inference.** Requests are issued to the forwarding address, which accepts the OpenAI, Anthropic and Gemini request formats:
 
     ```
     POST /v1/chat/completions                    OpenAI
@@ -11,23 +13,19 @@ info:
     POST /v1beta/models/{model}:generateContent  Gemini
     ```
 
-    ## 身份与鉴权
+    ## Authentication
 
-    每个请求需携带 `Authorization: Bearer <项目令牌>`。先在 auth.leaflow.net 登录获取账号令牌，再用它向 IAM 换取项目令牌。一张项目令牌同时说明当前用户和当前项目。
+    Every request carries a scoped token; see the `bearerAuth` security scheme.
 
-    **路径和请求头上都没有 `project_id`**：当前项目由令牌决定。
+    These endpoints do not accept an API key, and the forwarding endpoints do not accept a scoped token.
 
-    **这套接口不接受 API Key。** 一把泄露的 key 如果还能拿去建新的 key、看别人的用量，那它就撤不干净了。反过来，转发接口也不接受项目令牌。
+    ## Conventions
 
-    ## 通用约定
-
-    - **API Key 的明文只出现一次。** 签发时的响应里有 `secret`，之后任何接口都不会再返回它——服务端只存哈希。丢了只能撤销重建。
-    - **停用和撤销是两件事。** 停用随时能开回来；撤销不可逆，用于 key 泄露的情况。两者都不删除记录，那把 key 此前的用量仍然查得到。
-    - **用量查询必须带时间范围**，跨度不超过 31 天。`from` / `to` 带时区偏移，服务端不猜时区。
-    - **流水里没有请求体和响应体。** canopy 一张表都不存它们。排障请提供响应里的 `upstream_request_id`。
-    - **用量可能是估算的。** 上游不是每次都报用量（流式响应要显式开启，有些入口不透传，连接中断时最后一帧可能没到）。这种情况下 `usage_source` 为 `estimated`，那几个数是按字符类估的，误差在百分之十几。
-  title: Leaflow Canopy API
-  version: 1.0.0
+    - **The plaintext of an API key is returned once.** The `secret` appears in the response that issues it and is returned by no other endpoint. A key that has been lost has to be revoked and reissued.
+    - **Disabling and revoking are distinct.** A disabled key may be enabled again at any time, while a revocation is irreversible and is intended for a key that has been exposed. Neither removes the record, and the usage the key accrued remains readable.
+    - **A usage query must carry a time range**, spanning no more than 31 days. `from` and `to` carry a timezone offset, which the server does not infer.
+    - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the `upstream_request_id` from the response when reporting a problem.
+    - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
 servers:
   - url: https://canopy.leaflow.cloud
     description: Model gateway keys and usage
@@ -36,741 +34,738 @@ security:
 paths:
   /api/v1/keys:
     get:
-      summary: 列出 API Key
+      summary: List API keys
       operationId: list-api-keys
       tags:
         - APIKey
       parameters:
-        - description: 这一页最多返回多少条
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items in this page
+          explode: false
           schema:
+            description: Maximum number of items in this page
+            type: integer
+            format: int64
             default: 50
-            description: 这一页最多返回多少条
-            format: int64
-            maximum: 200
             minimum: 1
-            type: integer
-        - description: 跳过多少条。要翻得更深请改用游标翻页的接口
-          explode: false
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip. Use the cursor-paged endpoint to page deeper
+          explode: false
           schema:
-            description: 跳过多少条。要翻得更深请改用游标翻页的接口
+            description: Number of items to skip. Use the cursor-paged endpoint to page deeper
+            type: integer
             format: int64
-            maximum: 10000
             minimum: 0
-            type: integer
-        - description: 只看这个状态的；不传表示全部
-          explode: false
+            maximum: 10000
+        - name: status
           in: query
-          name: status
+          description: Restricts the result to the specified status. Every status is returned while this is absent
+          explode: false
           schema:
-            description: 只看这个状态的；不传表示全部
+            description: Restricts the result to the specified status. Every status is returned while this is absent
+            type: string
             enum:
               - active
               - disabled
               - revoked
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageAPIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageAPIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
-      summary: 签发一把 API Key
+      summary: Issue an API key
       description: |-
-        响应里的 `secret` 是完整的 key，**只在这一次出现**——服务端只存它的哈希，之后任何接口都不会再返回它。丢了只能撤销重建。
+        The `secret` in the response is the complete key and **appears in this response only**. It is returned by no other endpoint, and a key that has been lost has to be revoked and reissued.
 
-        把它填进 `OPENAI_API_KEY` 一类的地方即可，转发接口同时接受 OpenAI、Anthropic、Gemini 三种调用格式。
+        Supply it wherever a value such as `OPENAI_API_KEY` is expected. The forwarding endpoints accept the OpenAI, Anthropic and Gemini request formats alike.
       operationId: create-api-key
       tags:
         - APIKey
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateAPIKeyRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateAPIKeyRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IssuedAPIKeyResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IssuedAPIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/keys/{keyId}:
     get:
-      summary: 查看 API Key
+      summary: Get an API key
       operationId: get-api-key
       tags:
         - APIKey
       parameters:
-        - in: path
-          name: keyId
+        - name: keyId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
-      summary: 修改 API Key
+      summary: Update an API key
       description: |-
-        只改属性，不改状态——启用、停用、撤销各有自己的接口。
+        Attributes only. Enabling, disabling and revoking each have their own endpoint.
 
-        没提到的字段保持不变。要把到期时间改成「永不过期」请传 `clear_expiry: true`，而不是把 `expires_at` 传成 null。
+        A field that is not supplied is left unchanged. To remove an expiry, send `clear_expiry` as true rather than a null `expires_at`.
 
-        已撤销的 key 不接受任何修改。
+        A revoked key accepts no modification.
       operationId: update-api-key
       tags:
         - APIKey
       parameters:
-        - in: path
-          name: keyId
+        - name: keyId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateAPIKeyRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdateAPIKeyRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/keys/{keyId}/disable:
     post:
-      summary: 停用 API Key
-      description: 临时停用，随时可以启用回来。要永久失效请用撤销。
+      summary: Disable an API key
+      description: A temporary measure; the key may be enabled again at any time. Use revocation to invalidate it permanently.
       operationId: disable-api-key
       tags:
         - APIKey
       parameters:
-        - in: path
-          name: keyId
+        - name: keyId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/keys/{keyId}/enable:
     post:
-      summary: 启用 API Key
-      description: 两种情况开不回来：已撤销的（`API_KEY_REVOKED`），以及因项目停服被停的（`API_KEY_PROJECT_SUSPENDED`，响应里 `suspended` 为 true）。后者要等项目恢复。
+      summary: Enable an API key
+      description: Two cases cannot be enabled again. A revoked key answers `API_KEY_REVOKED`, and a key disabled because its project is suspended answers `API_KEY_PROJECT_SUSPENDED` with `suspended` set to true; the latter requires the project to be restored first.
       operationId: enable-api-key
       tags:
         - APIKey
       parameters:
-        - in: path
-          name: keyId
+        - name: keyId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/keys/{keyId}/revoke:
     post:
-      summary: 撤销 API Key
+      summary: Revoke an API key
       description: |-
-        **不可逆。** 用于这把 key 泄露了的情况——比如被提交进了仓库。
+        **Irreversible.** It is intended for a key that has been exposed, such as one committed to a repository.
 
-        记录不删除：这把 key 在被撤销前打了多少请求仍然查得到，那正是出事之后要看的。
+        The record is retained, so the requests the key issued before it was revoked remain readable.
 
-        只是想临时停一下请用停用。
+        Use disabling for a temporary measure.
       operationId: revoke-api-key
       tags:
         - APIKey
       parameters:
-        - in: path
-          name: keyId
+        - name: keyId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/models:
     get:
-      summary: 列出可用模型
+      summary: List the available models
       description: |-
-        已下架（`retired`）的模型不出现在这里，但仍然查得到——见查看单个模型。
+        A model that has been retired does not appear here, while it remains readable individually.
 
-        `context_length` 和 `max_output_tokens` 仅供客户端提示：服务端不据此截断，请求体原样转给上游。
+        `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
       operationId: list-models
       tags:
         - Model
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ModelListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/models/{modelId}:
     get:
-      summary: 查看模型
-      description: 已下架的模型在这里查得到，但转发时会被拒（`MODEL_RETIRED`）——这和「这个模型不存在」是两件事，前者说明它曾经有过。
+      summary: Get a model
+      description: A model that has been retired remains readable here, while forwarding to it is refused with `MODEL_RETIRED`. That is distinct from a model that does not exist.
       operationId: get-model
       tags:
         - Model
       parameters:
-        - in: path
-          name: modelId
+        - name: modelId
+          in: path
           required: true
           schema:
-            maxLength: 128
             type: string
+            maxLength: 128
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ModelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/requests:
     get:
-      summary: 列出请求流水
+      summary: List request records
       description: |-
-        游标翻页，按时间倒序。`next_cursor` 为空表示已经到底。
+        Cursor-paged, most recent first. An empty `next_cursor` indicates the last page.
 
-        **不返回请求体和响应体**——canopy 一张表都不存它们。排障请提供 `upstream_request_id`。
+        **The request and response bodies are not returned**; they are not recorded. Quote the `upstream_request_id` when reporting a problem.
 
-        `usage_source` 为 `estimated` 表示上游这次没给用量，那几个数是我们按字符类估的。
+        A `usage_source` of `estimated` indicates that the upstream provider reported no usage for that request, and that the figures are derived from the character classes of the payload.
       operationId: list-requests
       tags:
         - Usage
       parameters:
-        - description: 起点，含。RFC 3339，带时区偏移
-          explode: false
+        - name: from
           in: query
-          name: from
           required: true
-          schema:
-            description: 起点，含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 终点，不含。RFC 3339，带时区偏移
+          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
           explode: false
+          schema:
+            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: to
           required: true
-          schema:
-            description: 终点，不含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 只看这个模型
+          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
           explode: false
-          in: query
-          name: model_id
           schema:
-            description: 只看这个模型
+            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: model_id
+          in: query
+          description: Restricts the result to the specified model
+          explode: false
+          schema:
+            description: Restricts the result to the specified model
+            type: string
             maxLength: 128
-            type: string
-        - description: 只看这把 key
-          explode: false
+        - name: api_key_id
           in: query
-          name: api_key_id
-          schema:
-            description: 只看这把 key
-            type: string
-        - description: 只看这个状态的
+          description: Restricts the result to the specified API key
           explode: false
-          in: query
-          name: status
           schema:
-            description: 只看这个状态的
+            description: Restricts the result to the specified API key
+            type: string
+        - name: status
+          in: query
+          description: Restricts the result to the specified status
+          explode: false
+          schema:
+            description: Restricts the result to the specified status
+            type: string
             enum:
               - in_flight
               - succeeded
               - refused
               - upstream_failed
               - client_aborted
-            type: string
-        - description: 这一页最多返回多少条
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items in this page
+          explode: false
           schema:
-            default: 50
-            description: 这一页最多返回多少条
-            format: int64
-            maximum: 200
-            minimum: 1
+            description: Maximum number of items in this page
             type: integer
-        - description: 上一页返回的 next_cursor；首页不填
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: cursor
           in: query
-          name: cursor
+          description: The `next_cursor` returned by the previous page. Omitted on the first page
+          explode: false
           schema:
-            description: 上一页返回的 next_cursor；首页不填
-            maxLength: 512
+            description: The `next_cursor` returned by the previous page. Omitted on the first page
             type: string
+            maxLength: 512
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CursorPageRequestResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CursorPageRequestResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/requests/{requestId}:
     get:
-      summary: 查看单条流水
+      summary: Get a single request record
       operationId: get-request
       tags:
         - Usage
       parameters:
-        - in: path
-          name: requestId
+        - name: requestId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequestResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RequestResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/usage/by-api-key:
     get:
-      summary: 按 API Key 看用量
-      description: 用来回答「哪把 key 在烧钱」。已撤销的 key 仍然出现在这里——它在被撤销前的用量正是要看的东西。
+      summary: Get usage by API key
+      description: Answers which key is consuming the budget. A key that has been revoked still appears, since the usage it accrued beforehand is part of that answer.
       operationId: list-usage-by-api-key
       tags:
         - Usage
       parameters:
-        - description: 起点，含。RFC 3339，带时区偏移
-          explode: false
+        - name: from
           in: query
-          name: from
           required: true
-          schema:
-            description: 起点，含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 终点，不含。RFC 3339，带时区偏移
+          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
           explode: false
+          schema:
+            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: to
           required: true
-          schema:
-            description: 终点，不含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 只看这个模型
+          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
           explode: false
-          in: query
-          name: model_id
           schema:
-            description: 只看这个模型
+            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: model_id
+          in: query
+          description: Restricts the result to the specified model
+          explode: false
+          schema:
+            description: Restricts the result to the specified model
+            type: string
             maxLength: 128
-            type: string
-        - description: 只看这把 key
-          explode: false
+        - name: api_key_id
           in: query
-          name: api_key_id
-          schema:
-            description: 只看这把 key
-            type: string
-        - description: 只看这个状态的
+          description: Restricts the result to the specified API key
           explode: false
-          in: query
-          name: status
           schema:
-            description: 只看这个状态的
+            description: Restricts the result to the specified API key
+            type: string
+        - name: status
+          in: query
+          description: Restricts the result to the specified status
+          explode: false
+          schema:
+            description: Restricts the result to the specified status
+            type: string
             enum:
               - in_flight
               - succeeded
               - refused
               - upstream_failed
               - client_aborted
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIKeyUsageListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/APIKeyUsageListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/usage/by-model:
     get:
-      summary: 按模型看用量
+      summary: Get usage by model
       operationId: list-usage-by-model
       tags:
         - Usage
       parameters:
-        - description: 起点，含。RFC 3339，带时区偏移
-          explode: false
+        - name: from
           in: query
-          name: from
           required: true
-          schema:
-            description: 起点，含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 终点，不含。RFC 3339，带时区偏移
+          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
           explode: false
+          schema:
+            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: to
           required: true
-          schema:
-            description: 终点，不含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 只看这个模型
+          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
           explode: false
-          in: query
-          name: model_id
           schema:
-            description: 只看这个模型
+            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: model_id
+          in: query
+          description: Restricts the result to the specified model
+          explode: false
+          schema:
+            description: Restricts the result to the specified model
+            type: string
             maxLength: 128
-            type: string
-        - description: 只看这把 key
-          explode: false
+        - name: api_key_id
           in: query
-          name: api_key_id
-          schema:
-            description: 只看这把 key
-            type: string
-        - description: 只看这个状态的
+          description: Restricts the result to the specified API key
           explode: false
-          in: query
-          name: status
           schema:
-            description: 只看这个状态的
+            description: Restricts the result to the specified API key
+            type: string
+        - name: status
+          in: query
+          description: Restricts the result to the specified status
+          explode: false
+          schema:
+            description: Restricts the result to the specified status
+            type: string
             enum:
               - in_flight
               - succeeded
               - refused
               - upstream_failed
               - client_aborted
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelUsageListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ModelUsageListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/usage/summary:
     get:
-      summary: 用量合计
+      summary: Get total usage
       description: |-
-        `from` / `to` 必填，跨度不超过 31 天。两者带时区偏移，传 `2026-08-01T00:00:00+08:00` 得到的就是东八区那一刻起算。
+        `from` and `to` are required and may span no more than 31 days. Both carry a timezone offset, so `2026-08-01T00:00:00+08:00` starts at that instant in UTC+8.
 
-        五档 token 分开给：缓存命中的读取比普通输入便宜一个数量级，合成一个总数就再也拆不开了。
+        The five token classes are reported separately. A cache read costs an order of magnitude less than ordinary input, and a single total cannot be decomposed again.
       operationId: get-usage-summary
       tags:
         - Usage
       parameters:
-        - description: 起点，含。RFC 3339，带时区偏移
-          explode: false
+        - name: from
           in: query
-          name: from
           required: true
-          schema:
-            description: 起点，含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 终点，不含。RFC 3339，带时区偏移
+          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
           explode: false
+          schema:
+            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: to
           required: true
-          schema:
-            description: 终点，不含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 只看这个模型
+          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
           explode: false
-          in: query
-          name: model_id
           schema:
-            description: 只看这个模型
+            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: model_id
+          in: query
+          description: Restricts the result to the specified model
+          explode: false
+          schema:
+            description: Restricts the result to the specified model
+            type: string
             maxLength: 128
-            type: string
-        - description: 只看这把 key
-          explode: false
+        - name: api_key_id
           in: query
-          name: api_key_id
-          schema:
-            description: 只看这把 key
-            type: string
-        - description: 只看这个状态的
+          description: Restricts the result to the specified API key
           explode: false
-          in: query
-          name: status
           schema:
-            description: 只看这个状态的
+            description: Restricts the result to the specified API key
+            type: string
+        - name: status
+          in: query
+          description: Restricts the result to the specified status
+          explode: false
+          schema:
+            description: Restricts the result to the specified status
+            type: string
             enum:
               - in_flight
               - succeeded
               - refused
               - upstream_failed
               - client_aborted
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TotalsResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TotalsResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/usage/timeline:
     get:
-      summary: 用量曲线
+      summary: Get a usage series
       description: |-
-        从 `from` 起按 `bucket` 切段，最后一段可能不满。段数上限 100。
+        Divided into buckets of `bucket`, starting at `from`. The final bucket may be partial, and the number of buckets is limited to 100.
 
-        要按本地日切分就把 `from` 传成本地时间的零点（带偏移）、`bucket` 传 `24h`——服务端不猜时区。
+        To divide by local day, send `from` as midnight in local time with its offset and `bucket` as `24h`. The server does not infer a timezone.
       operationId: get-usage-timeline
       tags:
         - Usage
       parameters:
-        - description: 起点，含。RFC 3339，带时区偏移
-          explode: false
+        - name: from
           in: query
-          name: from
           required: true
-          schema:
-            description: 起点，含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 终点，不含。RFC 3339，带时区偏移
+          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
           explode: false
+          schema:
+            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: to
           required: true
-          schema:
-            description: 终点，不含。RFC 3339，带时区偏移
-            format: date-time
-            type: string
-        - description: 只看这个模型
+          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
           explode: false
-          in: query
-          name: model_id
           schema:
-            description: 只看这个模型
+            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
+            type: string
+            format: date-time
+        - name: model_id
+          in: query
+          description: Restricts the result to the specified model
+          explode: false
+          schema:
+            description: Restricts the result to the specified model
+            type: string
             maxLength: 128
-            type: string
-        - description: 只看这把 key
-          explode: false
+        - name: api_key_id
           in: query
-          name: api_key_id
-          schema:
-            description: 只看这把 key
-            type: string
-        - description: 只看这个状态的
+          description: Restricts the result to the specified API key
           explode: false
-          in: query
-          name: status
           schema:
-            description: 只看这个状态的
+            description: Restricts the result to the specified API key
+            type: string
+        - name: status
+          in: query
+          description: Restricts the result to the specified status
+          explode: false
+          schema:
+            description: Restricts the result to the specified status
+            type: string
             enum:
               - in_flight
               - succeeded
               - refused
               - upstream_failed
               - client_aborted
-            type: string
-        - description: 每段多长，Go 的时长写法，如 1h、24h。段数上限 100
-          explode: false
+        - name: bucket
           in: query
-          name: bucket
+          description: The length of each bucket, written as a duration such as 1h or 24h. The number of buckets is limited to 100
+          explode: false
           schema:
-            default: 1h
-            description: 每段多长，Go 的时长写法，如 1h、24h。段数上限 100
-            maxLength: 16
+            description: The length of each bucket, written as a duration such as 1h or 24h. The number of buckets is limited to 100
             type: string
+            default: 1h
+            maxLength: 16
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UsageTimelineResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/UsageTimelineResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: 项目令牌。先在 auth.leaflow.net 登录拿到账号令牌，再用它向 IAM 换取项目令牌（POST /account/v1/projects/{projectId}/token）——一张项目令牌同时说明当前用户和当前项目。
-      scheme: bearer
-      type: http
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     APIKeyResource:
-      additionalProperties: false
+      type: object
       properties:
         allowed_models:
-          description: restrict_models 为 false 时无意义
+          description: Carries no meaning while `restrict_models` is false
+          type: array
           items:
             type: string
-          type: array
         created_at:
-          format: date-time
           type: string
+          format: date-time
         created_by:
-          description: 建这把 key 的人
-          format: uuid
+          description: Who created the key
           type: string
+          format: uuid
         expires_at:
-          description: 到期时间；null 表示永不过期
-          format: date-time
+          description: When the key expires. Null means it never expires
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         id:
-          format: uuid
           type: string
+          format: uuid
         last_four:
-          description: 明文的后四位
+          description: The last four characters of the plaintext
           type: string
         last_used_at:
-          description: 最后一次成功用它转发的时刻，精度约一分钟
-          format: date-time
+          description: When the key was last used to forward a request successfully, accurate to about a minute
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         name:
           type: string
         prefix:
-          description: 明文的前几位，用来在列表里辨认
+          description: The leading characters of the plaintext, by which a key is recognised in a list
           type: string
         restrict_models:
-          description: true 时只允许 allowed_models 里的模型
+          description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
         status:
+          type: string
           enum:
             - active
             - disabled
             - revoked
-          type: string
         suspended:
-          description: true 表示这把 key 因项目停服被停，需要项目恢复后才能再用
+          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
           type: boolean
       required:
         - id
@@ -785,112 +780,112 @@ components:
         - last_used_at
         - created_by
         - created_at
-      type: object
-    LengthAwarePageAPIKeyResource:
       additionalProperties: false
+    LengthAwarePageAPIKeyResource:
+      type: object
       properties:
         items:
-          description: 这一页的内容
-          items:
-            $ref: '#/components/schemas/APIKeyResource'
+          description: The items in this page
           type: array
+          items:
+            $ref: "#/components/schemas/APIKeyResource"
         limit:
-          description: 这一页最多几条，回显请求里的值
-          format: int64
+          description: Maximum number of items in this page, echoing the request
           type: integer
+          format: int64
         offset:
-          description: 跳过了多少条，回显请求里的值
-          format: int64
+          description: Number of items skipped, echoing the request
           type: integer
+          format: int64
         total:
-          description: 命中的总条数，不只是这一页
-          format: int64
+          description: Total number of matches, not only this page
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
-    CreateAPIKeyRequestBody:
       additionalProperties: false
+    CreateAPIKeyRequestBody:
+      type: object
       properties:
         allowed_models:
-          description: restrict_models 为 false 时忽略
-          items:
-            type: string
+          description: Ignored while `restrict_models` is false
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         expires_at:
-          description: 到期时间；不填表示永不过期
-          format: date-time
+          description: When the key expires. Omitted means it never expires
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         name:
-          minLength: 1
-          description: 给自己看的名字，比如「CI」「生产」
-          maxLength: 128
+          description: A name for the holder's own use, such as CI or Production
           type: string
+          minLength: 1
+          maxLength: 128
         restrict_models:
-          description: true 时只允许 allowed_models 里的模型
+          description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
       required:
         - name
-      type: object
-    IssuedAPIKeyResource:
       additionalProperties: false
+    IssuedAPIKeyResource:
+      type: object
       properties:
         allowed_models:
-          description: restrict_models 为 false 时无意义
+          description: Carries no meaning while `restrict_models` is false
+          type: array
           items:
             type: string
-          type: array
         created_at:
-          format: date-time
           type: string
+          format: date-time
         created_by:
-          description: 建这把 key 的人
-          format: uuid
+          description: Who created the key
           type: string
+          format: uuid
         expires_at:
-          description: 到期时间；null 表示永不过期
-          format: date-time
+          description: When the key expires. Null means it never expires
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         id:
-          format: uuid
           type: string
+          format: uuid
         last_four:
-          description: 明文的后四位
+          description: The last four characters of the plaintext
           type: string
         last_used_at:
-          description: 最后一次成功用它转发的时刻，精度约一分钟
-          format: date-time
+          description: When the key was last used to forward a request successfully, accurate to about a minute
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         name:
           type: string
         prefix:
-          description: 明文的前几位，用来在列表里辨认
+          description: The leading characters of the plaintext, by which a key is recognised in a list
           type: string
         restrict_models:
-          description: true 时只允许 allowed_models 里的模型
+          description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
         secret:
-          description: 完整的 key，**只在这一次响应里出现**，请立即保存
+          description: The complete key, **returned in this response only**. Store it immediately
           type: string
         status:
+          type: string
           enum:
             - active
             - disabled
             - revoked
-          type: string
         suspended:
-          description: true 表示这把 key 因项目停服被停，需要项目恢复后才能再用
+          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
           type: boolean
       required:
         - secret
@@ -906,65 +901,65 @@ components:
         - last_used_at
         - created_by
         - created_at
-      type: object
-    UpdateAPIKeyRequestBody:
       additionalProperties: false
+    UpdateAPIKeyRequestBody:
+      type: object
       properties:
         allowed_models:
-          items:
-            type: string
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         clear_expiry:
-          description: true 表示改成永不过期
+          description: True removes the expiry
           type: boolean
         expires_at:
-          description: 改到期时间；要改成永不过期请用 clear_expiry
+          description: Sets the expiry. To remove it, use `clear_expiry`
+          type:
+            - string
+            - "null"
           format: date-time
-          type:
-            - string
-            - 'null'
         name:
-          maxLength: 128
           type:
             - string
-            - 'null'
+            - "null"
+          maxLength: 128
         restrict_models:
           type:
             - boolean
-            - 'null'
-      type: object
-    ModelResource:
+            - "null"
       additionalProperties: false
+    ModelResource:
+      type: object
       properties:
         context_length:
-          description: 上下文窗口，仅供客户端提示，服务端不据此截断
-          format: int64
+          description: The context window. Advisory only; the server does not truncate on its basis
           type: integer
+          format: int64
         display_name:
           type: string
         family:
-          description: 同一系列聚在一起用，如 claude、gpt、gemini
+          description: Groups the models of one family together, such as claude, gpt or gemini
           type: string
         id:
-          description: 请求体里 model 字段要填的那个字符串
+          description: The string to send in the `model` field of the request body
           type: string
         max_output_tokens:
-          description: 最大输出，仅供客户端提示
-          format: int64
+          description: The maximum output length. Advisory only
           type: integer
+          format: int64
         reasoning_tiers:
-          description: reasoning_effort 能填的值；空表示不支持
+          description: The values accepted for `reasoning_effort`. Empty means it is not supported
+          type: array
           items:
             type: string
-          type: array
         status:
+          type: string
           enum:
             - available
             - draining
             - retired
-          type: string
         supports_reasoning:
           type: boolean
         supports_tools:
@@ -982,88 +977,88 @@ components:
         - supports_tools
         - supports_reasoning
         - reasoning_tiers
-      type: object
-    ModelListResponseBody:
       additionalProperties: false
+    ModelListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/ModelResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ModelResource"
       required:
         - items
-      type: object
-    RequestResource:
       additionalProperties: false
+    RequestResource:
+      type: object
       properties:
         api_key_id:
-          format: uuid
           type: string
+          format: uuid
         cache_read_tokens:
-          description: 命中上游前缀缓存的部分，比普通输入便宜一个数量级
-          format: int64
+          description: The portion served from the upstream prefix cache, which costs an order of magnitude less than ordinary input
           type: integer
+          format: int64
         cache_write_tokens:
-          format: int64
           type: integer
+          format: int64
         error_code:
-          description: 失败时的错误码；成功时为空
+          description: The error code on failure. Empty on success
           type: string
         finished_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         first_token_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         id:
-          format: uuid
           type: string
+          format: uuid
         input_tokens:
-          format: int64
           type: integer
+          format: int64
         model_id:
-          description: 请求里写的模型名
+          description: The model named in the request
           type: string
         output_tokens:
-          format: int64
           type: integer
+          format: int64
         reasoning_tokens:
-          format: int64
           type: integer
+          format: int64
         retries:
-          format: int64
           type: integer
+          format: int64
         started_at:
-          format: date-time
           type: string
+          format: date-time
         status:
+          type: string
           enum:
             - in_flight
             - succeeded
             - refused
             - upstream_failed
             - client_aborted
-          type: string
         stream:
           type: boolean
         upstream_request_id:
-          description: 上游那边的请求 id，报障时提供给我们
+          description: The id of the request on the upstream side. Quote it when reporting a problem
           type: string
         upstream_status:
-          description: 上游返回的 HTTP 状态码；0 表示没打到上游
-          format: int64
+          description: The HTTP status returned upstream. 0 indicates that the request never reached it
           type: integer
+          format: int64
         usage_source:
-          description: upstream 是上游报的，estimated 是我们按字符类估的
+          description: upstream means the figures were reported by the provider; estimated means they were derived from the character classes of the payload
+          type: string
           enum:
             - none
             - upstream
             - estimated
-          type: string
       required:
         - id
         - model_id
@@ -1083,46 +1078,46 @@ components:
         - first_token_at
         - finished_at
         - retries
-      type: object
-    CursorPageRequestResource:
       additionalProperties: false
+    CursorPageRequestResource:
+      type: object
       properties:
         items:
-          description: 这一页的内容
-          items:
-            $ref: '#/components/schemas/RequestResource'
+          description: The items in this page
           type: array
+          items:
+            $ref: "#/components/schemas/RequestResource"
         next_cursor:
-          description: 下一页的游标；为空表示已经到底
+          description: The cursor for the next page. Empty on the last page
           type: string
       required:
         - items
         - next_cursor
-      type: object
-    APIKeyUsageResource:
       additionalProperties: false
+    APIKeyUsageResource:
+      type: object
       properties:
         api_key_id:
-          format: uuid
           type: string
+          format: uuid
         cache_read_tokens:
-          format: int64
           type: integer
+          format: int64
         cache_write_tokens:
-          format: int64
           type: integer
+          format: int64
         input_tokens:
-          format: int64
           type: integer
+          format: int64
         output_tokens:
-          format: int64
           type: integer
+          format: int64
         reasoning_tokens:
-          format: int64
           type: integer
+          format: int64
         requests:
-          format: int64
           type: integer
+          format: int64
       required:
         - api_key_id
         - requests
@@ -1131,40 +1126,40 @@ components:
         - cache_read_tokens
         - cache_write_tokens
         - reasoning_tokens
-      type: object
-    APIKeyUsageListResponseBody:
       additionalProperties: false
+    APIKeyUsageListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/APIKeyUsageResource'
           type: array
+          items:
+            $ref: "#/components/schemas/APIKeyUsageResource"
       required:
         - items
-      type: object
-    ModelUsageResource:
       additionalProperties: false
+    ModelUsageResource:
+      type: object
       properties:
         cache_read_tokens:
-          format: int64
           type: integer
+          format: int64
         cache_write_tokens:
-          format: int64
           type: integer
+          format: int64
         input_tokens:
-          format: int64
           type: integer
+          format: int64
         model_id:
           type: string
         output_tokens:
-          format: int64
           type: integer
+          format: int64
         reasoning_tokens:
-          format: int64
           type: integer
+          format: int64
         requests:
-          format: int64
           type: integer
+          format: int64
       required:
         - model_id
         - requests
@@ -1173,38 +1168,38 @@ components:
         - cache_read_tokens
         - cache_write_tokens
         - reasoning_tokens
-      type: object
-    ModelUsageListResponseBody:
       additionalProperties: false
+    ModelUsageListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/ModelUsageResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ModelUsageResource"
       required:
         - items
-      type: object
-    TotalsResource:
       additionalProperties: false
+    TotalsResource:
+      type: object
       properties:
         cache_read_tokens:
-          format: int64
           type: integer
+          format: int64
         cache_write_tokens:
-          format: int64
           type: integer
+          format: int64
         input_tokens:
-          format: int64
           type: integer
+          format: int64
         output_tokens:
-          format: int64
           type: integer
+          format: int64
         reasoning_tokens:
-          format: int64
           type: integer
+          format: int64
         requests:
-          format: int64
           type: integer
+          format: int64
       required:
         - requests
         - input_tokens
@@ -1212,36 +1207,36 @@ components:
         - cache_read_tokens
         - cache_write_tokens
         - reasoning_tokens
-      type: object
-    UsageBucketResource:
       additionalProperties: false
+    UsageBucketResource:
+      type: object
       properties:
         cache_read_tokens:
-          format: int64
           type: integer
+          format: int64
         cache_write_tokens:
-          format: int64
           type: integer
+          format: int64
         from:
-          description: 这一段的起点，含
-          format: date-time
+          description: Start of the bucket, inclusive
           type: string
+          format: date-time
         input_tokens:
-          format: int64
           type: integer
+          format: int64
         output_tokens:
-          format: int64
           type: integer
+          format: int64
         reasoning_tokens:
-          format: int64
           type: integer
+          format: int64
         requests:
-          format: int64
           type: integer
+          format: int64
         to:
-          description: 这一段的终点，不含
-          format: date-time
+          description: End of the bucket, exclusive
           type: string
+          format: date-time
       required:
         - from
         - to
@@ -1251,14 +1246,14 @@ components:
         - cache_read_tokens
         - cache_write_tokens
         - reasoning_tokens
-      type: object
-    UsageTimelineResponseBody:
       additionalProperties: false
+    UsageTimelineResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/UsageBucketResource'
           type: array
+          items:
+            $ref: "#/components/schemas/UsageBucketResource"
       required:
         - items
-      type: object
+      additionalProperties: false

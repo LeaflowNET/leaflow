@@ -1,15 +1,13 @@
 openapi: 3.1.0
 info:
+  title: Leaflow Monitoring API
+  version: 1.0.0
   description: |-
     Monitoring for your own project: enroll machines, read metrics, work through incidents, schedule maintenance windows, and set availability targets.
 
     ## Authentication
 
-    Every request must carry `Authorization: Bearer <scoped token>`. Sign in at auth.leaflow.net to obtain an access token, then exchange it for a scoped token (`POST /account/v1/projects/{projectId}/scoped-tokens`). A scoped token identifies both the current user and the current project.
-
-    **There is no `projectId` in any path**: the current project is determined by the token.
-
-    Distinguish the failure modes by error code: `TOKEN_MISSING` means no token was supplied; `TOKEN_EXPIRED` means the token has expired and can be re-issued from the access token without signing in again; `TOKEN_INVALID` means the token failed validation; `NOT_A_MEMBER` means the account is not a member of the project; `USER_SUSPENDED` and `USER_BANNED` mean the account itself is barred from operating.
+    Every request carries a scoped token; see the `bearerAuth` security scheme.
 
     ## Two distinctions worth keeping straight
 
@@ -19,8 +17,6 @@ info:
     ## The PSK is returned once
 
     Enrollment and rotation responses include `tls_psk`. No other endpoint will return it again, so store it immediately. If it is lost, rotate once more — at the cost of updating the agent configuration on the monitored machine.
-  title: Leaflow Monitoring API
-  version: 1.0.0
 servers:
   - url: https://monitoring.leaflow.cloud
     description: Host monitoring, incidents, web checks and SLOs
@@ -30,60 +26,61 @@ paths:
   /api/v1/incidents:
     get:
       summary: List incidents
-      description: '`incident_status` reports whether monitoring considers the problem recovered; `closed` reports whether someone has finished handling it. The two are independent and can be filtered separately.'
+      description: "`incident_status` reports whether monitoring considers the problem recovered; `closed` reports whether someone has finished handling it. The two are independent and can be filtered separately."
       operationId: list-incidents
       tags:
         - Incident
       parameters:
-        - description: Maximum number of records in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of records in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of records in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
+          explode: false
           schema:
             description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Restrict to a single machine
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: server_id
           in: query
-          name: server_id
+          description: Restrict to a single machine
+          explode: false
           schema:
             description: Restrict to a single machine
             type: string
-        - description: Restrict to a single web check
-          explode: false
+        - name: web_check_id
           in: query
-          name: web_check_id
+          description: Restrict to a single web check
+          explode: false
           schema:
             description: Restrict to a single web check. Combines with server_id rather than replacing it
             type: string
-        - explode: false
+        - name: incident_status
           in: query
-          name: incident_status
+          explode: false
           schema:
+            type: string
             enum:
               - PROBLEM
               - RESOLVED
-            type: string
-        - description: Matches at or above this severity, not exactly this severity
-          explode: false
+        - name: min_severity
           in: query
-          name: min_severity
+          description: Matches at or above this severity, not exactly this severity
+          explode: false
           schema:
             description: Matches at or above this severity, not exactly this severity
+            type: string
             enum:
               - NOT_CLASSIFIED
               - INFORMATION
@@ -91,94 +88,93 @@ paths:
               - AVERAGE
               - HIGH
               - DISASTER
-            type: string
-        - explode: false
+        - name: started_after
           in: query
-          name: started_after
-          schema:
-            format: date-time
-            type: string
-        - explode: false
-          in: query
-          name: started_before
-          schema:
-            format: date-time
-            type: string
-        - description: Incidents that **overlap** [active_from, active_to]. This is what you want when overlaying incident bands on a metric chart
           explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: started_before
           in: query
-          name: active_from
+          explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: active_from
+          in: query
+          description: Incidents that **overlap** [active_from, active_to]. This is what you want when overlaying incident bands on a metric chart
+          explode: false
           schema:
             description: Incidents that **overlap** [active_from, active_to]. This is what you want when overlaying incident bands on a metric chart
-            format: date-time
             type: string
-        - explode: false
+            format: date-time
+        - name: active_to
           in: query
-          name: active_to
-          schema:
-            format: date-time
-            type: string
-        - description: Given as `key` or `key=value`, repeatable. Multiple tags are combined with AND
           explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: tag
           in: query
-          name: tag
+          description: Given as `key` or `key=value`, repeatable. Multiple tags are combined with AND
+          explode: false
           schema:
             description: Given as `key` or `key=value`, repeatable. Multiple tags are combined with AND
-            items:
-              type: string
             type:
               - array
-              - 'null'
-        - explode: false
+              - "null"
+            items:
+              type: string
+        - name: assignee_user_id
           in: query
-          name: assignee_user_id
+          explode: false
           schema:
             type: string
-        - description: Whether someone has finished handling it here. Independent of `incident_status`
-          explode: false
+        - name: closed
           in: query
-          name: closed
+          description: Whether someone has finished handling it here. Independent of `incident_status`
+          explode: false
           schema:
             description: Whether someone has finished handling it here. Independent of `incident_status`
-            enum:
-              - 'true'
-              - 'false'
             type: string
-        - explode: false
-          in: query
-          name: acknowledged
-          schema:
             enum:
-              - 'true'
-              - 'false'
-            type: string
-        - explode: false
+              - "true"
+              - "false"
+        - name: acknowledged
           in: query
-          name: unassigned
+          explode: false
           schema:
+            type: string
             enum:
-              - 'true'
-              - 'false'
-            type: string
-        - explode: false
+              - "true"
+              - "false"
+        - name: unassigned
           in: query
-          name: keyword
+          explode: false
           schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+        - name: keyword
+          in: query
+          explode: false
+          schema:
+            type: string
             maxLength: 255
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageIncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageIncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}:
     get:
       summary: Get an incident
@@ -186,25 +182,25 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/acknowledge:
     post:
       summary: Acknowledge an incident
@@ -213,31 +209,31 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AcknowledgeIncidentRequestBody'
-        required: true
+              $ref: "#/components/schemas/AcknowledgeIncidentRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/assignee:
     put:
       summary: Assign an incident, or clear its assignee
@@ -249,31 +245,31 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AssignIncidentRequestBody'
-        required: true
+              $ref: "#/components/schemas/AssignIncidentRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/close:
     post:
       summary: Close an incident
@@ -282,31 +278,31 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CloseIncidentRequestBody'
-        required: true
+              $ref: "#/components/schemas/CloseIncidentRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/comments:
     post:
       summary: Add a note to the timeline
@@ -314,64 +310,64 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCommentRequestBody'
-        required: true
+              $ref: "#/components/schemas/AddCommentRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentActivityResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentActivityResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/following:
     put:
       summary: Follow an incident, or stop following it
-      description: 'You follow **yourself**: the caller is the user added to or removed from the follower list.'
+      description: "You follow **yourself**: the caller is the user added to or removed from the follower list."
       operationId: set-incident-following
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetFollowingRequestBody'
-        required: true
+              $ref: "#/components/schemas/SetFollowingRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/reopen:
     post:
       summary: Reopen a closed incident
@@ -379,68 +375,68 @@ paths:
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/IncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/incidents/{incidentId}/timeline:
     get:
       summary: List the timeline of an incident
-      description: 'Cursor paging rather than offset paging: the timeline is append-only, and offset paging would skip or repeat entries whenever a new one is written.'
+      description: "Cursor paging rather than offset paging: the timeline is append-only, and offset paging would skip or repeat entries whenever a new one is written."
       operationId: list-incident-timeline
       tags:
         - Incident
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - explode: false
+            format: uuid
+        - name: limit
           in: query
-          name: limit
-          schema:
-            default: 50
-            format: int64
-            maximum: 500
-            minimum: 0
-            type: integer
-        - description: The `next_cursor` returned by the previous page. Empty starts from the beginning
           explode: false
+          schema:
+            type: integer
+            format: int64
+            default: 50
+            minimum: 0
+            maximum: 500
+        - name: cursor
           in: query
-          name: cursor
+          description: The `next_cursor` returned by the previous page. Empty starts from the beginning
+          explode: false
           schema:
             description: The `next_cursor` returned by the previous page. Empty starts from the beginning
             type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CursorPageIncidentActivityResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CursorPageIncidentActivityResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/maintenance-windows:
     get:
       summary: List maintenance windows
@@ -448,66 +444,44 @@ paths:
       tags:
         - MaintenanceWindow
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MaintenanceWindowListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MaintenanceWindowListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/maintenance-windows/{windowId}:
-    delete:
-      summary: Cancel a maintenance window
-      description: Alerting resumes immediately, even if the window has not yet expired.
-      operationId: delete-maintenance-window
-      tags:
-        - MaintenanceWindow
-      parameters:
-        - in: path
-          name: windowId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        '204':
-          description: No Content
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
     get:
       summary: Get a maintenance window
       operationId: get-maintenance-window
       tags:
         - MaintenanceWindow
       parameters:
-        - in: path
-          name: windowId
+        - name: windowId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MaintenanceWindowResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MaintenanceWindowResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Create a maintenance window, or replace it by the same id
       description: |-
@@ -518,31 +492,53 @@ paths:
       tags:
         - MaintenanceWindow
       parameters:
-        - in: path
-          name: windowId
+        - name: windowId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutMaintenanceWindowRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutMaintenanceWindowRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MaintenanceWindowResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MaintenanceWindowResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Cancel a maintenance window
+      description: Alerting resumes immediately, even if the window has not yet expired.
+      operationId: delete-maintenance-window
+      tags:
+        - MaintenanceWindow
+      parameters:
+        - name: windowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/overview:
     get:
       summary: Project overview
@@ -551,18 +547,18 @@ paths:
       tags:
         - Observability
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectOverviewResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ProjectOverviewResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/items:
     get:
       summary: List the monitoring items of a machine
@@ -571,113 +567,113 @@ paths:
       tags:
         - Observability
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - description: Fuzzy match on key or name
-          explode: false
+            format: uuid
+        - name: keyword
           in: query
-          name: keyword
+          description: Fuzzy match on key or name
+          explode: false
           schema:
             description: Fuzzy match on key or name
-            maxLength: 255
             type: string
-        - description: Given as `key` or `key=value`, repeatable. The `component` tags applied by the official templates (cpu, memory, filesystem and so on) are filtered through this
-          explode: false
+            maxLength: 255
+        - name: tag
           in: query
-          name: tag
+          description: Given as `key` or `key=value`, repeatable. The `component` tags applied by the official templates (cpu, memory, filesystem and so on) are filtered through this
+          explode: false
           schema:
             description: Given as `key` or `key=value`, repeatable. The `component` tags applied by the official templates (cpu, memory, filesystem and so on) are filtered through this
-            items:
-              type: string
             type:
               - array
-              - 'null'
+              - "null"
+            items:
+              type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ItemListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ItemListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/metrics:
     get:
       summary: Get the time series of a monitoring item
-      description: '`item_key` is matched **by prefix**. Keys discovered per partition or per interface carry parameters (`vfs.fs.size[/var,pused]`), so a single request for `vfs.fs.size` returns one series per mount point.'
+      description: "`item_key` is matched **by prefix**. Keys discovered per partition or per interface carry parameters (`vfs.fs.size[/var,pused]`), so a single request for `vfs.fs.size` returns one series per mount point."
       operationId: get-server-metric
       tags:
         - Observability
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
+            type: string
             format: uuid
-            type: string
-        - description: '**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`'
+        - name: item_key
+          in: query
+          description: "**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`"
           explode: false
-          in: query
-          name: item_key
           schema:
-            description: '**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`'
+            description: "**Prefix match**: `vfs.fs.size` returns one series per mount point. Supply this or `item_id`"
             type: string
-        - explode: false
+        - name: item_id
           in: query
-          name: item_id
-          schema:
-            type: string
-        - description: Defaults to one hour ago
           explode: false
+          schema:
+            type: string
+        - name: from
           in: query
-          name: from
+          description: Defaults to one hour ago
+          explode: false
           schema:
             description: Defaults to one hour ago
-            format: date-time
             type: string
-        - explode: false
+            format: date-time
+        - name: to
           in: query
-          name: to
-          schema:
-            format: date-time
-            type: string
-        - description: Number of downsampling buckets. 0 returns the collected data points unchanged
           explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: max_points
           in: query
-          name: max_points
+          description: Number of downsampling buckets. 0 returns the collected data points unchanged
+          explode: false
           schema:
             description: Number of downsampling buckets. 0 returns the collected data points unchanged
+            type: integer
             format: int64
             minimum: 0
-            type: integer
-        - description: Also return the thresholds currently in effect for these items
-          explode: false
+        - name: include_thresholds
           in: query
-          name: include_thresholds
+          description: Also return the thresholds currently in effect for these items
+          explode: false
           schema:
             description: Also return the thresholds currently in effect for these items
             type: boolean
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MetricResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/MetricResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/resources:
     get:
       summary: Hardware and interfaces of a machine
@@ -685,25 +681,25 @@ paths:
       tags:
         - Observability
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerResourcesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ServerResourcesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/snapshot:
     get:
       summary: Current state of a machine
@@ -711,25 +707,25 @@ paths:
       tags:
         - Observability
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SnapshotResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SnapshotResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/top-items:
     get:
       summary: Machines ranked highest by a given metric
@@ -737,39 +733,39 @@ paths:
       tags:
         - Observability
       parameters:
-        - explode: false
+        - name: kind
           in: query
-          name: kind
           required: true
+          explode: false
           schema:
+            type: string
             enum:
               - CPU_UTILIZATION
               - MEMORY_UTILIZATION
               - ROOT_FILESYSTEM_USED
-            type: string
-        - description: 0 uses the default
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: 0 uses the default
+          explode: false
           schema:
             description: 0 uses the default
-            format: int64
-            maximum: 100
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 100
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TopItemListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TopItemListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/templates:
     get:
       summary: List the monitoring templates that can be bound to a machine
@@ -778,18 +774,18 @@ paths:
       tags:
         - Onboarding
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TemplateCatalogResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TemplateCatalogResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers:
     get:
       summary: List the machines in the project
@@ -797,138 +793,84 @@ paths:
       tags:
         - Onboarding
       parameters:
-        - description: Maximum number of records in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of records in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of records in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
+          explode: false
           schema:
             description: Number of records to skip. For deeper paging, use the cursor-paged endpoint instead
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Fuzzy match on name or address
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: keyword
           in: query
-          name: keyword
+          description: Fuzzy match on name or address
+          explode: false
           schema:
             description: Fuzzy match on name or address
-            maxLength: 255
             type: string
-        - explode: false
+            maxLength: 255
+        - name: monitoring_status
           in: query
-          name: monitoring_status
+          explode: false
           schema:
+            type: string
             enum:
               - PENDING
               - ACTIVE
               - DISABLED
               - FAILED
-            type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageServerResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageServerResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}:
-    delete:
-      summary: Delete a machine
-      description: '**Irreversible**: the monitored host, its history and every incident recorded against this machine are removed together. To stop collection temporarily, use `/disable` instead.'
-      operationId: delete-server
-      tags:
-        - Onboarding
-      parameters:
-        - in: path
-          name: serverId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        '204':
-          description: No Content
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
     get:
       summary: Get the enrollment state of a machine
       operationId: get-server
       tags:
         - Onboarding
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
-    patch:
-      summary: Update the enrollment settings of a machine
-      description: 'Only the fields present in the request body are updated. `address` and `address_kind` must be supplied together: changing one without the other produces a contradictory configuration that is not reported as an error and shows up only as an agent that cannot connect.'
-      operationId: update-server
-      tags:
-        - Onboarding
-      parameters:
-        - in: path
-          name: serverId
-          required: true
-          schema:
             format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateServerRequestBody'
-        required: true
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ServerResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Enroll a machine into monitoring
       description: |-
@@ -945,55 +887,109 @@ paths:
       tags:
         - Onboarding
       parameters:
-        - description: 'Supplied by the caller; no operation issues one. Reuse the identifier the machine already carries in the originating system — a Leaflow Compute instance id, or the caller''s own inventory identifier — or allocate a UUID and persist it before the first call. It is the idempotency key of the enrollment.'
+        - name: serverId
           in: path
-          name: serverId
           required: true
+          description: Supplied by the caller; no operation issues one. Reuse the identifier the machine already carries in the originating system — a Leaflow Compute instance id, or the caller's own inventory identifier — or allocate a UUID and persist it before the first call. It is the idempotency key of the enrollment.
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EnableMonitoringRequestBody'
-        required: true
+              $ref: "#/components/schemas/EnableMonitoringRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServerEnrollmentResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ServerEnrollmentResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update the enrollment settings of a machine
+      description: "Only the fields present in the request body are updated. `address` and `address_kind` must be supplied together: changing one without the other produces a contradictory configuration that is not reported as an error and shows up only as an agent that cannot connect."
+      operationId: update-server
+      tags:
+        - Onboarding
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateServerRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a machine
+      description: "**Irreversible**: the monitored host, its history and every incident recorded against this machine are removed together. To stop collection temporarily, use `/disable` instead."
+      operationId: delete-server
+      tags:
+        - Onboarding
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/disable:
     post:
       summary: Stop monitoring a machine
-      description: 'Reversible: the monitored host is retained, only collection stops, and history is unaffected. Enrolling again resumes collection. To remove the history as well, use DELETE.'
+      description: "Reversible: the monitored host is retained, only collection stops, and history is unaffected. Enrolling again resumes collection. To remove the history as well, use DELETE."
       operationId: disable-server-monitoring
       tags:
         - Onboarding
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/psk:
     post:
       summary: Rotate the agent PSK
@@ -1002,26 +998,95 @@ paths:
       tags:
         - Onboarding
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EnrollmentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/EnrollmentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/servers/{serverId}/web-checks/{checkId}:
+    get:
+      summary: Get a web check
+      operationId: get-web-check
+      tags:
+        - WebCheck
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebCheckResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Create a web check, or replace it by the same id
+      description: "**Create or replace**: to modify a check, call this endpoint again with the same id. There is no need to determine first whether it already exists."
+      operationId: put-web-check
+      tags:
+        - WebCheck
+      parameters:
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: checkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutWebCheckRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebCheckResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a web check
       description: The corresponding check task and trigger are removed from the monitoring system as well, so no permanently unrecoverable alert is left behind.
@@ -1029,96 +1094,27 @@ paths:
       tags:
         - WebCheck
       parameters:
-        - in: path
-          name: serverId
+        - name: serverId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
-        - in: path
-          name: checkId
+            format: uuid
+        - name: checkId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '204':
+        "204":
           description: No Content
         default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
           description: Error
-    get:
-      summary: Get a web check
-      operationId: get-web-check
-      tags:
-        - WebCheck
-      parameters:
-        - in: path
-          name: serverId
-          required: true
-          schema:
-            format: uuid
-            type: string
-        - in: path
-          name: checkId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      responses:
-        '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WebCheckResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
-    put:
-      summary: Create a web check, or replace it by the same id
-      description: '**Create or replace**: to modify a check, call this endpoint again with the same id. There is no need to determine first whether it already exists.'
-      operationId: put-web-check
-      tags:
-        - WebCheck
-      parameters:
-        - in: path
-          name: serverId
-          required: true
-          schema:
-            format: uuid
-            type: string
-        - in: path
-          name: checkId
-          required: true
-          schema:
-            format: uuid
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PutWebCheckRequestBody'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebCheckResource'
-          description: OK
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/web-checks:
     get:
       summary: List web checks
@@ -1126,26 +1122,26 @@ paths:
       tags:
         - WebCheck
       parameters:
-        - description: Restrict to the checks of a single machine. Omit for the whole project
-          explode: false
+        - name: server_id
           in: query
-          name: server_id
+          description: Restrict to the checks of a single machine. Omit for the whole project
+          explode: false
           schema:
             description: Restrict to the checks of a single machine. Omit for the whole project
             type: string
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebCheckListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/WebCheckListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/sli-report:
     get:
       summary: Get measured availability
@@ -1157,76 +1153,61 @@ paths:
       tags:
         - SLA
       parameters:
-        - explode: false
+        - name: from
           in: query
-          name: from
-          schema:
-            format: date-time
-            type: string
-        - explode: false
-          in: query
-          name: to
-          schema:
-            format: date-time
-            type: string
-        - description: Return the most recent N complete periods. Use this or from/to, not both
           explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
           in: query
-          name: periods
+          explode: false
+          schema:
+            type: string
+            format: date-time
+        - name: periods
+          in: query
+          description: Return the most recent N complete periods. Use this or from/to, not both
+          explode: false
           schema:
             description: Return the most recent N complete periods. Use this or from/to, not both
-            format: int64
-            maximum: 100
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 100
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SLIReportResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SLIReportResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/slo:
-    delete:
-      summary: Remove the availability target of this project
-      description: Availability is no longer tracked from this point on.
-      operationId: delete-slo
-      tags:
-        - SLA
-      responses:
-        '204':
-          description: No Content
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
     get:
       summary: Get the availability target of this project
-      description: 'A project that has never set one returns 404 rather than a default target: making no promise and promising 99.9% are different things.'
+      description: "A project that has never set one returns 404 rather than a default target: making no promise and promising 99.9% are different things."
       operationId: get-slo
       tags:
         - SLA
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SLOResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SLOResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Set the availability target of this project, or change it
       description: |-
@@ -1237,24 +1218,39 @@ paths:
       tags:
         - SLA
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutSLORequestBody'
-        required: true
+              $ref: "#/components/schemas/PutSLORequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SLOResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/SLOResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove the availability target of this project
+      description: Availability is no longer tracked from this point on.
+      operationId: delete-slo
+      tags:
+        - SLA
+      responses:
+        "204":
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page:
     get:
       summary: Get the status page of this project
@@ -1263,18 +1259,18 @@ paths:
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Create the status page, or replace its configuration
       description: |-
@@ -1287,24 +1283,24 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete the status page
       description: Its groups, components, availability history, incident notices and scheduled maintenance are removed together, and cannot be recovered. The slug and custom domain are released.
@@ -1312,14 +1308,14 @@ paths:
       tags:
         - StatusPage
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/order:
     put:
       summary: Set the order of the top level of the page
@@ -1333,20 +1329,20 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageOrderRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageOrderRequestBody"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/groups:
     get:
       summary: List groups
@@ -1354,18 +1350,18 @@ paths:
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageGroupListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageGroupListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Create a group
       description: A group is one level of collapsing applied to components on the page. There is exactly one level; groups cannot be nested.
@@ -1373,56 +1369,56 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageGroupRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageGroupRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageGroupResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageGroupResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/groups/{groupId}:
     parameters:
-      - in: path
-        name: groupId
+      - name: groupId
+        in: path
         required: true
         schema:
-          format: uuid
           type: string
+          format: uuid
     put:
       summary: Update a group
       operationId: update-status-page-group
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageGroupRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageGroupRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageGroupResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageGroupResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a group
       description: The components in it are **not deleted**. They return to the top level as ungrouped components, keeping their availability history and the incident notices that reference them.
@@ -1430,14 +1426,14 @@ paths:
       tags:
         - StatusPage
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/groups/{groupId}/order:
     put:
       summary: Set the order of components within a group
@@ -1445,47 +1441,47 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: groupId
+        - name: groupId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageGroupOrderRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageGroupOrderRequestBody"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/components:
     get:
       summary: List components
-      description: 'A component is one row on the status page: an externally promised capability. It is not a machine — a single component may be backed by several machines and several web checks.'
+      description: "A component is one row on the status page: an externally promised capability. It is not a machine — a single component may be backed by several machines and several web checks."
       operationId: list-status-page-components
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Create a component
       description: |-
@@ -1496,75 +1492,75 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageComponentRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageComponentRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/components/{componentId}:
     parameters:
-      - in: path
-        name: componentId
+      - name: componentId
+        in: path
         required: true
         schema:
-          format: uuid
           type: string
+          format: uuid
     get:
       summary: Get a component
       operationId: get-status-page-component
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Update a component
-      description: '`started_on` cannot be changed: it determines where the availability bar stops showing as unmeasured, and changing it would rewrite history that has already been published.'
+      description: "`started_on` cannot be changed: it determines where the availability bar stops showing as unmeasured, and changing it would rewrite history that has already been published."
       operationId: update-status-page-component
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageComponentRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageComponentRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a component
       description: Its availability history is removed along with it. Passages in already-published notices that refer to it are retained, since customers may already have read them.
@@ -1572,22 +1568,22 @@ paths:
       tags:
         - StatusPage
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/components/{componentId}/sources:
     parameters:
-      - in: path
-        name: componentId
+      - name: componentId
+        in: path
         required: true
         schema:
-          format: uuid
           type: string
+          format: uuid
     get:
       summary: List the monitored sources bound to a component
       description: Monitored sources are internal information and **never appear on the public page**.
@@ -1595,18 +1591,18 @@ paths:
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentSourcesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentSourcesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Set the complete list of monitored sources for a component
       description: |-
@@ -1619,24 +1615,24 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageComponentSourcesRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageComponentSourcesRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageComponentSourcesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageComponentSourcesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/incidents:
     get:
       summary: List the incident notices on the status page
@@ -1645,37 +1641,37 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - description: Maximum number of records in this page
+        - name: limit
+          in: query
+          description: Maximum number of records in this page
           explode: false
-          in: query
-          name: limit
           schema:
+            type: integer
+            format: int64
             default: 50
-            format: int64
-            maximum: 200
             minimum: 1
-            type: integer
-        - explode: false
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          explode: false
           schema:
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageStatusPageIncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageStatusPageIncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Publish an incident notice
       description: |-
@@ -1688,24 +1684,24 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PublishStatusPageIncidentRequestBody'
-        required: true
+              $ref: "#/components/schemas/PublishStatusPageIncidentRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageIncidentResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageIncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/incidents/{incidentId}:
     get:
       summary: Get an incident notice
@@ -1713,25 +1709,25 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageIncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageIncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/incidents/{incidentId}/updates:
     post:
       summary: Append an update to an incident notice
@@ -1743,31 +1739,31 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: incidentId
+        - name: incidentId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PostStatusPageIncidentUpdateRequestBody'
-        required: true
+              $ref: "#/components/schemas/PostStatusPageIncidentUpdateRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageIncidentResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageIncidentResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/maintenances:
     get:
       summary: List scheduled maintenance
@@ -1775,37 +1771,37 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - description: Maximum number of records in this page
+        - name: limit
+          in: query
+          description: Maximum number of records in this page
           explode: false
-          in: query
-          name: limit
           schema:
+            type: integer
+            format: int64
             default: 50
-            format: int64
-            maximum: 200
             minimum: 1
-            type: integer
-        - explode: false
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          explode: false
           schema:
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
+            format: int64
+            minimum: 0
+            maximum: 10000
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageStatusPageMaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageStatusPageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Schedule maintenance
       description: |-
@@ -1816,24 +1812,24 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ScheduleStatusPageMaintenanceRequestBody'
-        required: true
+              $ref: "#/components/schemas/ScheduleStatusPageMaintenanceRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/maintenances/{maintenanceId}:
     get:
       summary: Get a scheduled maintenance
@@ -1841,25 +1837,25 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: maintenanceId
+        - name: maintenanceId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/maintenances/{maintenanceId}/cancel:
     post:
       summary: Cancel a maintenance that has not started
@@ -1868,78 +1864,78 @@ paths:
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: maintenanceId
+        - name: maintenanceId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/maintenances/{maintenanceId}/complete:
     post:
       summary: Finish a running maintenance early
-      description: 'Optional: maintenance finishes on its own at the scheduled end time. Use this endpoint when the work is done ahead of schedule; the affected components return to operational immediately.'
+      description: "Optional: maintenance finishes on its own at the scheduled end time. Use this endpoint when the work is done ahead of schedule; the affected components return to operational immediately."
       operationId: complete-status-page-maintenance
       tags:
         - StatusPage
       parameters:
-        - in: path
-          name: maintenanceId
+        - name: maintenanceId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageMaintenanceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageMaintenanceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/web-checks/{checkId}:
     parameters:
-      - in: path
-        name: checkId
+      - name: checkId
+        in: path
         required: true
         schema:
-          format: uuid
           type: string
+          format: uuid
     get:
       summary: Get a project-level web check
       operationId: get-project-web-check
       tags:
         - WebCheck
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebCheckResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/WebCheckResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Create a web check that is not tied to a machine, or replace it by the same id
       description: |-
@@ -1952,24 +1948,24 @@ paths:
       tags:
         - WebCheck
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutWebCheckRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutWebCheckRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WebCheckResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/WebCheckResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete a project-level web check
       description: The corresponding check task and trigger are removed from the monitoring system as well.
@@ -1977,14 +1973,14 @@ paths:
       tags:
         - WebCheck
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/status-page/domain:
     get:
       summary: Get the custom domain and its certificate state
@@ -1996,18 +1992,18 @@ paths:
       tags:
         - StatusPage
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageDomainResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageDomainResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       summary: Bind a custom domain to this status page
       description: |-
@@ -2020,24 +2016,24 @@ paths:
       tags:
         - StatusPage
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PutStatusPageDomainRequestBody'
-        required: true
+              $ref: "#/components/schemas/PutStatusPageDomainRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusPageDomainResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/StatusPageDomainResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Unbind the custom domain
       description: The page stays reachable at its shared address. Certificate renewal for the domain stops; the certificate already issued is left to expire.
@@ -2045,48 +2041,45 @@ paths:
       tags:
         - StatusPage
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: Scoped token. Sign in at auth.leaflow.net to obtain an access token, then exchange it for a scoped token (POST /account/v1/projects/{projectId}/scoped-tokens). A scoped token identifies both the current user and the current project.
-      scheme: bearer
-      type: http
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     IncidentFollowerResource:
-      additionalProperties: false
+      type: object
       properties:
         display_name:
           type: string
         followed_at:
-          format: date-time
           type: string
+          format: date-time
         user_id:
           type: string
       required:
         - user_id
         - display_name
         - followed_at
-      type: object
-    MonitoringItemResource:
       additionalProperties: false
+    MonitoringItemResource:
+      type: object
       properties:
         aggregation_function:
           description: Such as last, avg, min or max
           type: string
         evaluation_window_seconds:
-          format: int64
           type: integer
+          format: int64
         item_id:
           type: string
         key:
@@ -2097,10 +2090,10 @@ components:
           type: string
         threshold:
           description: Present only when `threshold_status` is RESOLVED
-          format: double
           type:
             - number
-            - 'null'
+            - "null"
+          format: double
         threshold_status:
           type: string
         value:
@@ -2116,9 +2109,9 @@ components:
         - operator
         - aggregation_function
         - evaluation_window_seconds
-      type: object
-    TagResource:
       additionalProperties: false
+    TagResource:
+      type: object
       properties:
         tag:
           type: string
@@ -2127,28 +2120,28 @@ components:
       required:
         - tag
         - value
-      type: object
-    IncidentResource:
       additionalProperties: false
+    IncidentResource:
+      type: object
       properties:
         acknowledge_message:
           type: string
         acknowledged:
           type: boolean
         acknowledged_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         acknowledged_by_display_name:
           type: string
         acknowledged_by_user_id:
           type: string
         assigned_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         assignee_display_name:
           type: string
         assignee_user_id:
@@ -2158,67 +2151,68 @@ components:
         close_reason:
           type: string
         closed_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         closed_by_display_name:
           type: string
         closed_by_user_id:
           type: string
         duration_seconds:
-          format: int64
           type: integer
+          format: int64
         followers:
-          items:
-            $ref: '#/components/schemas/IncidentFollowerResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/IncidentFollowerResource"
         host_connection:
           type: string
         host_display_name:
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         incident_status:
           description: Whether monitoring considers the problem recovered. Independent of whether anyone has closed the incident
+          type: string
           enum:
             - PROBLEM
             - RESOLVED
-          type: string
         items:
-          items:
-            $ref: '#/components/schemas/MonitoringItemResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/MonitoringItemResource"
         name:
           type: string
         operational_data:
           description: The operational data line configured on the trigger
           type: string
         project_id:
-          format: uuid
           type: string
+          format: uuid
         resolved_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         resolved_trigger_expression:
           type: string
         server_id:
           description: The machine this alert is about. Null when the alert is not about a machine
-          format: uuid
           type:
             - string
-            - 'null'
+            - "null"
+          format: uuid
         server_name:
           description: Empty when server_id is null
           type: string
         severity:
+          type: string
           enum:
             - NOT_CLASSIFIED
             - INFORMATION
@@ -2226,26 +2220,23 @@ components:
             - AVERAGE
             - HIGH
             - DISASTER
-          type: string
         started_at:
-          format: date-time
           type: string
+          format: date-time
         tags:
-          items:
-            $ref: '#/components/schemas/TagResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TagResource"
         trigger_expression:
           type: string
         web_check_id:
-          description: >-
-            The web check that reported this alert. Null when the alert did not come from a web
-            check. Both this and server_id are set when the check runs on one of your machines
-          format: uuid
+          description: The web check that reported this alert. Null when the alert did not come from a web check. Both this and server_id are set when the check runs on one of your machines
           type:
             - string
-            - 'null'
+            - "null"
+          format: uuid
         zabbix_event_id:
           type: string
       required:
@@ -2282,60 +2273,61 @@ components:
         - items
         - tags
         - followers
-      type: object
-    LengthAwarePageIncidentResource:
       additionalProperties: false
+    LengthAwarePageIncidentResource:
+      type: object
       properties:
         items:
           description: The records in this page
-          items:
-            $ref: '#/components/schemas/IncidentResource'
           type: array
+          items:
+            $ref: "#/components/schemas/IncidentResource"
         limit:
           description: Maximum records per page, echoing the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Number of records skipped, echoing the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matches, not just this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
-    AcknowledgeIncidentRequestBody:
       additionalProperties: false
+    AcknowledgeIncidentRequestBody:
+      type: object
       properties:
         message:
           description: Also written to the acknowledgement record in the monitoring system
-          maxLength: 2000
           type: string
-      type: object
-    AssignIncidentRequestBody:
+          maxLength: 2000
       additionalProperties: false
+    AssignIncidentRequestBody:
+      type: object
       properties:
         assignee_display_name:
           description: Defaults to the user id. The timeline keeps a copy of the name as it was at the time
-          maxLength: 255
           type: string
+          maxLength: 255
         assignee_user_id:
-          maxLength: 255
           type: string
-      type: object
-    CloseIncidentRequestBody:
+          maxLength: 255
       additionalProperties: false
+    CloseIncidentRequestBody:
+      type: object
       properties:
         message:
           description: Required when `reason` is OTHER; the request is rejected otherwise
-          maxLength: 2000
           type: string
+          maxLength: 2000
         reason:
+          type: string
           enum:
             - RECOVERED
             - FIXED
@@ -2344,24 +2336,24 @@ components:
             - NO_ACTION_REQUIRED
             - ACCEPTED_RISK
             - OTHER
-          type: string
       required:
         - reason
-      type: object
-    AddCommentRequestBody:
       additionalProperties: false
+    AddCommentRequestBody:
+      type: object
       properties:
         message:
-          maxLength: 2000
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 2000
       required:
         - message
-      type: object
-    IncidentActivityResource:
       additionalProperties: false
+    IncidentActivityResource:
+      type: object
       properties:
         activity_type:
+          type: string
           enum:
             - OPENED
             - RECOVERED
@@ -2373,7 +2365,6 @@ components:
             - COMMENT
             - CLOSED
             - REOPENED
-          type: string
         actor_display_name:
           type: string
         actor_user_id:
@@ -2382,22 +2373,22 @@ components:
         close_reason:
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         incident_id:
-          format: uuid
           type: string
+          format: uuid
         message:
           type: string
         occurred_at:
-          format: date-time
           type: string
+          format: date-time
         source:
+          type: string
           enum:
             - SYSTEM
             - OPERATOR
             - ZABBIX
-          type: string
         subject_display_name:
           type: string
         subject_user_id:
@@ -2415,60 +2406,60 @@ components:
         - subject_display_name
         - close_reason
         - occurred_at
-      type: object
-    SetFollowingRequestBody:
       additionalProperties: false
+    SetFollowingRequestBody:
+      type: object
       properties:
         following:
           type: boolean
       required:
         - following
-      type: object
-    CursorPageIncidentActivityResource:
       additionalProperties: false
+    CursorPageIncidentActivityResource:
+      type: object
       properties:
         items:
           description: The records in this page
-          items:
-            $ref: '#/components/schemas/IncidentActivityResource'
           type: array
+          items:
+            $ref: "#/components/schemas/IncidentActivityResource"
         next_cursor:
           description: Cursor for the next page. Empty means the end has been reached
           type: string
       required:
         - items
         - next_cursor
-      type: object
-    MaintenancePeriodResource:
       additionalProperties: false
+    MaintenancePeriodResource:
+      type: object
       properties:
         duration_seconds:
-          format: int64
           type: integer
+          format: int64
         every:
-          description: 'DAILY and WEEKLY: every N days or every N weeks'
-          format: int64
+          description: "DAILY and WEEKLY: every N days or every N weeks"
           type: integer
+          format: int64
         kind:
+          type: string
           enum:
             - ONCE
             - DAILY
             - WEEKLY
-          type: string
         start_time_seconds:
-          description: 'DAILY and WEEKLY: seconds from midnight, in the timezone of the window'
-          format: int64
+          description: "DAILY and WEEKLY: seconds from midnight, in the timezone of the window"
           type: integer
+          format: int64
         starts_at:
           description: Present only for ONCE
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         weekdays:
-          description: 'WEEKLY: bitmap of weekdays, **Monday is the lowest bit**'
-          format: int64
+          description: "WEEKLY: bitmap of weekdays, **Monday is the lowest bit**"
           type: integer
+          format: int64
       required:
         - kind
         - starts_at
@@ -2476,16 +2467,16 @@ components:
         - duration_seconds
         - every
         - weekdays
-      type: object
-    MaintenanceWindowResource:
       additionalProperties: false
+    MaintenanceWindowResource:
+      type: object
       properties:
         active_since:
-          format: date-time
           type: string
+          format: date-time
         active_till:
-          format: date-time
           type: string
+          format: date-time
         description:
           type: string
         last_error:
@@ -2493,29 +2484,29 @@ components:
         name:
           type: string
         period:
-          $ref: '#/components/schemas/MaintenancePeriodResource'
+          $ref: "#/components/schemas/MaintenancePeriodResource"
         project_id:
-          format: uuid
           type: string
+          format: uuid
         server_ids:
           description: Empty covers the **entire project**
-          items:
-            type: string
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         sync_status:
+          type: string
           enum:
             - PENDING
             - ACTIVE
             - FAILED
             - EXPIRED
-          type: string
         timezone:
           type: string
         window_id:
-          format: uuid
           type: string
+          format: uuid
       required:
         - window_id
         - project_id
@@ -2528,162 +2519,162 @@ components:
         - period
         - sync_status
         - last_error
-      type: object
-    MaintenanceWindowListResponseBody:
       additionalProperties: false
+    MaintenanceWindowListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/MaintenanceWindowResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/MaintenanceWindowResource"
       required:
         - items
-      type: object
-    MaintenancePeriodRequest:
       additionalProperties: false
+    MaintenancePeriodRequest:
+      type: object
       properties:
         duration_seconds:
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         every:
-          description: 'DAILY and WEEKLY: every N days or every N weeks'
+          description: "DAILY and WEEKLY: every N days or every N weeks"
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         kind:
+          type: string
           enum:
             - ONCE
             - DAILY
             - WEEKLY
-          type: string
         start_time_seconds:
-          description: 'DAILY and WEEKLY: seconds from midnight, in the timezone of the window'
-          format: int64
-          maximum: 86399
-          minimum: 0
+          description: "DAILY and WEEKLY: seconds from midnight, in the timezone of the window"
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 86399
         starts_at:
           description: Used only by ONCE
-          format: date-time
           type: string
+          format: date-time
         weekdays:
-          description: 'WEEKLY: bitmap of weekdays, **Monday is the lowest bit**'
-          format: int64
-          maximum: 127
-          minimum: 0
+          description: "WEEKLY: bitmap of weekdays, **Monday is the lowest bit**"
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 127
       required:
         - kind
-      type: object
-    PutMaintenanceWindowRequestBody:
       additionalProperties: false
+    PutMaintenanceWindowRequestBody:
+      type: object
       properties:
         active_since:
           description: Start of the period in which the rule is effective
-          format: date-time
           type: string
+          format: date-time
         active_till:
+          type: string
           format: date-time
-          type: string
         description:
+          type: string
           maxLength: 2000
-          type: string
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         period:
-          $ref: '#/components/schemas/MaintenancePeriodRequest'
+          $ref: "#/components/schemas/MaintenancePeriodRequest"
         server_ids:
-          items:
-            type: string
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         timezone:
           description: IANA name such as Asia/Shanghai. Empty uses the configured default
-          maxLength: 64
           type: string
+          maxLength: 64
       required:
         - name
         - active_since
         - active_till
         - period
-      type: object
-    CountResource:
       additionalProperties: false
+    CountResource:
+      type: object
       properties:
         count:
-          format: int64
           type: integer
+          format: int64
         key:
           type: string
       required:
         - key
         - count
-      type: object
-    ProjectOverviewResource:
       additionalProperties: false
+    ProjectOverviewResource:
+      type: object
       properties:
         monitored_servers:
-          format: int64
           type: integer
+          format: int64
         problem_counts:
-          items:
-            $ref: '#/components/schemas/CountResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/CountResource"
         reachability_counts:
-          items:
-            $ref: '#/components/schemas/CountResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/CountResource"
         total_servers:
-          format: int64
           type: integer
+          format: int64
       required:
         - total_servers
         - monitored_servers
         - reachability_counts
         - problem_counts
-      type: object
-    ItemResource:
       additionalProperties: false
+    ItemResource:
+      type: object
       properties:
         item_id:
           type: string
         key:
           type: string
         last_collected_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         last_value:
           type: string
         name:
           type: string
         tags:
-          items:
-            $ref: '#/components/schemas/TagResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TagResource"
         units:
           type: string
         value_type:
+          type: string
           enum:
             - FLOAT
             - CHARACTER
             - LOG
             - UNSIGNED
             - TEXT
-          type: string
       required:
         - item_id
         - key
@@ -2693,42 +2684,42 @@ components:
         - last_value
         - last_collected_at
         - tags
-      type: object
-    ItemListResponseBody:
       additionalProperties: false
+    ItemListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/ItemResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/ItemResource"
       required:
         - items
-      type: object
-    MetricPointResource:
       additionalProperties: false
+    MetricPointResource:
+      type: object
       properties:
         max_value:
-          format: double
           type: number
+          format: double
         min_value:
-          format: double
           type: number
+          format: double
         timestamp:
-          format: date-time
           type: string
+          format: date-time
         value:
-          format: double
           type: number
+          format: double
       required:
         - timestamp
         - value
         - min_value
         - max_value
-      type: object
-    MetricSeriesResource:
       additionalProperties: false
+    MetricSeriesResource:
+      type: object
       properties:
         item_id:
           type: string
@@ -2737,11 +2728,11 @@ components:
         item_name:
           type: string
         points:
-          items:
-            $ref: '#/components/schemas/MetricPointResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/MetricPointResource"
         units:
           type: string
       required:
@@ -2750,15 +2741,15 @@ components:
         - item_name
         - units
         - points
-      type: object
-    ItemThresholdResource:
       additionalProperties: false
+    ItemThresholdResource:
+      type: object
       properties:
         aggregation_function:
           type: string
         evaluation_window_seconds:
-          format: int64
           type: integer
+          format: int64
         item_id:
           type: string
         operator:
@@ -2766,8 +2757,8 @@ components:
         severity:
           type: string
         threshold:
-          format: double
           type: number
+          format: double
         trigger_name:
           description: Labels the line in the chart legend
           type: string
@@ -2779,33 +2770,33 @@ components:
         - trigger_name
         - aggregation_function
         - evaluation_window_seconds
-      type: object
-    MetricResponseBody:
       additionalProperties: false
+    MetricResponseBody:
+      type: object
       properties:
         downsampled:
           type: boolean
         effective_from:
-          format: date-time
           type: string
+          format: date-time
         effective_to:
-          format: date-time
           type: string
+          format: date-time
         from_trends:
           description: Data comes from hourly aggregates, one point per hour
           type: boolean
         series:
-          items:
-            $ref: '#/components/schemas/MetricSeriesResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/MetricSeriesResource"
         thresholds:
-          items:
-            $ref: '#/components/schemas/ItemThresholdResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/ItemThresholdResource"
         truncated:
           type: boolean
       required:
@@ -2816,9 +2807,9 @@ components:
         - effective_from
         - effective_to
         - thresholds
-      type: object
-    HostInterfaceResource:
       additionalProperties: false
+    HostInterfaceResource:
+      type: object
       properties:
         available:
           type: boolean
@@ -2827,8 +2818,8 @@ components:
         ip:
           type: string
         port:
-          format: int64
           type: integer
+          format: int64
         use_ip:
           type: boolean
       required:
@@ -2837,98 +2828,98 @@ components:
         - port
         - use_ip
         - available
-      type: object
-    ServerResourcesResource:
       additionalProperties: false
+    ServerResourcesResource:
+      type: object
       properties:
         interfaces:
-          items:
-            $ref: '#/components/schemas/HostInterfaceResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/HostInterfaceResource"
         inventory:
+          description: "Hardware and system inventory collected automatically: CPU, memory, operating system and so on"
+          type: object
           additionalProperties:
             type: string
-          description: 'Hardware and system inventory collected automatically: CPU, memory, operating system and so on'
-          type: object
         tags:
-          items:
-            $ref: '#/components/schemas/TagResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TagResource"
       required:
         - inventory
         - interfaces
         - tags
-      type: object
-    SnapshotResource:
       additionalProperties: false
+    SnapshotResource:
+      type: object
       properties:
         agent_error:
           type: string
         agent_reachability:
           description: AGENT_DOWN means the agent is unreachable while the machine is still alive; UNREACHABLE means neither can be established
+          type: string
           enum:
             - UNKNOWN
             - REACHABLE
             - AGENT_DOWN
             - UNREACHABLE
-          type: string
         last_collected_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         monitoring_enabled:
           type: boolean
         problem_counts:
-          items:
-            $ref: '#/components/schemas/CountResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/CountResource"
       required:
         - agent_reachability
         - agent_error
         - monitoring_enabled
         - last_collected_at
         - problem_counts
-      type: object
-    TopItemResource:
       additionalProperties: false
+    TopItemResource:
+      type: object
       properties:
         item_key:
           type: string
         server_id:
-          format: uuid
           type: string
+          format: uuid
         units:
           type: string
         value:
-          format: double
           type: number
+          format: double
       required:
         - server_id
         - item_key
         - units
         - value
-      type: object
-    TopItemListResponseBody:
       additionalProperties: false
+    TopItemListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/TopItemResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TopItemResource"
       required:
         - items
-      type: object
-    TemplateCatalogParameterResource:
       additionalProperties: false
+    TemplateCatalogParameterResource:
+      type: object
       properties:
         default:
           description: The value that takes effect when the parameter is omitted. An empty string is a real default, not an absent one
@@ -2945,6 +2936,7 @@ components:
             - `host` — an IP address, or a hostname of at most 255 characters whose dot-separated labels are at most 63 characters of `A-Z a-z 0-9 - _` and neither begin nor end with `-`. A single label such as `localhost` is accepted, as is a trailing dot
             - `ip_or_empty` — an IP address, or empty to mean "not specified"
             - `regexp` — must compile as a **Go RE2** pattern. RE2 has no backreferences and no lookaround, so a pattern that a browser's `new RegExp()` accepts may still be rejected here. Validating client-side narrows the gap but does not close it
+          type: string
           enum:
             - string
             - non_empty_string
@@ -2954,7 +2946,6 @@ components:
             - host
             - ip_or_empty
             - regexp
-          type: string
         name:
           description: The key to use in `template_bindings[].parameters`. It is not the Zabbix macro name, which is internal and changes between Zabbix versions
           type: string
@@ -2970,9 +2961,9 @@ components:
         - default
         - secret
         - kind
-      type: object
-    TemplateCatalogEntryResource:
       additionalProperties: false
+    TemplateCatalogEntryResource:
+      type: object
       properties:
         is_base:
           description: Exactly one template with this set must be bound to every machine. Binding none enrolls a machine that can never alert; binding both loads the Linux and Windows items onto one machine, half of which must fail
@@ -2982,18 +2973,18 @@ components:
           type: boolean
         parameters:
           description: In declaration order — connection parameters first, thresholds after — and meant to be rendered in that order. It is deliberately not alphabetical, which would split a template's connection parameters apart with thresholds between them even though they only make sense filled in together
-          items:
-            $ref: '#/components/schemas/TemplateCatalogParameterResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TemplateCatalogParameterResource"
         requires:
           description: Templates that must be bound alongside this one. Values are `template_key`s
-          items:
-            type: string
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         supports_active_mode:
           description: Whether this template may be bound when `agent_mode` is ACTIVE. It already combines both reasons it may not be — no active variant exists, or this deployment does not have one installed — because the two are rejected identically and call for the same fix
           type: boolean
@@ -3006,32 +2997,32 @@ components:
         - supports_active_mode
         - requires
         - parameters
-      type: object
-    TemplateCatalogResponseBody:
       additionalProperties: false
+    TemplateCatalogResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/TemplateCatalogEntryResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TemplateCatalogEntryResource"
       required:
         - items
-      type: object
-    ServerTemplateResource:
       additionalProperties: false
+    ServerTemplateResource:
+      type: object
       properties:
         configured_secret_parameters:
-          items:
-            type: string
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            type: string
         parameters:
+          type: object
           additionalProperties:
             type: string
-          type: object
         template_key:
           type: string
         zabbix_template_id:
@@ -3044,57 +3035,57 @@ components:
         - zabbix_template_name
         - parameters
         - configured_secret_parameters
-      type: object
-    ServerResource:
       additionalProperties: false
+    ServerResource:
+      type: object
       properties:
         address:
           type: string
         address_kind:
+          type: string
           enum:
             - ip
             - dns
-          type: string
         agent_mode:
+          type: string
           enum:
             - PASSIVE
             - ACTIVE
-          type: string
         agent_port:
-          format: int64
           type: integer
+          format: int64
         created_at:
-          format: date-time
           type: string
+          format: date-time
         description:
           type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         last_error:
           type: string
         monitoring_status:
           description: Consult `last_error` when this is FAILED
+          type: string
           enum:
             - PENDING
             - ACTIVE
             - DISABLED
             - FAILED
-          type: string
         name:
           type: string
         project_id:
-          format: uuid
           type: string
+          format: uuid
         templates:
-          items:
-            $ref: '#/components/schemas/ServerTemplateResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/ServerTemplateResource"
         updated_at:
-          format: date-time
           type: string
+          format: date-time
         zabbix_host_name:
           description: The Hostname in the agent configuration must match this value; active checks identify the machine by it
           type: string
@@ -3113,45 +3104,46 @@ components:
         - templates
         - created_at
         - updated_at
-      type: object
-    LengthAwarePageServerResource:
       additionalProperties: false
+    LengthAwarePageServerResource:
+      type: object
       properties:
         items:
           description: The records in this page
-          items:
-            $ref: '#/components/schemas/ServerResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ServerResource"
         limit:
           description: Maximum records per page, echoing the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Number of records skipped, echoing the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matches, not just this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
-      type: object
-    TemplateBindingRequest:
       additionalProperties: false
+    TemplateBindingRequest:
+      type: object
       properties:
         parameters:
-          additionalProperties:
-            type: string
           description: |-
             Parameters declared by the template, keyed by `name` from `GET /templates`. This is a full replacement: a parameter that is omitted takes the `default` reported there, so send back the whole `parameters` map read from the machine rather than only the field being changed.
 
             Secret parameters are the one exception, because they are never returned and so cannot be sent back. Omit one to keep the value already stored, and supply it only to replace it. An empty or blank value counts as omitted.
           type: object
+          additionalProperties:
+            type: string
         template_key:
+          type: string
           enum:
             - LINUX
             - SYSTEMD
@@ -3164,54 +3156,53 @@ components:
             - SMART
             - NVIDIA
             - PROXMOX_VE
-          type: string
       required:
         - template_key
-      type: object
-    EnableMonitoringRequestBody:
       additionalProperties: false
+    EnableMonitoringRequestBody:
+      type: object
       properties:
         address:
+          type: string
           minLength: 1
           maxLength: 255
-          type: string
         address_kind:
+          type: string
           enum:
             - ip
             - dns
-          type: string
         agent_mode:
           description: Empty selects passive mode, which requires the least agent-side configuration
+          type: string
           enum:
             - PASSIVE
             - ACTIVE
-          type: string
         agent_port:
           description: 0 uses the default of 10050
-          format: int64
-          maximum: 65535
-          minimum: 0
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 65535
         description:
+          type: string
           maxLength: 2000
-          type: string
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         template_bindings:
-          items:
-            $ref: '#/components/schemas/TemplateBindingRequest'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/TemplateBindingRequest"
       required:
         - name
         - address_kind
         - address
-      type: object
-    EnrollmentResource:
       additionalProperties: false
+    EnrollmentResource:
+      type: object
       properties:
         install_command:
           description: Includes the PSK. Like `tls_psk`, it is returned only this once
@@ -3219,7 +3210,7 @@ components:
         install_script_url:
           type: string
         tls_psk:
-          description: '**Returned only this once**'
+          description: "**Returned only this once**"
           type: string
         tls_psk_identity:
           type: string
@@ -3235,73 +3226,73 @@ components:
         - tls_psk
         - install_script_url
         - install_command
-      type: object
-    ServerEnrollmentResponseBody:
       additionalProperties: false
+    ServerEnrollmentResponseBody:
+      type: object
       properties:
         enrollment:
-          $ref: '#/components/schemas/EnrollmentResource'
+          $ref: "#/components/schemas/EnrollmentResource"
         server:
-          $ref: '#/components/schemas/ServerResource'
+          $ref: "#/components/schemas/ServerResource"
       required:
         - server
         - enrollment
-      type: object
-    UpdateServerRequestBody:
       additionalProperties: false
+    UpdateServerRequestBody:
+      type: object
       properties:
         address:
-          maxLength: 255
           type: string
+          maxLength: 255
         address_kind:
           description: Must be supplied together with `address` when changing the address
+          type: string
           enum:
             - ip
             - dns
-          type: string
         agent_mode:
           description: Changing the collection mode rebinds every template to the corresponding variant
+          type: string
           enum:
             - PASSIVE
             - ACTIVE
-          type: string
         agent_port:
-          format: int64
-          maximum: 65535
-          minimum: 1
           type: integer
+          format: int64
+          minimum: 1
+          maximum: 65535
         description:
+          type: string
           maxLength: 2000
-          type: string
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         template_bindings:
-          items:
-            $ref: '#/components/schemas/TemplateBindingRequest'
           type: array
-      type: object
-    WebCheckResultResource:
+          items:
+            $ref: "#/components/schemas/TemplateBindingRequest"
       additionalProperties: false
+    WebCheckResultResource:
+      type: object
       properties:
         checked_at:
-          format: date-time
           type: string
+          format: date-time
         error:
           type: string
         failed_step:
           description: Index of the failed step, counting from 1. 0 when healthy
-          format: int64
           type: integer
+          format: int64
         healthy:
           type: boolean
         response_code:
-          format: int64
           type: integer
+          format: int64
         response_time_seconds:
-          format: double
           type: number
+          format: double
       required:
         - healthy
         - failed_step
@@ -3309,9 +3300,9 @@ components:
         - response_code
         - response_time_seconds
         - checked_at
-      type: object
-    WebCheckStepResource:
       additionalProperties: false
+    WebCheckStepResource:
+      type: object
       properties:
         expected_status_codes:
           description: Status code expression, such as 200 or 200,301-302
@@ -3330,48 +3321,48 @@ components:
         - expected_status_codes
         - required_pattern
         - follow_redirects
-      type: object
-    WebCheckResource:
       additionalProperties: false
+    WebCheckResource:
+      type: object
       properties:
         check_id:
-          format: uuid
           type: string
+          format: uuid
         interval_seconds:
-          format: int64
           type: integer
+          format: int64
         last_error:
           type: string
         response_time_threshold_seconds:
-          format: int64
           type: integer
+          format: int64
         result:
-          anyOf:
-            - $ref: '#/components/schemas/WebCheckResultResource'
-            - type: 'null'
           description: null means the check has not completed a round yet. A zero value would present "not yet known" as "0 seconds, status code 0"
+          anyOf:
+            - $ref: "#/components/schemas/WebCheckResultResource"
+            - type: "null"
         retries:
-          format: int64
           type: integer
+          format: int64
         server_id:
-          format: uuid
-          type: string
           description: The machine this check is attached to. Empty for a project-level check, which is not tied to any machine
+          type: string
+          format: uuid
         steps:
-          items:
-            $ref: '#/components/schemas/WebCheckStepResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/WebCheckStepResource"
         sync_status:
+          type: string
           enum:
             - PENDING
             - ACTIVE
             - FAILED
-          type: string
         timeout_seconds:
-          format: int64
           type: integer
+          format: int64
       required:
         - check_id
         - server_id
@@ -3383,102 +3374,102 @@ components:
         - sync_status
         - last_error
         - result
-      type: object
-    WebCheckStepRequest:
       additionalProperties: false
+    WebCheckStepRequest:
+      type: object
       properties:
         expected_status_codes:
           description: Status code expression, such as 200 or 200,301-302. Empty disables status code checking
-          maxLength: 255
           type: string
+          maxLength: 255
         follow_redirects:
           type: boolean
         name:
-          maxLength: 64
           type: string
+          maxLength: 64
         required_pattern:
           description: A string that must appear in the response body
+          type: string
           maxLength: 255
-          type: string
         url:
-          maxLength: 2048
           type: string
+          maxLength: 2048
       required:
         - name
         - url
-      type: object
-    PutWebCheckRequestBody:
       additionalProperties: false
+    PutWebCheckRequestBody:
+      type: object
       properties:
         interval_seconds:
           description: 0 uses the default
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         response_time_threshold_seconds:
           description: Slower than this counts as slow. 0 disables the response time check
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         retries:
+          type: integer
           format: int64
           minimum: 0
-          type: integer
         steps:
-          items:
-            $ref: '#/components/schemas/WebCheckStepRequest'
-          minItems: 1
           type:
             - array
-            - 'null'
+            - "null"
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/WebCheckStepRequest"
         timeout_seconds:
+          type: integer
           format: int64
           minimum: 0
-          type: integer
       required:
         - steps
-      type: object
-    WebCheckListResponseBody:
       additionalProperties: false
+    WebCheckListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/WebCheckResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/WebCheckResource"
       required:
         - items
-      type: object
-    SLIReportRowResource:
       additionalProperties: false
+    SLIReportRowResource:
+      type: object
       properties:
         downtime_seconds:
-          format: int64
           type: integer
+          format: int64
         error_budget_seconds:
           description: A negative value means the budget for this period is already exhausted
-          format: int64
           type: integer
+          format: int64
         excluded_downtime_seconds:
           description: The portion excluded by planned maintenance
-          format: int64
           type: integer
+          format: int64
         period_from:
-          format: date-time
           type: string
+          format: date-time
         period_to:
-          format: date-time
           type: string
+          format: date-time
         server_id:
           description: Empty means this row covers the project as a whole
           type: string
         sli_percent:
-          format: double
           type: number
+          format: double
         uptime_seconds:
-          format: int64
           type: integer
+          format: int64
       required:
         - server_id
         - period_from
@@ -3488,46 +3479,47 @@ components:
         - downtime_seconds
         - error_budget_seconds
         - excluded_downtime_seconds
-      type: object
-    SLIReportResponseBody:
       additionalProperties: false
+    SLIReportResponseBody:
+      type: object
       properties:
         rows:
-          items:
-            $ref: '#/components/schemas/SLIReportRowResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/SLIReportRowResource"
       required:
         - rows
-      type: object
-    ScheduleWindowResource:
       additionalProperties: false
+    ScheduleWindowResource:
+      type: object
       properties:
         end_time_seconds:
-          format: int64
           type: integer
+          format: int64
         start_time_seconds:
-          format: int64
           type: integer
+          format: int64
         weekdays:
           description: Bitmap of weekdays, **Monday is the lowest bit**, using the same encoding as maintenance windows
-          format: int64
           type: integer
+          format: int64
       required:
         - weekdays
         - start_time_seconds
         - end_time_seconds
-      type: object
-    SLOResource:
       additionalProperties: false
+    SLOResource:
+      type: object
       properties:
         effective_from:
-          format: date-time
           type: string
+          format: date-time
         last_error:
           type: string
         min_severity:
+          type: string
           enum:
             - ANY
             - INFORMATION
@@ -3535,40 +3527,39 @@ components:
             - AVERAGE
             - HIGH
             - DISASTER
-          type: string
         name:
           type: string
         period:
+          type: string
           enum:
             - DAILY
             - WEEKLY
             - MONTHLY
             - QUARTERLY
             - ANNUALLY
-          type: string
         project_id:
-          format: uuid
           type: string
+          format: uuid
         schedule:
           description: Empty means a 24x7 commitment
-          items:
-            $ref: '#/components/schemas/ScheduleWindowResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/ScheduleWindowResource"
         slo_id:
-          format: uuid
           type: string
+          format: uuid
         slo_percent:
           description: Target availability, such as 99.9
-          format: double
           type: number
+          format: double
         sync_status:
+          type: string
           enum:
             - PENDING
             - ACTIVE
             - FAILED
-          type: string
         timezone:
           type: string
       required:
@@ -3583,36 +3574,37 @@ components:
         - min_severity
         - sync_status
         - last_error
-      type: object
-    ScheduleWindowRequest:
       additionalProperties: false
+    ScheduleWindowRequest:
+      type: object
       properties:
         end_time_seconds:
-          format: int64
-          maximum: 86400
-          minimum: 0
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 86400
         start_time_seconds:
-          format: int64
-          maximum: 86400
-          minimum: 0
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 86400
         weekdays:
           description: Bitmap of weekdays, **Monday is the lowest bit** (1 = Monday … 64 = Sunday)
-          format: int64
-          maximum: 127
-          minimum: 1
           type: integer
+          format: int64
+          minimum: 1
+          maximum: 127
       required:
         - weekdays
-      type: object
-    PutSLORequestBody:
       additionalProperties: false
+    PutSLORequestBody:
+      type: object
       properties:
         effective_from:
-          format: date-time
           type: string
+          format: date-time
         min_severity:
+          type: string
           enum:
             - ANY
             - INFORMATION
@@ -3620,54 +3612,53 @@ components:
             - AVERAGE
             - HIGH
             - DISASTER
-          type: string
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         period:
           description: Empty selects monthly
+          type: string
           enum:
             - DAILY
             - WEEKLY
             - MONTHLY
             - QUARTERLY
             - ANNUALLY
-          type: string
         schedule:
-          items:
-            $ref: '#/components/schemas/ScheduleWindowRequest'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/ScheduleWindowRequest"
         slo_id:
-          format: uuid
           type: string
+          format: uuid
         slo_percent:
           description: Target availability, such as 99.9. At most four decimal places
-          format: double
-          maximum: 100
-          minimum: 0
           type: number
+          format: double
+          minimum: 0
+          maximum: 100
         timezone:
           description: Determines the boundaries of each reporting period, that is, the moment each period begins
-          maxLength: 64
           type: string
+          maxLength: 64
       required:
         - slo_id
         - name
         - slo_percent
         - min_severity
-      type: object
-    StatusPageResource:
       additionalProperties: false
+    StatusPageResource:
+      type: object
       properties:
         brand_color:
-          description: '#RRGGBB'
+          description: "#RRGGBB"
           type: string
         created_at:
-          format: date-time
           type: string
+          format: date-time
         custom_domain:
           description: The custom domain bound to this page. Empty means it is served only at /{slug} under the shared domain
           type: string
@@ -3680,7 +3671,7 @@ components:
         name:
           type: string
         public_url:
-          description: 'The address this page is served at: the custom domain if one is bound, otherwise the shared domain with the slug, otherwise the shared domain with the project id'
+          description: "The address this page is served at: the custom domain if one is bound, otherwise the shared domain with the slug, otherwise the shared domain with the project id"
           type: string
         published:
           type: boolean
@@ -3688,29 +3679,29 @@ components:
           description: Whether search engines may index the page
           type: boolean
         slug:
-          type: string
           description: The readable address segment, empty when none is set. The page is always reachable at /<project id> regardless
-        status_page_id:
-          format: uuid
           type: string
+        status_page_id:
+          type: string
+          format: uuid
         support_url:
           type: string
         theme:
+          type: string
           enum:
             - AUTO
             - LIGHT
             - DARK
-          type: string
         timezone:
           description: Determines where the day boundary falls on the availability bar
           type: string
         updated_at:
-          format: date-time
           type: string
+          format: date-time
         uptime_days:
           description: Number of days covered by the availability bar
-          format: int64
           type: integer
+          format: int64
         support_label:
           description: The text shown on the support link. Empty means the page default is used
           type: string
@@ -3733,127 +3724,127 @@ components:
         - created_at
         - updated_at
         - support_label
-      type: object
-    PutStatusPageRequestBody:
       additionalProperties: false
+    PutStatusPageRequestBody:
+      type: object
       properties:
         brand_color:
-          description: '#RRGGBB. Applied to the page styling; only a strict six-digit hexadecimal value is accepted'
-          maxLength: 7
-          pattern: '^(#[0-9a-fA-F]{6})?$'
+          description: "#RRGGBB. Applied to the page styling; only a strict six-digit hexadecimal value is accepted"
           type: string
+          maxLength: 7
+          pattern: ^(#[0-9a-fA-F]{6})?$
         custom_domain:
           description: Read-only here. Bind a custom domain through PUT /status-page/domain, which verifies ownership first; a value sent here is ignored
-          maxLength: 253
           type: string
+          maxLength: 253
         footer_text:
           description: The line of free-form text in the page footer. Plain text
-          maxLength: 500
           type: string
+          maxLength: 500
         headline:
           description: The line shown below the title
+          type: string
           maxLength: 255
-          type: string
         logo_url:
-          maxLength: 2048
           type: string
+          maxLength: 2048
         name:
           description: Page title
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         published:
-          default: false
           description: While false, the public address returns 404. Unpublished by default
           type: boolean
-        search_engine_index:
           default: false
+        search_engine_index:
           description: Not indexed by default. Once a page has been crawled, switching back does not remove copies already held in third-party indexes
           type: boolean
+          default: false
         slug:
           description: An optional readable address segment under the shared domain. Lowercase letters, digits and hyphens; globally unique. Leave it empty and the page is served at /<project id>, which needs no configuration and cannot be taken by anyone else
-          maxLength: 63
+          type: string
           minLength: 1
-          pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
-          type: string
+          maxLength: 63
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
         support_url:
-          maxLength: 2048
           type: string
+          maxLength: 2048
         theme:
-          default: AUTO
+          type: string
           enum:
             - AUTO
             - LIGHT
             - DARK
-          type: string
+          default: AUTO
         timezone:
           description: IANA name. Empty selects UTC
-          maxLength: 64
           type: string
+          maxLength: 64
         uptime_days:
-          default: 90
-          format: int64
-          maximum: 365
-          minimum: 30
           type: integer
+          format: int64
+          default: 90
+          minimum: 30
+          maximum: 365
         support_label:
           description: The text shown on the support link. Empty uses the page default. Different products call this different things — help centre, submit a ticket, support
-          maxLength: 32
           type: string
+          maxLength: 32
       required:
         - name
-      type: object
-    PutStatusPageOrderRequestBody:
       additionalProperties: false
+    PutStatusPageOrderRequestBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/StatusPageOrderItem'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageOrderItem"
       required:
         - items
-      type: object
-    StatusPageOrderItem:
       additionalProperties: false
-      description: 'Exactly one of the two: `group_id` marks this position as a group, `component_id` as an ungrouped component'
+    StatusPageOrderItem:
+      description: "Exactly one of the two: `group_id` marks this position as a group, `component_id` as an ungrouped component"
+      type: object
       properties:
         component_id:
-          format: uuid
           type: string
+          format: uuid
         group_id:
-          format: uuid
           type: string
-      type: object
-    PutStatusPageGroupOrderRequestBody:
+          format: uuid
       additionalProperties: false
+    PutStatusPageGroupOrderRequestBody:
+      type: object
       properties:
         component_ids:
-          items:
-            format: uuid
-            type: string
           type: array
+          items:
+            type: string
+            format: uuid
       required:
         - component_ids
-      type: object
-    StatusPageGroupResource:
       additionalProperties: false
+    StatusPageGroupResource:
+      type: object
       properties:
         collapsed:
           description: Whether the group is collapsed by default on the page
           type: boolean
         created_at:
-          format: date-time
           type: string
+          format: date-time
         description:
           type: string
         group_id:
-          format: uuid
           type: string
+          format: uuid
         name:
           type: string
         position:
-          format: int64
           type: integer
+          format: int64
       required:
         - group_id
         - name
@@ -3861,37 +3852,38 @@ components:
         - position
         - collapsed
         - created_at
-      type: object
-    StatusPageGroupListResponseBody:
       additionalProperties: false
+    StatusPageGroupListResponseBody:
+      type: object
       properties:
         data:
-          items:
-            $ref: '#/components/schemas/StatusPageGroupResource'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageGroupResource"
       required:
         - data
-      type: object
-    PutStatusPageGroupRequestBody:
       additionalProperties: false
+    PutStatusPageGroupRequestBody:
+      type: object
       properties:
         collapsed:
-          default: true
           type: boolean
+          default: true
         description:
+          type: string
           maxLength: 2000
-          type: string
         name:
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
       required:
         - name
-      type: object
-    StatusPageComponentResource:
       additionalProperties: false
+    StatusPageComponentResource:
+      type: object
       properties:
         auto_status_min_severity:
+          type: string
           enum:
             - ANY
             - INFORMATION
@@ -3899,22 +3891,21 @@ components:
             - AVERAGE
             - HIGH
             - DISASTER
-          type: string
         component_id:
+          type: string
           format: uuid
-          type: string
         created_at:
-          format: date-time
           type: string
+          format: date-time
         current_status:
           description: The status currently shown to the public. OPERATIONAL means normal
+          type: string
           enum:
             - OPERATIONAL
             - DEGRADED_PERFORMANCE
             - PARTIAL_OUTAGE
             - MAJOR_OUTAGE
             - UNDER_MAINTENANCE
-          type: string
         description:
           type: string
         group_id:
@@ -3926,19 +3917,19 @@ components:
           description: Hide this row while everything is normal
           type: boolean
         position:
-          format: int64
           type: integer
+          format: int64
         show_uptime:
           description: Whether the availability bar is shown. Components with this disabled are also excluded from the aggregate of their group
           type: boolean
         started_on:
           description: The moment this component started being covered. Earlier days are shown as unmeasured rather than operational
-          format: date-time
           type: string
+          format: date-time
         uptime_percent:
           description: Availability over the past `uptime_days` days
-          format: double
           type: number
+          format: double
       required:
         - component_id
         - name
@@ -3952,23 +3943,23 @@ components:
         - current_status
         - uptime_percent
         - created_at
-      type: object
-    StatusPageComponentListResponseBody:
       additionalProperties: false
+    StatusPageComponentListResponseBody:
+      type: object
       properties:
         data:
-          items:
-            $ref: '#/components/schemas/StatusPageComponentResource'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageComponentResource"
       required:
         - data
-      type: object
-    PutStatusPageComponentRequestBody:
       additionalProperties: false
+    PutStatusPageComponentRequestBody:
+      type: object
       properties:
         auto_status_min_severity:
-          default: AVERAGE
           description: Alerts below this severity do not change the status of this row
+          type: string
           enum:
             - ANY
             - INFORMATION
@@ -3976,186 +3967,186 @@ components:
             - AVERAGE
             - HIGH
             - DISASTER
-          type: string
+          default: AVERAGE
         description:
-          maxLength: 2000
           type: string
+          maxLength: 2000
         group_id:
           description: Empty leaves the component ungrouped
-          format: uuid
           type: string
+          format: uuid
         name:
           description: Customer-facing copy; appears verbatim on the public page
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         only_show_if_degraded:
+          type: boolean
           default: false
-          type: boolean
         show_uptime:
-          default: true
           type: boolean
+          default: true
         started_on:
           description: Meaningful only at creation and immutable afterwards. Empty selects the current moment
-          format: date-time
           type: string
+          format: date-time
       required:
         - name
-      type: object
-    StatusPageComponentSourceServer:
       additionalProperties: false
+    StatusPageComponentSourceServer:
+      type: object
       properties:
         server_id:
-          format: uuid
           type: string
+          format: uuid
       required:
         - server_id
-      type: object
-    StatusPageComponentSourceWebCheck:
       additionalProperties: false
+    StatusPageComponentSourceWebCheck:
+      type: object
       properties:
         show_url:
-          default: false
           description: Whether the checked address is shown on the public page
           type: boolean
+          default: false
         web_check_id:
-          format: uuid
           type: string
+          format: uuid
       required:
         - web_check_id
-      type: object
-    StatusPageComponentSourcesResource:
       additionalProperties: false
+    StatusPageComponentSourcesResource:
+      type: object
       properties:
         servers:
-          items:
-            $ref: '#/components/schemas/StatusPageComponentSourceServer'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageComponentSourceServer"
         web_checks:
-          items:
-            $ref: '#/components/schemas/StatusPageComponentSourceWebCheck'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageComponentSourceWebCheck"
       required:
         - servers
         - web_checks
-      type: object
-    PutStatusPageComponentSourcesRequestBody:
       additionalProperties: false
+    PutStatusPageComponentSourcesRequestBody:
       description: Submits the complete set; anything not listed is unbound
+      type: object
       properties:
         servers:
-          items:
-            $ref: '#/components/schemas/StatusPageComponentSourceServer'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageComponentSourceServer"
         web_checks:
-          items:
-            $ref: '#/components/schemas/StatusPageComponentSourceWebCheck'
           type: array
-      type: object
-    StatusPageIncidentComponentResource:
+          items:
+            $ref: "#/components/schemas/StatusPageComponentSourceWebCheck"
       additionalProperties: false
+    StatusPageIncidentComponentResource:
       description: A status transition of one component within one update. The component name is a snapshot taken at the time
+      type: object
       properties:
         component_id:
-          format: uuid
           type: string
+          format: uuid
         component_name:
           type: string
         new_status:
+          type: string
           enum:
             - OPERATIONAL
             - DEGRADED_PERFORMANCE
             - PARTIAL_OUTAGE
             - MAJOR_OUTAGE
             - UNDER_MAINTENANCE
-          type: string
         old_status:
+          type: string
           enum:
             - OPERATIONAL
             - DEGRADED_PERFORMANCE
             - PARTIAL_OUTAGE
             - MAJOR_OUTAGE
             - UNDER_MAINTENANCE
-          type: string
       required:
         - component_id
         - component_name
         - old_status
         - new_status
-      type: object
-    StatusPageIncidentUpdateResource:
       additionalProperties: false
+    StatusPageIncidentUpdateResource:
+      type: object
       properties:
         affected_components:
-          items:
-            $ref: '#/components/schemas/StatusPageIncidentComponentResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/StatusPageIncidentComponentResource"
         body:
           description: Body text. Plain text
           type: string
         incident_status:
+          type: string
           enum:
             - INVESTIGATING
             - IDENTIFIED
             - MONITORING
             - RESOLVED
-          type: string
         published_at:
+          type: string
           format: date-time
-          type: string
         update_id:
-          format: uuid
           type: string
+          format: uuid
       required:
         - update_id
         - incident_status
         - body
         - published_at
         - affected_components
-      type: object
-    StatusPageIncidentResource:
       additionalProperties: false
+    StatusPageIncidentResource:
+      type: object
       properties:
         impact:
+          type: string
           enum:
             - NONE
             - MINOR
             - MAJOR
             - CRITICAL
-          type: string
         incident_id:
-          format: uuid
           type: string
+          format: uuid
         incident_status:
+          type: string
           enum:
             - INVESTIGATING
             - IDENTIFIED
             - MONITORING
             - RESOLVED
-          type: string
         name:
           type: string
         published_at:
-          format: date-time
           type: string
-        resolved_at:
           format: date-time
+        resolved_at:
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         started_at:
           description: When the incident began, not when the notice was published
-          format: date-time
           type: string
+          format: date-time
         updates:
           description: Most recently published first
-          items:
-            $ref: '#/components/schemas/StatusPageIncidentUpdateResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/StatusPageIncidentUpdateResource"
       required:
         - incident_id
         - name
@@ -4165,177 +4156,177 @@ components:
         - resolved_at
         - published_at
         - updates
-      type: object
-    LengthAwarePageStatusPageIncidentResource:
       additionalProperties: false
+    LengthAwarePageStatusPageIncidentResource:
+      type: object
       properties:
         data:
-          items:
-            $ref: '#/components/schemas/StatusPageIncidentResource'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageIncidentResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - data
         - total
         - limit
         - offset
-      type: object
-    StatusPageIncidentComponentRequest:
       additionalProperties: false
+    StatusPageIncidentComponentRequest:
+      type: object
       properties:
         component_id:
-          format: uuid
           type: string
+          format: uuid
         status:
           description: Empty returns this component to operational
+          type: string
           enum:
             - OPERATIONAL
             - DEGRADED_PERFORMANCE
             - PARTIAL_OUTAGE
             - MAJOR_OUTAGE
             - UNDER_MAINTENANCE
-          type: string
       required:
         - component_id
-      type: object
-    PublishStatusPageIncidentRequestBody:
       additionalProperties: false
+    PublishStatusPageIncidentRequestBody:
+      type: object
       properties:
         body:
           description: Body of the first update. Plain text
-          minLength: 1
           type: string
+          minLength: 1
         components:
-          items:
-            $ref: '#/components/schemas/StatusPageIncidentComponentRequest'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageIncidentComponentRequest"
         impact:
           description: Empty derives the impact from the affected components
+          type: string
           enum:
             - NONE
             - MINOR
             - MAJOR
             - CRITICAL
-          type: string
         incident_status:
-          default: INVESTIGATING
+          type: string
           enum:
             - INVESTIGATING
             - IDENTIFIED
             - MONITORING
             - RESOLVED
-          type: string
+          default: INVESTIGATING
         name:
           description: The public title
-          maxLength: 255
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 255
         published_at:
           description: Empty selects the current moment. Backfilling a past incident sets it in the past
-          format: date-time
           type: string
+          format: date-time
         started_at:
           description: When the incident began. Empty uses the publication time
-          format: date-time
           type: string
+          format: date-time
       required:
         - name
         - body
-      type: object
-    PostStatusPageIncidentUpdateRequestBody:
       additionalProperties: false
+    PostStatusPageIncidentUpdateRequestBody:
+      type: object
       properties:
         body:
           description: Body text. Plain text
-          minLength: 1
           type: string
+          minLength: 1
         components:
           description: Lists only the components being changed by this update; those not listed keep their current status
-          items:
-            $ref: '#/components/schemas/StatusPageIncidentComponentRequest'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageIncidentComponentRequest"
         incident_status:
           description: Empty keeps the current stage. RESOLVED closes the notice and returns every affected component to operational
+          type: string
           enum:
             - INVESTIGATING
             - IDENTIFIED
             - MONITORING
             - RESOLVED
-          type: string
         published_at:
-          format: date-time
           type: string
+          format: date-time
       required:
         - body
-      type: object
-    StatusPageMaintenanceComponentResource:
       additionalProperties: false
+    StatusPageMaintenanceComponentResource:
+      type: object
       properties:
         component_id:
-          format: uuid
           type: string
+          format: uuid
         component_name:
           type: string
         component_status:
+          type: string
           enum:
             - UNDER_MAINTENANCE
             - DEGRADED_PERFORMANCE
-          type: string
       required:
         - component_id
         - component_name
         - component_status
-      type: object
-    StatusPageMaintenanceResource:
       additionalProperties: false
+    StatusPageMaintenanceResource:
+      type: object
       properties:
         affected_components:
-          items:
-            $ref: '#/components/schemas/StatusPageMaintenanceComponentResource'
           type:
             - array
-            - 'null'
+            - "null"
+          items:
+            $ref: "#/components/schemas/StatusPageMaintenanceComponentResource"
         body:
           description: Maintenance description. Plain text
           type: string
         completed_at:
           description: When the maintenance actually finished
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         maintenance_id:
-          format: uuid
           type: string
+          format: uuid
         maintenance_status:
+          type: string
           enum:
             - SCHEDULED
             - IN_PROGRESS
             - COMPLETED
             - CANCELLED
-          type: string
         name:
           type: string
         scheduled_for:
-          format: date-time
           type: string
+          format: date-time
         scheduled_until:
-          format: date-time
           type: string
+          format: date-time
         started_at:
           description: When the maintenance actually started, which may differ from the scheduled time
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
       required:
         - maintenance_id
         - name
@@ -4346,93 +4337,93 @@ components:
         - started_at
         - completed_at
         - affected_components
-      type: object
-    LengthAwarePageStatusPageMaintenanceResource:
       additionalProperties: false
+    LengthAwarePageStatusPageMaintenanceResource:
+      type: object
       properties:
         data:
-          items:
-            $ref: '#/components/schemas/StatusPageMaintenanceResource'
           type: array
+          items:
+            $ref: "#/components/schemas/StatusPageMaintenanceResource"
         limit:
-          format: int64
           type: integer
+          format: int64
         offset:
-          format: int64
           type: integer
+          format: int64
         total:
-          format: int64
           type: integer
+          format: int64
       required:
         - data
         - total
         - limit
         - offset
-      type: object
-    StatusPageMaintenanceComponentRequest:
       additionalProperties: false
+    StatusPageMaintenanceComponentRequest:
+      type: object
       properties:
         component_id:
-          format: uuid
           type: string
+          format: uuid
         component_status:
-          default: UNDER_MAINTENANCE
           description: How this component is shown while the maintenance runs. Neither value reduces availability
+          type: string
           enum:
             - UNDER_MAINTENANCE
             - DEGRADED_PERFORMANCE
-          type: string
+          default: UNDER_MAINTENANCE
       required:
         - component_id
-      type: object
-    ScheduleStatusPageMaintenanceRequestBody:
       additionalProperties: false
+    ScheduleStatusPageMaintenanceRequestBody:
+      type: object
       properties:
         body:
           description: Maintenance description. Plain text
-          minLength: 1
           type: string
+          minLength: 1
         components:
           description: At least one. Maintenance that affects no component reads on the page as an announcement with no subject
-          items:
-            $ref: '#/components/schemas/StatusPageMaintenanceComponentRequest'
-          minItems: 1
           type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StatusPageMaintenanceComponentRequest"
         name:
-          maxLength: 255
+          type: string
           minLength: 1
-          type: string
+          maxLength: 255
         scheduled_for:
-          format: date-time
           type: string
+          format: date-time
         scheduled_until:
           description: Must be later than `scheduled_for`
-          format: date-time
           type: string
+          format: date-time
       required:
         - name
         - body
         - scheduled_for
         - scheduled_until
         - components
-      type: object
-    StatusPageDomainResource:
       additionalProperties: false
+    StatusPageDomainResource:
+      type: object
       properties:
         certificate_not_after:
           description: When the current certificate expires
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         certificate_status:
           description: NONE means no certificate has been requested for this domain yet
+          type: string
           enum:
             - NONE
             - PENDING
             - ACTIVE
             - FAILED
-          type: string
         domain:
           description: The bound custom domain. Empty means none is bound
           type: string
@@ -4453,10 +4444,10 @@ components:
           type: boolean
         verified_at:
           description: When ownership was last confirmed
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
       required:
         - domain
         - expected_cname
@@ -4467,15 +4458,15 @@ components:
         - certificate_not_after
         - last_error
         - public_url
-      type: object
-    PutStatusPageDomainRequestBody:
       additionalProperties: false
+    PutStatusPageDomainRequestBody:
+      type: object
       properties:
         domain:
           description: Your own domain, such as status.acme.com. It must already point at the status page by CNAME
-          maxLength: 253
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 253
       required:
         - domain
-      type: object
+      additionalProperties: false

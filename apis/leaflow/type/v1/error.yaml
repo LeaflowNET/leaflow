@@ -9,32 +9,37 @@ paths: {}
 components:
   schemas:
     Error:
-      additionalProperties: false
+      type: object
       properties:
         code:
           type: string
         message:
           type: string
         meta:
-          additionalProperties: {}
           type: object
+          properties:
+            violations:
+              description: |-
+                Present on every response whose `code` is `VALIDATION_FAILED`, and on no
+                other response.
+              type: array
+              items:
+                $ref: "#/components/schemas/Violation"
+          additionalProperties: {}
         status:
-          format: int64
           type: integer
+          format: int64
       required:
         - status
         - message
-      type: object
+      additionalProperties: false
     Violation:
       description: |-
         A single mismatch between the request and the contract.
 
-        Violations appear in `Error.meta.violations`. They are present on every response
-        whose `code` is `VALIDATION_FAILED` and on no other response.
-
         Use `field` to locate the input, `rule` to decide what to tell the user, and
         `reason` only for diagnostics.
-      additionalProperties: false
+      type: object
       properties:
         field:
           description: |-
@@ -54,4 +59,4 @@ components:
       required:
         - field
         - rule
-      type: object
+      additionalProperties: false

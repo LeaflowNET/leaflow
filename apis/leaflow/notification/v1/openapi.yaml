@@ -1,5 +1,7 @@
 openapi: 3.1.0
 info:
+  title: Leaflow Notification API
+  version: 1.0.0
   description: |-
     Read the notifications this platform has sent you, and choose where each kind of notification
     is delivered.
@@ -56,8 +58,6 @@ info:
     initial password of a newly created instance, for example. That credential is readable exactly
     once, expires on its own, and is destroyed as soon as it has been read. Requesting it a second
     time returns `CREDENTIAL_TICKET_CONSUMED`.
-  title: Leaflow Notification API
-  version: 1.0.0
 servers:
   - url: https://notification.leaflow.cloud
     description: Inbox, delivery preferences and outbound channels
@@ -78,74 +78,74 @@ paths:
       tags:
         - Notification
       parameters:
-        - description: Maximum number of items to return in this page
-          explode: false
+        - name: limit
           in: query
-          name: limit
+          description: Maximum number of items to return in this page
+          explode: false
           schema:
-            default: 50
             description: Maximum number of items to return in this page
-            format: int64
-            maximum: 200
-            minimum: 1
             type: integer
-        - description: Number of items to skip
-          explode: false
+            format: int64
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
           in: query
-          name: offset
+          description: Number of items to skip
+          explode: false
           schema:
             description: Number of items to skip
-            format: int64
-            maximum: 10000
-            minimum: 0
             type: integer
-        - description: Which projects to include; defaults to every project
-          explode: false
+            format: int64
+            minimum: 0
+            maximum: 10000
+        - name: scope
           in: query
-          name: scope
-          schema:
-            $ref: '#/components/schemas/NotificationScope'
-        - description: Return only notifications of this type; omit for all types
+          description: Which projects to include; defaults to every project
           explode: false
-          in: query
-          name: type
           schema:
-            maxLength: 128
+            $ref: "#/components/schemas/NotificationScope"
+        - name: type
+          in: query
+          description: Return only notifications of this type; omit for all types
+          explode: false
+          schema:
             type: string
-        - description: Return only notifications at or above this severity; omit for all severities
-          explode: false
+            maxLength: 128
+        - name: min_severity
           in: query
-          name: min_severity
+          description: Return only notifications at or above this severity; omit for all severities
+          explode: false
           schema:
-            $ref: '#/components/schemas/NotificationSeverity'
-        - description: Restrict to unread, to read, or to neither; omit for both
-          explode: false
+            $ref: "#/components/schemas/NotificationSeverity"
+        - name: read
           in: query
-          name: read
+          description: Restrict to unread, to read, or to neither; omit for both
+          explode: false
           schema:
             description: Restrict to unread, to read, or to neither; omit for both
             type: boolean
-        - description: Include archived notifications; they are excluded by default
-          explode: false
+        - name: include_archived
           in: query
-          name: include_archived
+          description: Include archived notifications; they are excluded by default
+          explode: false
           schema:
-            default: false
             description: Include archived notifications; they are excluded by default
             type: boolean
+            default: false
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LengthAwarePageNotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/LengthAwarePageNotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/notifications/read:
     post:
       summary: Mark several notifications as read
@@ -158,24 +158,24 @@ paths:
       tags:
         - Notification
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MarkNotificationsReadRequestBody'
-        required: true
+              $ref: "#/components/schemas/MarkNotificationsReadRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UnreadCountResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/UnreadCountResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/notifications/unread-count:
     get:
       summary: Count unread notifications
@@ -187,25 +187,25 @@ paths:
       tags:
         - Notification
       parameters:
-        - description: Which projects to include; defaults to every project
-          explode: false
+        - name: scope
           in: query
-          name: scope
+          description: Which projects to include; defaults to every project
+          explode: false
           schema:
-            $ref: '#/components/schemas/NotificationScope'
+            $ref: "#/components/schemas/NotificationScope"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UnreadCountResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/UnreadCountResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/notifications/{notificationId}:
     get:
       summary: Get one notification
@@ -216,20 +216,20 @@ paths:
       tags:
         - Notification
       parameters:
-        - $ref: '#/components/parameters/NotificationId'
+        - $ref: "#/components/parameters/NotificationId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/notifications/{notificationId}/read:
     post:
       summary: Mark one notification as read
@@ -238,20 +238,20 @@ paths:
       tags:
         - Notification
       parameters:
-        - $ref: '#/components/parameters/NotificationId'
+        - $ref: "#/components/parameters/NotificationId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Mark one notification as unread
       description: |-
@@ -263,20 +263,20 @@ paths:
       tags:
         - Notification
       parameters:
-        - $ref: '#/components/parameters/NotificationId'
+        - $ref: "#/components/parameters/NotificationId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/notifications/{notificationId}/archive:
     post:
       summary: Archive one notification
@@ -287,20 +287,20 @@ paths:
       tags:
         - Notification
       parameters:
-        - $ref: '#/components/parameters/NotificationId'
+        - $ref: "#/components/parameters/NotificationId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Take one notification out of the archive
       description: |-
@@ -316,20 +316,20 @@ paths:
       tags:
         - Notification
       parameters:
-        - $ref: '#/components/parameters/NotificationId'
+        - $ref: "#/components/parameters/NotificationId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/announcements:
     get:
       summary: List platform announcements
@@ -352,18 +352,18 @@ paths:
       tags:
         - Announcement
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnouncementListResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/AnnouncementListResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/announcements/read:
     post:
       summary: Mark every visible announcement as read
@@ -372,18 +372,18 @@ paths:
       tags:
         - Announcement
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnnouncementReadResultResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/AnnouncementReadResultResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/announcements/{announcementId}/read:
     post:
       summary: Mark one announcement as read
@@ -394,21 +394,21 @@ paths:
       tags:
         - Announcement
       parameters:
-        - in: path
-          name: announcementId
+        - name: announcementId
+          in: path
           required: true
           schema:
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/notification-types:
     get:
       summary: List every notification type
@@ -423,18 +423,18 @@ paths:
         - Notification
       security: []
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/NotificationTypeListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/NotificationTypeListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/preferences:
     get:
       summary: Get your delivery preferences
@@ -447,18 +447,18 @@ paths:
       tags:
         - Preference
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PreferencesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/PreferencesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     patch:
       summary: Update your delivery preferences
       description: |-
@@ -476,24 +476,24 @@ paths:
       tags:
         - Preference
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdatePreferencesRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdatePreferencesRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PreferencesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/PreferencesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/preferences/email-override/code:
     post:
       summary: Send a code to the pending address
@@ -512,18 +512,18 @@ paths:
       tags:
         - Preference
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EmailOverrideCodeResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/EmailOverrideCodeResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Give up on the pending address
       description: |-
@@ -536,18 +536,18 @@ paths:
       tags:
         - Preference
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PreferencesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/PreferencesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/preferences/email-override/code/confirm:
     post:
       summary: Confirm the pending address with its code
@@ -562,24 +562,24 @@ paths:
       tags:
         - Preference
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ConfirmEmailOverrideRequestBody'
-        required: true
+              $ref: "#/components/schemas/ConfirmEmailOverrideRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PreferencesResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/PreferencesResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/preferences/types:
     get:
       summary: List your per-type preferences
@@ -594,27 +594,27 @@ paths:
       tags:
         - Preference
       parameters:
-        - description: Return preferences for this project in addition to the account-wide ones; omit for the account-wide ones only
-          explode: false
+        - name: project_id
           in: query
-          name: project_id
+          description: Return preferences for this project in addition to the account-wide ones; omit for the account-wide ones only
+          explode: false
           schema:
             description: Return preferences for this project in addition to the account-wide ones
-            format: uuid
             type: string
+            format: uuid
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TypePreferenceListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TypePreferenceListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/preferences/types/{type}:
     put:
       summary: Set the preference for one type
@@ -634,27 +634,27 @@ paths:
       tags:
         - Preference
       parameters:
-        - $ref: '#/components/parameters/NotificationType'
-        - $ref: '#/components/parameters/PreferenceProjectId'
+        - $ref: "#/components/parameters/NotificationType"
+        - $ref: "#/components/parameters/PreferenceProjectId"
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateTypePreferenceRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdateTypePreferenceRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TypePreferenceResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/TypePreferenceResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Restore the default for one type
       description: |-
@@ -666,17 +666,17 @@ paths:
       tags:
         - Preference
       parameters:
-        - $ref: '#/components/parameters/NotificationType'
-        - $ref: '#/components/parameters/PreferenceProjectId'
+        - $ref: "#/components/parameters/NotificationType"
+        - $ref: "#/components/parameters/PreferenceProjectId"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/channels:
     get:
       summary: List outbound channels
@@ -687,31 +687,31 @@ paths:
       tags:
         - Channel
       parameters:
-        - description: Return only channels of this scope; omit for both
-          explode: false
+        - name: channel_scope
           in: query
-          name: channel_scope
-          schema:
-            $ref: '#/components/schemas/ChannelScope'
-        - description: Return only channels of this kind; omit for all kinds
+          description: Return only channels of this scope; omit for both
           explode: false
-          in: query
-          name: kind
           schema:
-            $ref: '#/components/schemas/ChannelKind'
+            $ref: "#/components/schemas/ChannelScope"
+        - name: kind
+          in: query
+          description: Return only channels of this kind; omit for all kinds
+          explode: false
+          schema:
+            $ref: "#/components/schemas/ChannelKind"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelListResponseBody'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelListResponseBody"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       summary: Register an outbound channel
       description: |-
@@ -732,24 +732,24 @@ paths:
       tags:
         - Channel
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateChannelRequestBody'
-        required: true
+              $ref: "#/components/schemas/CreateChannelRequestBody"
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelResource'
+        "201":
           description: Created
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channelId}:
     patch:
       summary: Rename or re-enable an outbound channel
@@ -765,26 +765,26 @@ paths:
       tags:
         - Channel
       parameters:
-        - $ref: '#/components/parameters/ChannelId'
+        - $ref: "#/components/parameters/ChannelId"
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateChannelRequestBody'
-        required: true
+              $ref: "#/components/schemas/UpdateChannelRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Delete an outbound channel
       description: |-
@@ -794,16 +794,16 @@ paths:
       tags:
         - Channel
       parameters:
-        - $ref: '#/components/parameters/ChannelId'
+        - $ref: "#/components/parameters/ChannelId"
       responses:
-        '204':
+        "204":
           description: No Content
         default:
+          description: Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-          description: Error
+                $ref: "#/components/schemas/Error"
   /api/v1/channels/{channelId}/verify:
     post:
       summary: Verify an outbound channel
@@ -820,20 +820,20 @@ paths:
       tags:
         - Channel
       parameters:
-        - $ref: '#/components/parameters/ChannelId'
+        - $ref: "#/components/parameters/ChannelId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChannelResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/ChannelResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/credentials/{ticketId}:
     get:
       summary: Describe a one-time credential
@@ -847,20 +847,20 @@ paths:
       tags:
         - Credential
       parameters:
-        - $ref: '#/components/parameters/TicketId'
+        - $ref: "#/components/parameters/TicketId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialTicketResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/CredentialTicketResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/credentials/{ticketId}/reveal:
     post:
       summary: Reveal a one-time credential
@@ -883,20 +883,20 @@ paths:
       tags:
         - Credential
       parameters:
-        - $ref: '#/components/parameters/TicketId'
+        - $ref: "#/components/parameters/TicketId"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RevealedCredentialResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RevealedCredentialResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/realtime:
     get:
       summary: Describe the realtime connection
@@ -912,18 +912,18 @@ paths:
       tags:
         - Realtime
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RealtimeConnectionResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RealtimeConnectionResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/realtime/auth:
     post:
       summary: Authorize a realtime channel subscription
@@ -941,75 +941,28 @@ paths:
       tags:
         - Realtime
       requestBody:
+        required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AuthorizeRealtimeChannelRequestBody'
-        required: true
+              $ref: "#/components/schemas/AuthorizeRealtimeChannelRequestBody"
       responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RealtimeAuthResource'
+        "200":
           description: OK
-        default:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/RealtimeAuthResource"
+        default:
           description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
-      bearerFormat: JWT
-      description: Scoped token. Sign in at auth.leaflow.net to obtain an access token, then exchange it with IAM for a scoped token (POST /account/v1/projects/{projectId}/scoped-tokens). A scoped token identifies both the current user and the current project.
-      scheme: bearer
-      type: http
-  parameters:
-    NotificationId:
-      description: The notification, or the announcement when kind is announcement
-      in: path
-      name: notificationId
-      required: true
-      schema:
-        format: uuid
-        type: string
-    NotificationType:
-      description: A notification type identifier, as listed by list-notification-types
-      in: path
-      name: type
-      required: true
-      schema:
-        maxLength: 128
-        minLength: 3
-        pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$'
-        type: string
-    PreferenceProjectId:
-      description: Apply to this project alone; omit to apply to every project
-      explode: false
-      in: query
-      name: project_id
-      schema:
-        description: Apply to this project alone; omit to apply to every project
-        format: uuid
-        type: string
-    ChannelId:
-      description: The outbound channel
-      in: path
-      name: channelId
-      required: true
-      schema:
-        format: uuid
-        type: string
-    TicketId:
-      description: The one-time credential
-      in: path
-      name: ticketId
-      required: true
-      schema:
-        format: uuid
-        type: string
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
@@ -1017,10 +970,10 @@ components:
       description: |-
         `all` covers every project you belong to as well as notifications that belong to no
         project. `current_project` covers only the project in the token.
+      type: string
       enum:
         - all
         - current_project
-      type: string
     NotificationSeverity:
       description: |-
         How much attention a notification asks for. It is assigned by the type and by the event,
@@ -1028,39 +981,39 @@ components:
 
         `critical` announces something that is either irreversible or actively costing the
         recipient something.
+      type: string
       enum:
         - info
         - warning
         - error
         - critical
-      type: string
     NotificationKind:
       description: |-
         `notification` is addressed to you. `announcement` was published to the whole platform and
         appears in everyone's inbox.
+      type: string
       enum:
         - notification
         - announcement
-      type: string
     NotificationChannel:
       description: |-
         Where a notification is delivered.
 
         `inbox` is this API. `email` is the address on your preferences. `webhook` covers every
         outbound channel you have registered — the message is shaped for each one.
+      type: string
       enum:
         - inbox
         - email
         - webhook
-      type: string
     ChannelScope:
       description: |-
         `user` is yours alone. `project` is shared with everyone in the project and requires
         `notification:channels.manage` to register or delete.
+      type: string
       enum:
         - user
         - project
-      type: string
     ChannelKind:
       description: |-
         The kind of endpoint, which determines both how the message is shaped and what the
@@ -1069,12 +1022,12 @@ components:
         `lark_webhook` and `wecom_webhook` are group robot webhook URLs and receive a card.
         `bark` is a Bark server URL including the device key and receives a short line of text.
         `generic_webhook` receives a JSON document and is the option for anything else.
+      type: string
       enum:
         - lark_webhook
         - wecom_webhook
         - bark
         - generic_webhook
-      type: string
     NotificationAudience:
       description: |-
         Who a type is addressed to. It is a property of the type, so it is the same for every
@@ -1083,6 +1036,7 @@ components:
         `explicit` is whoever the reporting service names, usually the person who asked for the
         action. `account` is one person, independently of any project. `address` is an email
         address belonging to someone who may not have an account yet. `broadcast` is everyone.
+      type: string
       enum:
         - explicit
         - account
@@ -1091,42 +1045,38 @@ components:
         - project_owner
         - project_admins
         - broadcast
-      type: string
     AnnouncementResource:
-      additionalProperties: false
       description: One announcement, with its text in the language on your preferences.
+      type: object
       properties:
         id:
-          format: uuid
           type: string
+          format: uuid
         title:
           type: string
         body:
           description: The text as a fragment of HTML, same rules as a notification body
           type: string
         severity:
-          $ref: '#/components/schemas/NotificationSeverity'
+          $ref: "#/components/schemas/NotificationSeverity"
         critical:
-          description: >-
-            You cannot dismiss this one. It is a property of the announcement rather than a second
-            type, because what the operator judges when writing it is "is this important enough to
-            push", and that is the question this asks.
+          description: You cannot dismiss this one. It is a property of the announcement rather than a second type, because what the operator judges when writing it is "is this important enough to push", and that is the question this asks.
           type: boolean
         published_at:
-          format: date-time
           type: string
+          format: date-time
         expires_at:
           description: When it drops out of this list; null means it stays
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         read_at:
           description: When you read it; null means you have not
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
       required:
         - id
         - title
@@ -1134,42 +1084,42 @@ components:
         - severity
         - critical
         - published_at
-      type: object
-    AnnouncementListResource:
       additionalProperties: false
+    AnnouncementListResource:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/AnnouncementResource'
           type: array
+          items:
+            $ref: "#/components/schemas/AnnouncementResource"
         unread:
           description: How many of them you have not read
           type: integer
       required:
         - items
         - unread
-      type: object
-    AnnouncementReadResultResource:
       additionalProperties: false
+    AnnouncementReadResultResource:
+      type: object
       properties:
         marked:
           description: How many this call changed; already-read ones are not counted
           type: integer
       required:
         - marked
-      type: object
-    NotificationResource:
       additionalProperties: false
+    NotificationResource:
       description: |-
         One notification, with its text rendered in the language on your preferences at the moment
         it was read.
+      type: object
       properties:
         archived_at:
           description: When you archived it; null if you did not
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         body:
           description: The text, as a fragment of HTML. Contains formatting and links, no scripts and no styles
           type: string
@@ -1177,40 +1127,40 @@ components:
           description: The same text without markup, for clients that cannot render HTML
           type: string
         created_at:
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         kind:
-          $ref: '#/components/schemas/NotificationKind'
+          $ref: "#/components/schemas/NotificationKind"
         locale:
           description: The language this text was rendered in
           type: string
         occurred_at:
           description: When the event itself happened, which precedes created_at
-          format: date-time
           type: string
+          format: date-time
         params:
-          additionalProperties: {}
           description: |-
             The facts the text was rendered from, for clients that want to link to the resource the
             notification is about. The names are documented per type in the catalogue.
           type: object
+          additionalProperties: {}
         project_id:
           description: The project the event belongs to; null for events that belong to no project
-          format: uuid
           type:
             - string
-            - 'null'
+            - "null"
+          format: uuid
         read_at:
           description: When you read it; null if you have not
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         severity:
-          $ref: '#/components/schemas/NotificationSeverity'
+          $ref: "#/components/schemas/NotificationSeverity"
         title:
           description: A single line, without markup
           type: string
@@ -1232,76 +1182,76 @@ components:
         - created_at
         - read_at
         - archived_at
-      type: object
-    LengthAwarePageNotificationResource:
       additionalProperties: false
+    LengthAwarePageNotificationResource:
+      type: object
       properties:
         items:
           description: The contents of this page
-          items:
-            $ref: '#/components/schemas/NotificationResource'
           type: array
+          items:
+            $ref: "#/components/schemas/NotificationResource"
         limit:
           description: Maximum items per page, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         offset:
           description: Items skipped, echoing the value in the request
-          format: int64
           type: integer
+          format: int64
         total:
           description: Total number of matching items, not only those in this page
-          format: int64
           type: integer
+          format: int64
         unread_count:
           description: Unread notifications in the same scope, not only in this page
-          format: int64
           type: integer
+          format: int64
       required:
         - items
         - total
         - limit
         - offset
         - unread_count
-      type: object
-    UnreadCountResource:
       additionalProperties: false
+    UnreadCountResource:
+      type: object
       properties:
         unread_count:
-          format: int64
           type: integer
+          format: int64
       required:
         - unread_count
-      type: object
-    MarkNotificationsReadRequestBody:
       additionalProperties: false
+    MarkNotificationsReadRequestBody:
       description: An empty list marks everything currently unread as read.
+      type: object
       properties:
         notification_ids:
-          items:
-            format: uuid
-            type: string
-          maxItems: 500
           type: array
+          maxItems: 500
+          items:
+            type: string
+            format: uuid
       required:
         - notification_ids
-      type: object
-    NotificationTypeDescriptor:
       additionalProperties: false
+    NotificationTypeDescriptor:
       description: One entry in the catalogue of everything the platform can notify about.
+      type: object
       properties:
         audience:
-          $ref: '#/components/schemas/NotificationAudience'
+          $ref: "#/components/schemas/NotificationAudience"
         available_channels:
           description: The channels this type may be delivered on. Configuring any other channel is rejected
-          items:
-            $ref: '#/components/schemas/NotificationChannel'
           type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
         default_channels:
           description: The channels this type is delivered on when nothing has been configured
-          items:
-            $ref: '#/components/schemas/NotificationChannel'
           type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
         mandatory:
           description: |-
             True when this type must reach you: it cannot be muted, and email cannot be removed
@@ -1309,14 +1259,14 @@ components:
           type: boolean
         params:
           description: The names of the facts this type carries, as they appear on NotificationResource.params
+          type: array
           items:
             type: string
-          type: array
         service:
           description: The service that reports this type
           type: string
         severity:
-          $ref: '#/components/schemas/NotificationSeverity'
+          $ref: "#/components/schemas/NotificationSeverity"
         title:
           description: |-
             A short name for this type, in the reader's language — what a settings screen puts on
@@ -1335,19 +1285,19 @@ components:
         - available_channels
         - mandatory
         - params
-      type: object
-    NotificationTypeListResponseBody:
       additionalProperties: false
+    NotificationTypeListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/NotificationTypeDescriptor'
           type: array
+          items:
+            $ref: "#/components/schemas/NotificationTypeDescriptor"
       required:
         - items
-      type: object
-    PreferencesResource:
       additionalProperties: false
+    PreferencesResource:
+      type: object
       properties:
         email_address:
           description: Where email is delivered right now, which is the account address unless a verified override replaces it
@@ -1358,7 +1308,7 @@ components:
             is used. Only ever an address that was confirmed by code
           type:
             - string
-            - 'null'
+            - "null"
         email_override_pending:
           description: |-
             An address waiting to be confirmed; null when nothing is waiting. It receives nothing but
@@ -1366,21 +1316,21 @@ components:
             confirmed
           type:
             - string
-            - 'null'
+            - "null"
         email_override_pending_expires_at:
           description: |-
             When the code last sent to the pending address stops working; null when no code is
             outstanding, in which case a new one has to be sent before it can be confirmed
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         email_override_verified_at:
           description: When the address in `email_override` was confirmed; null when there is no override
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         locale:
           description: The language notifications are written in, as an IETF language tag
           type: string
@@ -1391,10 +1341,10 @@ components:
         - email_override_verified_at
         - email_override_pending
         - email_override_pending_expires_at
-      type: object
-    UpdatePreferencesRequestBody:
       additionalProperties: false
+    UpdatePreferencesRequestBody:
       description: Fields that are omitted are left alone.
+      type: object
       properties:
         email_override:
           description: |-
@@ -1402,57 +1352,57 @@ components:
             receives nothing until it is confirmed by code, so the address in use does not change
             here. Null clears both the pending address and the one in use, returning delivery to
             the account address
-          maxLength: 320
           type:
             - string
-            - 'null'
+            - "null"
+          maxLength: 320
         locale:
           description: An IETF language tag. A language that is not supported is rejected rather than approximated
-          maxLength: 16
-          minLength: 2
           type: string
-      type: object
-    EmailOverrideCodeResource:
+          minLength: 2
+          maxLength: 16
       additionalProperties: false
+    EmailOverrideCodeResource:
       description: What was sent, and when the next one may be asked for.
+      type: object
       properties:
         address:
           description: Where the code went. It is the pending address, echoed so a client can show it
           type: string
         expires_at:
           description: When this code stops working
-          format: date-time
           type: string
+          format: date-time
         resend_available_at:
           description: |-
             The earliest another code may be asked for. Asking sooner is refused rather than
             silently ignored, so a client can show the wait instead of a failure
-          format: date-time
           type: string
+          format: date-time
       required:
         - address
         - expires_at
         - resend_available_at
-      type: object
-    ConfirmEmailOverrideRequestBody:
       additionalProperties: false
+    ConfirmEmailOverrideRequestBody:
+      type: object
       properties:
         code:
           description: The code from the email, exactly as it appears there
-          maxLength: 16
-          minLength: 4
           type: string
+          minLength: 4
+          maxLength: 16
       required:
         - code
-      type: object
-    TypePreferenceResource:
       additionalProperties: false
+    TypePreferenceResource:
+      type: object
       properties:
         channels:
           description: Where this type is delivered
-          items:
-            $ref: '#/components/schemas/NotificationChannel'
           type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
         inherited:
           description: True when nothing has been configured and these are the defaults from the catalogue
           type: boolean
@@ -1464,17 +1414,17 @@ components:
             Deliver only at or above this severity. Null delivers every severity. It applies to the
             channels named here and not to the inbox, which always holds everything
           anyOf:
-            - $ref: '#/components/schemas/NotificationSeverity'
-            - type: 'null'
+            - $ref: "#/components/schemas/NotificationSeverity"
+            - type: "null"
         muted:
           description: True when this type is not delivered anywhere except the inbox
           type: boolean
         project_id:
           description: The project this preference applies to; null when it applies to every project
-          format: uuid
           type:
             - string
-            - 'null'
+            - "null"
+          format: uuid
         type:
           type: string
       required:
@@ -1485,107 +1435,106 @@ components:
         - min_severity
         - inherited
         - mandatory
-      type: object
-    TypePreferenceListResponseBody:
       additionalProperties: false
+    TypePreferenceListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/TypePreferenceResource'
           type: array
+          items:
+            $ref: "#/components/schemas/TypePreferenceResource"
       required:
         - items
-      type: object
-    UpdateTypePreferenceRequestBody:
       additionalProperties: false
-      description: |-
-        States how this type should be delivered, replacing whatever was configured before.
+    UpdateTypePreferenceRequestBody:
+      description: States how this type should be delivered, replacing whatever was configured before.
+      type: object
       properties:
         channels:
           description: |-
             Where to deliver this type, beyond the inbox. An empty list delivers to the inbox only.
             `inbox` may be listed and is accepted, but has no effect: every notification is in the
             inbox whatever this says
-          items:
-            $ref: '#/components/schemas/NotificationChannel'
-          maxItems: 8
           type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
         min_severity:
           description: Deliver only at or above this severity. Null delivers every severity
           anyOf:
-            - $ref: '#/components/schemas/NotificationSeverity'
-            - type: 'null'
+            - $ref: "#/components/schemas/NotificationSeverity"
+            - type: "null"
         muted:
-          default: false
           description: Stop delivering this type anywhere except the inbox
           type: boolean
+          default: false
       required:
         - channels
-      type: object
-    ChannelResource:
       additionalProperties: false
+    ChannelResource:
       description: A registered outbound channel. The endpoint itself is never included.
+      type: object
       properties:
         channel_scope:
-          $ref: '#/components/schemas/ChannelScope'
+          $ref: "#/components/schemas/ChannelScope"
         consecutive_failures:
           description: Deliveries that have failed in a row. Reset by a success, and by re-enabling the channel
-          format: int64
           type: integer
+          format: int64
         created_at:
-          format: date-time
           type: string
+          format: date-time
         disabled_at:
           description: When the channel was disabled after repeated failures; null if it is enabled
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         disabled_reason:
           description: Why it was disabled; null if it is enabled
           type:
             - string
-            - 'null'
+            - "null"
         id:
-          format: uuid
           type: string
+          format: uuid
         kind:
-          $ref: '#/components/schemas/ChannelKind'
+          $ref: "#/components/schemas/ChannelKind"
         last_error:
           description: Why the most recent attempt failed, in the endpoint's own wording; null if the most recent attempt succeeded
           type:
             - string
-            - 'null'
+            - "null"
         last_failure_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         last_success_at:
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         name:
           type: string
         project_id:
           description: The project this channel is shared with; null for a channel of scope user
-          format: uuid
           type:
             - string
-            - 'null'
+            - "null"
+          format: uuid
         redacted:
           description: A partially masked fragment of the endpoint, for visual identification only
           type: string
         updated_at:
-          format: date-time
           type: string
+          format: date-time
         verified_at:
           description: When the endpoint last acknowledged a verification message; null while it never has, during which the channel is skipped
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
       required:
         - id
         - channel_scope
@@ -1602,22 +1551,22 @@ components:
         - disabled_reason
         - created_at
         - updated_at
-      type: object
-    ChannelListResponseBody:
       additionalProperties: false
+    ChannelListResponseBody:
+      type: object
       properties:
         items:
-          items:
-            $ref: '#/components/schemas/ChannelResource'
           type: array
+          items:
+            $ref: "#/components/schemas/ChannelResource"
       required:
         - items
-      type: object
-    CreateChannelRequestBody:
       additionalProperties: false
+    CreateChannelRequestBody:
+      type: object
       properties:
         channel_scope:
-          $ref: '#/components/schemas/ChannelScope'
+          $ref: "#/components/schemas/ChannelScope"
         endpoint:
           description: |-
             The address messages are sent to. It must be an https URL reachable over the public
@@ -1627,16 +1576,16 @@ components:
             it is the push URL including the device key, such as
             `https://api.day.app/your-device-key`. For `generic_webhook` it is any endpoint
             accepting a JSON POST.
-          maxLength: 2048
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 2048
         kind:
-          $ref: '#/components/schemas/ChannelKind'
+          $ref: "#/components/schemas/ChannelKind"
         name:
           description: A display name for this channel
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
         secret:
           description: |-
             The signing secret, where the endpoint has one. It is required for a Lark group robot
@@ -1644,34 +1593,34 @@ components:
             signs the request so the receiver can confirm the message came from this platform.
 
             It is not returned by any operation.
-          maxLength: 512
           type: string
+          maxLength: 512
       required:
         - channel_scope
         - kind
         - name
         - endpoint
-      type: object
-    UpdateChannelRequestBody:
       additionalProperties: false
+    UpdateChannelRequestBody:
       description: Fields that are omitted are left alone.
+      type: object
       properties:
         enabled:
           description: Set true to re-enable a channel that was disabled after repeated failures, clearing the failure count
           type: boolean
         name:
-          maxLength: 128
-          minLength: 1
           type: string
-      type: object
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
     CredentialSubjectKind:
       description: What the credential belongs to.
+      type: string
       enum:
         - compute_instance
-      type: string
     CredentialTicketResource:
-      additionalProperties: false
       description: A one-time credential, described without being consumed.
+      type: object
       properties:
         available:
           description: |-
@@ -1680,28 +1629,28 @@ components:
           type: boolean
         expires_at:
           description: After this moment the credential is destroyed whether or not it was read
+          type: string
           format: date-time
-          type: string
         id:
-          format: uuid
           type: string
+          format: uuid
         revealed_at:
           description: When it was revealed; null if it has not been
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         revoked_at:
           description: When the service that issued it withdrew it; null if it did not
-          format: date-time
           type:
             - string
-            - 'null'
+            - "null"
+          format: date-time
         subject_id:
           description: The resource the credential belongs to
           type: string
         subject_kind:
-          $ref: '#/components/schemas/CredentialSubjectKind'
+          $ref: "#/components/schemas/CredentialSubjectKind"
       required:
         - id
         - subject_kind
@@ -1710,40 +1659,40 @@ components:
         - expires_at
         - revealed_at
         - revoked_at
-      type: object
-    RevealedCredentialResource:
       additionalProperties: false
+    RevealedCredentialResource:
       description: |-
         The credential itself. This shape is returned by exactly one operation, and that operation
         succeeds at most once per ticket.
+      type: object
       properties:
         revealed_at:
-          format: date-time
           type: string
+          format: date-time
         secret:
           description: The credential. It is destroyed as this response is produced and cannot be obtained again
           type: string
         subject_id:
           type: string
         subject_kind:
-          $ref: '#/components/schemas/CredentialSubjectKind'
+          $ref: "#/components/schemas/CredentialSubjectKind"
         username:
           description: The account the credential belongs to, where the resource has one; null otherwise
           type:
             - string
-            - 'null'
+            - "null"
       required:
         - subject_kind
         - subject_id
         - secret
         - username
         - revealed_at
-      type: object
-    RealtimeConnectionResource:
       additionalProperties: false
+    RealtimeConnectionResource:
       description: |-
         Everything needed to open a realtime connection. The connection speaks the Pusher channels
         protocol, so any client library for it works.
+      type: object
       properties:
         auth_path:
           description: The path a client posts to while subscribing, relative to this API
@@ -1760,8 +1709,8 @@ components:
           description: The application key, which is public and identifies the deployment rather than the caller
           type: string
         port:
-          format: int64
           type: integer
+          format: int64
         announcements_channel:
           description: |-
             The channel carrying announcements. It is public: subscribing to it needs no
@@ -1789,30 +1738,74 @@ components:
         - user_channel
         - project_channel
         - announcements_channel
-      type: object
-    AuthorizeRealtimeChannelRequestBody:
       additionalProperties: false
+    AuthorizeRealtimeChannelRequestBody:
+      type: object
       properties:
         channel_name:
           description: The channel being subscribed to
-          maxLength: 255
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 255
         socket_id:
           description: The connection identifier the realtime server assigned to this client
-          maxLength: 128
-          minLength: 1
           type: string
+          minLength: 1
+          maxLength: 128
       required:
         - socket_id
         - channel_name
-      type: object
-    RealtimeAuthResource:
       additionalProperties: false
+    RealtimeAuthResource:
+      type: object
       properties:
         auth:
           description: The authorization token for this subscription, passed back to the realtime server by the client library
           type: string
       required:
         - auth
-      type: object
+      additionalProperties: false
+  parameters:
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      description: The notification, or the announcement when kind is announcement
+      schema:
+        type: string
+        format: uuid
+    NotificationType:
+      name: type
+      in: path
+      required: true
+      description: A notification type identifier, as listed by list-notification-types
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 128
+        pattern: ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$
+    PreferenceProjectId:
+      name: project_id
+      in: query
+      description: Apply to this project alone; omit to apply to every project
+      explode: false
+      schema:
+        description: Apply to this project alone; omit to apply to every project
+        type: string
+        format: uuid
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      description: The outbound channel
+      schema:
+        type: string
+        format: uuid
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      description: The one-time credential
+      schema:
+        type: string
+        format: uuid
