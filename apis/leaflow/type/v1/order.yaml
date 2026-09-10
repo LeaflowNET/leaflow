@@ -1,34 +1,10 @@
-# 业务服务建出一笔账之后回给调用方的那个句柄。
-#
-# # 为什么在这里，而不是在 billing 的契约里
-#
-# billing 从不返回这个形状。返回它的是 compute、canopy 这些**拥有那样东西的服务**：
-# 用户点「买一台」，请求到的是 compute，compute 去 billing 建单，然后要把「建出来了哪一单」
-# 告诉前端。所以它不属于任何单个服务，正是 type/ 该放的东西。
-#
-# # 为什么只有一格
-#
-# 阿里云的 `RunInstances` 回 `OrderId`，腾讯云的产品 API 回 deal 号，两家都只回一个句柄，
-# 金额和状态一律回计费 API 读。我们照做，而且我们有一条更硬的理由：
-#
-# 租户面的 `Order` 上已经有 amount / amount_due / state / reservation_expires_at。
-# 产品服务再回带一份金额，那是**用户即将被扣的那个数的第二份拷贝**，而两份一定会漂 ——
-# 漂了之后确认页上显示的数和实际扣款不一样，而两边各自都对得上自己那份。
-#
-# 所以这一格存在的理由不是传数据，是**统一那个字段名**。不定下来的话 compute 叫 order_id、
-# canopy 叫 billing_order_id、下一个叫 deal_id，而前端要为每个服务写一条分支。
-#
-# # 免费的那一档走同一条路
-#
-# 金额为零、又不欠支付渠道钱的单在下单那一刻就成交。调用方拿到的仍然是一个 order_id，
-# 读回来看到 amount_due 是 0、state 已经是 fulfilled，跳过付款那一步即可 ——
-# 不必为「这次要不要付钱」写第二条分支。
 openapi: 3.1.0
 info:
-  title: Leaflow 共用类型：订单句柄
+  title: Leaflow shared types — order handle
   version: v1
   description: |-
-    业务服务建出一笔账之后回给调用方的句柄。这里没有接口，只有类型。
+    The handle a service returns after creating a billable order. Types only; this document
+    declares no operations.
 paths: {}
 components:
   schemas:
@@ -38,18 +14,19 @@ components:
       required:
         - order_id
       description: |-
-        A billable order was created. Read it from the billing API to find out what is owed and
-        whether anything still has to be paid.
+        A billable order has been created. Read it from the billing API to find out what is
+        owed and whether payment is still required.
 
-        Only the identifier is returned. Amounts are not repeated here: the order already
-        carries them, and a second copy of the figure a customer is about to be charged is a
-        copy that can disagree with the first.
+        Only the identifier is returned. Amounts and state are not repeated here; the order
+        itself is the single source for them.
       properties:
         order_id:
           type: string
           format: uuid
           description: |-
-            Pass it to the billing API to read the order, and to pay it.
+            Identifies the order. Use it to read the order and, where payment is required,
+            to pay it.
 
-            An order exists even when nothing is owed — a free plan, or one covered entirely by
-            granted credit. It will already be settled, so there is no separate case to handle.
+            An order is created even when nothing is owed, such as a plan with no charge or one
+            covered entirely by granted credit. Such an order is already settled, and no
+            payment step applies.
