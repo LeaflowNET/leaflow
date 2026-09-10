@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  title: Leaflow 账号 API
+  title: Leaflow Account API
   version: 1.0.0
   description: |-
-    选中项目之前的那些事：注册、账号本身、我参与了哪些项目、进入一个项目。
+    进入项目之前的接口：注册、账号本身、参与了哪些项目，以及进入一个项目。
 
-    这一面用**账号令牌** —— 在 auth.leaflow.net 登录拿到的那张，放在 `Authorization: Bearer` 里。
+    这一面接受 auth.leaflow.net 签发的 access token，置于 `Authorization: Bearer`。
 
     进入一个项目：
 
-    1. 调 `GET /account/v1/projects` 列出参与的项目。首次调用会自动登记账号，姓名与邮箱取自登录信息；
-    2. 选定项目后调 `POST /account/v1/projects/{projectId}/token` 换取**项目令牌**；
-    3. 之后一律用项目令牌调各服务的 `/api/v1/*`。
+    1. 调用 `GET /account/v1/projects` 列出参与的项目。首次调用会登记账号，姓名与邮箱取自登录信息；
+    2. 选定项目后调用 `POST /account/v1/projects/{projectId}/scoped-tokens` 换取该项目的 scoped token；
+    3. 之后一律用 scoped token 调用各服务的 `/api/v1/*`。
 
-    项目令牌过期后重新执行第 2 步，没有单独的续期接口；账号令牌过期则先在 auth.leaflow.net 续期。
+    scoped token 不可续期，过期后重新执行第 2 步；access token 过期则先在 auth.leaflow.net 重新获取。
 servers:
   - url: https://account.leaflow.cloud
-    description: Account, agreements, projects and project tokens
+    description: Account, agreements, projects and scoped tokens
 security:
   - bearerAuth: []
 paths:
@@ -150,7 +150,7 @@ paths:
     post:
       summary: 注册账号
       description: |-
-        在 auth.leaflow.net 登录之后调它，带上账号令牌。姓名和邮箱取自登录信息，不从请求体收。
+        在 auth.leaflow.net 登录之后调用，带上 access token。姓名和邮箱取自登录信息，不从请求体收。
 
         `consents` 要覆盖 `GET /api/v1/agreements` 返回的每一份，版本号也要一致；漏一份答 400，版本对不上答 409（多半是页面开着的时候条款改版了，重新拉一次清单即可）。已经注册过的答 409。
       operationId: register
@@ -496,22 +496,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
           description: Error
-  /account/v1/projects/{projectId}/token:
+  /account/v1/projects/{projectId}/scoped-tokens:
     post:
-      summary: 换一张项目令牌
+      summary: 换取一张 scoped token
       description: |-
-        选定一个项目后，用账号令牌换取该项目的令牌。
+        选定一个项目后，用 access token 换取该项目的 scoped token。
 
-        **只接受 auth.leaflow.net 签发的账号令牌，不接受项目令牌。** 项目令牌过期后，先在 auth.leaflow.net 续期账号令牌，再重新调用这个接口。
+        **只接受 auth.leaflow.net 签发的 access token，不接受 scoped token。** scoped token 过期后，先在 auth.leaflow.net 重新获取 access token，再调用这个接口。
 
         换取时会确认账号可用、项目存在，且**调用者是该项目的成员**。非成员无法换取。
 
-        令牌只表明身份（用户与项目），**不包含权限**：权限在每次请求时实时判定，所以角色调整立即生效，不必等待令牌过期。
+        scoped token 只表明身份（用户与项目），**不包含权限**：权限在每次请求时判定，所以角色调整立即生效，不必等待令牌过期。
 
-        项目处于停用、封禁或删除中时**仍可换取令牌**：这些状态限制的是写入，不影响查看项目当前状况。
-      operationId: exchange-project-token
+        项目处于停用、封禁或删除中时**仍可换取**：这些状态限制的是写入，不影响查看项目当前状况。
+      operationId: create-scoped-token
       tags:
-        - ProjectToken
+        - ScopedToken
       parameters:
         - in: path
           name: projectId
@@ -524,7 +524,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectTokenResponseBody'
+                $ref: '#/components/schemas/ScopedTokenResponseBody'
           description: Created
         default:
           content:
@@ -536,7 +536,7 @@ components:
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
-      description: 账号令牌。在 auth.leaflow.net 登录拿到的那张，只说明你是谁，不带任何项目；用它列出参与的项目，并换取项目令牌。
+      description: auth.leaflow.net 签发的 access token。它只说明调用者是谁，不带任何项目；用它列出参与的项目，并换取 scoped token。
       scheme: bearer
       type: http
   schemas:
@@ -1175,25 +1175,25 @@ components:
       required:
         - name
       type: object
-    ProjectTokenResponseBody:
+    ScopedTokenResponseBody:
       additionalProperties: false
       properties:
         expires_at:
-          description: 过期时刻。到点之前拿用户身份再换一张，别等第一个 401
+          description: 过期时刻。到点之前用 access token 换取新的一张，不必等到第一个 401
           format: date-time
           type: string
         expires_in:
-          description: 还能活多少秒
+          description: 距离过期还有多少秒
           format: int64
           type: integer
         grant:
-          description: '**这一份是此刻的快照，不在令牌里，也不要缓存它。** 它只用来决定界面上画什么；真正的判定每次都要重新问'
+          description: '**换取时刻的快照，不在 scoped token 里，不要缓存。** 它只用于决定界面上呈现什么；实际判定在每次请求时进行'
           $ref: '#/components/schemas/GrantResource'
         project:
-          description: 顺带带上项目本身，省掉换完之后立刻再查一次
+          description: 一并返回项目本身，省去换取之后再查询一次
           $ref: '#/components/schemas/ProjectResource'
         token:
-          description: '项目令牌，放进 Authorization: Bearer 里用'
+          description: 'scoped token，置于 Authorization: Bearer'
           type: string
         token_type:
           description: 固定是 Bearer
