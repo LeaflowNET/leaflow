@@ -3029,8 +3029,22 @@ components:
         refunded_amount:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: |-
-            Returned as part of a downgrade. It is returned to the sources that originally paid
-            rather than deducted from `amount`.
+            How much of `refundable_amount` has already gone back.
+        change_effective:
+          type: string
+          enum: [none, immediate, period_end]
+          description: |-
+            When a plan change takes effect. `none` on anything that is not a change.
+
+            `period_end` orders stay pending until the current paid period runs out. Renewing in
+            the meantime moves that moment along with it.
+        refundable_amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |-
+            What a downgrade gives back. It is returned to the sources that originally paid
+            rather than deducted from `amount`, so paying with granted credit gives back credit.
+
+            Always "0" on a `period_end` change: nothing is left of the period at its end.
         reservation_expires_at:
           type: string
           format: date-time
