@@ -1,0 +1,142 @@
+openapi: 3.1.0
+info:
+  description: |-
+    Leaflow Fleet user API. It answers where the platform offers service: the regions that are open, and the availability zones each one contains.
+
+    ## Authentication
+
+    Every request must carry `Authorization: Bearer <project token>`. Sign in at auth.leaflow.net to obtain an account token, then exchange it with IAM for a project token (`POST /api/v1/projects/{projectId}/token`).
+
+    Neither the path nor the headers carry a `project_id`. Nothing returned by this API is specific to a project: every caller sees the same regions and the same availability zones.
+
+    ## Conventions
+
+    - **Only locations open to new orders are listed.** A region or availability zone that has stopped accepting new orders does not appear here, while resources already placed in it keep running and remain manageable through the API of the product that owns them.
+    - **A region appearing here does not mean every product is sold there.** Each product decides independently where it is offered, and announces that through its own API — for example, the instance types a region has determines whether instances can be created in it. Use this API for the list of locations, and the product's own API for what is available in each.
+    - **Codes are stable.** The `code` of a region or an availability zone is fixed when the location is first offered and is never reused for another location. It is the value other APIs expect wherever a location has to be named.
+    - **Locations that must interoperate usually have to match.** Resources are generally required to share an availability zone in order to be attached to one another; consult the product's own documentation for the exact rule.
+  title: Leaflow Fleet User API
+  version: 1.0.0
+servers:
+  - url: https://fleet.leaflow.cloud
+    description: Regions and availability zones
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/regions:
+    get:
+      summary: List available regions
+      description: |-
+        Lists every region currently open to new orders, in display order.
+
+        The list is the same for every caller and changes rarely.
+      operationId: list-regions
+      tags:
+        - Region
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegionListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+  /api/v1/regions/{regionCode}/availability-zones:
+    get:
+      summary: List the availability zones of a region
+      description: |-
+        Lists every availability zone of this region that is currently open to new orders, in display order.
+
+        Resources are generally required to share an availability zone in order to be attached to one another, so confirm the zone before creating either side.
+
+        A region that exists but is not open to new orders is reported as not found, exactly as an unknown code is: both mean that nothing can be created there.
+      operationId: list-availability-zones
+      tags:
+        - Region
+      parameters:
+        - in: path
+          name: regionCode
+          required: true
+          schema:
+            maxLength: 32
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityZoneListResponseBody'
+          description: OK
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Error
+components:
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Project token. Sign in at auth.leaflow.net to obtain an account token, then exchange it with IAM for a project token (POST /account/v1/projects/{projectId}/token). A project token identifies both the current user and the current project.
+      scheme: bearer
+      type: http
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    RegionResource:
+      additionalProperties: false
+      properties:
+        code:
+          description: Stable identifier of the region, used wherever a region has to be named
+          type: string
+        country_code:
+          description: ISO 3166-1 alpha-2 code of the country this region is in
+          type: string
+        name:
+          type: string
+      required:
+        - code
+        - name
+        - country_code
+      type: object
+    AvailabilityZoneResource:
+      additionalProperties: false
+      properties:
+        code:
+          description: Stable identifier of the availability zone, used wherever an availability zone has to be named
+          type: string
+        name:
+          type: string
+      required:
+        - code
+        - name
+      type: object
+    RegionListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RegionResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
+    AvailabilityZoneListResponseBody:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AvailabilityZoneResource'
+          type:
+            - array
+            - 'null'
+      required:
+        - items
+      type: object
