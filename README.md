@@ -77,7 +77,7 @@ opening the link anywhere else — over ssh, for instance — cannot complete it
 Press Enter at the prompt for a code you can approve from any device, or start
 that way with `leaflow login --device`.
 
-For CI, pipe in a refresh token, or set `LEAFLOW_TOKEN` to a project token:
+For CI, pipe in a refresh token, or set `LEAFLOW_TOKEN` to a scoped token:
 
 ```sh
 echo "$LEAFLOW_REFRESH_TOKEN" | leaflow login --with-token

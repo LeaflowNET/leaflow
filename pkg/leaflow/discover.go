@@ -171,7 +171,7 @@ func (o *Operation) ReadOnly() bool {
 	return isReadOnly(o.spec)
 }
 
-// AccountToken reports that this operation takes an account token rather than
+// AccountToken reports that this operation takes an access token rather than
 // an access token. It is the one thing about a call that is not in its
 // arguments.
 func (o *Operation) AccountToken() bool {

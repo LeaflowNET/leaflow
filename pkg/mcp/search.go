@@ -299,7 +299,7 @@ func (s *Server) handleOperationSchema(_ context.Context, req *sdk.CallToolReque
 	// arguments: an account-token operation works before a project is selected,
 	// and every other one does not.
 	if op.AccountToken() {
-		reply["credential"] = "account token; works without a project selected"
+		reply["credential"] = "access token; works without a project selected"
 	} else {
 		reply["credential"] = "access token; acts in the project the token names"
 	}

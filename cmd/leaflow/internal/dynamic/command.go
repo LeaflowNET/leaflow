@@ -175,7 +175,7 @@ func writeDetails(op *spec.Operation, binding *Binding) string {
 	fmt.Fprintf(&builder, "operation: %s (%s %s)", op.ID, op.Method, op.Path)
 
 	if op.Credential == spec.AccountToken {
-		builder.WriteString("\ncredential: account token (no project needed)")
+		builder.WriteString("\ncredential: access token (no project needed)")
 	}
 
 	return builder.String()

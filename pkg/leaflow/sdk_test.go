@@ -161,7 +161,7 @@ func TestAccessTokenOnlyDropsTheAccountFace(t *testing.T) {
 
 	for _, op := range client.Operations() {
 		if op.AccountToken() {
-			t.Errorf("%s %s takes an account token and was exposed", op.Service(), op.Name())
+			t.Errorf("%s %s takes an access token and was exposed", op.Service(), op.Name())
 		}
 	}
 

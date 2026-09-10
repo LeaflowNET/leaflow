@@ -3,10 +3,10 @@
 //
 // The platform issues two tokens and this package handles both:
 //
-//	account token   from Keycloak, says who you are, renewed with a refresh token
-//	project token   from IAM, says who you are and where, obtained by exchange
+//	access token   from Keycloak, says who you are, renewed with a refresh token
+//	scoped token   from IAM, says who you are and where, obtained by exchange
 //
-// Project tokens are not renewable by design. One asserts that you are still a
+// Scoped tokens are not renewable by design. One asserts that you are still a
 // member of that project, and membership changes; renewal would extend the
 // claim without re-proving it.
 package auth
@@ -96,7 +96,7 @@ type Credentials struct {
 
 	// Renaming these makes an entry written by an older version read as having
 	// no access token. That is a cheap thing to be wrong about: the refresh
-	// token and the account token are untouched, so the next call exchanges for
+	// token and the access token are untouched, so the next call exchanges for
 	// a fresh one and nobody is asked to sign in again.
 	AccessToken        string    `json:"access_token,omitempty"`
 	AccessTokenExpires time.Time `json:"access_token_expires"`

@@ -27,7 +27,7 @@ var ErrRequestFailed = fmt.Errorf("request failed: %w", ErrUnavailable)
 //
 // An interface, because the two callers want opposite things from one. A
 // command line serves one person on one machine: it keeps a refresh token in
-// the keychain, renews it, and exchanges it for a project token, and "the
+// the keychain, renews it, and exchanges it for a scoped token, and "the
 // current user" is a thing it can meaningfully have. A service serves many
 // people at once and is handed a token per request; it must not touch a
 // keychain, and there is no current user for it to ask about.

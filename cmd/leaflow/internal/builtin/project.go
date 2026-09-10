@@ -54,7 +54,7 @@ func newProjectListCommand(ext *extension.Context) *cobra.Command {
 
 func listProjects(cmd *cobra.Command, ext *extension.Context) (any, error) {
 	// This runs before a project exists, so it goes to the account face with an
-	// account token. spec.Operation carries that decision already.
+	// access token. spec.Operation carries that decision already.
 	op, err := accountOperation(ext, "list-projects")
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func newProjectUseCommand(ext *extension.Context) *cobra.Command {
 		Short: "select the project for later commands",
 		Long: `Select a project by id or by name.
 
-The cached project token is dropped at the same time. Keeping it would not
+The cached scoped token is dropped at the same time. Keeping it would not
 fail — the next command would succeed against the previous project, which is
 worse than any error.`,
 		Args:          cobra.ExactArgs(1),
@@ -178,7 +178,7 @@ func newProjectCurrentCommand(ext *extension.Context) *cobra.Command {
 
 // accountOperation looks up an operation on the account face, which is where
 // listing projects lives: it runs before a project is chosen, so it takes an
-// account token rather than a project one.
+// access token rather than a project one.
 func accountOperation(ext *extension.Context, id string) (*spec.Operation, error) {
 	service, ok := ext.Specs.Service("account")
 	if !ok {

@@ -41,7 +41,7 @@ For CI, pipe a refresh token in:
 
     echo "$LEAFLOW_REFRESH_TOKEN" | leaflow login --with-token
 
-or set LEAFLOW_TOKEN to a project token and do not sign in at all.`,
+or set LEAFLOW_TOKEN to a scoped token and do not sign in at all.`,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,

@@ -68,10 +68,10 @@ type Options struct {
 	// ability to change it.
 	ReadOnly bool
 
-	// AccessTokenOnly drops every operation that takes an account token, leaving
+	// AccessTokenOnly drops every operation that takes an access token, leaving
 	// the ones an access token can call.
 	//
-	// The account face — registering, listing projects, minting project tokens —
+	// The account face — registering, listing projects, minting scoped tokens —
 	// only accepts a token that comes from a person's sign-in session, which a
 	// service acting on someone's behalf does not have. Left in, those
 	// operations are ones a model can find, call, and be refused by, with
@@ -178,7 +178,7 @@ var (
 // interpret.
 type Token struct {
 	// Access acts inside one project and is what almost every operation takes.
-	// The contracts call it a project token: it names a project as well as a
+	// The contracts call it a scoped token: it names a project as well as a
 	// person, which is why no request path carries a project id.
 	Access string
 

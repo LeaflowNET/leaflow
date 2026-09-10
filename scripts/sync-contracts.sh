@@ -44,13 +44,23 @@ for existing in "$destination"/*/; do
   service="$(basename "$existing")"
   found="$source_repo/leaflow/$service/v1/openapi.yaml"
 
-  # type/ holds the shared error schema rather than a service contract.
+  # type/ holds the shared schemas and security schemes rather than a service
+  # contract, and there is more than one document in it. Copying the whole
+  # directory keeps every relative reference resolvable; syncing a named subset
+  # would leave a contract referring to a file that is not there, and the CLI
+  # only finds out when it parses one.
   if [ "$service" = "type" ]; then
-    found="$source_repo/leaflow/type/v1/error.yaml"
-    target="$destination/type/v1/error.yaml"
-  else
-    target="$destination/$service/v1/openapi.yaml"
+    mkdir -p "$destination/type/v1"
+    for shared in "$source_repo"/leaflow/type/v1/*.yaml; do
+      [ -f "$shared" ] || continue
+      cp "$shared" "$destination/type/v1/$(basename "$shared")"
+      echo "type <- $shared"
+      updated=$((updated + 1))
+    done
+    continue
   fi
+
+  target="$destination/$service/v1/openapi.yaml"
 
   if [ ! -f "$found" ]; then
     echo "no contract found for $service" >&2

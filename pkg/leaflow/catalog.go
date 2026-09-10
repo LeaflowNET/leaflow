@@ -149,8 +149,8 @@ func (c *catalog) find(service, id string) (*Operation, error) {
 		}
 
 		if c.limits.accessTokenOnly {
-			return nil, fmt.Errorf("%w: %s has no %q that a project token can call, "+
-				"and this client was built for project tokens only",
+			return nil, fmt.Errorf("%w: %s has no %q that a scoped token can call, "+
+				"and this client was built for scoped tokens only",
 				ErrNoSuchOperation, service, id)
 		}
 	}

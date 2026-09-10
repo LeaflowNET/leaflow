@@ -57,7 +57,7 @@ type Context struct {
 	// and cannot hold a secret.
 	ClientID string `mapstructure:"client_id" yaml:"client_id,omitempty"`
 
-	// Project is the current project. A project token already names its project,
+	// Project is the current project. A scoped token already names its project,
 	// so no request path carries one — which makes the project a property of the
 	// context rather than an argument to every command.
 	Project string `mapstructure:"project" yaml:"project,omitempty"`

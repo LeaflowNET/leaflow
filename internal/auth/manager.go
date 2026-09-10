@@ -18,33 +18,33 @@ import (
 	"github.com/LeaflowNET/leaflow/pkg/spec"
 )
 
-// EnvToken carries a project token straight from the environment. It bypasses
+// EnvToken carries a scoped token straight from the environment. It bypasses
 // storage, renewal and exchange, because CI has no browser and cannot run an
 // interactive login.
 const EnvToken = "LEAFLOW_TOKEN"
 
-// accountService is the face that mints project tokens.
+// accountService is the face that mints scoped tokens.
 const accountService = "account"
 
 var (
 	ErrNeedProject = errors.New("no project selected")
 
 	// ErrAccountTokenInCI is separate because retrying cannot help: the value in
-	// LEAFLOW_TOKEN is a project token and the operation needs an account one.
+	// LEAFLOW_TOKEN is a scoped token and the operation needs an account one.
 	ErrAccountTokenInCI = errors.New(
-		"this command needs an account token (register, list projects, exchange), which " +
+		"this command needs an access token (register, list projects, exchange), which " +
 			EnvToken + " cannot provide; run leaflow login")
 
 	ErrNotAMember = errors.New("cannot obtain a token for that project; you may not be a member")
 
-	ErrExchangeFailed = errors.New("project token exchange failed")
+	ErrExchangeFailed = errors.New("scoped token exchange failed")
 
 	// ErrLoginAborted means the caller gave up on the browser flow, not that
 	// anything failed.
 	ErrLoginAborted = errors.New("browser sign-in abandoned")
 
 	ErrExchangeUnknown = errors.New(
-		"the bundled contract does not declare " + ExchangeOperation + ", so a project token cannot be obtained")
+		"the bundled contract does not declare " + ExchangeOperation + ", so a scoped token cannot be obtained")
 
 	ErrTokenRejected = errors.New("the realm rejected that refresh token; it may be expired, revoked, or from another realm")
 
@@ -62,7 +62,7 @@ type Manager struct {
 	store       *Store
 	client      *http.Client
 
-	// exchange is where the account face mints project tokens: both the path and
+	// exchange is where the account face mints scoped tokens: both the path and
 	// the address come from the contract rather than being hardcoded. The path
 	// has moved once already, and a stale constant fails as "you may not be a
 	// member", which sends people to look at permissions instead of at this line.
@@ -72,8 +72,8 @@ type Manager struct {
 	discovered *endpoints
 }
 
-// ExchangeOperation is the contract's id for minting a project token.
-const ExchangeOperation = "exchange-project-token"
+// ExchangeOperation is the contract's id for minting a scoped token.
+const ExchangeOperation = "create-scoped-token"
 
 // UseExchange tells the manager where the exchange lives. The CLI wires this
 // from the loaded contract at startup.
@@ -217,8 +217,8 @@ func (m *Manager) fetchAccessToken(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-// exchange trades an account token for a project token. IAM has no renewal
-// endpoint for project tokens; asking for another one is the renewal.
+// exchange trades an access token for a scoped token. IAM has no renewal
+// endpoint for scoped tokens; asking for another one is the renewal.
 func (m *Manager) exchange(ctx context.Context, accountToken, projectID string) (string, time.Time, error) {
 	path := m.exchangePath
 	if path == "" {
@@ -416,7 +416,7 @@ func (m *Manager) LoginWithDeviceCode(ctx context.Context) (*DeviceCode, func() 
 // of at the first real command, where it would look like an outage.
 //
 // A refresh token is what CI wants because it is the only credential this CLI
-// can renew on its own. A project token expires in minutes, which is what
+// can renew on its own. A scoped token expires in minutes, which is what
 // LEAFLOW_TOKEN is for.
 func (m *Manager) LoginWithRefreshToken(ctx context.Context, refreshToken string) (*Credentials, error) {
 	ep, err := m.discoverEndpoints(ctx)
@@ -513,11 +513,11 @@ func (m *Manager) Status() (*Status, error) {
 	}, nil
 }
 
-// InvalidateProject drops the cached project token. Switching projects without
+// InvalidateProject drops the cached scoped token. Switching projects without
 // it means the next command runs against the previous project and succeeds.
 // Invalidate satisfies the transport's Credentials interface.
 //
-// Only the project token is ever dropped. An account token comes from the realm
+// Only the scoped token is ever dropped. An access token comes from the realm
 // and a refused one means the sign-in itself has to happen again, which no
 // retry can do; throwing it away would only turn "log in again" into "log in
 // again, and you are also logged out now".
