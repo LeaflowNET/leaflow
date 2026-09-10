@@ -3,60 +3,8 @@ info:
   title: Leaflow Billing API
   version: 2.0.0
   description: |-
-    Billing for the people who use the platform. Two audiences are served here, and they are not
-    the same people.
-
-    ## Two faces, two credentials
-
-    | Prefix | Credential | Answers |
-    |---|---|---|
-    | `/account/v1/` | Access token | What I have, what I owe, how I pay |
-    | `/api/v1/projects/{projectId}/` | Scoped token | What this project spent, and who pays for it |
-    | `/catalog/v1/` | None | What the platform sells and what it costs |
-
-    An access token is obtained by signing in at auth.leaflow.net. A scoped token is issued by
-    IAM for a project the caller belongs to.
-
-    The separation reflects who may see what. A project member should be able to see what their
-    project is spending and how much is left to spend; they should not be able to see the
-    account's cards, invoices or transaction history. Those belong to whoever owns the account.
-
-    A valid token is not sufficient on its own. Each request re-checks that the account behind it
-    is still usable, so a token belonging to an account that has been suspended is refused with
-    `403`. Signing in again does not clear it.
-
-    ## What the model calls things
-
-    A **product** is a service — `compute`, `canopy`, `oss`. A **plan** is something that can be
-    bought: a machine type, a model, a metered service. A **price** is one way to buy a plan.
-
-    Buying a plan creates a **subscription item**. Metered usage for a service is charged against
-    the subscription item that covers it.
-
-    ## Money
-
-    - **Amounts are decimal strings, never numbers.** `"10.25"`, not `10.25`. A JSON number is a
-      double in most parsers, and a double cannot represent every value money takes.
-    - A billing account has exactly one currency, fixed when it is created. Everything charged to
-      it is in that currency.
-    - No conversion takes place anywhere in billing. A checkout page may collect payment in a
-      local currency; the amount recorded against the account is always in the account's own.
-
-    ## Time
-
-    All timestamps are UTC, and billing periods are computed in UTC. A customer in UTC+8 will see
-    their billing period begin at 08:00 local time. Ranges are half-open: one month is
-    `[2026-09-01T00:00:00Z, 2026-10-01T00:00:00Z)`.
-
-    ## Card details
-
-    No card data is stored by this service. Only a reference to the payment provider's record,
-    together with the brand, last four digits and expiry that the provider reports.
-
-    ## Every list is paged
-
-    Lists accept `page` and `page_size` (100 maximum) and return `total_count`.
-
+    Billing for tenants: the public catalogue, the caller's own account, and what a project
+    has spent.
 security:
   - accountAuth: []
 
@@ -1565,20 +1513,9 @@ paths:
 components:
   securitySchemes:
     accountAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: |-
-        An access token, obtained by signing in at auth.leaflow.net. A scoped token is not
-        accepted on `/account/v1/`.
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/AccessToken
     projectAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: |-
-        A scoped token issued by IAM for a project the caller belongs to. Accepted only on
-        `/api/v1/projects/{projectId}/`.
-
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   parameters:
     IfNoneMatch:
       name: If-None-Match
