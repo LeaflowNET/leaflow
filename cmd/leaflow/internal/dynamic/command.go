@@ -176,6 +176,10 @@ func writeDetails(op *spec.Operation, binding *Binding) string {
 
 	if op.Credential == spec.AccountToken {
 		builder.WriteString("\ncredential: access token (no project needed)")
+	} else if op.Credential == spec.NoCredential {
+		builder.WriteString("\ncredential: none")
+	} else {
+		builder.WriteString("\ncredential: scoped token (project required)")
 	}
 
 	return builder.String()

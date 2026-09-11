@@ -117,7 +117,7 @@ func (c *Client) Do(ctx context.Context, request *Request) (any, int, error) {
 	// An expired token is the only failure worth retrying automatically: a fresh
 	// one fixes it, and making the user rerun the command just moves the work.
 	var apiErr *APIError
-	if errors.As(err, &apiErr) && canRetry(apiErr) {
+	if request.Operation.Credential != spec.NoCredential && c.credentials != nil && errors.As(err, &apiErr) && canRetry(apiErr) {
 		if invalidated := c.credentials.Invalidate(request.Operation.Credential); invalidated == nil {
 			return c.send(ctx, request)
 		}
@@ -142,9 +142,16 @@ func canRetry(err *APIError) bool {
 }
 
 func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
-	token, err := c.credentials.Token(ctx, request.Operation.Credential)
-	if err != nil {
-		return nil, 0, err
+	var token string
+	if request.Operation.Credential != spec.NoCredential {
+		if c.credentials == nil {
+			return nil, 0, ErrUnauthenticated
+		}
+		var err error
+		token, err = c.credentials.Token(ctx, request.Operation.Credential)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	base, err := c.baseURL(request.Operation)
@@ -184,7 +191,11 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 		}
 	}
 
-	httpRequest.Header.Set("Authorization", "Bearer "+token)
+	if request.Operation.Credential != spec.NoCredential {
+		httpRequest.Header.Set("Authorization", "Bearer "+token)
+	} else {
+		httpRequest.Header.Del("Authorization")
+	}
 	httpRequest.Header.Set("Accept", "application/json")
 
 	if body != nil {

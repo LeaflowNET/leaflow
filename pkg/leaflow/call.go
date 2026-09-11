@@ -79,7 +79,7 @@ func (c *Client) Call(ctx context.Context, call Call) (*Result, error) {
 		credentials = call.Token
 	}
 
-	if credentials == nil {
+	if credentials == nil && operation.RequiresAuth() {
 		kind := "access"
 		if operation.AccountToken() {
 			kind = "account"

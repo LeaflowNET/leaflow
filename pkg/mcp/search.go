@@ -295,13 +295,13 @@ func (s *Server) handleOperationSchema(_ context.Context, req *sdk.CallToolReque
 		reply["deprecated"] = true
 	}
 
-	// Said out loud because it is the one thing about a call that is not in its
-	// arguments: an account-token operation works before a project is selected,
-	// and every other one does not.
-	if op.AccountToken() {
+	// Authentication follows the operation's contract, not its service.
+	if !op.RequiresAuth() {
+		reply["credential"] = "none; works without signing in"
+	} else if op.AccountToken() {
 		reply["credential"] = "access token; works without a project selected"
 	} else {
-		reply["credential"] = "access token; acts in the project the token names"
+		reply["credential"] = "scoped token; acts in the project the token names"
 	}
 
 	return renderReply(reply, "operation"), nil

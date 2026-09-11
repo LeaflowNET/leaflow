@@ -1,51 +1,66 @@
 package spec
 
-// Credential says which of the platform's two user-facing tokens an operation
-// takes.
-//
-//	access token   signed by Keycloak   register, list projects, exchange
-//	access token    signed by IAM        everything inside a project
-//
-// An access token names a project as well as a person, which is why no request
-// path carries a project id. The contracts still call it a scoped token, and
-// the product calls it 访问密钥; all three are the same thing.
-//
-// The exchange itself can only take the access token: it is what mints project
-// tokens, so requiring one would deadlock.
-//
-// This has nothing to do with the operator console, which this CLI never
-// touches.
+import (
+	"path"
+	"sort"
+
+	"github.com/getkin/kin-openapi/openapi3"
+)
+
+// Credential identifies the authentication required by an operation.
 type Credential int
 
 const (
+	// AccessToken is the CLI's project access key (ScopedToken in OpenAPI).
 	AccessToken Credential = iota
-
+	// AccountToken is the identity provider's AccessToken in OpenAPI.
 	AccountToken
+	NoCredential
 )
 
 func (c Credential) String() string {
-	if c == AccountToken {
+	switch c {
+	case AccountToken:
 		return "account"
+	case NoCredential:
+		return "none"
+	default:
+		return "project"
 	}
-
-	return "project"
 }
 
-// accountService is the one service that speaks access tokens.
-//
-// This used to be a hand-written list of thirteen operationIds, because both
-// faces lived in one contract and the difference could not be read off it.
-// They are now separate services with separate contracts and separate
-// addresses, so the service name answers the question and the list is gone —
-// along with everything that could rot in it.
-const accountService = "account"
-
-// ReadCredential is exported because refreshing a contract is a request too, and
-// the account face does not accept a scoped token.
-func ReadCredential(service string) Credential {
-	if service == accountService {
-		return AccountToken
+// ReadCredential applies the operation's security override, or the document's
+// default when no override is declared. An empty requirement permits anonymous
+// requests. Scheme references identify the token independently of service names.
+func ReadCredential(doc *openapi3.T, operation *openapi3.Operation) Credential {
+	security := doc.Security
+	if operation.Security != nil {
+		security = *operation.Security
+	}
+	if len(security) == 0 {
+		return NoCredential
+	}
+	for _, requirement := range security {
+		if len(requirement) == 0 {
+			return NoCredential
+		}
 	}
 
+	// Leaflow contracts declare one bearer scheme per requirement. Keep the
+	// choice deterministic if a future contract contains multiple scheme names.
+	names := make([]string, 0, len(security[0]))
+	for name := range security[0] {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	name := names[0]
+	if doc.Components != nil {
+		if scheme := doc.Components.SecuritySchemes[name]; scheme != nil && scheme.Ref != "" {
+			name = path.Base(scheme.Ref)
+		}
+	}
+	if name == "AccessToken" {
+		return AccountToken
+	}
 	return AccessToken
 }

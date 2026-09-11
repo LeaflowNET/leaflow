@@ -64,9 +64,7 @@ type Operation struct {
 
 	Tags []string
 
-	// Credential decides which token to send. It follows from the service: the
-	// account face and the project face are separate services with separate
-	// contracts and separate addresses.
+	// Credential follows the operation's effective OpenAPI security requirement.
 	Credential Credential
 
 	// BaseURL is the address its contract declares.
@@ -196,8 +194,6 @@ func newService(name string, doc *openapi3.T) *Service {
 		return svc
 	}
 
-	credential := ReadCredential(name)
-
 	for _, p := range doc.Paths.InMatchingOrder() {
 		item := doc.Paths.Find(p)
 		if item == nil {
@@ -224,7 +220,7 @@ func newService(name string, doc *openapi3.T) *Service {
 				Description: op.Description,
 				Deprecated:  op.Deprecated,
 				Tags:        op.Tags,
-				Credential:  credential,
+				Credential:  ReadCredential(doc, op),
 				BaseURL:     svc.BaseURL,
 				Parameters:  params,
 			}

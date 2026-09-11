@@ -20,6 +20,30 @@ type renewing struct {
 	previous string
 }
 
+func TestPublicCallWithoutToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			t.Error("public call sent authorization")
+		}
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+	client, err := New(Options{Endpoints: transport.Endpoints{Overrides: map[string]string{"account": server.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Call(context.Background(), Call{Service: "account", Operation: "list-locales"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != http.StatusOK {
+		t.Fatalf("status=%d", result.Status)
+	}
+	if _, err := client.Call(context.Background(), Call{Service: "account", Operation: "list-projects"}); !errors.Is(err, ErrNoToken) {
+		t.Fatalf("protected call without credentials: %v", err)
+	}
+}
+
 func (r *renewing) Token(context.Context, spec.Credential) (string, error) {
 	r.minted++
 
@@ -186,10 +210,12 @@ func TestAccessTokenOnlyReadsTheContract(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	for _, service := range client.Services() {
-		if spec.ReadCredential(service.Name) == spec.AccountToken {
-			t.Errorf("%s is an account-token service and was kept", service.Name)
-		}
+	// Public operations remain available within services that also require tokens.
+	if _, err := client.Operation("account", "list-locales"); err != nil {
+		t.Errorf("public operation was dropped: %v", err)
+	}
+	if _, err := client.Operation("billing", "create-estimate"); err != nil {
+		t.Errorf("public estimate was dropped: %v", err)
 	}
 }
 

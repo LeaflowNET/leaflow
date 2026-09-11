@@ -171,9 +171,13 @@ func (o *Operation) ReadOnly() bool {
 	return isReadOnly(o.spec)
 }
 
-// AccountToken reports that this operation takes an access token rather than
-// an access token. It is the one thing about a call that is not in its
-// arguments.
+// RequiresAuth reports whether the contract requires credentials.
+func (o *Operation) RequiresAuth() bool {
+	return o.spec.Credential != spec.NoCredential
+}
+
+// AccountToken reports whether this operation takes an identity provider's
+// access token rather than a project-scoped token.
 func (o *Operation) AccountToken() bool {
 	return o.spec.Credential == spec.AccountToken
 }
