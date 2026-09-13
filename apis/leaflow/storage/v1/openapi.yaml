@@ -1,0 +1,1558 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Storage API
+  version: 2.0.0
+  description: Storage resource management. Each request requires an IAM scoped token. The current project comes
+    only from that token. Resource changes are asynchronous; read the resource or Billing order to observe completion.
+    Released tenant resources are retained as history. Location fields contain Fleet IDs. Capacity, upstream quota,
+    unknown capacity and Billing sellable quota failures have distinct error codes.
+servers:
+  - url: https://storage.leaflow.cloud
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/backups:
+    get:
+      summary: List backups
+      operationId: list-backups
+      tags:
+        - Backup
+      parameters:
+        - name: disk_id
+          in: query
+          description: Return only the backups of this disk
+          explode: false
+          schema:
+            description: Return only the backups of this disk
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a backup
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: create-backup
+      tags:
+        - Backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBackupRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/backups/{backupId}:
+    get:
+      summary: Retrieve a backup
+      description: Queries the current state of the backup, which makes it slower but more accurate than the list
+        endpoint. Use it to poll creation progress.
+      operationId: get-backup
+      tags:
+        - Backup
+      parameters:
+        - name: backupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a backup
+      operationId: rename-backup
+      tags:
+        - Backup
+      parameters:
+        - name: backupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameBackupRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a backup
+      description: 'Independent of the source disk: deletion succeeds whether or not that disk still exists.'
+      operationId: delete-backup
+      tags:
+        - Backup
+      parameters:
+        - name: backupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/backups/{backupId}/restore:
+    post:
+      summary: Restore from a backup
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: restore-backup
+      tags:
+        - Backup
+      parameters:
+        - name: backupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreBackupRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disk-types:
+    get:
+      summary: List disk types on sale
+      description: Only disk types currently on sale are listed. A withdrawn one disappears from here and can no
+        longer be bought, while the disks already on it keep working and can still be resized.
+      operationId: list-disk-types
+      tags:
+        - Catalog
+      parameters:
+        - name: region_id
+          in: query
+          required: true
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskTypeListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disk-types/{diskTypeId}:
+    get:
+      summary: Get a disk type
+      description: Retrieve capacity and performance constraints for an existing disk, including system disk types
+        and types withdrawn from sale.
+      operationId: get-disk-type
+      tags:
+        - Catalog
+      parameters:
+        - name: diskTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskTypeResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disks:
+    get:
+      summary: List disks
+      description: Lists disks in the current project. Use resource-usages to inspect consumers and pending reservations.
+      operationId: list-disks
+      tags:
+        - Disk
+      parameters:
+        - name: region_id
+          in: query
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: availability_zone_id
+          in: query
+          description: Supplied together with `region_id` to filter attachable disks
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a disk
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: create-disk
+      tags:
+        - Disk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDiskRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disks/{diskId}:
+    get:
+      summary: Retrieve a disk
+      description: Returns the disk and its observed state. Read its attachments for consumers, device names and
+        pending attachment operations.
+      operationId: get-disk
+      tags:
+        - Disk
+      parameters:
+        - name: diskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a disk
+      description: Changes the name only. Use the resize endpoint for capacity; type and availability zone are immutable.
+      operationId: rename-disk
+      tags:
+        - Disk
+      parameters:
+        - name: diskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameDiskRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a disk
+      description: Deletion is rejected while the disk is attached, or while snapshots created from it still exist.
+      operationId: delete-disk
+      tags:
+        - Disk
+      parameters:
+        - name: diskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disks/{diskId}/resize:
+    post:
+      summary: Resize a disk
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: resize-disk
+      tags:
+        - Disk
+      parameters:
+        - name: diskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResizeDiskRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/disks/{diskId}/revert:
+    post:
+      summary: Revert to a snapshot
+      description: 'Restores the contents of the disk to the moment the snapshot was taken. **All data written after
+        that moment is lost and cannot be recovered.**
+
+
+        Three restrictions apply: only the most recent snapshot of the disk can be reverted to; the disk must be
+        detached from its instance first; and a disk resized since the snapshot was taken cannot be reverted. To
+        return to an earlier point in time, or to keep the existing disk, create a new disk from the snapshot instead.
+
+
+        The revert is not complete when this endpoint returns; poll the retrieve endpoint.'
+      operationId: revert-disk
+      tags:
+        - Disk
+      parameters:
+        - name: diskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevertDiskRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/operation-logs:
+    get:
+      summary: List the operation log of the project
+      description: 'Records every write operation in the project: who performed it, when, on what, and whether it
+        succeeded. Read operations are not recorded.
+
+
+        **Operations performed by the platform are included, but the individual operator is not disclosed** and
+        `by_platform` is true. Suspension for non-payment and bans for abuse are examples: the time at which an
+        instance was stopped by the platform is needed, whereas the operator is internal information.
+
+
+        Fields such as passwords are replaced with a placeholder as the record is written and never appear in `payload`.'
+      operationId: list-operation-logs
+      tags:
+        - OperationLog
+      parameters:
+        - name: action
+          in: query
+          description: Return a single kind of operation; the value matches the operation id of the endpoint
+          explode: false
+          schema:
+            description: Return a single kind of operation; the value matches the operation id of the endpoint
+            type: string
+            maxLength: 64
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/snapshots:
+    get:
+      summary: List snapshots
+      operationId: list-snapshots
+      tags:
+        - Snapshot
+      parameters:
+        - name: disk_id
+          in: query
+          description: Return only the snapshots of this disk
+          explode: false
+          schema:
+            description: Return only the snapshots of this disk
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a snapshot
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: create-snapshot
+      tags:
+        - Snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSnapshotRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/snapshots/{snapshotId}:
+    get:
+      summary: Retrieve a snapshot
+      operationId: get-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - name: snapshotId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a snapshot
+      operationId: rename-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - name: snapshotId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSnapshotRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a snapshot
+      operationId: delete-snapshot
+      tags:
+        - Snapshot
+      parameters:
+        - name: snapshotId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/resource-usages:
+    get:
+      operationId: list-resource-usages
+      summary: List resource usages
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceUsageList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: include_released
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      description: Lists direct consumers, including pending reservations and claims being released. The resource
+        must be readable by the caller. Historical released claims are included only when requested.
+  /api/v1/resource-usages/{usageId}:
+    get:
+      operationId: get-resource-usage
+      summary: Get resource usage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceUsage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: usageId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/resources/{resourceType}/{resourceId}/reclamation:
+    get:
+      operationId: get-resource-reclamation
+      summary: Get resource reclamation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclamationState'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceType
+          in: path
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/resources/{resourceType}/{resourceId}/idle-policy:
+    put:
+      operationId: set-resource-idle-policy
+      summary: Set resource idle policy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclamationState'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceType
+          in: path
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdlePolicy'
+      description: Requires permission to delete this resource. Enabling schedules reclamation only after the resource
+        is continuously unreferenced for the requested retention. Existing claims, attachments and unfinished operations
+        always prevent reclamation.
+  /api/v1/disks/{resourceId}/attachments:
+    get:
+      operationId: list-disk-attachments
+      summary: List disk attachments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: include_detached
+          in: query
+          schema:
+            type: boolean
+            default: false
+      description: Actual attachment state, including operations whose provider outcome is unknown. Use usage_id
+        to locate the corresponding blocking claim.
+  /api/v1/attachments/{attachmentId}:
+    get:
+      operationId: get-attachment
+      summary: Get attachment
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: attachmentId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    BackupResource:
+      type: object
+      properties:
+        availability_zone_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region_id:
+          type: string
+          format: uuid
+        size_gb:
+          description: Capacity of the source disk when the backup was created. A restored disk cannot be smaller
+            than this
+          type: integer
+          format: int64
+        source_disk_id:
+          description: The disk this backup was taken from. The backup remains usable after that disk is deleted
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - provisioning
+            - available
+            - restoring
+            - deleting
+            - error
+        subscription_item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - id
+        - source_disk_id
+        - name
+        - size_gb
+        - status
+        - region_id
+        - availability_zone_id
+        - created_at
+      additionalProperties: false
+    BackupListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BackupResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateBackupRequestBody:
+      type: object
+      properties:
+        disk_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - disk_id
+        - name
+        - order
+        - price
+      additionalProperties: false
+    RenameBackupRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+      additionalProperties: false
+    RestoreBackupRequestBody:
+      type: object
+      properties:
+        disk_type_id:
+          description: May differ from the availability zone of the source disk, but must be in the same region.
+            It has to be on sale — restoring creates a new disk, so a withdrawn type is rejected here as well
+          type: string
+          format: uuid
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        size_gb:
+          description: Matches the size of the backup when omitted. When given, it must not be smaller than the
+            backup
+          type: integer
+          format: int64
+          minimum: 0
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - disk_type_id
+        - name
+        - order
+        - price
+      additionalProperties: false
+    DiskResource:
+      type: object
+      properties:
+        availability_zone_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        disk_type_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region_id:
+          type: string
+          format: uuid
+        size_gb:
+          type: integer
+          format: int64
+        iops:
+          description: 'IOPS this disk is allowed. Null when its type is not rate-limited.
+
+
+            Computed from the disk''s own capacity, so it grows when the disk is grown — but see the
+
+            note on the resize endpoint: growing a disk that is attached is refused, precisely because
+
+            the new figure would not take effect until it was attached again.'
+          type:
+            - integer
+            - 'null'
+          format: int64
+        throughput_bytes_per_sec:
+          description: Throughput this disk is allowed, in bytes per second. Null when its type is not rate-limited
+          type:
+            - integer
+            - 'null'
+          format: int64
+        status:
+          type: string
+          enum:
+            - provisioning
+            - available
+            - attaching
+            - in_use
+            - detaching
+            - resizing
+            - reverting
+            - restoring
+            - releasing
+            - deleting
+            - error
+        subscription_item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - id
+        - name
+        - region_id
+        - availability_zone_id
+        - disk_type_id
+        - size_gb
+        - iops
+        - throughput_bytes_per_sec
+        - status
+        - created_at
+      additionalProperties: false
+    DiskTypeResource:
+      type: object
+      properties:
+        availability_zone_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        iops_at_min_size:
+          description: 'IOPS a disk of `min_size_gb` gets. Null when this type is not rate-limited.
+
+
+            Performance grows with capacity, so this and `iops_at_max_size` are the two ends of the
+
+            range. The exact figure for the size actually bought appears on the disk itself once it
+
+            exists.'
+          type:
+            - integer
+            - 'null'
+          format: int64
+        iops_at_max_size:
+          description: IOPS a disk of `max_size_gb` gets. Null when this type is not rate-limited
+          type:
+            - integer
+            - 'null'
+          format: int64
+        max_size_gb:
+          type: integer
+          format: int64
+        media:
+          type: string
+          enum:
+            - ssd
+            - hdd
+            - nvme
+        min_size_gb:
+          type: integer
+          format: int64
+        name:
+          type: string
+        region_id:
+          type: string
+          format: uuid
+        step_gb:
+          type: integer
+          format: int64
+        throughput_at_min_size:
+          description: 'Throughput a disk of `min_size_gb` gets, in **bytes per second**. Null when this type is
+
+            not rate-limited.
+
+
+            Bytes rather than MiB so the number needs no rounding on the way out; divide by 1048576
+
+            for MiB/s at the point of display.'
+          type:
+            - integer
+            - 'null'
+          format: int64
+        throughput_at_max_size:
+          description: Throughput a disk of `max_size_gb` gets, in bytes per second. Null when this type is not
+            rate-limited
+          type:
+            - integer
+            - 'null'
+          format: int64
+        billing_plan_id:
+          type: string
+          format: uuid
+          description: The Billing Plan for this type. Read its available prices from Billing; resource capacity
+            and sellable quota are evaluated when placing the order.
+      required:
+        - id
+        - name
+        - media
+        - region_id
+        - availability_zone_id
+        - min_size_gb
+        - max_size_gb
+        - step_gb
+        - iops_at_min_size
+        - iops_at_max_size
+        - throughput_at_min_size
+        - throughput_at_max_size
+        - billing_plan_id
+      additionalProperties: false
+    DiskTypeListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiskTypeResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    DiskListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiskResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateDiskRequestBody:
+      type: object
+      properties:
+        disk_type_id:
+          description: A disk type currently on sale. A withdrawn one is rejected even though its identifier still
+            resolves
+          type: string
+          format: uuid
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        size_gb:
+          type: integer
+          format: int64
+          minimum: 1
+        snapshot_id:
+          description: Restore from this snapshot. When given, the capacity need only be no smaller than the snapshot
+          type: string
+          format: uuid
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - disk_type_id
+        - name
+        - size_gb
+        - order
+        - price
+      additionalProperties: false
+    RenameDiskRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+      additionalProperties: false
+    ResizeDiskRequestBody:
+      type: object
+      properties:
+        size_gb:
+          description: Must be larger than the current capacity
+          type: integer
+          format: int64
+          minimum: 1
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - size_gb
+        - order
+        - price
+      additionalProperties: false
+    RevertDiskRequestBody:
+      type: object
+      properties:
+        snapshot_id:
+          description: Must be the most recent snapshot of the disk
+          type: string
+          format: uuid
+      required:
+        - snapshot_id
+      additionalProperties: false
+    OperationLogResource:
+      type: object
+      properties:
+        action:
+          description: Name of the operation; matches the operation id of the endpoint
+          type: string
+        actor:
+          description: The user who initiated the operation. Empty when the platform performed it
+          type:
+            - string
+            - 'null'
+        actor_name:
+          description: 'The name this user went by at the time of the operation, recorded alongside the operation
+            itself. It is not refreshed afterwards: the record states who acted then, and a name read today is a
+            statement about a different moment.
+
+
+            Null on entries recorded before this field existed, and on entries performed by the platform. An empty
+            string means the account had no name recorded.'
+          type:
+            - string
+            - 'null'
+        by_platform:
+          description: True when the operation was performed by the platform
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        failure:
+          description: Brief reason for the failure
+          type:
+            - string
+            - 'null'
+        id:
+          type: string
+          format: uuid
+        payload:
+          description: Path and query parameters of the request. Fields such as passwords are redacted
+          type: object
+          additionalProperties: {}
+        region_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        subject_id:
+          description: 'Empty for create operations: the id of the new resource is in the response, not in the request
+            path'
+          type: string
+        subject_type:
+          type: string
+        succeeded:
+          type: boolean
+      required:
+        - id
+        - action
+        - by_platform
+        - actor
+        - actor_name
+        - subject_type
+        - subject_id
+        - region_id
+        - payload
+        - succeeded
+        - failure
+        - created_at
+      additionalProperties: false
+    OperationLogListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationLogResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    SnapshotResource:
+      type: object
+      properties:
+        availability_zone_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        disk_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region_id:
+          type: string
+          format: uuid
+        size_gb:
+          description: Capacity of the source disk when the snapshot was created. A disk restored from it cannot
+            be smaller
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+            - provisioning
+            - available
+            - restoring
+            - deleting
+            - error
+        subscription_item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - id
+        - disk_id
+        - name
+        - size_gb
+        - status
+        - availability_zone_id
+        - region_id
+        - created_at
+      additionalProperties: false
+    SnapshotListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SnapshotResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateSnapshotRequestBody:
+      type: object
+      properties:
+        disk_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - disk_id
+        - name
+        - order
+        - price
+      additionalProperties: false
+    RenameSnapshotRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+      additionalProperties: false
+    OrderOptions:
+      $ref: ../../type/v1/order.yaml#/components/schemas/OrderOptions
+    CatalogReference:
+      $ref: ../../type/v1/order.yaml#/components/schemas/CatalogReference
+    PlacedOrder:
+      $ref: ../../type/v1/order.yaml#/components/schemas/PlacedOrder
+    ResourceUsage:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsage
+    ResourceUsageList:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsageList
+    IdlePolicy:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/IdlePolicy
+    ReclamationState:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ReclamationState
+    Attachment:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/Attachment
+    AttachmentList:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/AttachmentList

@@ -1,0 +1,2123 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Fabric API
+  version: 2.0.0
+  description: Fabric resource management. Each request requires an IAM scoped token. The current project comes
+    only from that token. Resource changes are asynchronous; read the resource or Billing order to observe completion.
+    Released tenant resources are retained as history. Location fields contain Fleet IDs. Capacity, upstream quota,
+    unknown capacity and Billing sellable quota failures have distinct error codes.
+servers:
+  - url: https://fabric.leaflow.cloud
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/floating-ips:
+    get:
+      summary: List floating IPs
+      operationId: list-floating-ips
+      tags:
+        - FloatingIP
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+    post:
+      summary: Allocate a floating IP
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: allocate-floating-ip
+      tags:
+        - FloatingIP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllocateFloatingIPRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/floating-ips/{floatingIpId}:
+    get:
+      summary: Retrieve a floating IP
+      operationId: get-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - name: floatingIpId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Release a floating IP
+      description: A released address enters a cooldown period before it is allocated again, so that DNS records
+        and allow-lists still pointing at it do not break immediately. **The same address therefore cannot be re-allocated**
+        for some time after release. Proceed with care.
+      operationId: release-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - name: floatingIpId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/floating-ips/{floatingIpId}/bandwidth:
+    put:
+      summary: Set the bandwidth limit
+      description: Creates a Billing order, including for metered pricing. The price must belong to the resource’s
+        Billing Plan; applicable contract pricing is resolved by Billing. Technical capacity is checked before sellable
+        quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
+        paying. Reuse the original idempotency key after an uncertain response.
+      operationId: set-floating-ip-bandwidth
+      tags:
+        - FloatingIP
+      parameters:
+        - name: floatingIpId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetBandwidthRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacedOrder'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/floating-ips/{floatingIpId}/binding:
+    put:
+      summary: Bind a floating IP to a network interface
+      operationId: bind-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - name: floatingIpId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindFloatingIPRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Unbind a floating IP
+      description: The address remains held by the project and simply no longer points at any network interface.
+      operationId: unbind-floating-ip
+      tags:
+        - FloatingIP
+      parameters:
+        - name: floatingIpId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloatingIPResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/operation-logs:
+    get:
+      summary: List the operation log of the project
+      description: 'Records every write operation in the project: who performed it, when, on what, and whether it
+        succeeded. Read operations are not recorded.
+
+
+        **Operations performed by the platform are included, but the individual operator is not disclosed** and
+        `by_platform` is true. Suspension for non-payment and bans for abuse are examples: the time at which an
+        instance was stopped by the platform is needed, whereas the operator is internal information.
+
+
+        Fields such as passwords are replaced with a placeholder as the record is written and never appear in `payload`.'
+      operationId: list-operation-logs
+      tags:
+        - OperationLog
+      parameters:
+        - name: action
+          in: query
+          description: Return a single kind of operation; the value matches the operation id of the endpoint
+          explode: false
+          schema:
+            description: Return a single kind of operation; the value matches the operation id of the endpoint
+            type: string
+            maxLength: 64
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ports:
+    get:
+      summary: List network interfaces
+      operationId: list-ports
+      tags:
+        - Port
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+    post:
+      summary: Create a network interface
+      description: The new network interface is not attached to any instance. Primary network interfaces are not
+        created here; they are created with the instance.
+      operationId: create-port
+      tags:
+        - Port
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePortRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ports/{portId}:
+    delete:
+      summary: Delete a network interface
+      description: The primary network interface cannot be deleted on its own, as it is released with the instance.
+        A network interface still attached to an instance cannot be deleted either.
+      operationId: delete-port
+      tags:
+        - Port
+      parameters:
+        - name: portId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: get-port
+      summary: Get port
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: portId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/private-networks:
+    get:
+      summary: List private networks
+      operationId: list-private-networks
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: region_id
+          in: query
+          description: Returns every region when omitted
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a private network
+      description: Creates a network, a router and a default security group in one call. The default security group
+        denies all inbound traffic and permits all outbound traffic.
+      operationId: create-private-network
+      tags:
+        - PrivateNetwork
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrivateNetworkRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}:
+    get:
+      summary: Retrieve a private network
+      operationId: get-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a private network
+      description: Changes the display name only. The CIDR, the routes and the internet gateway are immutable.
+      operationId: rename-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenamePrivateNetworkRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateNetworkResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Release a private network
+      description: Release is rejected while instances or network interfaces remain in the network. IPv6, the router
+        and the security groups are released with it.
+      operationId: delete-private-network
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/ipv6:
+    get:
+      summary: Retrieve the IPv6 configuration of a private network
+      operationId: get-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPv6ResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Enable IPv6 on a private network
+      description: 'Allocates an IPv6 prefix to the private network. Addresses are assigned to instances by the
+        network itself, can be neither requested nor released individually, and consume no public IPv4 address.
+
+
+        If the private network is not yet connected to the internet, connectivity is established as part of this
+        call.'
+      operationId: enable-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPv6ResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Disable IPv6 on a private network
+      description: A released prefix is not re-allocated immediately.
+      operationId: disable-private-network-ipv6
+      tags:
+        - PrivateNetwork
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/routes:
+    get:
+      summary: List static routes
+      operationId: list-routes
+      tags:
+        - Route
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a static route
+      description: 'Three forms that would sever connectivity are rejected: a destination of `0.0.0.0/0`, which
+        overrides the default route and takes every floating IP offline immediately; a destination equal to the
+        CIDR of a subnet, which overrides its directly connected route; and a next hop equal to the gateway of a
+        subnet, which points back at the router itself.'
+      operationId: create-route
+      tags:
+        - Route
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/routes/{routeId}:
+    delete:
+      summary: Delete a static route
+      operationId: delete-route
+      tags:
+        - Route
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: routeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/subnets:
+    get:
+      summary: List subnets
+      description: IPv6 subnets are included, with `ip_version` 6. They are created when IPv6 is enabled and cannot
+        be deleted individually.
+      operationId: list-subnets
+      tags:
+        - Subnet
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubnetListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a subnet
+      operationId: create-subnet
+      tags:
+        - Subnet
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubnetRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubnetResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/subnets/next-free-cidr:
+    get:
+      summary: Suggest the next free CIDR
+      description: The returned value is a suggestion and is validated again when the subnet is created. It exists
+        to avoid errors when computing the next free CIDR by hand.
+      operationId: suggest-subnet-cidr
+      tags:
+        - Subnet
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: prefix_length
+          in: query
+          explode: false
+          schema:
+            type: integer
+            format: int64
+            default: 24
+            minimum: 16
+            maximum: 30
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextFreeCidrResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/private-networks/{privateNetworkId}/subnets/{subnetId}:
+    delete:
+      summary: Delete a subnet
+      description: Deletion is rejected while network interfaces remain in the subnet, or while a static route has
+        a next hop inside its CIDR.
+      operationId: delete-subnet
+      tags:
+        - Subnet
+      parameters:
+        - name: privateNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: subnetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security-groups:
+    get:
+      summary: List security groups
+      operationId: list-security-groups
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: region_id
+          in: query
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: private_network_id
+          in: query
+          description: Return only the security groups of this private network
+          explode: false
+          schema:
+            description: Return only the security groups of this private network
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a security group
+      description: A new security group carries one rule, permitting ICMP fragmentation-needed messages (type 3,
+        code 4). Without it path MTU discovery fails, which presents as connections that establish and then stall
+        on large packets.
+      operationId: create-security-group
+      tags:
+        - SecurityGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityGroupRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security-groups/{securityGroupId}:
+    get:
+      summary: Retrieve a security group
+      operationId: get-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a security group
+      description: Changes the name only. Use the rule endpoints to change rules.
+      operationId: rename-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameSecurityGroupRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a security group
+      description: The default security group cannot be deleted, as it is released with the private network. A security
+        group still referenced by a network interface cannot be deleted either.
+      operationId: delete-security-group
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security-groups/{securityGroupId}/rules:
+    get:
+      summary: List security group rules
+      operationId: list-security-group-rules
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityRuleListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create a security group rule
+      description: Adding an identical rule twice is rejected. For that comparison `0.0.0.0/0`, `::/0` and an omitted
+        value are treated as equivalent.
+      operationId: create-security-group-rule
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityRuleRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityRuleResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security-groups/{securityGroupId}/rules/{ruleId}:
+    delete:
+      summary: Delete a security group rule
+      operationId: delete-security-group-rule
+      tags:
+        - SecurityGroup
+      parameters:
+        - name: securityGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/resource-usages:
+    get:
+      operationId: list-resource-usages
+      summary: List resource usages
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceUsageList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: include_released
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+      description: Lists direct consumers, including pending reservations and claims being released. The resource
+        must be readable by the caller. Historical released claims are included only when requested.
+  /api/v1/resource-usages/{usageId}:
+    get:
+      operationId: get-resource-usage
+      summary: Get resource usage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceUsage'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: usageId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/resources/{resourceType}/{resourceId}/reclamation:
+    get:
+      operationId: get-resource-reclamation
+      summary: Get resource reclamation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclamationState'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceType
+          in: path
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/resources/{resourceType}/{resourceId}/idle-policy:
+    put:
+      operationId: set-resource-idle-policy
+      summary: Set resource idle policy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReclamationState'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceType
+          in: path
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdlePolicy'
+      description: Requires permission to delete this resource. Enabling schedules reclamation only after the resource
+        is continuously unreferenced for the requested retention. Existing claims, attachments and unfinished operations
+        always prevent reclamation.
+  /api/v1/ports/{resourceId}/attachments:
+    get:
+      operationId: list-port-attachments
+      summary: List port attachments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: resourceId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: include_detached
+          in: query
+          schema:
+            type: boolean
+            default: false
+      description: Actual attachment state, including operations whose provider outcome is unknown. Use usage_id
+        to locate the corresponding blocking claim.
+  /api/v1/attachments/{attachmentId}:
+    get:
+      operationId: get-attachment
+      summary: Get attachment
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: attachmentId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    FloatingIPResource:
+      type: object
+      properties:
+        address:
+          type: string
+        attached_fixed_ip:
+          type:
+            - string
+            - 'null'
+        attached_port_id:
+          type:
+            - string
+            - 'null'
+        bandwidth_mbps:
+          type:
+            - integer
+            - 'null'
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        detached_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        region_id:
+          type: string
+          format: uuid
+        status:
+          description: '`idle` means the address is not bound to a network interface'
+          type: string
+          enum:
+            - idle
+            - bound
+        subscription_item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - id
+        - region_id
+        - address
+        - status
+        - bandwidth_mbps
+        - attached_port_id
+        - attached_fixed_ip
+        - detached_at
+        - created_at
+      additionalProperties: false
+    FloatingIPListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FloatingIPResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    AllocateFloatingIPRequestBody:
+      type: object
+      properties:
+        address:
+          description: The address to allocate. Allocated by the platform when omitted
+          type: string
+          maxLength: 64
+        bandwidth_mbps:
+          description: Maximum bandwidth in Mbit/s. Address and bandwidth use separate selected prices; a zero or
+            unlimited ceiling is not accepted.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        private_network_id:
+          type: string
+          format: uuid
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+        bandwidth_price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - private_network_id
+        - bandwidth_mbps
+        - order
+        - price
+        - bandwidth_price
+      additionalProperties: false
+    SetBandwidthRequestBody:
+      type: object
+      properties:
+        mbps:
+          description: Applied to both directions
+          type: integer
+          format: int64
+          minimum: 1
+        order:
+          $ref: '#/components/schemas/OrderOptions'
+        price:
+          $ref: '#/components/schemas/CatalogReference'
+      required:
+        - mbps
+        - order
+        - price
+      additionalProperties: false
+    BindFloatingIPRequestBody:
+      type: object
+      properties:
+        port_id:
+          type: string
+          format: uuid
+      required:
+        - port_id
+      additionalProperties: false
+    PortResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ipv6_address:
+          type:
+            - string
+            - 'null'
+        mac:
+          type:
+            - string
+            - 'null'
+        name:
+          type: string
+        private_ip:
+          type:
+            - string
+            - 'null'
+        private_network_id:
+          type: string
+          format: uuid
+        public_ips:
+          description: Floating IPv4 addresses bound to this network interface; an empty array when none are bound
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+        subnet_id:
+          type: string
+          format: uuid
+      required:
+        - id
+        - private_network_id
+        - subnet_id
+        - name
+        - mac
+        - private_ip
+        - ipv6_address
+        - public_ips
+      additionalProperties: false
+    PortListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    OperationLogResource:
+      type: object
+      properties:
+        action:
+          description: Name of the operation; matches the operation id of the endpoint
+          type: string
+        actor:
+          description: The user who initiated the operation. Empty when the platform performed it
+          type:
+            - string
+            - 'null'
+        actor_name:
+          description: 'The name this user went by at the time of the operation, recorded alongside the operation
+            itself. It is not refreshed afterwards: the record states who acted then, and a name read today is a
+            statement about a different moment.
+
+
+            Null on entries recorded before this field existed, and on entries performed by the platform. An empty
+            string means the account had no name recorded.'
+          type:
+            - string
+            - 'null'
+        by_platform:
+          description: True when the operation was performed by the platform
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        failure:
+          description: Brief reason for the failure
+          type:
+            - string
+            - 'null'
+        id:
+          type: string
+          format: uuid
+        payload:
+          description: Path and query parameters of the request. Fields such as passwords are redacted
+          type: object
+          additionalProperties: {}
+        region_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        subject_id:
+          description: 'Empty for create operations: the id of the new resource is in the response, not in the request
+            path'
+          type: string
+        subject_type:
+          type: string
+        succeeded:
+          type: boolean
+      required:
+        - id
+        - action
+        - by_platform
+        - actor
+        - actor_name
+        - subject_type
+        - subject_id
+        - region_id
+        - payload
+        - succeeded
+        - failure
+        - created_at
+      additionalProperties: false
+    OperationLogListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationLogResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreatePortRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        private_ip:
+          description: The private address to assign. Allocated automatically when omitted
+          type: string
+          maxLength: 64
+        security_group_ids:
+          description: At least one, and all must belong to the same private network
+          type:
+            - array
+            - 'null'
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+        subnet_id:
+          type: string
+          format: uuid
+      required:
+        - subnet_id
+        - security_group_ids
+      additionalProperties: false
+    PrivateNetworkResource:
+      type: object
+      properties:
+        cidr:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        has_internet_gateway:
+          type: boolean
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - available
+            - error
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - region_id
+        - cidr
+        - status
+        - has_internet_gateway
+        - created_at
+        - updated_at
+      additionalProperties: false
+    PrivateNetworkListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrivateNetworkResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreatePrivateNetworkRequestBody:
+      type: object
+      properties:
+        cidr:
+          description: Must be an RFC 1918 private CIDR with a prefix length between /8 and /24, for example `10.0.0.0/16`
+          type: string
+          minLength: 1
+          maxLength: 32
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        region_id:
+          type: string
+          format: uuid
+      required:
+        - name
+        - region_id
+        - cidr
+      additionalProperties: false
+    RenamePrivateNetworkRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+      additionalProperties: false
+    IPv6ResponseBody:
+      type: object
+      properties:
+        cidr:
+          description: The allocated /64 prefix; empty while IPv6 is disabled
+          type: string
+        enabled:
+          type: boolean
+        status:
+          description: '`active` means IPv6 is fully available'
+          type: string
+          enum:
+            - pending
+            - active
+            - draining
+      required:
+        - enabled
+        - cidr
+        - status
+      additionalProperties: false
+    RouteResource:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+        destination:
+          type: string
+        id:
+          type: string
+          format: uuid
+        nexthop:
+          type: string
+      required:
+        - id
+        - destination
+        - nexthop
+        - description
+        - created_at
+      additionalProperties: false
+    RouteListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateRouteRequestBody:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 255
+        destination:
+          description: Destination CIDR. It cannot be `0.0.0.0/0`, nor the CIDR of a subnet of this network
+          type: string
+          minLength: 1
+          maxLength: 32
+        nexthop:
+          description: Private address of an instance; must fall inside a subnet of this private network
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+        - destination
+        - nexthop
+      additionalProperties: false
+    SubnetResource:
+      type: object
+      properties:
+        cidr:
+          type: string
+        gateway_ip:
+          type:
+            - string
+            - 'null'
+        id:
+          type: string
+          format: uuid
+        ip_version:
+          type: integer
+          format: int64
+          enum:
+            - 4
+            - 6
+        name:
+          type: string
+        private_network_id:
+          type: string
+          format: uuid
+      required:
+        - id
+        - private_network_id
+        - name
+        - ip_version
+        - cidr
+        - gateway_ip
+      additionalProperties: false
+    SubnetListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubnetResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateSubnetRequestBody:
+      type: object
+      properties:
+        cidr:
+          description: Must fall inside the CIDR of the private network and must not overlap an existing subnet
+          type: string
+          minLength: 1
+          maxLength: 32
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+        - cidr
+      additionalProperties: false
+    NextFreeCidrResponseBody:
+      type: object
+      properties:
+        cidr:
+          description: Empty when the private network has no free CIDR left for that prefix length
+          type: string
+      required:
+        - cidr
+      additionalProperties: false
+    SecurityGroupResource:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+        id:
+          type: string
+          format: uuid
+        is_default:
+          description: The default security group is released with its private network and cannot be deleted individually
+          type: boolean
+        name:
+          type: string
+        private_network_id:
+          type: string
+          format: uuid
+      required:
+        - id
+        - private_network_id
+        - name
+        - description
+        - is_default
+        - created_at
+      additionalProperties: false
+    SecurityGroupListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityGroupResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateSecurityGroupRequestBody:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 500
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        private_network_id:
+          type: string
+          format: uuid
+      required:
+        - private_network_id
+        - name
+      additionalProperties: false
+    SecurityRuleResource:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+        direction:
+          type: string
+          enum:
+            - ingress
+            - egress
+        ethertype:
+          type: string
+          enum:
+            - IPv4
+            - IPv6
+        id:
+          type: string
+          format: uuid
+        port_range_max:
+          description: Denotes the ICMP code rather than a port when the protocol is ICMP
+          type:
+            - integer
+            - 'null'
+          format: int64
+        port_range_min:
+          description: Denotes the ICMP type rather than a port when the protocol is ICMP
+          type:
+            - integer
+            - 'null'
+          format: int64
+        protocol:
+          type:
+            - string
+            - 'null'
+        remote_ip_prefix:
+          type:
+            - string
+            - 'null'
+      required:
+        - id
+        - direction
+        - ethertype
+        - protocol
+        - port_range_min
+        - port_range_max
+        - remote_ip_prefix
+        - description
+        - created_at
+      additionalProperties: false
+    SecurityRuleListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityRuleResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    CreateSecurityRuleRequestBody:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 255
+        direction:
+          type: string
+          enum:
+            - ingress
+            - egress
+        ethertype:
+          type: string
+          enum:
+            - IPv4
+            - IPv6
+        port_range_max:
+          description: Denotes the ICMP code (0–255) rather than a port when the protocol is ICMP
+          type:
+            - integer
+            - 'null'
+          format: int64
+        port_range_min:
+          description: Denotes the ICMP type (0–255) rather than a port when the protocol is ICMP
+          type:
+            - integer
+            - 'null'
+          format: int64
+        protocol:
+          description: For example `tcp`, `udp`, `icmp` or `ipv6-icmp`. All protocols when omitted
+          type: string
+          maxLength: 16
+        remote_ip_prefix:
+          description: Equivalent to `0.0.0.0/0` or `::/0` when omitted
+          type: string
+          maxLength: 64
+      required:
+        - direction
+        - ethertype
+      additionalProperties: false
+    RenameSecurityGroupRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
+      additionalProperties: false
+    OrderOptions:
+      $ref: ../../type/v1/order.yaml#/components/schemas/OrderOptions
+    CatalogReference:
+      $ref: ../../type/v1/order.yaml#/components/schemas/CatalogReference
+    PlacedOrder:
+      $ref: ../../type/v1/order.yaml#/components/schemas/PlacedOrder
+    ResourceUsage:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsage
+    ResourceUsageList:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsageList
+    IdlePolicy:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/IdlePolicy
+    ReclamationState:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/ReclamationState
+    Attachment:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/Attachment
+    AttachmentList:
+      $ref: ../../type/v1/resource.yaml#/components/schemas/AttachmentList

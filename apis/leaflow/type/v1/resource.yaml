@@ -1,0 +1,288 @@
+openapi: 3.1.0
+info:
+  title: Resource relationships
+  version: v1
+  description: Resource identities, claims and reclamation policy. Types only.
+paths: {}
+components:
+  schemas:
+    ResourceReference:
+      type: object
+      properties:
+        service:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-z][a-z0-9_]*$
+        type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        id:
+          type: string
+          format: uuid
+      required:
+        - service
+        - type
+        - id
+      additionalProperties: false
+      description: A resource identified within its owning service. The project is taken from the containing usage
+        or request.
+    ResourceUsage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        resource:
+          $ref: '#/components/schemas/ResourceReference'
+        consumer:
+          $ref: '#/components/schemas/ResourceReference'
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 64
+        state:
+          type: string
+          enum:
+            - reserved
+            - active
+            - releasing
+            - released
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        operation_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        released_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - project_id
+        - resource
+        - consumer
+        - purpose
+        - state
+        - generation
+        - operation_id
+        - created_at
+        - updated_at
+      additionalProperties: false
+      description: An authoritative claim held by the resource owner. Reserved, active and releasing claims all
+        prevent idle reclamation. Stopped consumers retain their claims. Released claims remain readable.
+    ResourceDependency:
+      type: object
+      properties:
+        usage_id:
+          type: string
+          format: uuid
+        resource:
+          $ref: '#/components/schemas/ResourceReference'
+        purpose:
+          type: string
+          minLength: 1
+          maxLength: 64
+        desired_state:
+          type: string
+          enum:
+            - present
+            - absent
+        delete_with_consumer:
+          type: boolean
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+        - usage_id
+        - resource
+        - purpose
+        - desired_state
+        - delete_with_consumer
+        - generation
+      additionalProperties: false
+      description: The consumer’s desired dependency. usage_id identifies the corresponding claim in the owning
+        service; actual attachment state is read from that service.
+    IdlePolicy:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        retention_seconds:
+          type: integer
+          format: int64
+          minimum: 3600
+      required:
+        - enabled
+        - retention_seconds
+      additionalProperties: false
+      description: Automatic reclamation is disabled by default. When enabled, retention starts after the last live
+        claim is confirmed released. Traffic, IO and consumer heartbeats do not affect eligibility.
+    ReclamationState:
+      type: object
+      properties:
+        resource:
+          $ref: '#/components/schemas/ResourceReference'
+        policy:
+          $ref: '#/components/schemas/IdlePolicy'
+        active_usage_count:
+          type: integer
+          format: int64
+          minimum: 0
+        unreferenced_at:
+          type: string
+          format: date-time
+        eligible_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - retained
+            - in_use
+            - idle
+            - reclaiming
+            - deleted
+        blocked_reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - resource
+        - policy
+        - active_usage_count
+        - status
+        - blocked_reasons
+      additionalProperties: false
+    ResourceUsageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceUsage'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    ResourceDependencyList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceDependency'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usage_id:
+          type: string
+          format: uuid
+        resource:
+          $ref: '#/components/schemas/ResourceReference'
+        consumer:
+          $ref: '#/components/schemas/ResourceReference'
+        state:
+          type: string
+          enum:
+            - reserved
+            - attaching
+            - attached
+            - detaching
+            - detached
+            - unknown
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        device:
+          type: string
+        read_only:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - usage_id
+        - resource
+        - consumer
+        - state
+        - generation
+        - read_only
+        - created_at
+        - updated_at
+      additionalProperties: false
+    AttachmentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+      additionalProperties: false
