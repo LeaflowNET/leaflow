@@ -2,31 +2,88 @@ openapi: 3.1.0
 info:
   title: Order Types
   version: v1
-  description: |-
-    The handle a service returns after creating a billable order. Types only; this document
-    declares no operations.
+  description: 'The handle a service returns after creating a billable order. Types only; this document
+
+    declares no operations.'
 paths: {}
 components:
   schemas:
     PlacedOrder:
-      description: |-
-        A billable order has been created. Read it from the billing API to find out what is
+      description: 'A billable order has been created. Read it from the billing API to find out what is
+
         owed and whether payment is still required.
 
+
         Only the identifier is returned. Amounts and state are not repeated here; the order
-        itself is the single source for them.
+
+        itself is the single source for them.'
       type: object
       properties:
         order_id:
-          description: |-
-            Identifies the order. Use it to read the order and, where payment is required,
+          description: 'Identifies the order. Use it to read the order and, where payment is required,
+
             to pay it.
 
+
             An order is created even when nothing is owed, such as a plan with no charge or one
+
             covered entirely by granted credit. Such an order is already settled, and no
-            payment step applies.
+
+            payment step applies.'
           type: string
           format: uuid
       required:
         - order_id
       additionalProperties: false
+    CatalogReference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+      description: Specify exactly one of id or lookup_key. A lookup key is scoped to the product of the resource
+        service.
+      minProperties: 1
+      maxProperties: 1
+    PaymentPlan:
+      type: object
+      properties:
+        balance_amount:
+          type: string
+          pattern: ^\d+(\.\d{1,10})?$
+        provider_amount:
+          type: string
+          pattern: ^\d+(\.\d{1,10})?$
+      required:
+        - balance_amount
+        - provider_amount
+      additionalProperties: false
+      description: Requested funding split. This does not select a card or payment provider; complete payment through
+        Billing.
+    OrderOptions:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 255
+        payment_plan:
+          $ref: '#/components/schemas/PaymentPlan'
+        expected_amount:
+          type: string
+          pattern: ^\d+(\.\d{1,10})?$
+        redemption_code:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - idempotency_key
+      additionalProperties: false
+      description: Reuse the same key for retries of the same purchase. Reusing it with a different request fails.
+        Billing selects contract pricing, applies eligible grants and promotions, and owns payment challenges and
+        expiry.

@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Pagination types
+  version: v1
+  description: Shared pagination request parameters and response metadata. This document declares types only.
+paths: {}
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, format: int64, minimum: 1, default: 1}
+    PageSize:
+      name: page_size
+      in: query
+      schema: {type: integer, format: int64, minimum: 1, maximum: 200, default: 50}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string, minLength: 1, maxLength: 1024}
+  schemas:
+    OffsetPagination:
+      type: object
+      additionalProperties: false
+      required: [page, page_size]
+      properties:
+        page: {type: integer, format: int64, minimum: 1}
+        page_size: {type: integer, format: int64, minimum: 1}
+        total_count: {type: integer, format: int64, minimum: 0}
+      description: Pagination metadata for stable numbered pages. total_count is returned only when the operation can determine it without an unbounded scan.
+    CursorPagination:
+      type: object
+      additionalProperties: false
+      required: [page_size]
+      properties:
+        page_size: {type: integer, format: int64, minimum: 1}
+        next_cursor: {type: [string, 'null']}
+      description: Pagination metadata for keyset traversal. Pass next_cursor as cursor to read the following page; null means there is no following page.

@@ -1,83 +1,171 @@
 openapi: 3.1.0
 info:
   title: Leaflow Fleet API
-  version: 1.0.0
-  description: |-
-    Leaflow Fleet user API. It answers where the platform offers service: the regions that are open, and the availability zones each one contains.
-
-    ## Authentication
-
-    Every request carries a scoped token; see the `bearerAuth` security scheme.
-
-    Nothing returned by this API is specific to a project: every caller sees the same regions and the same availability zones.
-
-    ## Conventions
-
-    - **Only locations open to new orders are listed.** A region or availability zone that has stopped accepting new orders does not appear here, while resources already placed in it keep running and remain manageable through the API of the product that owns them.
-    - **A region appearing here does not mean every product is sold there.** Each product decides independently where it is offered, and announces that through its own API — for example, the instance types a region has determines whether instances can be created in it. Use this API for the list of locations, and the product's own API for what is available in each.
-    - **Codes are stable.** The `code` of a region or an availability zone is fixed when the location is first offered and is never reused for another location. It is the value other APIs expect wherever a location has to be named.
-    - **Locations that must interoperate usually have to match.** Resources are generally required to share an availability zone in order to be attached to one another; consult the product's own documentation for the exact rule.
-servers:
-  - url: https://fleet.leaflow.cloud
-    description: Regions and availability zones
+  version: 2.0.0
+  description: Region and availability-zone catalog. IDs are stable; lookup keys are external aliases. Draining
+    and retired locations remain readable for existing resources. Availability does not imply a product has a sellable
+    price or physical capacity. Requires an IAM scoped token. No result contains project-specific resources.
 security:
   - bearerAuth: []
 paths:
   /api/v1/regions:
     get:
-      summary: List available regions
-      description: |-
-        Lists every region currently open to new orders, in display order.
-
-        The list is the same for every caller and changes rarely.
       operationId: list-regions
-      tags:
-        - Region
+      summary: List regions
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RegionListResponseBody"
+                $ref: '#/components/schemas/RegionList'
         default:
           description: Error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/regions/{regionCode}/availability-zones:
-    get:
-      summary: List the availability zones of a region
-      description: |-
-        Lists every availability zone of this region that is currently open to new orders, in display order.
-
-        Resources are generally required to share an availability zone in order to be attached to one another, so confirm the zone before creating either side.
-
-        A region that exists but is not open to new orders is reported as not found, exactly as an unknown code is: both mean that nothing can be created there.
-      operationId: list-availability-zones
-      tags:
-        - Region
+                $ref: '#/components/schemas/Error'
       parameters:
-        - name: regionCode
-          in: path
-          required: true
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: status
+          in: query
           schema:
             type: string
-            maxLength: 32
+            enum:
+              - pending
+              - available
+              - draining
+              - retired
+        - name: lookup_key
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      description: Lists available, draining and retired regions; pending locations are visible only to operators.
+        Filter status=available to offer new placement choices.
+  /api/v1/regions/{regionId}:
+    get:
+      operationId: get-region
+      summary: Get region
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AvailabilityZoneListResponseBody"
+                $ref: '#/components/schemas/Region'
         default:
           description: Error
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Error"
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: regionId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+  /api/v1/regions/{regionId}/availability-zones:
+    get:
+      operationId: list-availability-zones
+      summary: List availability zones
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityZoneList'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: regionId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: page
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - pending
+              - available
+              - draining
+              - retired
+        - name: lookup_key
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+  /api/v1/regions/{regionId}/availability-zones/{availabilityZoneId}:
+    get:
+      operationId: get-availability-zone
+      summary: Get availability zone
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityZone'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+        - name: regionId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: availabilityZoneId
+          in: path
+          schema:
+            type: string
+            format: uuid
+          required: true
 components:
   securitySchemes:
     bearerAuth:
@@ -85,55 +173,147 @@ components:
   schemas:
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
-    RegionResource:
+    Region:
       type: object
       properties:
-        code:
-          description: Stable identifier of the region, used wherever a region has to be named
+        id:
           type: string
-        country_code:
-          description: ISO 3166-1 alpha-2 code of the country this region is in
+          format: uuid
+        lookup_key:
           type: string
+          minLength: 1
+          maxLength: 64
         name:
           type: string
+          minLength: 1
+          maxLength: 128
+        name_translations:
+          type: object
+          additionalProperties:
+            type: string
+        country_code:
+          type: string
+          pattern: ^[A-Z]{2}$
+        status:
+          type: string
+          enum:
+            - pending
+            - available
+            - draining
+            - retired
+        sort:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
       required:
-        - code
+        - id
+        - lookup_key
         - name
         - country_code
+        - status
+        - sort
+        - created_at
+        - updated_at
       additionalProperties: false
-    AvailabilityZoneResource:
+    AvailabilityZone:
       type: object
       properties:
-        code:
-          description: Stable identifier of the availability zone, used wherever an availability zone has to be named
+        id:
           type: string
+          format: uuid
+        region_id:
+          type: string
+          format: uuid
+        lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 64
         name:
           type: string
+          minLength: 1
+          maxLength: 128
+        name_translations:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - available
+            - draining
+            - retired
+        sort:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
       required:
-        - code
+        - id
+        - region_id
+        - lookup_key
         - name
+        - status
+        - sort
+        - created_at
+        - updated_at
       additionalProperties: false
-    RegionListResponseBody:
+    RegionList:
       type: object
       properties:
         items:
-          type:
-            - array
-            - "null"
+          type: array
           items:
-            $ref: "#/components/schemas/RegionResource"
+            $ref: '#/components/schemas/Region'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
       required:
         - items
+        - page
+        - page_size
       additionalProperties: false
-    AvailabilityZoneListResponseBody:
+    AvailabilityZoneList:
       type: object
       properties:
         items:
-          type:
-            - array
-            - "null"
+          type: array
           items:
-            $ref: "#/components/schemas/AvailabilityZoneResource"
+            $ref: '#/components/schemas/AvailabilityZone'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
       required:
         - items
+        - page
+        - page_size
       additionalProperties: false
+servers:
+  - url: https://fleet.leaflow.cloud

@@ -1,0 +1,383 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Storage API
+  version: 4.0.0
+  description: Manages block disks in the current IAM project. A disk purchase creates a Billing order; payment and provisioning continue asynchronously. Location identifiers are owned by Fleet.
+servers:
+  - url: https://storage.leaflow.cloud
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/disk-types:
+    get:
+      operationId: list-disk-types
+      summary: List disk types on sale
+      parameters:
+        - $ref: '#/components/parameters/RegionID'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskTypeList'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/disk-types/{diskTypeId}:
+    get:
+      operationId: get-disk-type
+      summary: Get a disk type
+      parameters:
+        - $ref: '#/components/parameters/DiskTypeID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskType'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/disks:
+    get:
+      operationId: list-disks
+      summary: List disks in the current project
+      parameters:
+        - $ref: '#/components/parameters/RegionIDOptional'
+        - $ref: '#/components/parameters/AvailabilityZoneIDOptional'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: create-disk
+      summary: Create a disk purchase
+      description: Checks Fleet capacity, creates the local disk intent, and places a Billing order. Reuse the same idempotency key after an uncertain response. Billing resolves contract pricing, sellable quota, grants, payment challenges, and expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDiskRequest'
+      responses:
+        '202':
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/order.yaml#/components/schemas/PlacedOrder
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/disks/{diskId}:
+    get:
+      operationId: get-disk
+      summary: Get a disk
+      parameters:
+        - $ref: '#/components/parameters/DiskID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Disk'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: rename-disk
+      summary: Rename a disk
+      parameters:
+        - $ref: '#/components/parameters/DiskID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Disk'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: delete-disk
+      summary: Delete a disk
+      description: Deletion is asynchronous and is rejected while the disk has a live attachment or another live resource claim. Billing ends resource-bound subscriptions only after Cinder confirms deletion.
+      parameters:
+        - $ref: '#/components/parameters/DiskID'
+        - name: idempotency_key
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+      responses:
+        '204':
+          description: Accepted
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/resource-usages:
+    get:
+      operationId: list-resource-usages
+      summary: List resource usages
+      description: Lists direct consumers and pending reservations for a resource readable in the current project.
+      parameters:
+        - $ref: '#/components/parameters/ResourceType'
+        - $ref: '#/components/parameters/ResourceID'
+        - $ref: '#/components/parameters/IncludeReleased'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsageList
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/resource-usages/{usageId}:
+    get:
+      operationId: get-resource-usage
+      summary: Get a resource usage
+      parameters:
+        - $ref: '#/components/parameters/UsageID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/ResourceUsage
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/resources/{resourceType}/{resourceId}/reclamation:
+    get:
+      operationId: get-resource-reclamation
+      summary: Get resource reclamation state
+      parameters:
+        - $ref: '#/components/parameters/ResourceTypePath'
+        - $ref: '#/components/parameters/ResourceIDPath'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/ReclamationState
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/resources/{resourceType}/{resourceId}/idle-policy:
+    put:
+      operationId: set-resource-idle-policy
+      summary: Set resource idle policy
+      description: Enabling automatic cleanup starts a fresh retention interval after the last live claim is released. Existing claims and pending operations always block reclamation.
+      parameters:
+        - $ref: '#/components/parameters/ResourceTypePath'
+        - $ref: '#/components/parameters/ResourceIDPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../../type/v1/resource.yaml#/components/schemas/IdlePolicy
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/ReclamationState
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/disks/{diskId}/attachments:
+    get:
+      operationId: list-disk-attachments
+      summary: List disk attachments
+      parameters:
+        - $ref: '#/components/parameters/DiskID'
+        - $ref: '#/components/parameters/IncludeDetached'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/AttachmentList
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/attachments/{attachmentId}:
+    get:
+      operationId: get-attachment
+      summary: Get a disk attachment
+      parameters:
+        - $ref: '#/components/parameters/AttachmentID'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/resource.yaml#/components/schemas/Attachment
+        default:
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  parameters:
+    DiskTypeID:
+      name: diskTypeId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    DiskID:
+      name: diskId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    UsageID:
+      name: usageId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    AttachmentID:
+      name: attachmentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RegionID:
+      name: region_id
+      in: query
+      required: true
+      schema: {type: string, format: uuid}
+    RegionIDOptional:
+      name: region_id
+      in: query
+      schema: {type: string, format: uuid}
+    AvailabilityZoneIDOptional:
+      name: availability_zone_id
+      in: query
+      schema: {type: string, format: uuid}
+    ResourceType:
+      name: resource_type
+      in: query
+      required: true
+      schema: {type: string, enum: [disk]}
+    ResourceID:
+      name: resource_id
+      in: query
+      required: true
+      schema: {type: string, format: uuid}
+    ResourceTypePath:
+      name: resourceType
+      in: path
+      required: true
+      schema: {type: string, enum: [disk]}
+    ResourceIDPath:
+      name: resourceId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    IncludeReleased:
+      name: include_released
+      in: query
+      schema: {type: boolean, default: false}
+    IncludeDetached:
+      name: include_detached
+      in: query
+      schema: {type: boolean, default: false}
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  schemas:
+    Disk:
+      type: object
+      additionalProperties: false
+      required: [id, name, region_id, availability_zone_id, disk_type_id, size_gb, status, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        region_id: {type: string, format: uuid}
+        availability_zone_id: {type: string, format: uuid}
+        disk_type_id: {type: string, format: uuid}
+        size_gb: {type: integer, format: int64, minimum: 1}
+        status:
+          type: string
+          enum: [provisioning, available, attaching, in_use, detaching, resizing, reverting, restoring, releasing, deleting, error]
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        deleted_at: {type: [string, 'null'], format: date-time}
+    DiskList:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Disk'}
+        pagination: {$ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination}
+    DiskType:
+      type: object
+      additionalProperties: false
+      required: [id, lookup_key, name, media, region_id, availability_zone_id, min_size_gb, max_size_gb, step_gb, for_system, product_id, plan_id]
+      properties:
+        id: {type: string, format: uuid}
+        lookup_key: {type: string}
+        name: {type: string}
+        media: {type: string, enum: [ssd, hdd, nvme]}
+        region_id: {type: string, format: uuid}
+        availability_zone_id: {type: string, format: uuid}
+        min_size_gb: {type: integer, format: int64, minimum: 1}
+        max_size_gb: {type: integer, format: int64, minimum: 1}
+        step_gb: {type: integer, format: int64, minimum: 1}
+        for_system: {type: boolean}
+        product_id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+    DiskTypeList:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DiskType'}
+        pagination: {$ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination}
+    CatalogReference:
+      $ref: ../../type/v1/order.yaml#/components/schemas/CatalogReference
+    CreateDiskRequest:
+      type: object
+      additionalProperties: false
+      required: [disk_type_id, name, size_gb, price, order]
+      properties:
+        disk_type_id: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 128}
+        size_gb: {type: integer, format: int64, minimum: 1}
+        price: {$ref: '#/components/schemas/CatalogReference'}
+        order: {$ref: ../../type/v1/order.yaml#/components/schemas/OrderOptions}
+    RenameRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 128}
