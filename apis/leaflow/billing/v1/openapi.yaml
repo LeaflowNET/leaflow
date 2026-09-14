@@ -27,6 +27,121 @@ tags:
 - name: projects
   description: What one project has spent, and who pays for it.
 paths:
+  /account/v1/commitments:
+    get:
+      operationId: ListCommitments
+      summary: List account commercial commitments
+      tags:
+      - contracts
+      parameters:
+      - in: query
+        name: billing_account_id
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: page
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Commitments including original payment schedules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitmentList'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+      - accountAuth: []
+  /api/v1/projects/{projectId}/closure-preview:
+    get:
+      summary: Preview project closure
+      description: Lists outstanding orders, subscriptions, metering and unfinished operations. Reports the next action
+        and timing for each item. This read never performs cleanup or creates a closure request. Historical invoices
+        and account-level purchases are retained. Billing approval alone does not prove that technical resources are
+        absent.
+      operationId: get-project-closure-preview
+      tags:
+      - projects
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: page_size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Closure assessment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectClosurePreview'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+      - projectAuth: []
+  /account/v1/projects/{projectId}/closure-preview:
+    get:
+      summary: Preview project closure
+      description: Lists outstanding orders, subscriptions, metering and unfinished operations. Reports the next action
+        and timing for each item. This read never performs cleanup or creates a closure request. Historical invoices
+        and account-level purchases are retained. Billing approval alone does not prove that technical resources are
+        absent.
+      operationId: get-account-project-closure-preview
+      tags:
+      - projects
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: page_size
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      responses:
+        '200':
+          description: Closure assessment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectClosurePreview'
+        default:
+          $ref: '#/components/responses/Error'
   /catalog/v1/products:
     get:
       summary: List catalog products
@@ -1787,6 +1902,297 @@ components:
     projectAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
+    CommitmentPeriod:
+      type: object
+      required:
+      - id
+      - sequence
+      - period_start
+      - period_end
+      - due_at
+      - amount
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        amount:
+          type: string
+        invoice_item_id:
+          type: string
+          format: uuid
+        finalized_at:
+          type: string
+          format: date-time
+        eligible_amount:
+          type: string
+        amount_due:
+          type: string
+        waived_at:
+          type: string
+          format: date-time
+        waiver_reason:
+          type: string
+    Commitment:
+      type: object
+      required:
+      - id
+      - billing_account_id
+      - currency
+      - type
+      - status
+      - description
+      - terms_reference
+      - effective_from
+      - effective_to
+      - release_policy
+      - periods
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+        currency:
+          type: string
+        type:
+          type: string
+          enum:
+          - fixed_amount
+          - minimum_spend
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+          - completed
+          - terminated
+        description:
+          type: string
+        terms_reference:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        release_policy:
+          type: string
+          enum:
+          - retain_until_term
+          - release_with_obligation
+        contract_id:
+          type: string
+          format: uuid
+        origin_order_item_id:
+          type: string
+          format: uuid
+        origin_project_id:
+          type: string
+          format: uuid
+        accepted_at:
+          type: string
+          format: date-time
+        accepted_by:
+          type: string
+        eligibility_policy_version:
+          type: string
+        terminated_at:
+          type: string
+          format: date-time
+        termination_reason:
+          type: string
+        periods:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommitmentPeriod'
+      description: Account-owned commercial obligation. Project removal does not waive
+        payment. Minimum-spend activation requires a defined, reproducible eligibility
+        policy; drafts do not authorize collection.
+    CommitmentList:
+      type: object
+      required:
+      - items
+      - total_count
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Commitment'
+        total_count:
+          type: integer
+          format: int64
+    TerminationPolicy:
+      type: string
+      enum:
+      - immediate
+      - period_end
+      description: Whether a fulfilled purchase may end immediately or only after its paid term. Does not grant a refund.
+        When absent, the terms are not configured and termination requires review.
+    RefundPolicy:
+      type: string
+      enum:
+      - none
+      - standard
+      description: none preserves paid amounts when fulfilled service ends. standard applies the documented refund window
+        and change proration rules. Releasing unpaid holds or returning funds for failed fulfillment is separate.
+    SubscriptionCancellation:
+      type: object
+      required:
+      - id
+      - subscription_item_id
+      - status
+      - mode
+      - requested_at
+      - forfeit_remaining_value
+      properties:
+        id:
+          type: string
+          format: uuid
+        subscription_item_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - requested
+          - scheduled
+          - releasing
+          - failed
+          - completed
+          - canceled
+        mode:
+          type: string
+          enum:
+          - immediate
+          - period_end
+        requested_at:
+          type: string
+          format: date-time
+        scheduled_for:
+          type: string
+          format: date-time
+        effective_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        release_started_at:
+          type: string
+          format: date-time
+        canceled_at:
+          type: string
+          format: date-time
+        forfeit_remaining_value:
+          type: boolean
+        failure_code:
+          type: string
+        failure_reason:
+          type: string
+      description: A cancellation request for the original purchase. scheduled_for is the intended time; effective_at
+        is the confirmed end of service. The request alone does not stop metering or issue a refund.
+    ProjectClosureItem:
+      type: object
+      required:
+      - type
+      - id
+      - disposition
+      - reason_code
+      - actions
+      properties:
+        type:
+          type: string
+          enum:
+          - order
+          - subscription_item
+          - active_resource
+          - resource_operation
+          - subscription_cancellation
+          - usage_charge
+          - commitment
+        id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+        disposition:
+          type: string
+          enum:
+          - action_required
+          - waiting
+          - blocked
+        reason_code:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+            enum:
+            - cancel_order
+            - wait
+            - release_resource
+            - cancel_subscription
+            - disable_auto_renew
+            - settle_usage
+            - configure_terms
+            - resolve_failure
+        earliest_termination_at:
+          type: string
+          format: date-time
+        refund_amount:
+          type: string
+          description: Known refund amount as a decimal string. Absent means a separate quote is required, not zero.
+        currency:
+          type: string
+        cancellation:
+          $ref: '#/components/schemas/SubscriptionCancellation'
+      description: One outstanding Billing obligation. action_required identifies a supported next step, not authorization
+        to destroy a resource. Items for the same resource must be considered together.
+    ProjectClosurePreview:
+      type: object
+      required:
+      - project_id
+      - evaluated_at
+      - can_close
+      - items
+      - total_count
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        evaluated_at:
+          type: string
+          format: date-time
+        can_close:
+          type: boolean
+          description: True only when the full Billing result, across all pages, has no outstanding obligations. Technical
+            services must independently confirm that all resources are gone.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectClosureItem'
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      description: Read-only, paginated assessment. Does not cancel orders, stop renewals, refund payments or release
+        resources. Concurrent orders or callbacks may change the result; execution must close admission and recheck.
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     Translations:
@@ -1871,6 +2277,10 @@ components:
     CatalogPrice:
       type: object
       properties:
+        termination_policy:
+          $ref: '#/components/schemas/TerminationPolicy'
+        refund_policy:
+          $ref: '#/components/schemas/RefundPolicy'
         lookup_key:
           description: External lookup alias within the service. Existing
             references use the price ID.
