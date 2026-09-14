@@ -817,9 +817,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     delete:
       summary: Release a floating IP
-      description: A released address enters a cooldown period before it is allocated again, so that DNS records
-        and allow-lists still pointing at it do not break immediately. **The same address therefore cannot be re-allocated**
-        for some time after release. Proceed with care.
+      description: Releases the floating IP after unbinding it. Completion is reported by the returned task.
       operationId: release-floating-ip
       tags:
       - FloatingIP
@@ -840,14 +838,18 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
         default:
           description: Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '202':
+          description: The release has been accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
   /api/v1/floating-ips/{floatingIpId}/bandwidth:
     put:
       summary: Set the bandwidth limit
@@ -3458,10 +3460,6 @@ components:
     BackupResource:
       type: object
       properties:
-        availability_zone_id:
-          description: Availability zone of the source disk. A restore may target another zone in the same region
-          type: string
-          format: uuid
         created_at:
           type: string
           format: date-time
@@ -3519,6 +3517,19 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Task'
           - type: 'null'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        source_availability_zone_id:
+          description: Availability zone of the source disk. A restore may target another zone in the same region
+          type: string
+          format: uuid
       required:
       - id
       - source_disk_id
@@ -3526,8 +3537,15 @@ components:
       - size_gb
       - status
       - region_id
-      - availability_zone_id
+      - source_availability_zone_id
       - created_at
+      - order_id
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - generation
+      - observed_at
       additionalProperties: false
     BackupListResponseBody:
       type: object
@@ -3658,23 +3676,6 @@ components:
           - releasing
           - deleting
           - error
-        charge_type:
-          description: 'How this disk is paid for. `postpaid` is billed by the hour for as long as it exists;
-
-            `prepaid` was bought outright for a term.
-
-
-            **Not the term.** How long it was bought for belongs to the order, not to the disk:
-
-            renewing can change it, and a machine bought for a year and then renewed for a month is
-
-            still a prepaid machine. Ask billing for the term and the expiry — they live there, and
-
-            they are the only two values a renewal moves.'
-          type: string
-          enum:
-          - postpaid
-          - prepaid
         order_id:
           type:
           - string
@@ -3708,6 +3709,15 @@ components:
           anyOf:
           - $ref: '#/components/schemas/DiskAttachment'
           - type: 'null'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
       required:
       - id
       - name
@@ -3719,7 +3729,13 @@ components:
       - throughput_bytes_per_sec
       - status
       - created_at
-      - charge_type
+      - order_id
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - generation
+      - observed_at
       additionalProperties: false
     DiskTypeResource:
       type: object
@@ -3789,69 +3805,6 @@ components:
           - integer
           - 'null'
           format: int64
-        sold_out:
-          description: 'Whether any capacity is left in this type''s pool.
-
-
-            The same shape as on an instance type, but it answers less here: a disk is sold by the
-
-            GiB, so "not sold out" does not mean the size being asked for fits. `remaining` is the
-
-            field that decides that, and this one only says whether the pool is empty outright.
-
-
-            It reflects a limit set by operations, not what the storage backend physically has —
-
-            raising the limit does not create capacity, and a type that is not sold out can still fail
-
-            to create if the backend is full.
-
-
-            Advisory: it is read when the list is built, and capacity can be taken between that read
-
-            and the order. The order is what actually refuses.'
-          type: boolean
-        remaining:
-          description: 'How much capacity is left, **in GiB**. Absent when this type is not limited at all.
-
-
-            Unlike an instance type, where this is a count of machines, here it is an amount of
-
-            storage — and it is the number that bounds the size a customer may ask for. A picker that
-
-            offers sizes above it produces orders that are refused after the customer has chosen
-
-            everything else.
-
-
-            Absent is not zero and not "unknown": a type with no limit simply has no number to show.
-
-            Reporting it as a number would need a sentinel, and any sentinel eventually gets compared
-
-            against a real size.'
-          type: integer
-          format: int64
-        prepaid_prices:
-          description: 'What buying this type outright costs, per term. Empty means this type is only sold by the
-
-            hour.
-
-
-            **The amount is per GiB for the whole term**, not the price of one disk: a disk''s size is
-
-            chosen by the customer, so the total is this figure times the size. That differs from an
-
-            instance type, where the same field is the price of one machine — the unit follows what
-
-            the product is sold by, and the order is priced the same way.
-
-
-            Advisory, like `sold_out`: it is read when the list is built. The order is what fixes the
-
-            price, and it refuses rather than falling back to hourly if the term is not sold.'
-          type: array
-          items:
-            $ref: '#/components/schemas/PrepaidPrice'
         product_id:
           type:
           - string
@@ -3864,8 +3817,25 @@ components:
           format: uuid
         lookup_key:
           type: string
-          minLength: 1
-          maxLength: 128
+        name_translations:
+          type: object
+          additionalProperties:
+            type: string
+        snapshot_plan_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        backup_plan_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        private_image_plan_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
       required:
       - id
       - name
@@ -3879,7 +3849,13 @@ components:
       - iops_at_max_size
       - throughput_at_min_size
       - throughput_at_max_size
-      - sold_out
+      - lookup_key
+      - product_id
+      - plan_id
+      - name_translations
+      - snapshot_plan_id
+      - backup_plan_id
+      - private_image_plan_id
       additionalProperties: false
     DiskTypeListResponseBody:
       type: object
@@ -3963,26 +3939,6 @@ components:
       - page
       - page_size
       additionalProperties: false
-    PrepaidPrice:
-      type: object
-      properties:
-        term:
-          description: 'An ISO 8601 duration (P1M, P1Y). A duration rather than a number of months: months are not
-
-            the same length, and storing a number leaves whoever reads it to decide what it means.'
-          type: string
-        amount:
-          description: 'A decimal string, not a float. Money that survives a round trip through binary floating
-
-            point is money that stops adding up.'
-          type: string
-        currency:
-          type: string
-      required:
-      - term
-      - amount
-      - currency
-      additionalProperties: false
     InstanceTypeResource:
       type: object
       properties:
@@ -4051,8 +4007,10 @@ components:
           format: uuid
         lookup_key:
           type: string
-          minLength: 1
-          maxLength: 128
+        name_translations:
+          type: object
+          additionalProperties:
+            type: string
       required:
       - id
       - name
@@ -4066,6 +4024,9 @@ components:
       - network_egress_kbps
       - network_ingress_kbps
       - plan_id
+      - lookup_key
+      - product_id
+      - name_translations
       additionalProperties: false
     InstanceTypeListResponseBody:
       type: object
@@ -4234,14 +4195,6 @@ components:
       properties:
         address:
           type: string
-        attached_fixed_ip:
-          type:
-          - string
-          - 'null'
-        attached_port_id:
-          type:
-          - string
-          - 'null'
         bandwidth_mbps:
           type:
           - integer
@@ -4249,11 +4202,6 @@ components:
           format: int64
         created_at:
           type: string
-          format: date-time
-        detached_at:
-          type:
-          - string
-          - 'null'
           format: date-time
         id:
           type: string
@@ -4323,16 +4271,38 @@ components:
           - suspended
           - reclaimed
           - null
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        binding:
+          anyOf:
+          - $ref: '#/components/schemas/IPv4Binding'
+          - type: 'null'
       required:
       - id
       - region_id
       - address
       - status
       - bandwidth_mbps
-      - attached_port_id
-      - attached_fixed_ip
-      - detached_at
       - created_at
+      - order_id
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - generation
+      - observed_at
+      - binding
+      - bandwidth_order_id
+      - bandwidth_price_id
+      - bandwidth_subscription_item_id
+      - bandwidth_access_state
       additionalProperties: false
     FloatingIPListResponseBody:
       type: object
@@ -4477,10 +4447,10 @@ components:
           - string
           - 'null'
         private_network_id:
-          description: Private network of the primary network interface
           type:
           - string
           - 'null'
+          format: uuid
         public_ips:
           description: Floating IPv4 addresses bound to the primary network interface; an empty array when none
             are bound
@@ -4510,10 +4480,10 @@ components:
           - error
           - unknown
         subnet_id:
-          description: Subnet of the primary network interface
           type:
           - string
           - 'null'
+          format: uuid
         updated_at:
           type: string
           format: date-time
@@ -4544,10 +4514,10 @@ components:
           format: int64
           minimum: 1
         observed_at:
-          type: string
+          type:
+          - string
+          - 'null'
           format: date-time
-          description: Timestamp of the last successful provider observation. An unreachable provider does not erase
-            the last observation or prove deletion.
         restrictions:
           type: array
           items:
@@ -4614,6 +4584,11 @@ components:
       - task_state
       - generation
       - restrictions
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - observed_at
       additionalProperties: false
     InstanceListResponseBody:
       type: object
@@ -4969,12 +4944,32 @@ components:
           anyOf:
           - $ref: '#/components/schemas/PortAttachment'
           - type: 'null'
+        status:
+          type: string
+          enum:
+          - pending
+          - available
+          - deleting
+          - error
+          - unknown
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
       required:
       - id
       - private_network_id
       - name
       - mac
       - public_ips
+      - status
+      - generation
+      - observed_at
       additionalProperties: false
     PortListResponseBody:
       type: object
@@ -5202,6 +5197,15 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Task'
           - type: 'null'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
       required:
       - login_username
       - id
@@ -5218,6 +5222,13 @@ components:
       - os_version
       - architecture
       - created_at
+      - order_id
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - generation
+      - observed_at
       additionalProperties: false
     PrivateImageListResponseBody:
       type: object
@@ -5720,6 +5731,15 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Task'
           - type: 'null'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
       required:
       - id
       - disk_id
@@ -5729,6 +5749,13 @@ components:
       - availability_zone_id
       - region_id
       - created_at
+      - order_id
+      - price_id
+      - subscription_item_id
+      - access_state
+      - task
+      - generation
+      - observed_at
       additionalProperties: false
     SnapshotListResponseBody:
       type: object
@@ -5962,6 +5989,10 @@ components:
           - string
           - 'null'
           format: date-time
+        device:
+          type:
+          - string
+          - 'null'
       required:
       - id
       - instance_id
@@ -5972,6 +6003,7 @@ components:
       - attached_at
       - detached_at
       - released_at
+      - device
       additionalProperties: false
     DiskAttachmentList:
       type: object
@@ -6141,3 +6173,53 @@ components:
       - page
       - page_size
       additionalProperties: false
+    IPv4Binding:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        ipv4_allocation_id:
+          type: string
+          format: uuid
+        port_address_id:
+          type: string
+          format: uuid
+        address:
+          type: string
+        fixed_ip:
+          type: string
+        state:
+          type: string
+          enum:
+          - binding
+          - bound
+          - unbinding
+          - released
+          - unknown
+        bound_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        unbound_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        released_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - ipv4_allocation_id
+      - port_address_id
+      - address
+      - fixed_ip
+      - state
+      - bound_at
+      - unbound_at
+      - released_at
