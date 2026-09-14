@@ -1,0 +1,54 @@
+openapi: 3.1.0
+info:
+  title: Long-running tasks
+  version: v1
+  description: Shared progress and outcome of an action owned by a resource service. Types only.
+paths: {}
+components:
+  schemas:
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Action requested from the owning service.
+        state:
+          type: string
+          enum:
+          - pending
+          - running
+          - succeeded
+          - failed
+          - canceled
+        error:
+          $ref: ./error.yaml#/components/schemas/Error
+          description: Terminal failure. Absent while work can still recover.
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        completed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - type
+      - state
+      - created_at
+      - started_at
+      - completed_at
+      additionalProperties: false
+      description: A requested action and its outcome. Query it through the service that accepted the request, using
+        the same project or administrator credentials. Only succeeded confirms completion. Stopping a wait does
+        not cancel the action. Cancellation is available only where the action explicitly supports it.

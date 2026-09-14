@@ -16,8 +16,8 @@ info:
 
 
     - **Operations are asynchronous.** Creating an instance, creating a disk and resizing all return before the
-    work completes, leaving the resource in an intermediate state such as `provisioning`. Poll the GET endpoint
-    to observe the outcome. Retrieving a single resource synchronises its current state.
+    work completes, leaving the resource in an intermediate state such as `provisioning`. Use the returned task
+    or order to track completion. Resource reads return the latest observed state.
 
     - **Availability zones.** A disk and an instance must reside in the same availability zone to be attached. Instance
     types and disk types are each bound to one availability zone, so choosing a type determines the zone.
@@ -189,8 +189,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -623,8 +627,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -720,12 +728,12 @@ paths:
             schema:
               $ref: '#/components/schemas/RevertDiskRequestBody'
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DiskResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1008,8 +1016,8 @@ paths:
         quota is reserved. Provisioning continues automatically after payment; do not submit a new purchase after
         paying. Reuse the original idempotency key after an uncertain response. Exactly one of image_id, private_image_id
         or boot_disk_id is required, and exactly one of port_id or subnet_id. Existing ports, boot disks or floating
-        IPs require count=1. Image boots require boot_disk; existing disks retain their own subscription. Resource
-        lines for Compute, Storage and Fabric remain separate subscriptions on the same order.
+        IPs require count=1. Image boots require boot_disk; existing disks retain their own subscription. Instances,
+        disks and public IPs keep their own subscription items on the same order.
       operationId: launch-instance
       tags:
       - Instance
@@ -1025,7 +1033,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlacedOrder'
+                $ref: '#/components/schemas/LaunchInstanceResponseBody'
         default:
           description: Error
           content:
@@ -1131,8 +1139,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1494,12 +1506,12 @@ paths:
             schema:
               $ref: '#/components/schemas/RebootInstanceRequestBody'
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1614,12 +1626,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1651,12 +1663,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1667,8 +1679,8 @@ paths:
     post:
       summary: Start an instance
       description: Records the desired power state. An in-flight shutdown is allowed to finish before a subsequent
-        start. Outstanding restrictions can prevent starting. A stopped VM retains its Fabric and Storage claims.
-        Inspect operation, task_state, power_state and observed_at to determine completion.
+        start. Outstanding restrictions can prevent starting. A stopped instance keeps its disks, network attachments
+        and sellable quota. Inspect operation, task_state, power_state and observed_at to determine completion.
       operationId: start-instance
       tags:
       - Instance
@@ -1690,11 +1702,11 @@ paths:
           rejected.
       responses:
         '202':
-          description: Accepted
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1711,8 +1723,8 @@ paths:
     post:
       summary: Stop an instance
       description: Records the desired power state. An in-flight shutdown is allowed to finish before a subsequent
-        start. Outstanding restrictions can prevent starting. A stopped VM retains its Fabric and Storage claims.
-        Inspect operation, task_state, power_state and observed_at to determine completion.
+        start. Outstanding restrictions can prevent starting. A stopped instance keeps its disks, network attachments
+        and sellable quota. Inspect operation, task_state, power_state and observed_at to determine completion.
       operationId: stop-instance
       tags:
       - Instance
@@ -1734,11 +1746,11 @@ paths:
           rejected.
       responses:
         '202':
-          description: Accepted
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceResource'
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -1822,8 +1834,8 @@ paths:
             schema:
               $ref: '#/components/schemas/AttachDiskRequestBody'
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
@@ -1865,8 +1877,8 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
@@ -1880,9 +1892,8 @@ paths:
   /api/v1/instances/{instanceId}/floating-ips:
     post:
       summary: Bind a floating IP to an instance
-      description: Requests a binding change on the instance’s primary Fabric port. The returned Fabric usage claim
-        identifies the port-to-address relationship; Compute does not own the address. An accepted release can still
-        be releasing until the provider confirms removal.
+      description: Changes the public IP binding on the instance's primary network interface. The returned task
+        tracks confirmation of the binding change.
       operationId: attach-instance-floating-ip
       tags:
       - Attachment
@@ -1962,9 +1973,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      description: Requests a binding change on the instance’s primary Fabric port. The returned Fabric usage claim
-        identifies the port-to-address relationship; Compute does not own the address. An accepted release can still
-        be releasing until the provider confirms removal.
+      description: Changes the public IP binding on the instance's primary network interface. The returned task
+        tracks confirmation of the binding change.
   /api/v1/instances/{instanceId}/ports:
     get:
       summary: List the network interfaces of an instance
@@ -2034,8 +2044,8 @@ paths:
             schema:
               $ref: '#/components/schemas/AttachPortRequestBody'
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
@@ -2076,8 +2086,8 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '200':
-          description: OK
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
           content:
             application/json:
               schema:
@@ -2413,8 +2423,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -3354,8 +3368,12 @@ paths:
         description: Reuse the same key for retries of the same action. A different request with the same key is
           rejected.
       responses:
-        '204':
-          description: No Content
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -3382,6 +3400,49 @@ paths:
                 $ref: '#/components/schemas/Task'
         default:
           description: The request could not be completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/ipv4-pools:
+    get:
+      summary: List public IP pools
+      description: Lists the public IP pools available for new allocations in this region.
+      operationId: list-ipv4-pools
+      tags:
+      - Catalog
+      parameters:
+      - name: region_id
+        in: query
+        required: true
+        explode: false
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          default: 1
+      - name: page_size
+        in: query
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPv4PoolListResponseBody'
+        default:
+          description: Error
           content:
             application/json:
               schema:
@@ -3978,11 +4039,6 @@ components:
         vcpus:
           type: integer
           format: int64
-        billing_plan_id:
-          type: string
-          format: uuid
-          description: The Billing Plan for this type. Read its available prices from Billing; resource capacity
-            and sellable quota are evaluated when placing the order.
         product_id:
           type:
           - string
@@ -4009,7 +4065,7 @@ components:
       - max_bandwidth_mbps
       - network_egress_kbps
       - network_ingress_kbps
-      - billing_plan_id
+      - plan_id
       additionalProperties: false
     InstanceTypeListResponseBody:
       type: object
@@ -4461,23 +4517,6 @@ components:
         updated_at:
           type: string
           format: date-time
-        billing_order_id:
-          description: 'The order this instance was bought under, in billing''s own identifiers. Empty when the
-
-            deployment has no billing wired in.
-
-
-            Kept so the question can be answered later. "Why was I charged for this" is asked days
-
-            after the fact, and an order id handed back only in the launch response is one the
-
-            person who needs it never had.'
-          type: string
-        subscription_item_ids:
-          type: array
-          items:
-            type: string
-            format: uuid
         desired_state:
           type: string
           enum:
@@ -4569,7 +4608,7 @@ components:
       - status
       - created_at
       - updated_at
-      - billing_order_id
+      - order_id
       - desired_state
       - power_state
       - task_state
@@ -5831,94 +5870,13 @@ components:
     PowerRequest:
       type: object
       properties:
-        idempotency_key:
-          type: string
-          minLength: 8
-          maxLength: 255
         expected_generation:
           type: integer
           format: int64
           minimum: 1
-      required:
-      - idempotency_key
       additionalProperties: false
     Task:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        type:
-          type: string
-          enum:
-          - create
-          - delete
-          - update
-          - register
-          - remove
-          - publish
-          - retire
-          - enable_traffic
-          - start
-          - stop
-          - reboot
-          - rebuild
-          - resize
-          - confirm_resize
-          - revert_resize
-          - attach_disk
-          - detach_disk
-          - attach_port
-          - detach_port
-          - bind_ip
-          - unbind_ip
-          - set_bandwidth
-          - restore
-          - capture
-          - set_rules
-          - set_routes
-        state:
-          type: string
-          enum:
-          - pending
-          - running
-          - succeeded
-          - failed
-          - canceled
-        order_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        failure_code:
-          type:
-          - string
-          - 'null'
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-        completed_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-      required:
-      - id
-      - type
-      - state
-      - order_id
-      - failure_code
-      - created_at
-      - started_at
-      - completed_at
-      additionalProperties: false
-      description: A requested resource action and its result. A successful action has completed; accepted work
-        may still be running.
+      $ref: ../../type/v1/task.yaml#/components/schemas/Task
     PortAddress:
       type: object
       properties:
@@ -6112,4 +6070,74 @@ components:
       - page
       - page_size
       - total_count
+      additionalProperties: false
+    LaunchInstanceResponseBody:
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/PlacedOrder'
+        password:
+          type:
+          - string
+          - 'null'
+          description: Generated login password. Null when no password was generated. Keep it before leaving this
+            response.
+      required:
+      - order
+      - password
+      additionalProperties: false
+    IPv4PoolResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        region_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        lookup_key:
+          type: string
+        plan_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        bandwidth_plan_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - id
+      - region_id
+      - name
+      - lookup_key
+      - plan_id
+      - bandwidth_plan_id
+      additionalProperties: false
+    IPv4PoolListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/IPv4PoolResource'
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - items
+      - page
+      - page_size
       additionalProperties: false
