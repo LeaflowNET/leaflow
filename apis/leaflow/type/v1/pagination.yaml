@@ -2,7 +2,13 @@ openapi: 3.1.0
 info:
   title: Pagination types
   version: v1
-  description: Shared pagination request parameters and response metadata. This document declares types only.
+  description: |-
+    Shared pagination request parameters and response metadata. This document declares types only.
+
+    The schemas here are referenced across documents. **The parameters are not**: a cross-document $ref to a
+    parameter does not survive the client generator, which emits a reference to a type that is never
+    produced — parameters do not become types. Copy a parameter into the document that uses it, as page and
+    page_size already are, and keep the wording identical.
 paths: {}
 components:
   parameters:
@@ -14,6 +20,24 @@ components:
       name: page_size
       in: query
       schema: {type: integer, format: int64, minimum: 1, maximum: 200, default: 50}
+    Ids:
+      name: ids
+      in: query
+      description: |-
+        Return only the rows whose id is in this list. Comma-separated ids, at most 100.
+
+        It narrows a listing the way every other filter does: it is combined with them as AND, and the
+        result is paged as usual. Ids that match no row are left out of the result rather than reported;
+        a caller that needs to know which of its ids exist compares the ids it sent with the ones it got
+        back.
+
+        At least one id is required. An empty value is rejected rather than treated as "no filter",
+        because a caller that builds this list from a selection and finds it empty would otherwise
+        receive the whole table and show it as the selection.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 4096
     Cursor:
       name: cursor
       in: query
