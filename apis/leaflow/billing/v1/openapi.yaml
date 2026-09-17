@@ -259,13 +259,12 @@ paths:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/IfNoneMatch"
-        - name: meter
+        - name: meter_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
         - name: at
@@ -1037,15 +1036,12 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: product
+        - name: product_id
           in: query
           required: false
-          description: Filter by ID or lookup key. A lookup key is scoped to the
-            product.
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
         - name: resource_id
           in: query
           required: false
@@ -1230,9 +1226,9 @@ paths:
     get:
       summary: Get project billing account
       description: |-
-        A deliberately narrow view: the payer's identity, its currency, and how much can still
-        be spent. Cards, invoices and transaction history are not included; they belong to the
-        account owner and are reached through `/account/v1/`.
+        Returns the payer's identity, its currency, and how much can still be spent. Cards,
+        invoices and transaction history are not included; they belong to the account owner
+        and are reached through `/account/v1/`.
 
         Returns 404 when no account pays for this project. Resources cannot be created in that
         state.
@@ -1283,13 +1279,12 @@ paths:
               - plan
               - resource
             default: product
-        - name: product
+        - name: product_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
         - $ref: "#/components/parameters/Page"
@@ -1324,22 +1319,18 @@ paths:
           required: false
           schema:
             type: string
-        - name: product
-          in: query
-          required: false
-          description: |-
-            Filter by ID or lookup key. A lookup key is scoped to the product.
-          schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
-        - name: meter
+        - name: product_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
+        - name: meter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
         - $ref: "#/components/parameters/From"
@@ -1569,13 +1560,12 @@ paths:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/AccountIdQuery"
-        - name: meter
+        - name: meter_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
         - name: status
@@ -1588,15 +1578,12 @@ paths:
               - depleted
               - expired
               - voided
-        - name: product
+        - name: product_id
           in: query
           required: false
-          description: |-
-            Filter by ID or lookup key. A lookup key is scoped to the product.
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
       responses:
         "200":
           description: OK
@@ -1798,24 +1785,20 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
-        - name: meter
+        - name: meter_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
-        - name: product
+        - name: product_id
           in: query
           required: false
-          description: |-
-            Filter by ID or lookup key. A lookup key is scoped to the product.
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
       responses:
         "200":
           description: OK
@@ -1880,13 +1863,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
-        - name: product
+        - name: product_id
           in: query
           required: false
           schema:
-            $ref: "#/components/schemas/ObjectReference"
-          style: deepObject
-          explode: true
+            type: string
+            format: uuid
           description: Filter by ID or lookup key. A lookup key is scoped to the
             product.
       responses:
@@ -2211,8 +2193,6 @@ components:
         id:
           type: string
           format: uuid
-        lookup_key:
-          type: string
         name:
           type: string
         name_translations:
@@ -2223,7 +2203,6 @@ components:
           $ref: ../../type/v1/translations.yaml#/components/schemas/Translations
       required:
         - id
-        - lookup_key
         - name
     CatalogProductList:
       type: object
@@ -2246,8 +2225,6 @@ components:
         product_id:
           type: string
           format: uuid
-        lookup_key:
-          type: string
         name:
           type: string
         name_translations:
@@ -2259,7 +2236,6 @@ components:
       required:
         - id
         - product_id
-        - lookup_key
         - name
     CatalogPlanList:
       type: object
@@ -2280,12 +2256,6 @@ components:
           $ref: "#/components/schemas/TerminationPolicy"
         refund_policy:
           $ref: "#/components/schemas/RefundPolicy"
-        lookup_key:
-          description: External lookup alias within the service. Existing
-            references use the price ID.
-          type: string
-          minLength: 1
-          maxLength: 128
         product_id:
           type: string
           format: uuid
@@ -2465,17 +2435,21 @@ components:
         - items
     QuoteLine:
       description: |-
-        Identify a price directly, or select a price for a plan. Lookup keys are scoped to the product. Account quotes apply applicable contract prices.
+        Identify a price directly, or select a price for a plan. Account quotes apply applicable contract prices.
       type: object
       properties:
-        price:
-          $ref: "#/components/schemas/ObjectReference"
-        product:
-          $ref: "#/components/schemas/ObjectReference"
-        plan:
-          $ref: "#/components/schemas/ObjectReference"
-        meter:
-          $ref: "#/components/schemas/ObjectReference"
+        price_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        meter_id:
+          type: string
+          format: uuid
         dimensions:
           description: |-
             The attributes the price depends on — region, instance type, token class.
@@ -2521,10 +2495,12 @@ components:
           description: What is being changed.
           type: string
           format: uuid
-        price:
-          $ref: "#/components/schemas/ObjectReference"
-        plan:
-          $ref: "#/components/schemas/ObjectReference"
+        price_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
         quantity:
           description: The new quantity. The current one is kept when omitted.
           type: string
@@ -4934,11 +4910,8 @@ components:
             How much is left, as a decimal string. Meaningful only when `metered` is true.
             `"0"` once exhausted, never negative.
 
-            This is the figure at the moment of the reply, and quantities are drawn down at
-            settlement rather than on each call. It is suitable for display and for a soft
-            warning, but it cannot enforce a strict limit: concurrent requests all see the same
-            figure. A hard limit has to be counted by the service that owns the capability, in
-            the same transaction as the operation it is limiting.
+            The figure is accurate as of the reply. It is suitable for display and for a soft
+            warning, and must not be used to enforce a strict limit.
           type: string
         unit:
           type: string
@@ -4967,31 +4940,20 @@ components:
           format: int64
       required:
         - items
-    ObjectReference:
-      description: Identify an object by ID or lookup key, exactly one. A lookup
-        key requires the owning product.
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        lookup_key:
-          type: string
-          minLength: 1
-          maxLength: 128
-      minProperties: 1
-      maxProperties: 1
-      additionalProperties: false
     ObjectIdentity:
+      description: A catalog object inlined for display.
       type: object
       properties:
         id:
           type: string
           format: uuid
-        lookup_key:
+        name:
           type: string
+        name_translations:
+          $ref: ../../type/v1/translations.yaml#/components/schemas/Translations
       required:
         - id
+        - name
   parameters:
     IfNoneMatch:
       name: If-None-Match
@@ -5001,8 +4963,7 @@ components:
         The `ETag` from an earlier reply. When the catalogue has not changed since, the
         answer is `304` with no body.
 
-        Worth sending on every catalogue read: the listings are public, unauthenticated and
-        cached at the edge, so a repeat read costs one round trip and no transfer.
+        Send it on every catalogue read. An unchanged catalogue is answered without a body.
       schema:
         type: string
     Page:
