@@ -27,41 +27,6 @@ tags:
   - name: projects
     description: What one project has spent, and who pays for it.
 paths:
-  /account/v1/commitments:
-    get:
-      operationId: ListCommitments
-      summary: List account commercial commitments
-      tags:
-        - contracts
-      parameters:
-        - in: query
-          name: billing_account_id
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-        - in: query
-          name: page
-          schema:
-            type: integer
-            minimum: 1
-        - in: query
-          name: page_size
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-      responses:
-        "200":
-          description: Commitments including original payment schedules.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CommitmentList"
-        default:
-          $ref: "#/components/responses/Error"
-      security:
-        - accountAuth: []
   /api/v1/projects/{projectId}/closure-preview:
     get:
       summary: Preview project closure
@@ -144,10 +109,61 @@ paths:
                 $ref: "#/components/schemas/ProjectClosurePreview"
         default:
           $ref: "#/components/responses/Error"
+  /catalog/v1/items:
+    get:
+      summary: List what is on sale, with prices
+      description: |-
+        Every sellable thing and what it costs, in one request. A plan appears once per price.
+
+        `currency` is required: a plan has a price in each currency it is sold in, so "what does
+        this cost" has no answer without one.
+
+        Retired prices are left out. Existing subscriptions still reference them, so this is not
+        the place to look up what an existing purchase is paying.
+      operationId: list-catalog-items
+      security: []
+      tags:
+        - catalog
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: currency
+          in: query
+          required: true
+          description: ISO 4217, three uppercase letters.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          required: false
+          description: Narrows to one payment timing.
+          schema:
+            type: string
+            enum: [metered, prepaid, one_time]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogItemList"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
   /catalog/v1/products:
     get:
       summary: List catalog products
-      operationId: list-catalog-products
+      operationId: list-products
       tags:
         - catalog
       security: []
@@ -168,9 +184,99 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CatalogProductList"
+                $ref: "#/components/schemas/ProductList"
         "304":
           $ref: "#/components/responses/NotModified"
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/products/{productId}:
+    parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a service
+      description: |-
+        Resolves an identifier that was stored elsewhere — on an order line, an invoice line, or
+        the terms of a credit — into something that can be displayed.
+      operationId: get-catalog-product
+      security: []
+      tags:
+        - catalog
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a sellable item
+      description: |-
+        Resolves a stored identifier into something that can be displayed. Returns items that are
+        no longer on sale: an existing purchase still refers to one.
+      operationId: get-catalog-plan
+      security: []
+      tags:
+        - catalog
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/prices/{priceId}:
+    parameters:
+      - name: priceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a price
+      description: |-
+        Returns retired prices. An existing subscription still bills at the price it was bought
+        at, so this is how to show what that purchase is paying.
+      operationId: get-catalog-price
+      security: []
+      tags:
+        - catalog
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Price"
+        "304":
+          description: Not Modified
         default:
           $ref: "#/components/responses/Error"
   /catalog/v1/products/{productId}/plans:
@@ -178,7 +284,7 @@ paths:
       - $ref: "#/components/parameters/ProductId"
     get:
       summary: List catalog plans
-      operationId: list-catalog-plans
+      operationId: list-plans
       tags:
         - catalog
       security: []
@@ -199,7 +305,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CatalogPlanList"
+                $ref: "#/components/schemas/PlanList"
         "304":
           $ref: "#/components/responses/NotModified"
         default:
@@ -212,7 +318,7 @@ paths:
       description: |-
         Public list prices only. An account holding a negotiated agreement may be charged less;
         it is never charged more.
-      operationId: list-catalog-prices
+      operationId: list-prices
       tags:
         - catalog
       security: []
@@ -238,7 +344,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CatalogPriceList"
+                $ref: "#/components/schemas/PriceList"
         "304":
           $ref: "#/components/responses/NotModified"
         default:
@@ -251,7 +357,7 @@ paths:
       description: |-
         Only public price lists are readable here. A list written for a single agreement is not,
         and its identifier cannot be used to reach it.
-      operationId: list-catalog-rates
+      operationId: list-rates
       tags:
         - catalog
       security: []
@@ -287,7 +393,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CatalogRateList"
+                $ref: "#/components/schemas/RateList"
         "304":
           $ref: "#/components/responses/NotModified"
         default:
@@ -887,6 +993,28 @@ paths:
                 $ref: "#/components/schemas/TransactionList"
         default:
           $ref: "#/components/responses/Error"
+  /account/v1/discounts:
+    get:
+      summary: List the coupons held on this account
+      description: |-
+        Coupons placed on the account directly, which apply at checkout without a code being
+        entered. A coupon reached through a code is not listed here.
+      operationId: list-account-discounts
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountList"
+        default:
+          $ref: "#/components/responses/Error"
   /account/v1/credit-grants:
     get:
       summary: List credit grants
@@ -917,54 +1045,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreditGrantList"
-        default:
-          $ref: "#/components/responses/Error"
-  /account/v1/allocations:
-    get:
-      summary: List allocations
-      description: |-
-        Give `source_id` to follow one top-up or grant through to everything it paid for. Give
-        `target_id` to see which sources paid for one line of an invoice.
-
-        Give `source_type` on its own to separate what cash paid for from what granted credit
-        paid for.
-      operationId: list-allocations
-      tags:
-        - billing-history
-      parameters:
-        - $ref: "#/components/parameters/Page"
-        - $ref: "#/components/parameters/PageSize"
-        - $ref: "#/components/parameters/AccountIdQuery"
-        - name: source_type
-          in: query
-          required: false
-          description:
-            "`transaction` is money paid in, `credit_grant` is granted credit
-            or a voucher."
-          schema:
-            type: string
-            enum:
-              - transaction
-              - credit_grant
-        - name: source_id
-          in: query
-          required: false
-          schema:
-            type: string
-            format: uuid
-        - name: target_id
-          in: query
-          required: false
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AllocationList"
         default:
           $ref: "#/components/responses/Error"
   /account/v1/refunds:
@@ -1114,6 +1194,35 @@ paths:
                 $ref: "#/components/schemas/SubscriptionItemList"
         default:
           $ref: "#/components/responses/Error"
+  /account/v1/subscription-items/{itemId}/renewal-prices:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the terms this item can be renewed for
+      description: |-
+        Every term on offer with what it costs, in one request: a renewal form needs the whole
+        ladder to render, and asking once per term is a request per row.
+
+        Prices agreed for this account are reflected. The term this item already bills at is
+        marked `current`: renewing for it is not affected by a later price change, while any
+        other term is bought at today's price.
+      operationId: list-renewal-prices
+      tags:
+        - subscriptions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenewalPriceList"
+        default:
+          $ref: "#/components/responses/Error"
   /account/v1/subscription-items/{itemId}/renew:
     parameters:
       - $ref: "#/components/parameters/ItemId"
@@ -1191,33 +1300,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CodePreview"
-        default:
-          $ref: "#/components/responses/Error"
-  /account/v1/codes/redeem:
-    post:
-      summary: Redeem code
-      description: |-
-        A voucher code adds credit to the account. A discount code records the entitlement, which
-        is then applied to the next qualifying purchase.
-
-        A code that has already been redeemed by this account is refused rather than redeemed a
-        second time.
-      operationId: redeem-code
-      tags:
-        - promotions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CodeRedeem"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CodeRedeemResult"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/billing-account:
@@ -1887,139 +1969,6 @@ components:
     projectAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
-    CommitmentPeriod:
-      type: object
-      required:
-        - id
-        - sequence
-        - period_start
-        - period_end
-        - due_at
-        - amount
-      properties:
-        id:
-          type: string
-          format: uuid
-        sequence:
-          type: integer
-          minimum: 1
-        period_start:
-          type: string
-          format: date-time
-        period_end:
-          type: string
-          format: date-time
-        due_at:
-          type: string
-          format: date-time
-        amount:
-          type: string
-        invoice_item_id:
-          type: string
-          format: uuid
-        finalized_at:
-          type: string
-          format: date-time
-        eligible_amount:
-          type: string
-        amount_due:
-          type: string
-        waived_at:
-          type: string
-          format: date-time
-        waiver_reason:
-          type: string
-    Commitment:
-      type: object
-      required:
-        - id
-        - billing_account_id
-        - currency
-        - type
-        - status
-        - description
-        - terms_reference
-        - effective_from
-        - effective_to
-        - release_policy
-        - periods
-      properties:
-        id:
-          type: string
-          format: uuid
-        billing_account_id:
-          type: integer
-        currency:
-          type: string
-        type:
-          type: string
-          enum:
-            - fixed_amount
-            - minimum_spend
-        status:
-          type: string
-          enum:
-            - draft
-            - active
-            - completed
-            - terminated
-        description:
-          type: string
-        terms_reference:
-          type: string
-        effective_from:
-          type: string
-          format: date-time
-        effective_to:
-          type: string
-          format: date-time
-        release_policy:
-          type: string
-          enum:
-            - retain_until_term
-            - release_with_obligation
-        contract_id:
-          type: string
-          format: uuid
-        origin_order_item_id:
-          type: string
-          format: uuid
-        origin_project_id:
-          type: string
-          format: uuid
-        accepted_at:
-          type: string
-          format: date-time
-        accepted_by:
-          type: string
-        eligibility_policy_version:
-          type: string
-        terminated_at:
-          type: string
-          format: date-time
-        termination_reason:
-          type: string
-        periods:
-          type: array
-          items:
-            $ref: "#/components/schemas/CommitmentPeriod"
-      description:
-        Account-owned commercial obligation. Project removal does not waive
-        payment. Minimum-spend activation requires a defined, reproducible eligibility
-        policy; drafts do not authorize collection.
-    CommitmentList:
-      type: object
-      required:
-        - items
-        - total_count
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/Commitment"
-        total_count:
-          type: integer
-          format: int64
     TerminationPolicy:
       type: string
       enum:
@@ -2108,10 +2057,9 @@ components:
             - order
             - subscription_item
             - active_resource
-            - resource_operation
+            - job
             - subscription_cancellation
             - usage_charge
-            - commitment
         id:
           type: string
           format: uuid
@@ -2187,7 +2135,7 @@ components:
         resources. Concurrent orders or callbacks may change the result; execution must close admission and recheck.
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
-    CatalogProduct:
+    Product:
       type: object
       properties:
         id:
@@ -2204,19 +2152,53 @@ components:
       required:
         - id
         - name
-    CatalogProductList:
+    ProductList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogProduct"
+            $ref: "#/components/schemas/Product"
         total_count:
           type: integer
           format: int64
       required:
         - items
-    CatalogPlan:
+    CatalogItem:
+      description: |-
+        One sellable thing at one price: the plan, and the price it is sold at in the currency
+        you asked for.
+
+        Listing plans and then asking for each plan's prices returns the same information, but
+        one request per plan. This flattens the two levels, so that a price list renders from a
+        single request.
+
+        A plan appears once per price, so a plan sold monthly and yearly appears twice.
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/ObjectIdentity"
+        plan:
+          $ref: "#/components/schemas/ObjectIdentity"
+        price:
+          $ref: "#/components/schemas/Price"
+      required:
+        - product
+        - plan
+        - price
+    CatalogItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Plan:
       type: object
       properties:
         id:
@@ -2237,19 +2219,19 @@ components:
         - id
         - product_id
         - name
-    CatalogPlanList:
+    PlanList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogPlan"
+            $ref: "#/components/schemas/Plan"
         total_count:
           type: integer
           format: int64
       required:
         - items
-    CatalogPrice:
+    Price:
       type: object
       properties:
         termination_policy:
@@ -2358,19 +2340,19 @@ components:
         - currency
         - type
         - billing_scheme
-    CatalogPriceList:
+    PriceList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogPrice"
+            $ref: "#/components/schemas/Price"
         total_count:
           type: integer
           format: int64
       required:
         - items
-    CatalogRate:
+    Rate:
       type: object
       properties:
         meter:
@@ -2421,13 +2403,13 @@ components:
         - pricing_model
         - currency
         - effective_from
-    CatalogRateList:
+    RateList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogRate"
+            $ref: "#/components/schemas/Rate"
         total_count:
           type: integer
           format: int64
@@ -2435,7 +2417,7 @@ components:
         - items
     QuoteLine:
       description: |-
-        Identify a price directly, or select a price for a plan. Account quotes apply applicable contract prices.
+        Identify a price directly, or select a price for a plan.
       type: object
       properties:
         price_id:
@@ -2829,13 +2811,9 @@ components:
           format: int64
         currency:
           type: string
-        cash:
+        balance:
           description: Funds paid in and not yet spent. This is the part that
-            can be refunded.
-          allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        held:
-          description: Reserved by orders that have not completed.
+            can be refunded. It goes negative when the account owes.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         accrued:
@@ -2844,30 +2822,26 @@ components:
             though no invoice exists for it yet.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        credit:
-          description: Granted credit. Spendable, but not withdrawable.
-          allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        voucher:
-          description: Voucher balance, spendable within each voucher's own
-            scope.
+        credits:
+          description: |-
+            Granted funds still unspent, vouchers included. Spendable within whatever each grant
+            covers, and never withdrawable. Individual grants are listed separately, which is
+            where a single voucher's remaining amount is read.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         spendable:
           description: |-
-            `cash` less `accrued` and `held` — what is actually available at checkout. It goes
-            negative when usage has exceeded the balance. Credit and vouchers are shown
-            separately because each can only pay for what it covers.
+            `balance` less `accrued` — what is actually available at checkout. It goes negative
+            when usage has exceeded the balance. Credits are shown separately because each grant
+            can only pay for what it covers.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
         - billing_account_id
         - currency
-        - cash
-        - held
+        - balance
         - accrued
-        - credit
-        - voucher
+        - credits
         - spendable
     ProjectBinding:
       type: object
@@ -3533,8 +3507,8 @@ components:
       description: |-
         What moved the money. These are the events that change the account's cash balance.
 
-        Charges for usage and amounts reserved by orders are not here: usage appears among the
-        charges and on invoices, and a reservation appears as an allocation.
+        Charges for usage are not here: they appear among the charges and on invoices. Nor is
+        what an order drew from the balance — the order itself records that.
       type: string
       enum:
         - topup
@@ -3542,6 +3516,13 @@ components:
         - payout
         - adjustment
     Transaction:
+      description: |-
+        A batch of money that has arrived in the account, and how much of it is still unspent.
+
+        It says nothing about how the money got here — that is a top-up, which carries the gateway,
+        the checkout and the outcome. One top-up settles into one batch.
+
+        Only settled money is here. Something still waiting on a gateway is a pending top-up.
       type: object
       properties:
         id:
@@ -3553,48 +3534,22 @@ components:
         type:
           $ref: "#/components/schemas/TransactionType"
         amount:
-          description: Signed. Positive increases the balance, negative reduces
-            it.
+          description: Signed. Positive adds to the balance, negative takes from it.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        remaining_amount:
+          description: How much of this batch has not been spent yet. Zero on negative batches.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         reason:
-          description: Why the money moved, on a manual adjustment.
           type: string
-        invoice_id:
-          type:
-            - string
-            - "null"
-          format: uuid
-        order_id:
-          type:
-            - string
-            - "null"
-          format: uuid
-        status:
-          description: |-
-            `pending` is a payment still with the gateway. Only one may be pending against any
-            one invoice or order.
-
-            `failed` covers a payment the gateway refused and one the payer walked away from
-            alike; `failure_reason` says which. There is no separate cancelled state, because
-            what to do next is the same either way — start a new one.
-          type: string
-          enum:
-            - pending
-            - succeeded
-            - failed
         created_at:
           type: string
           format: date-time
-      required:
-        - id
-        - type
-        - amount
-        - currency
-        - status
-        - created_at
+      required: [id, type, amount, remaining_amount, currency, created_at]
+      additionalProperties: false
     TransactionList:
       type: object
       properties:
@@ -3639,9 +3594,6 @@ components:
             anything on the account.
           allOf:
             - $ref: "#/components/schemas/Applicability"
-        applies_to_summary:
-          description: The restrictions in one sentence, ready to display.
-          type: string
         status:
           type: string
           enum:
@@ -3672,62 +3624,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditGrant"
-        total_count:
-          type: integer
-          format: int64
-      required:
-        - items
-    Allocation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        source_type:
-          type: string
-          enum:
-            - transaction
-            - credit_grant
-        source_id:
-          type: string
-          format: uuid
-        target_type:
-          type: string
-          enum:
-            - hold
-            - order_item
-            - invoice_item
-        target_id:
-          type: string
-          format: uuid
-        amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        currency:
-          type: string
-        allocated_at:
-          type: string
-          format: date-time
-        reversed_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-      required:
-        - id
-        - source_type
-        - source_id
-        - target_type
-        - target_id
-        - amount
-        - currency
-        - allocated_at
-    AllocationList:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/Allocation"
         total_count:
           type: integer
           format: int64
@@ -3799,7 +3695,7 @@ components:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
-        destination:
+        cash_destination:
           description: Where the cash went.
           type: string
           enum:
@@ -3844,14 +3740,13 @@ components:
       properties:
         type:
           description: |-
-            Where this part of the money came from, and therefore where it goes back to.
-            Only `cash` can reach a card or a spendable balance; credit and vouchers return
-            to themselves and never become cash.
+            Where this part of the money came from, and therefore where it returns to. Only
+            `cash` can reach a card or a spendable balance. Granted funds return to the grant
+            that issued them and never become cash.
           type: string
           enum:
             - cash
-            - credit
-            - voucher
+            - granted
         amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
@@ -3868,7 +3763,7 @@ components:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
-        destination:
+        cash_destination:
           description: |-
             Where the cash part would go. `gateway` returns it to the method it was paid
             with; `balance` credits the account instead, which is the answer whenever the cash
@@ -3899,7 +3794,7 @@ components:
       required:
         - refundable_amount
         - currency
-        - destination
+        - cash_destination
         - sources
     UsageCharge:
       type: object
@@ -4144,14 +4039,72 @@ components:
           format: int64
       required:
         - items
+    RenewalPrice:
+      type: object
+      properties:
+        price_id:
+          type: string
+          format: uuid
+        term:
+          description: How many periods one renewal covers.
+          type: integer
+        period:
+          type: string
+          enum: [day, month, year]
+        amount:
+          description: What renewing for this term costs, for the quantity held.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        current:
+          description: |-
+            The term this item already bills at. Renewing for it uses the price bought
+            originally, so a later price change does not affect it.
+          type: boolean
+      required:
+        - price_id
+        - term
+        - period
+        - current
+    RenewalPriceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenewalPrice"
+      required:
+        - items
     RenewRequest:
       type: object
       properties:
         periods:
-          description: How many further periods to buy.
+          description: |-
+            How many further periods to buy, each at the price this item already bills at.
+
+            Buying twelve monthly periods is not the same as buying one yearly term: a longer
+            term is usually sold at a lower price, and that price is only reached by naming the
+            term. Use `term` and `period` for that.
           type: integer
           default: 1
           minimum: 1
+        term:
+          description: |-
+            Renew for a term of this length instead, at the price currently sold for it. Give
+            `period` with it.
+
+            Leaving both out renews at the price this item already bills at, which a later price
+            change does not affect. Naming a term that differs from the current one is a fresh
+            choice, so it is bought at today's price. Naming the current term changes nothing.
+
+            List the terms on offer with the renewal prices operation.
+          type: integer
+          minimum: 1
+        period:
+          description: The unit `term` counts in.
+          type: string
+          enum: [day, month, year]
         payment_method_id:
           type: string
           format: uuid
@@ -4415,15 +4368,10 @@ components:
           type: boolean
         reason:
           $ref: "#/components/schemas/CodeRejection"
-        type:
-          type: string
-          enum:
-            - voucher
-            - discount
         name:
           type: string
         amount:
-          description: For a voucher, the amount it adds.
+          description: For a fixed-amount discount.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         percent_off:
@@ -4476,13 +4424,15 @@ components:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
         - valid
-        - type
     CodeRejection:
       description: |-
         Why a code cannot be used. `none` when it can.
 
         `operation_not_covered` means the code is limited to certain purchase actions — a
         first-purchase code presented for a renewal, for example.
+
+        `term_not_covered` means the code is limited to certain term lengths. A purchase with
+        no term, such as metered usage, is reported the same way.
 
         `below_minimum` is accompanied by `shortfall`.
       type: string
@@ -4496,8 +4446,10 @@ components:
         - currency_mismatch
         - product_not_covered
         - plan_not_covered
+        - price_not_covered
         - price_type_not_covered
         - operation_not_covered
+        - term_not_covered
         - not_first_purchase
         - below_minimum
     PurchaseOperation:
@@ -4514,6 +4466,103 @@ components:
         - renew
         - upgrade
         - downgrade
+    Discount:
+      description: A coupon held on this account. It applies at checkout without a code.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_translations:
+          $ref: ../../type/v1/translations.yaml#/components/schemas/Translations
+        percent_off:
+          description: 'For a percentage discount, out of one hundred.'
+          type: string
+        amount_off:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        max_discount:
+          description: Caps a percentage discount.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        applies_to:
+          description: |-
+            What it may be used for. Absent means it applies to anything on the account,
+            including setup fees and traffic.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+    DiscountList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Discount"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    ScopeEntry:
+      description: |-
+        One catalogue entry named by a scope, with the name to show for it.
+
+        `excluded` marks an entry the scope rules out: it never qualifies, even when another
+        field includes it.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_translations:
+          $ref: ../../type/v1/translations.yaml#/components/schemas/Translations
+        excluded:
+          type: boolean
+      required:
+        - id
+        - excluded
+    ScopePriceEntry:
+      description: |-
+        One price named by a scope. Prices have no name, so the terms are given instead —
+        a scope limited to a price is usually limiting to one billing period.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        type:
+          type: string
+          enum: [metered, prepaid, one_time]
+        period:
+          type: string
+          enum: [none, day, month, year]
+        term:
+          description: How many periods one purchase covers.
+          type: integer
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        excluded:
+          type: boolean
+      required:
+        - id
+        - excluded
     Applicability:
       description: |-
         What something may be used for. A field that is absent places no restriction on that
@@ -4521,18 +4570,23 @@ components:
 
         A line qualifies when it satisfies every field that is set. `min_amount` is then
         measured against **the qualifying lines only**, not the order total.
+
+        Entries carry the name to show for them, so that what a credit covers can be displayed
+        without looking each one up.
       type: object
       properties:
-        product_ids:
+        products:
           type: array
           items:
-            type: string
-            format: uuid
-        plan_ids:
+            $ref: "#/components/schemas/ScopeEntry"
+        plans:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/ScopeEntry"
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScopePriceEntry"
         price_types:
           type: array
           items:
@@ -4545,51 +4599,19 @@ components:
           description: Restricted to your first purchase of a covered product.
           type: boolean
         min_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-    CodeRedeem:
-      type: object
-      properties:
-        billing_account_id:
-          type: integer
-          format: int64
-        code:
-          type: string
-          minLength: 1
-          maxLength: 64
-        idempotency_key:
-          type: string
-          minLength: 1
-          maxLength: 255
-      required:
-        - billing_account_id
-        - code
-        - idempotency_key
-      additionalProperties: false
-    CodeRedeemResult:
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-            - voucher
-            - discount
-        credit_grant_id:
-          description: For a voucher, the credit that was added.
-          type:
-            - string
-            - "null"
-          format: uuid
-        amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        currency:
-          type: string
-        message:
           description: |-
-            For a discount, what will happen — it is applied to the next qualifying purchase
-            rather than added to the balance.
-          type: string
-      required:
-        - type
+            The threshold, measured against the qualifying lines. In the currency of whatever
+            carries these terms.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        min_term_months:
+          description: |-
+            The shortest term a purchase may have, in months. A purchase with no term, such as
+            metered usage, never qualifies while this is set.
+          type: integer
+        max_term_months:
+          description: The longest term a purchase may have, in months.
+          type: integer
     Tier:
       type: object
       properties:

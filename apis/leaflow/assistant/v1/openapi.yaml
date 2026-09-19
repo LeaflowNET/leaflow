@@ -16,6 +16,22 @@ info:
 
     Sending a file takes two steps: `POST /api/v1/attachments` for an id, then put that id in `attachmentIds` when sending the message. Images, text and arbitrary binaries all go through the same two steps; what differs is how the assistant reads them afterwards, which the upload response's `kind` says.
 
+    ## Models
+
+    Canopy owns the model catalogue and capabilities. Model ids in this API, conversation preferences and historical entries are Canopy model ids, with no separate assistant model registration. GET /api/v1/models returns the allowed, usable choices and allowModelSelection. Hide the selector when selection is disabled; the service enforces the same rule.
+
+    preferredModelId is the user's choice. Null follows the platform default, including later changes. Disabled selection preserves but ignores preferences for new turns. A model removed from the allowlist, retired in Canopy or otherwise unusable falls back to the default without clearing the preference.
+
+    Users can switch an existing conversation through PATCH /api/v1/threads/{thread} with preferredModelId. This preserves the transcript, starts no turn and makes no inference request. Null returns to following the default. Changes apply from the next turn; a running or waiting turn and messages queued into it retain their captured choices and fallback policy.
+
+    If the chosen model cannot serve a request, the service may safely fall back to the default without confirmation or an additional switching message. If the default also fails, the turn fails normally; no third model is selected for ordinary answers. Fallback preserves executed tool results and never splices answers from different models. Invalid input, cancellation and a declined tool call do not trigger model fallback. Each entry's model records its actual Canopy author, not the saved preference.
+
+    Users cannot choose a compaction model. Normal compaction reuses the effective model and reasoning settings for context-cache reuse. Only if that model cannot handle the compaction request or produce a summary fitting the target window may the service automatically use another allowed Canopy model with suitable capabilities. This does not change the preference or ordinary answer model, and is permitted even when user model selection is disabled.
+
+    After compaction, the full next request, including instructions, tools and retained messages, must fit the target's usable prompt budget with room left for an answer, respecting its output limit. If still too large, further compaction attempts are bounded; exhaustion fails with CANNOT_FOLD instead of sending an oversized request or silently discarding history or images. The same checks apply when switching models or falling back. Each compaction entry records its actual author.
+
+    An empty allowlist or unavailable default does not prevent reading conversations or saving permitted preference changes. A failed Canopy catalogue read is not evidence that a model was removed: use a valid cached snapshot or return MODEL_CATALOG_UNAVAILABLE, without deleting references or inventing capabilities. Catalogue presence is configuration information, not a live provider health check.
+
     ## Live output
 
     ```
@@ -35,6 +51,31 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /api/v1/models:
+    get:
+      summary: List assistant model choices
+      description: |-
+        Returns Canopy's models filtered by Assistant's saved allowlist and selection policy. There is no separately maintained assistant catalogue. The complete list is not paginated and is ordered by displayName, then id.
+
+        When allowModelSelection is true, models contains allowed Canopy models that remain callable, support tools and have positive context and output limits. When false, only the default is returned if it meets those conditions. defaultModelId is null if no usable default is known. Disallowed, retired and incompatible models are omitted, while saved preferences may still reference them.
+
+        This operation reads capabilities without making an inference request. It does not check live provider health or the inference key's model restrictions. If Canopy cannot be read and no usable cached snapshot exists, it returns 503 with code MODEL_CATALOG_UNAVAILABLE; a failed read is not an empty catalogue. An empty allowlist returns an empty list without needing Canopy. Supplier connection details and credentials are not returned.
+      operationId: list-models
+      tags:
+        - Model
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/attachments:
     post:
       summary: Upload a file
@@ -1034,6 +1075,10 @@ paths:
                 $ref: "#/components/schemas/Error"
     post:
       summary: Create a conversation
+      description: |-
+        Omit preferredModelId or set it to null to follow the platform default. A non-null preference is accepted only while model selection is enabled; otherwise the request fails with 403 and code MODEL_SELECTION_DISABLED.
+
+        A well-formed preference for a Canopy model that is no longer allowed or has been retired or removed is retained and uses the default when a turn starts. This also handles a catalogue change between displaying the selector and submitting the choice. Creating a conversation does not contact a model provider and remains possible when generation is unavailable.
       operationId: create-thread
       tags:
         - Thread
@@ -1085,7 +1130,13 @@ paths:
     patch:
       summary: Update conversation settings
       description: |-
-        Changes the title, the approval mode, and whether the conversation is archived. A change to the approval mode takes effect from the next turn; a turn already running keeps the settings it started with.
+        Changes the title, folder, approval mode, model preference, and whether the conversation is archived. Approval and model preference changes take effect from the next turn; a turn already running keeps the settings it started with.
+
+        Omit preferredModelId to leave the preference unchanged, or set it to null to follow the platform default. A non-null preference is accepted only while model selection is enabled; otherwise the whole request fails with 403 and code MODEL_SELECTION_DISABLED and none of its fields are changed. Clearing a preference remains allowed while selection is disabled. A well-formed preference for a disallowed, retired or removed Canopy model is retained and falls back to the default when used.
+
+        Model switching is allowed on an existing conversation, including while a turn is generating or waiting for approval or an answer. The response immediately returns the saved preferredModelId, while model continues to identify the running turn's effective model until it finishes. Messages queued into that running turn also keep its captured model choices. The next turn uses the latest saved preference.
+
+        Changing the preference does not create a new conversation, start a turn, call a model provider, clear the transcript, or rewrite historical model attribution. Before the next turn sends its first request to the selected model, the service checks that model's input capabilities and usable context budget. A switch to a smaller window may require compaction under the compaction policy above; saving the preference alone does not establish that the conversation fits.
 
         Archiving makes a conversation read-only: it stays in the list under "archived", stays readable, and the assistant can still find it when it searches past conversations — it just takes no new input. Unarchive it to continue. Archiving fails while a turn is running; stop it first.
       operationId: update-thread
@@ -1103,6 +1154,15 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/UpdateThreadRequestBody"
+            examples:
+              switchModel:
+                summary: Switch this conversation to another model from the catalogue
+                value:
+                  preferredModelId: model-from-catalogue
+              followDefault:
+                summary: Return this conversation to following the platform default
+                value:
+                  preferredModelId: null
       responses:
         "200":
           description: OK
@@ -1358,6 +1418,82 @@ components:
     bearerAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
+    ModelResource:
+      type: object
+      description: A read-only view of a Canopy model. No model definition is created or edited through Assistant.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Canopy model id, used unchanged in settings, conversation preferences and inference. There is no second assistant model id.
+        displayName:
+          type: string
+          description: The display_name maintained in Canopy
+        contextWindow:
+          description: The context_length maintained in Canopy. The assistant reserves room for instructions, tools and an answer rather than using this entire window for history.
+          type: integer
+          format: int64
+          minimum: 1
+        maxOutputTokens:
+          description: The max_output_tokens maintained in Canopy. Answer and summary budgets must respect this limit and the remaining context capacity.
+          type: integer
+          format: int64
+          minimum: 1
+        supportsTools:
+          type: boolean
+          description: Canopy supports_tools. Must be true before the model can be allowed for Assistant.
+        supportsReasoning:
+          type: boolean
+          description: Canopy supports_reasoning. False requires reasoning_effort to be omitted.
+        reasoningTiers:
+          description: Levels reported by Canopy reasoning_tiers. An empty list requires reasoning_effort to be omitted. List order does not imply reasoning strength.
+          type: array
+          items:
+            type: string
+        inputModalities:
+          description: Contains text, and also image when Canopy reports supports_vision. Other attachments remain accessible through file tools.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - text
+              - image
+      required:
+        - id
+        - displayName
+        - contextWindow
+        - maxOutputTokens
+        - supportsTools
+        - supportsReasoning
+        - reasoningTiers
+        - inputModalities
+      additionalProperties: false
+    ModelListResponseBody:
+      type: object
+      properties:
+        allowModelSelection:
+          description: Whether users can set a non-null model preference. When false, hide the selector and use the platform default for new turns.
+          type: boolean
+        defaultModelId:
+          description: The default Canopy model id, present in models when non-null. Null means no usable default is known from the current allowlist and capability snapshot; it does not report live provider health.
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
+        models:
+          description: Allowed, usable Canopy choices, or only the default when selection is disabled. Empty is an empty array, never null.
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelResource"
+      required:
+        - allowModelSelection
+        - defaultModelId
+        - models
+      additionalProperties: false
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     UploadedResource:
@@ -2086,7 +2222,17 @@ components:
         id:
           type: string
         model:
-          type: string
+          description: The actual Canopy model id for the running turn, or the first candidate for the next turn when idle. Null when no model can be selected. This can differ from preferredModelId after fallback or while selection is disabled.
+          type:
+            - string
+            - "null"
+        preferredModelId:
+          description: The saved preferred Canopy model id, independent of the model actually used. Null follows the platform default. Kept when selection is disabled, the model is removed, or a request falls back.
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
         title:
           type:
             - string
@@ -2100,6 +2246,7 @@ components:
         - id
         - title
         - model
+        - preferredModelId
         - createdAt
         - updatedAt
         - archived
@@ -2135,6 +2282,13 @@ components:
             - guardian
             - manual
             - yolo
+        preferredModelId:
+          description: A Canopy model id to prefer. Omit or pass null to follow the platform default. Non-null requires allowModelSelection; a disallowed, retired or removed id falls back to the default without clearing the preference.
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
       additionalProperties: false
     ContextResource:
       type: object
@@ -2150,12 +2304,15 @@ components:
 
             This governs images and nothing else. Text and binary attachments reach every model: a small text file is placed inline, a large one is read on demand, and a binary is downloaded onto a cloud instance — none of which asks the model to see a picture. So this decides whether pasting a screenshot does anything, not whether the attach control exists. Hiding file upload on a text-only model takes away something that would have worked.
 
-            An empty list is not a claim that the model reads nothing: it means this deployment has not stated the modalities, or the conversation names a model that has since been retired. Treat empty as unknown and keep the control, because hiding one for a reason nobody can see is worse than a refusal that says why.
+            This describes the effective model, including a replacement chosen through fallback, rather than the saved preference. An empty list means no effective model is available to describe; it is not a claim that every model rejects files.
           type: array
           items:
             type: string
         model:
-          type: string
+          description: The effective Canopy model id, matching the conversation summary's model. Null when no model can be selected; window and compactAt are then null and inputModalities is empty.
+          type:
+            - string
+            - "null"
         used:
           type:
             - integer
@@ -2284,7 +2441,7 @@ components:
         id:
           type: string
         model:
-          description: The model that produced this entry. Null for messages the user sent
+          description: The Canopy model id that actually produced this entry, including after fallback. Never replaced by the conversation's preference or rewritten when the model is retired or removed from the allowlist. Null for messages the user sent.
           type:
             - string
             - "null"
@@ -2561,6 +2718,16 @@ components:
             - yolo
         archived:
           type: boolean
+        preferredModelId:
+          description: |-
+            Switch this existing conversation's model. Omit to keep the preference; null clears it and follows the platform default; a string sets it for the next turn. The transcript is preserved and saving the preference does not start a turn.
+
+            Non-null requires allowModelSelection. A disallowed, retired or removed Canopy id is retained and uses the default when needed. The preference can be changed while a turn is running or waiting, but that turn and messages queued into it keep their captured model choices.
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
         folderId:
           description: |-
             File this conversation into a folder, or `null` to take it out of the one it is in. Omit the field to leave it where it is.
