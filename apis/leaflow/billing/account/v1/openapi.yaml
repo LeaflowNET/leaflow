@@ -1,0 +1,3500 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Billing Account API
+  version: 1.0.0
+  description: |-
+    The caller's billing accounts, purchases and payments.
+    Query accepted financial operations by their original IDs after an unknown outcome.
+    Public prices and estimates are served under `/catalog/v1/` and require no credentials.
+security:
+  - accessTokenAuth: []
+servers:
+  - url: https://billing.leaflow.cloud
+    description: Billing account management
+
+tags:
+  - name: accounts
+    description: Billing accounts, balances, and which projects they pay for.
+  - name: payments
+    description: Adding funds, payment methods, and settling what is owed.
+  - name: billing-history
+    description: Invoices, transactions and where each amount went.
+  - name: subscriptions
+    description: What has been bought and when it renews.
+  - name: entitlements
+    description: Which capabilities are currently available.
+  - name: allowances
+    description: |-
+      Included and promotional usage allowances and their remaining quantities.
+  - name: promotions
+    description: |-
+      Promotion code terms and purchase applicability previews.
+paths:
+  /account/v1/currencies:
+    get:
+      summary: List currencies accounts can be opened in
+      description: |-
+        The currencies a new billing account can be opened in. A retired currency is not listed,
+        although accounts already opened in it keep working. Not paged: the set is a few rows.
+      operationId: list-currencies
+      tags:
+        - accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrencyList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/billing-accounts:
+    get:
+      summary: List billing accounts
+      operationId: list-billing-accounts
+      tags:
+        - accounts
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingAccountList"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create billing account
+      description: |-
+        The currency is chosen here and cannot be changed afterwards. Everything charged to the
+        account — prices, orders, invoices, balance — is denominated in it.
+
+        One person may hold several accounts, for example a personal one and one for a team.
+      operationId: create-billing-account
+      tags:
+        - accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingAccountCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingAccount"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/billing-accounts/{accountId}:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      summary: Get billing account
+      operationId: get-billing-account
+      tags:
+        - accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingAccount"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update billing account
+      description: |-
+        The legal name, address and tax identifier are copied onto each invoice when it is
+        issued. Changing them here affects invoices issued afterwards, not those already sent.
+
+        The currency cannot be changed.
+      operationId: update-billing-account
+      tags:
+        - accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingAccountUpdate"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingAccount"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/billing-accounts/{accountId}/balance:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      summary: Get account balance
+      operationId: get-account-balance
+      tags:
+        - accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountBalance"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/billing-accounts/{accountId}/payment-options:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      summary: List payment options
+      description: |-
+        Lists the payment gateways and methods that currently accept payment in this account's currency, the
+        preferred gateway first. Top-ups and invoice payments must name a gateway and method listed here;
+        others are refused. An empty list means no online payment is available for this account. Not paged: the
+        set is a few rows.
+      operationId: list-payment-options
+      tags:
+        - payments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentOptionList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/projects:
+    get:
+      summary: List projects linked to billing accounts
+      operationId: list-billing-account-projects
+      tags:
+        - accounts
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: billing_account_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBillingInfoList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/projects/{projectId}/billing-account:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      summary: Get project billing account
+      description: Returns 404 when the project has no billing account. No resources can be
+        created until one is linked.
+      operationId: get-project-billing-account
+      tags:
+        - accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBillingInfo"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      summary: Set project billing account
+      description: |-
+        Charges already incurred remain with the billing account that was linked when they
+        occurred, and are still invoiced to it. Metered resources are settled up to the moment of
+        the change. Amounts owed by the previous billing account remain owed by it and do not
+        prevent the change.
+
+        Orders keep the billing account they were placed with and are fulfilled as placed. Periods
+        already paid for are unaffected; renewals are charged to the new billing account.
+
+        The request is refused once the project no longer accepts purchases because it is being
+        deleted, and while a subscription or an order in progress in the project uses a currency
+        other than that of the new billing account.
+      operationId: set-project-billing-account
+      tags:
+        - accounts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectBillingInfoSet"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectBillingInfo"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Unlink project billing account
+      description: |-
+        Permitted only when nothing in the project is still running or in progress: no metered
+        resources, no subscriptions that have not ended, and no orders in progress, including
+        changes scheduled for the end of a period. Orders are not modified by this request; wait
+        for them to complete, and have the service that scheduled a change call it off.
+
+        Charges already incurred remain with the billing account and are invoiced to it as usual.
+        Amounts the billing account owes do not prevent unlinking.
+
+        After this the project cannot make purchases until a billing account is linked again.
+      operationId: unlink-project-billing-account
+      tags:
+        - accounts
+      responses:
+        "204":
+          description: Unlinked
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/top-ups:
+    get:
+      summary: List top ups
+      description: |-
+        Lists only the authenticated user's top-ups. Includes pending, failed and canceled attempts; no invoice is
+        created for a top-up. Items carry no `action`; read a pending top-up with get-top-up to continue its payment.
+      operationId: list-top-ups
+      tags:
+        - payments
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopUpList"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create top up
+      description: |-
+        Creates a top-up for an account owned by the authenticated user and returns its payment information.
+        The balance increases only after the payment gateway confirms receipt. A top-up has no invoice.
+        Keep the supplied ID to query the original attempt after a lost response; duplicate creation conflicts.
+      operationId: create-top-up
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopUpCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopUp"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/top-ups/{topUpId}:
+    parameters:
+      - name: topUpId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get top up
+      description: |-
+        Reads a top-up owned by the authenticated user, including its outcome and the part of it not yet spent.
+        It is not an invoice.
+
+        While the top-up is pending, the answer includes the customer's next step as the payment gateway
+        currently reports it, so that a payment interrupted by a closed page can be continued. When the gateway
+        cannot be reached, the top-up is returned without `action`; read it again later.
+      operationId: get-top-up
+      tags:
+        - payments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopUp"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/top-ups/{topUpId}/cancel:
+    parameters:
+      - name: topUpId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Cancel top up
+      description: |-
+        Withdraws a pending top-up owned by the authenticated user at the payment gateway. It becomes
+        `canceled` with `cancellation_reason` `requested_by_customer`, and no money is collected for it. Canceling a
+        top-up that is already canceled returns it unchanged.
+
+        If the gateway has already collected the payment, nothing is withdrawn and the top-up is returned
+        as `succeeded` with the balance increased. Check `status` in the answer rather than assuming the
+        cancellation took effect.
+
+        Fails with 409 and BILLING_TOPUP_NOT_CANCELABLE when the top-up has already succeeded or failed,
+        with `status` naming that outcome, and while the gateway is processing the payment and can no
+        longer withdraw it, with `status` set to `pending`; read the top-up again later in that case.
+      operationId: cancel-top-up
+      tags:
+        - payments
+      responses:
+        "200":
+          description: The top-up after the request, canceled or succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopUp"
+        "409":
+          description: The top-up already has another outcome or can no longer be withdrawn.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payment-methods:
+    get:
+      summary: List payment methods
+      operationId: list-payment-methods
+      tags:
+        - payments
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payment-methods/setup:
+    post:
+      summary: Create payment method setup
+      description: |-
+        Returns what is needed to hand the browser over to the payment gateway's own card
+        form. Nothing is charged, and the method appears in the list once the gateway
+        confirms it.
+
+        Card numbers are never sent to or stored by this service.
+      operationId: create-payment-method-setup
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentMethodSetup"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethodSetupResult"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payment-methods/{paymentMethodId}/default:
+    parameters:
+      - $ref: "#/components/parameters/PaymentMethodId"
+    put:
+      summary: Set default payment method
+      operationId: set-default-payment-method
+      tags:
+        - payments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentMethod"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payment-methods/{paymentMethodId}:
+    parameters:
+      - $ref: "#/components/parameters/PaymentMethodId"
+    delete:
+      summary: Delete payment method
+      description: |-
+        Refused when it is the only method on an account that has resources billed by the hour,
+        as there would be nothing left to charge when the balance runs out.
+      operationId: delete-payment-method
+      tags:
+        - payments
+      responses:
+        "204":
+          description: Removed
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/invoices/{invoiceId}/pay:
+    parameters:
+      - $ref: "#/components/parameters/InvoiceId"
+    post:
+      summary: Pay invoice
+      description: |-
+        Applies the account balance first, then charges the remainder to a payment method. Give
+        `payment_method_id` to choose one, or omit it to use the default.
+
+        Returns a checkout address when the gateway requires the cardholder to confirm the
+        payment; the invoice is marked paid once the gateway confirms it.
+
+        Calling this on an invoice that is already paid returns the invoice unchanged.
+      operationId: pay-invoice
+      tags:
+        - payments
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResult"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payments:
+    post:
+      summary: Pay together
+      description: Pays outstanding invoices, including invoices associated with the listed orders. Gateway collection creates a top-up transaction applied to the original invoices. Paid invoices are not charged again. Unknown gateway results remain pending and are recovered through the original transaction and task.
+      operationId: pay-together
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayTogetherRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResult"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/invoices:
+    get:
+      summary: List invoices
+      operationId: list-invoices
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/InvoiceStatus"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/invoices/{invoiceId}:
+    parameters:
+      - $ref: "#/components/parameters/InvoiceId"
+    get:
+      summary: Get invoice
+      operationId: get-invoice
+      tags:
+        - billing-history
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/invoices/{invoiceId}/items:
+    parameters:
+      - $ref: "#/components/parameters/InvoiceId"
+    get:
+      summary: List invoice items
+      operationId: list-invoice-items
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceItemList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/transactions:
+    get:
+      summary: List transactions
+      operationId: list-transactions
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/discounts:
+    get:
+      summary: List the coupons held on this account
+      description: |-
+        Coupons placed on the account directly, which apply at checkout without a code being
+        entered. A coupon reached through a code is not listed here.
+      operationId: list-account-discounts
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/credit-grants:
+    get:
+      summary: List credit grants
+      description: |-
+        Each grant shows what remains and what it may be used for. Credit is spent before the balance
+        and cannot be withdrawn.
+      operationId: list-credit-grants
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - depleted
+              - expired
+              - voided
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditGrantList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/refunds:
+    get:
+      summary: List refunds
+      operationId: list-refunds
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/usage-charges:
+    get:
+      summary: List usage charges
+      description: |-
+        Each charge is added to the month's usage invoice as it is priced, summed into one line per
+        subscription, project, resource, meter and rate. Filter by `invoice_item_id` to see the
+        charges behind a line. Charges still waiting to be priced are included too.
+      operationId: list-usage-charges
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProductID'
+        - name: resource_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: invoice_item_id
+          in: query
+          required: false
+          description: Only the charges summed into this usage invoice line.
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageChargeList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/subscriptions:
+    get:
+      summary: List subscriptions
+      operationId: list-subscriptions
+      tags:
+        - subscriptions
+      parameters:
+        - name: expiring_before
+          in: query
+          schema: {type: string, format: date-time}
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/subscriptions/{subscriptionId}:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    get:
+      summary: Get subscription
+      operationId: get-subscription
+      tags: [subscriptions]
+      responses:
+        '200':
+          description: Purchase and renewal agreement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        default:
+          $ref: '#/components/responses/Error'
+  /account/v1/subscriptions/{subscriptionId}/cancellation-preview:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    get:
+      summary: Preview cancellation
+      description: Reads confirmed terms and paid-period value without recording a request or locking a refund amount.
+      operationId: preview-cancellation
+      tags: [subscriptions]
+      responses:
+        '200':
+          description: Cancellation estimate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationPreview'
+        default:
+          $ref: '#/components/responses/Error'
+  /account/v1/subscriptions/{subscriptionId}/cancellation-requests:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      summary: Request subscription cancellation
+      description: Ends the whole subscription under confirmed terms. The request does not itself stop service; actual end is confirmed by the owning service. Refund processing is separate.
+      operationId: create-cancellation-request
+      tags: [subscriptions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationRequestCreate'
+      responses:
+        '201':
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequest'
+        default:
+          $ref: '#/components/responses/Error'
+  /account/v1/cancellation-requests/{cancellationRequestId}:
+    parameters:
+      - $ref: '#/components/parameters/CancellationRequestId'
+    get:
+      summary: Get cancellation request
+      operationId: get-cancellation-request
+      tags: [subscriptions]
+      responses:
+        '200':
+          description: Request and actual end receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequest'
+        default:
+          $ref: '#/components/responses/Error'
+  /account/v1/cancellation-requests/{cancellationRequestId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/CancellationRequestId'
+    post:
+      summary: Cancel a cancellation request
+      description: Allowed only before release starts. Does not resume a previously suspended subscription.
+      operationId: cancel-cancellation-request
+      tags: [subscriptions]
+      responses:
+        '200':
+          description: Canceled request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRequest'
+        default:
+          $ref: '#/components/responses/Error'
+  /account/v1/subscriptions/{subscriptionId}/renewal-prices:
+    parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the terms this item can be renewed for
+      description: Lists the current renewal agreement and available intervals. The current option preserves recurring_amount; other options use current prices. Amounts cover the whole subscription quantity and exclude tax.
+      operationId: list-renewal-prices
+      tags:
+        - subscriptions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenewalPriceList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/subscriptions/{subscriptionId}/renew:
+    parameters:
+      - $ref: "#/components/parameters/SubscriptionId"
+    post:
+      summary: Renew subscription
+      description: Purchases prepaid periods from paid_until using the agreed recurring amount. A changed interval selects a current price and freezes new terms on the order, applied only after fulfillment. Existing paid periods keep their value. Save order_id before submitting and query the order after an unknown outcome; duplicate creation conflicts.
+      operationId: renew-subscription
+      tags:
+        - subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewRequest"
+      responses:
+        '409':
+          description: The order already exists or the subscription has a conflicting renewal, change or cancellation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResult"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/subscriptions/{subscriptionId}/auto-renew:
+    parameters:
+      - $ref: "#/components/parameters/SubscriptionId"
+    put:
+      summary: Set auto renew
+      description: Controls automatic prepaid renewal. Disabling it does not shorten paid_until and still permits manual renewal. Postpaid subscriptions do not renew and keep this false.
+      operationId: set-auto-renew
+      tags:
+        - subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoRenewSet"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/promotion-codes/preview:
+    post:
+      summary: Preview promotion code
+      description: |-
+        Nothing is recorded and the code is not consumed. Use it to show the customer the effect
+        before they commit.
+      operationId: preview-promotion-code
+      tags:
+        - promotions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionCodePreviewRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotionCodePreview"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/allowances:
+    get:
+      summary: List allowances
+      description: |-
+        Lists remaining usage quantities, such as bytes, seconds or tokens. Applicable allowances are
+        consumed before usage is charged. Lower priority values are consumed first, followed by earlier
+        expiry and earlier issuance.
+
+        Unused quantity expires without a refund or carry-over. Promotional allowances apply to usage paid
+        by their holding account. Included allowances apply only to the associated subscription, including
+        after its project moves to another billing account.
+      operationId: list-allowances
+      tags:
+        - allowances
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: meter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter by the meter UUID.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - depleted
+              - expired
+              - voided
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProductID'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowanceList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/orders:
+    get:
+      summary: List orders
+      description: Lists acceptance status and associated invoice amounts. Pending may be unpaid or paid; active means accepted, not delivered. Only pending orders expire at expires_at.
+      operationId: list-orders
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/orders/{orderId}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      summary: Get order
+      operationId: get-order
+      tags:
+        - billing-history
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/orders/{orderId}/items:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      summary: List order items
+      description: One entry per item bought, with the price charged and the
+        period it covers.
+      operationId: list-order-items
+      tags:
+        - billing-history
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderItemList"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/entitlements:
+    get:
+      summary: List entitlements
+      description: |-
+        Capabilities that come with what has been bought. A capability that is not held simply
+        does not appear, so that "this does not exist" and "this has not been bought" cannot be
+        confused.
+
+        Derived from live subscriptions rather than stored, so this always agrees with what is
+        being paid for. It stops being listed as soon as the subscription providing it ends.
+      operationId: list-entitlements
+      tags:
+        - entitlements
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/AccountIdQuery"
+        - name: project_id
+          in: query
+          required: false
+          description: |-
+            Restrict to one project. Anything bought at account level, such as a membership,
+            appears regardless.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementList"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    accessTokenAuth:
+      $ref: ../../../type/v1/security.yaml#/components/securitySchemes/AccessToken
+  schemas:
+    TerminationPolicy:
+      type: string
+      enum:
+        - immediate
+        - period_end
+      description:
+        Whether a fulfilled purchase may end immediately or only after its paid term. Does not grant a refund.
+        When absent, the terms are not configured and termination requires review.
+    RefundPolicy:
+      type: string
+      enum:
+        - none
+        - prorated
+      description:
+        Prorated returns the unused value of paid service periods using integer-second duration ratios.
+        Setup fees are excluded. Tax and funds follow the original invoice and payment sources.
+    CancellationPreview:
+      type: object
+      properties:
+        subscription_id: {type: string, format: uuid}
+        mode:
+          $ref: '#/components/schemas/TerminationPolicy'
+        scheduled_at: {type: string, format: date-time}
+        refundable_amount: {type: string}
+        currency: {type: string}
+      required: [subscription_id, mode, refundable_amount, currency]
+    CancellationRequestCreate:
+      type: object
+      properties:
+        mode:
+          $ref: '#/components/schemas/TerminationPolicy'
+        forfeit_remaining_value: {type: boolean, default: false}
+        reason: {type: string, minLength: 1, maxLength: 1024}
+      required: [reason]
+      additionalProperties: false
+    CancellationRequest:
+      type: object
+      required:
+        - id
+        - subscription_id
+        - status
+        - mode
+        - requested_at
+        - forfeit_remaining_value
+      properties:
+        reason: {type: string}
+        id:
+          type: string
+          format: uuid
+        subscription_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - requested
+            - scheduled
+            - releasing
+            - failed
+            - completed
+            - canceled
+        mode:
+          type: string
+          enum:
+            - immediate
+            - period_end
+        requested_at:
+          type: string
+          format: date-time
+        scheduled_at:
+          type: string
+          format: date-time
+        effective_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        release_started_at:
+          type: string
+          format: date-time
+        canceled_at:
+          type: string
+          format: date-time
+        forfeit_remaining_value:
+          type: boolean
+        failure_code:
+          type: string
+        failure_reason:
+          type: string
+      description:
+        A cancellation request for the original purchase. scheduled_at is the intended time; effective_at
+        is the confirmed end of service. The request alone does not stop metering or issue a refund.
+    Error:
+      $ref: ../../../type/v1/error.yaml#/components/schemas/Error
+    Product:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/ProductID'
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - id
+        - name
+    ProductID:
+      description: Immutable platform service identifier, such as compute, canopy or assistant.
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
+    QuoteLine:
+      description: |-
+        Identify a price directly, or select a price for a plan. For each resource give its ID or lookup key, never both. Lookup keys require product_id.
+
+        A line that gives a meter, `dimensions` or `duration_seconds` estimates usage and is
+        priced only at a postpaid price. Such a line is refused with HTTP 400
+        `BILLING_PURCHASE_INVALID` when `price_type` is `prepaid` or `one_time`, or when the price
+        it names is not postpaid; `meta.field` is `price_type`, `price_id` or `price_lookup_key`
+        accordingly. When the plan has no postpaid price, the line is returned unpriced with
+        `no_price`.
+      type: object
+      properties:
+        price_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        plan_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        meter_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        price_id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: '#/components/schemas/ProductID'
+        plan_id:
+          type: string
+          format: uuid
+        meter_id:
+          type: string
+          format: uuid
+        dimensions:
+          description: |-
+            The attributes the price depends on — region, instance type, token class.
+
+            Required when the price draws its rates from a price list, which is how anything
+            sold by region or by machine type is priced. A price that carries a single unit
+            amount, or a ladder, has no attributes to give and takes none.
+
+            Every attribute the meter declares must be present. A combination with no rate
+            covering it is refused rather than priced at zero.
+          type: object
+          additionalProperties:
+            type: string
+        price_type:
+          description: |-
+            Narrows the selection when a plan offers more than one billing type.
+          type: string
+          enum:
+            - postpaid
+            - prepaid
+            - one_time
+        interval: {type: string, enum: [none, day, month, year]}
+        interval_count: {type: integer, minimum: 1}
+        quantity:
+          type: string
+        duration_seconds:
+          description: |-
+            For metered items, how long to price for. This allows an estimate such as "about
+            this much per month" to be shown before anything exists. The priced quantity is
+            `quantity` multiplied by this duration.
+          type: integer
+          format: int64
+      required:
+        - quantity
+    BillingAccount:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          description: What you call this account.
+          type: string
+        legal_name:
+          description: The name invoices are made out to. Copied onto each
+            invoice when it is issued.
+          type: string
+        email:
+          description: Where invoices are sent.
+          type: string
+        address_line1:
+          type: string
+        address_line2:
+          type: string
+        address_city:
+          type: string
+        address_state:
+          type: string
+        address_postal_code:
+          type: string
+        address_country:
+          description: Two-letter code.
+          type: string
+        tax_id:
+          type: string
+        currency:
+          description: Fixed when the account was opened.
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - closed
+        grace_amount:
+          description: |-
+            How far past the suspension threshold this account may go before its resources are
+            suspended. "0" means none: the account is suspended as soon as it crosses the threshold.
+          type: string
+        grace_period_seconds:
+          description: |-
+            How long this account has to top up after crossing the suspension threshold.
+            0 means none. Whichever runs out first — this or grace_amount — ends the grace.
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - currency
+        - status
+        - created_at
+    Currency:
+      description: A currency a billing account can be opened in.
+      type: object
+      additionalProperties: false
+      required: [code, exponent, name, minimum_top_up]
+      properties:
+        code:
+          description: ISO 4217 alpha-3, uppercase.
+          type: string
+          minLength: 3
+          maxLength: 3
+        exponent:
+          description: Decimal places of the currency, the ISO 4217 minor unit.
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 4
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        minimum_top_up:
+          description: The smallest top-up accepted. Zero means no lower bound.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+    CurrencyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Currency"
+    BillingAccountCreate:
+      type: object
+      properties:
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        name:
+          type: string
+          maxLength: 255
+        legal_name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          maxLength: 255
+      required:
+        - currency
+      additionalProperties: false
+    BillingAccountUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        legal_name:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          maxLength: 255
+        address_line1:
+          type: string
+          maxLength: 255
+        address_line2:
+          type: string
+          maxLength: 255
+        address_city:
+          type: string
+          maxLength: 128
+        address_state:
+          type: string
+          maxLength: 128
+        address_postal_code:
+          type: string
+          maxLength: 32
+        address_country:
+          type: string
+          minLength: 2
+          maxLength: 2
+        tax_id:
+          type: string
+          maxLength: 64
+      additionalProperties: false
+    BillingAccountList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BillingAccount"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    AccountBalance:
+      description: |-
+        Account balance, credits, and unpaid charges are reported separately.
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        balance:
+          description: |-
+            Prepaid funds in the account currency, excluding credits. May be negative after a payment
+            dispute. Outstanding charges are reported separately in due; this value is not a withdrawal quote.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credits:
+          description: |-
+            The recorded remaining credit, including restricted grants. It is not withdrawable
+            and is not part of balance. credit_groups describes currently valid credit by permitted use; a positive
+            credits balance does not imply that due is zero.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          description: |-
+            balance plus credits, the sum shown as the account's funds. Credits count at their recorded remaining
+            amount, including restricted grants that only pay for what they allow, so total is an upper bound of what
+            the account can pay with rather than a withdrawable amount. due is reported separately and is not subtracted.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        restricted_credits:
+          description: |-
+            The part of currently valid credit that only pays for what its restrictions allow, such as a single
+            service, a billing type or a first purchase. The rest of the valid credit pays for anything on the account.
+            Included in credits and therefore in total.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credit_groups:
+          description: |-
+            Currently valid, unspent credit grouped by permitted use. Restrictions and
+            validity dates determine which charges a group can cover, so these groups are not a general
+            spendable balance and may differ from the recorded credits total.
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditGroup"
+        due:
+          description: |-
+            Owed and not yet paid: metered usage that balance and applicable credit could not cover as it was
+            charged, and issued usage invoices still unpaid. The account is in arrears while this
+            is above zero. Topping up pays it on the next collection.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - billing_account_id
+        - currency
+        - balance
+        - credits
+        - total
+        - restricted_credits
+        - credit_groups
+        - due
+    CreditGroup:
+      type: object
+      properties:
+        applies_to:
+          description: What the credit in this group may pay for. No restrictions means
+            anything on the account.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - applies_to
+        - amount
+    ProjectBillingInfo:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        account_name:
+          type: string
+        currency:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - project_id
+        - billing_account_id
+        - currency
+        - effective_from
+    ProjectBillingInfoList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectBillingInfo"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    ProjectBillingInfoSet:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+      required:
+        - billing_account_id
+      additionalProperties: false
+    TopUp:
+      description: A top-up attempt and its outcome. A successful top-up adds a traceable amount to the balance; it is not a credit grant and has no associated invoice.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        account:
+          $ref: '#/components/schemas/AccountIdentity'
+        amount:
+          description: What is credited to the account, in the account's own
+            currency.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        remaining_amount:
+          description: |-
+            The part of this top-up still held in the balance. Pending refunds and payouts can temporarily
+            reserve part of it; it is not a promise that the whole amount is immediately withdrawable.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        status:
+          description: |-
+            `pending` until the payment gateway reaches a result. The balance increases on `succeeded`.
+
+            `failed` means the gateway declined the payment. A declined attempt ends the top-up at once
+            and the payment is withdrawn at the gateway; to pay another way, create a new top-up.
+            `canceled` means the attempt was withdrawn without collecting money; `cancellation_reason`
+            says why. Unknown gateway outcomes remain `pending`, and a browser redirect is not proof of
+            payment.
+
+            `failed` and `canceled` are final. If the gateway nevertheless collects payment for such an
+            attempt, the amount is credited as a separate `succeeded` top-up.
+          type: string
+          enum:
+            - pending
+            - succeeded
+            - failed
+            - canceled
+        cancellation_reason:
+          description: Why the top-up was withdrawn. Present with `canceled`.
+          $ref: '#/components/schemas/PaymentCancellationReason'
+        payment_gateway:
+          description: Which payment gateway collected it.
+          type: string
+        method_type:
+          description: The selected payment method, such as card, wechat_pay or alipay.
+          type: string
+        presentment_currency:
+          description: |-
+            The currency the customer was actually charged in, when the checkout page collected a
+            local one. Absent when it was the same as the account's.
+          type: string
+        presentment_amount:
+          description: |-
+            What was charged, in `presentment_currency`. It will not equal `amount`, and it is
+            the figure that appears on the customer's card or wallet statement.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        failure_reason:
+          description: |-
+            Why the gateway declined it. Present with `failed`. The value is the gateway's own code,
+            passed on unchanged: the card issuer's decline code when there is one (Stripe's decline_code,
+            such as insufficient_funds or lost_card), otherwise the gateway's error code (Stripe's code,
+            such as card_declined, expired_card or payment_intent_authentication_failure). Clients map it
+            to their own wording and treat an unknown value as a generic decline.
+          type: string
+        action:
+          description: |-
+            The customer's next step while the top-up is `pending` and the gateway still awaits them. Returned
+            by create-top-up and get-top-up as the gateway currently reports it; absent from list-top-ups and
+            once the top-up has a result. Completing it does not replace confirmation of receipt.
+          $ref: '#/components/schemas/PaymentAction'
+        created_at:
+          type: string
+          format: date-time
+        settled_at:
+          description: |-
+            When the funds arrived. Later than `created_at` — by days for a bank transfer — so
+            reconciling against a statement uses this rather than the moment it was started.
+            Absent until the payment completes.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - billing_account_id
+        - account
+        - amount
+        - currency
+        - status
+        - created_at
+    TopUpCreate:
+      type: object
+      properties:
+        payment_gateway:
+          description: The gateway explicitly selected from the available payment options.
+          type: string
+          minLength: 1
+          maxLength: 32
+        method_type:
+          description: The selected method, such as card, wechat_pay or alipay.
+          type: string
+          minLength: 1
+          maxLength: 64
+        id:
+          description: The ID of this top-up attempt. Keep it before submitting and query it after an uncertain response.
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        amount:
+          description: |-
+            In the account's currency, and no finer than that currency's smallest unit:
+            two decimals for most, none for the yen. A finer amount is refused here rather
+            than at the checkout page, where the customer would see the gateway's own wording
+            instead of an explanation.
+
+            There is a minimum, which differs by currency. Below it the gateway's fee
+            exceeds the top-up itself, so such a payment costs more to accept than it brings.
+            The minimum in force is returned with the rejection.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        payment_method_id:
+          description: Charge a saved method instead of opening a checkout page.
+          type: string
+          format: uuid
+        return_url:
+          description: Where to send the customer after checkout.
+          type: string
+      required:
+        - payment_gateway
+        - method_type
+        - id
+        - billing_account_id
+        - amount
+      additionalProperties: false
+    AccountIdentity:
+      type: object
+      required: [id, name, currency]
+      properties:
+        id: {type: integer, format: int64}
+        name: {type: string}
+        currency: {type: string}
+    TopUpList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopUp"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    PaymentCancellationReason:
+      description: |-
+        Why a gateway payment was withdrawn. `abandoned` means the customer did not complete it within the time
+        allowed for payment. `requested_by_customer` means the customer canceled it.
+      type: string
+      enum:
+        - abandoned
+        - requested_by_customer
+    PaymentOption:
+      description: A payment gateway that accepts payment in the account's currency, with the methods it accepts.
+      type: object
+      properties:
+        payment_gateway:
+          description: The value to send as `payment_gateway`.
+          type: string
+        methods:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentOptionMethod"
+      required:
+        - payment_gateway
+        - methods
+      additionalProperties: false
+    PaymentOptionMethod:
+      type: object
+      properties:
+        method_type:
+          description: The value to send as `method_type`, such as card, wechat_pay or alipay.
+          type: string
+        reusable:
+          description: |-
+            Whether a method of this type can be saved with create-payment-method-setup and charged later
+            without the customer present. Methods that are not reusable are paid anew each time.
+          type: boolean
+      required:
+        - method_type
+        - reusable
+      additionalProperties: false
+    PaymentOptionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentOption"
+      required:
+        - items
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        payment_gateway:
+          type: string
+        brand:
+          type: string
+        last4:
+          type: string
+        exp_month:
+          type:
+            - integer
+            - "null"
+        exp_year:
+          type:
+            - integer
+            - "null"
+        is_default:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - active
+            - expired
+            - removed
+      required:
+        - id
+        - billing_account_id
+        - payment_gateway
+        - is_default
+        - status
+    PaymentMethodList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentMethod"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    PaymentMethodSetup:
+      type: object
+      properties:
+        payment_gateway:
+          description: The selected gateway supporting saved payment methods.
+          type: string
+          minLength: 1
+          maxLength: 32
+        billing_account_id:
+          type: integer
+          format: int64
+      required:
+        - payment_gateway
+        - billing_account_id
+      additionalProperties: false
+    PaymentMethodSetupResult:
+      description: |-
+        What the payment gateway's browser library needs in order to collect a card. There is
+        no address to redirect to: the form is rendered in the page, and the card goes straight
+        from the browser to the gateway.
+      type: object
+      properties:
+        setup_id:
+          description: |-
+            The gateway's identifier for this attempt. Use it to tell a reloaded page apart
+            from a second attempt.
+          type: string
+        payment_gateway:
+          type: string
+        action:
+          description: Browser configuration and credentials for this card setup, including the provider's public key. No server secret is returned.
+          $ref: '#/components/schemas/PaymentAction'
+      required:
+        - setup_id
+        - payment_gateway
+        - action
+    PayRequest:
+      description: |-
+        Applies eligible credit grants and the available balance as requested, then collects only the remainder
+        through the selected gateway. Grants restricted to other purchases are not counted as available funds.
+        An unresolved channel payment is reused; retries do not apply the grant or balance portions twice.
+        Without a gateway selection, insufficient account funds fail without starting an online payment.
+      type: object
+      properties:
+        payment_gateway:
+          description: Required to collect an online remainder. An existing attempt keeps its original gateway.
+          type: string
+          minLength: 1
+          maxLength: 32
+        method_type:
+          description: Required with payment_gateway; for example card, wechat_pay or alipay.
+          type: string
+          minLength: 1
+          maxLength: 64
+        payment_method_id:
+          description: Optional saved card owned by this billing account and belonging to the selected gateway. Omit to complete payment interactively.
+          type: string
+          format: uuid
+        use_balance:
+          description: |-
+            Whether to apply the available balance. Credit grants are controlled separately by use_credits.
+          type: boolean
+          default: true
+        use_credits:
+          description: Apply eligible, unexpired credit grants before using the balance. This never withdraws grants or converts them into balance.
+          type: boolean
+          default: true
+        return_url:
+          type: string
+      additionalProperties: false
+    PayTogetherRequest:
+      description: |-
+        Name at least one invoice or order. They must all belong to the same account and share
+        its currency; anything else is refused rather than partly paid.
+      type: object
+      properties:
+        invoice_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        order_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+      additionalProperties: false
+    PaymentAction:
+      description: The customer's next interaction. The gateway reports the actual payment outcome separately.
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [redirect, qr_code, sdk]
+        provider:
+          description: Identifies the browser adapter for an SDK action, for example stripe.
+          type: string
+        url:
+          type: string
+          format: uri
+        qr_code:
+          description: QR content to render and scan, not an image URL.
+          type: string
+        client_secret:
+          description: Short-lived client credential for this payment's browser confirmation.
+          type: string
+        public_key:
+          type: string
+      additionalProperties: false
+    PaymentStatus:
+      description: |-
+        The current payment outcome.
+
+        succeeded means payment is complete. processing means confirmation is pending; poll the invoice or
+        order rather than submitting another payment. requires_action means the customer must complete the
+        supplied action. failed means the attempt did not succeed and failure_reason explains the outcome; a
+        declined gateway payment is withdrawn at the gateway, and paying again starts a new payment with the
+        same or another method.
+      type: string
+      enum:
+        - succeeded
+        - processing
+        - requires_action
+        - failed
+    PaymentResult:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        transaction_id:
+          description: The gateway transaction, when one is involved. Balance and credit-grant payments are separate transactions.
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/PaymentStatus"
+        amount_paid:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        amount_due:
+          description: |-
+            What is still outstanding. Zero once the payment succeeds. Unchanged while
+            `processing`: nothing is collected until the gateway confirms it.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        credit_applied:
+          description: Credit grants applied to this invoice. Not a payment from the balance and not withdrawable.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        gateway_amount:
+          description: The remaining amount submitted to the selected payment gateway.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        payment_gateway:
+          type: string
+        method_type:
+          type: string
+        balance_applied:
+          description: |-
+            The amount already paid from the account's balance toward this invoice. Retrying an online remainder
+            does not debit it again. A canceled purchase returns funds through its refund process.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        action:
+          $ref: '#/components/schemas/PaymentAction'
+        retriable:
+          description: |-
+            Whether paying again is worth attempting. False for a refusal that will keep
+            happening — a closed account, an amount over a limit — so that a client does not
+            retry in a loop.
+          type: boolean
+        invoice_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        order_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        failure_reason:
+          description: |-
+            Why the payment did not go through. Present with `failed`. For a declined gateway payment the
+            value is the gateway's own code, passed on unchanged: the card issuer's decline code when
+            there is one (Stripe's decline_code, such as insufficient_funds or lost_card), otherwise the
+            gateway's error code (Stripe's code, such as card_declined, expired_card or
+            payment_intent_authentication_failure). Clients map it to their own wording and treat an
+            unknown value as a generic decline.
+          type: string
+      required:
+        - transactions
+        - status
+        - amount_paid
+        - amount_due
+        - currency
+    InvoiceStatus:
+      description: |-
+        A usage invoice stays `draft` through its month: each charge is added to it as it is priced
+        and paid from credits and balance as it goes. It is issued at the end of the month, becoming
+        `paid` when everything was covered and `open` when something is still owed.
+      type: string
+      enum:
+        - draft
+        - open
+        - paid
+        - void
+        - uncollectible
+    Invoice:
+      type: object
+      properties:
+        due_at: {type: string, format: date-time}
+        amount_refunded: {type: string}
+        tax_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxItem'
+        order_id:
+          description: The purchase that produced this invoice. Absent on usage invoices.
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        number:
+          description: Numbered per account and per month.
+          type: string
+        type:
+          description: What produced it — metered usage for a period, a
+            purchase, or a correction.
+          type: string
+          enum:
+            - usage
+            - order
+            - adjustment
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/InvoiceStatus"
+        subtotal:
+          description: |-
+            Sum of the line amounts before discounts. Where prices include tax, the tax contained in
+            each line's discounted amount is taken out here, so that total = subtotal -
+            discount_amount + tax_amount always holds.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          description: Sum of the line discounts, taken off before tax.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credit_applied:
+          description: Successful credit-grant payments included in amount_paid. Does not reduce the receivable or tax base.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          description: Subtotal less discount plus tax. Balance and credit grants are payment sources, not reductions of the receivable.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        amount_paid:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        period_start:
+          type:
+            - string
+            - "null"
+          format: date-time
+        period_end:
+          description: Exclusive.
+          type:
+            - string
+            - "null"
+          format: date-time
+        customer_name:
+          description: |-
+            Who this was billed to, as recorded when the invoice was issued. Later changes to
+            the account do not alter it.
+          type: string
+        customer_email:
+          type: string
+        customer_tax_id:
+          type: string
+        customer_address_line1:
+          type: string
+        customer_address_line2:
+          type: string
+        customer_address_city:
+          type: string
+        customer_address_state:
+          type: string
+        customer_address_postal_code:
+          type: string
+        customer_address_country:
+          type: string
+        paid_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - tax_items
+        - id
+        - billing_account_id
+        - number
+        - currency
+        - status
+        - total
+    InvoiceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invoice"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    InvoiceItem:
+      type: object
+      properties:
+        recurring_amount: {type: string}
+        taxable: {type: boolean}
+        discount_amount:
+          description: Discount applied to this line before tax.
+          type: string
+        tax_amount:
+          description: Tax on the discounted line, including tax already included in the price.
+          type: string
+        tax_included_amount:
+          description: The part of tax_amount already included in amount.
+          type: string
+        order_item_id:
+          description: The original order line. Refunds follow that line's original payment sources.
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - usage
+            - subscription
+            - one_time
+            - setup
+            - adjustment
+        project_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        resource_id:
+          type: string
+        description:
+          description: |-
+            The wording as recorded when the invoice was issued. It is not re-translated
+            afterwards, so that an invoice continues to read as it did when it was sent.
+          type: string
+        unit:
+          type: string
+        quantity:
+          type: string
+        deducted_quantity:
+          description: The part covered by an included allowance, and therefore
+            not charged.
+          type: string
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        period_start:
+          type:
+            - string
+            - "null"
+          format: date-time
+        period_end:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - description
+        - amount
+        - currency
+    InvoiceItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceItem"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    TransactionType:
+      description: topup adds to the balance; payment settles an invoice; refund returns original funds; payout withdraws from the balance; adjustment changes the balance with an audit reason.
+      type: string
+      enum:
+        - topup
+        - payment
+        - refund
+        - payout
+        - adjustment
+    Transaction:
+      description: A funds operation. Each payment has one source; refunds identify the original successful transaction. Unknown gateway results remain pending. Payments from the balance or a gateway are distinct from credit-grant payments.
+      type: object
+      properties:
+        invoice_id: {type: string, format: uuid}
+        transaction_id: {type: string, format: uuid}
+        credit_grant_id: {type: string, format: uuid}
+        credit_grant:
+          $ref: '#/components/schemas/ObjectIdentity'
+        refund_id: {type: string, format: uuid}
+        status:
+          description: |-
+            `failed` means the operation did not succeed; for a gateway payment, that the gateway declined
+            it. `canceled` means a gateway payment was withdrawn without collecting money. After either,
+            an invoice the payment was meant to pay remains open for another payment.
+          type: string
+          enum: [pending, succeeded, failed, canceled]
+        cancellation_reason:
+          description: Why the payment was withdrawn. Present with `canceled`.
+          $ref: '#/components/schemas/PaymentCancellationReason'
+        payment_gateway: {type: string}
+        method_type: {type: string}
+        failure_reason:
+          description: |-
+            Why it failed. Present with `failed`. For a declined gateway payment the value is the
+            gateway's own code, passed on unchanged: the card issuer's decline code when there is one
+            (Stripe's decline_code, such as insufficient_funds or lost_card), otherwise the gateway's
+            error code (Stripe's code, such as card_declined, expired_card or
+            payment_intent_authentication_failure). Clients map it to their own wording and treat an
+            unknown value as a generic decline.
+          type: string
+        settled_at: {type: string, format: date-time}
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        type:
+          $ref: "#/components/schemas/TransactionType"
+        amount:
+          description: Signed. Positive adds to the balance, negative takes from it.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        remaining_amount:
+          description: How much of this batch has not been spent yet. Zero on negative batches.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [id, type, amount, remaining_amount, currency, created_at]
+      additionalProperties: false
+    TransactionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    CreditGrant:
+      type: object
+      properties:
+        min_amount: {type: string}
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        remaining_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        applies_to:
+          description: What this credit may pay for. No restrictions means
+            anything on the account.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        status:
+          type: string
+          enum:
+            - active
+            - depleted
+            - expired
+            - voided
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - applies_to
+        - id
+        - name
+        - amount
+        - remaining_amount
+        - currency
+        - status
+        - valid_from
+    CreditGrantList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditGrant"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Refund:
+      type: object
+      properties:
+        transaction_id: {type: string, format: uuid}
+        cancellation_request_id: {type: string, format: uuid}
+        transactions:
+          description: Original funds-return split and each result. Unknown gateway results remain pending.
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        invoice_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        order_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        settled_amount:
+          description: What has actually been returned.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        destination:
+          description: Where the refunded money went — back to the account balance, or back to the
+            payment method it came from.
+          type: string
+          enum:
+            - balance
+            - gateway
+        status:
+          description: |-
+            Summary of the related refund transactions. Succeeded only when every part succeeds.
+            Pending and processing do not mean funds have been returned. Partial success remains
+            visible in settled_amount and transactions, including when another part has failed.
+          type: string
+          enum:
+            - pending
+            - processing
+            - succeeded
+            - failed
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - currency
+        - status
+        - created_at
+        - amount
+        - transactions
+    RefundList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Refund"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    UsageCharge:
+      type: object
+      properties:
+        subscription_id: {type: string, format: uuid}
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        product:
+          $ref: "#/components/schemas/Product"
+        resource_id:
+          description: Which resource this was charged for. Empty for charges
+            not tied to one.
+          type: string
+        meter:
+          $ref: "#/components/schemas/ObjectIdentity"
+        unit:
+          type: string
+        dimensions:
+          description: The attributes the rate was chosen by, such as region and
+            machine type.
+          type: object
+          additionalProperties:
+            type: string
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          description: Exclusive.
+          type: string
+          format: date-time
+        gross_quantity:
+          description: How much was used, before any included allowance.
+          type: string
+        deducted_quantity:
+          description: How much of that was covered by an allowance.
+          type: string
+        quantity:
+          description: What was charged for — the gross quantity less the part
+            covered.
+          type: string
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        invoice_id:
+          description: The usage invoice this charge was added to. Absent while it waits to be priced.
+          type:
+            - string
+            - "null"
+          format: uuid
+        invoice_item_id:
+          description: The usage invoice line this charge was summed into. Absent while it waits to be priced.
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - id
+        - product
+        - meter
+        - window_start
+        - window_end
+        - quantity
+        - currency
+    UsageChargeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageCharge"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    SubscriptionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subscription"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Subscription:
+      type: object
+      description: An independently billed purchase. Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their original value. Technical state belongs to the owning service.
+      properties:
+        currency: {type: string}
+        billing_type: {type: string, enum: [postpaid, prepaid, one_time]}
+        interval: {type: string, enum: [none, day, month, year]}
+        interval_count: {type: integer, minimum: 1}
+        recurring_amount:
+          description: Whole-subscription prepaid renewal amount, after continuing discounts and before tax. Absent for other billing types.
+          type: string
+        termination_policy:
+          $ref: '#/components/schemas/TerminationPolicy'
+        refund_policy:
+          $ref: '#/components/schemas/RefundPolicy'
+        order_item_id: {type: string, format: uuid}
+        replaces_subscription_id: {type: string, format: uuid}
+        coupon_id: {type: string, format: uuid}
+        coupon:
+          $ref: '#/components/schemas/ObjectIdentity'
+        discounted_renewals_remaining: {type: integer, minimum: 0}
+        suspend_reason: {type: string}
+        billing_cycle_anchor: {type: string, format: date-time}
+        cancellation_request:
+          $ref: '#/components/schemas/CancellationRequest'
+        paid_with:
+          description: |-
+            How the purchase, or the latest renewal paid with a saved card, was paid. Automatic renewal
+            tries this card after the account's balance and credits, and the account's default card after
+            that.
+          allOf:
+            - $ref: "#/components/schemas/PaidWith"
+        created_at: {type: string, format: date-time}
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          description: The billing account that made the purchase. Renewals of a project subscription are charged to the project's current billing account.
+          type: integer
+          format: int64
+        account:
+          $ref: '#/components/schemas/AccountIdentity'
+        product_id:
+          $ref: '#/components/schemas/ProductID'
+        project_id:
+          description: |-
+            Which project this is for. Absent when it was bought at account level, such as a
+            membership, which belongs to no single project.
+          type:
+            - string
+            - "null"
+          format: uuid
+        product:
+          $ref: "#/components/schemas/Product"
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        price_id:
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        paid_until:
+          description: Present for prepaid items. Absent for metered ones, which
+            have no end date.
+          type:
+            - string
+            - "null"
+          format: date-time
+        auto_renew:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - pending
+            - active
+            - suspended
+            - canceled
+            - terminated
+        started_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - plan_id
+        - price_id
+        - quantity
+        - status
+        - billing_account_id
+        - account
+        - product_id
+        - product
+        - plan_name
+        - billing_type
+        - currency
+        - interval
+        - auto_renew
+    RenewalPrice:
+      type: object
+      properties:
+        termination_policy:
+          $ref: '#/components/schemas/TerminationPolicy'
+        refund_policy:
+          $ref: '#/components/schemas/RefundPolicy'
+        price_id:
+          type: string
+          format: uuid
+        interval_count:
+          description: How many periods one renewal covers.
+          type: integer
+        interval:
+          type: string
+          enum: [day, month, year]
+        amount:
+          description: What renewing for this term costs, for the quantity held.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        current:
+          description: |-
+            The term this item already bills at. Renewing for it uses the price bought
+            originally, so a later price change does not affect it.
+          type: boolean
+      required:
+        - price_id
+        - interval_count
+        - interval
+        - current
+    RenewalPriceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenewalPrice"
+      required:
+        - items
+    RenewRequest:
+      type: object
+      properties:
+        order_id:
+          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown result.
+          type: string
+          format: uuid
+        periods:
+          description: |-
+            How many further periods to buy, each at the price this item already bills at.
+
+            Buying twelve monthly periods is not the same as buying one yearly term: a longer
+            term is usually sold at a lower price, and that price is only reached by naming the
+            interval. Use `interval_count` and `interval` for that.
+          type: integer
+          default: 1
+          minimum: 1
+        interval_count:
+          description: |-
+            Renew for a term of this length instead, at the price currently sold for it. Give
+            `interval` with it.
+
+            Leaving both out renews at the price this item already bills at, which a later price
+            change does not affect. Naming a term that differs from the current one is a fresh
+            choice, so it is bought at today's price. Naming the current term changes nothing.
+
+            List the terms on offer with the renewal prices operation.
+          type: integer
+          minimum: 1
+        interval:
+          description: The unit interval_count counts in.
+          type: string
+          enum: [day, month, year]
+        payment_method_id:
+          type: string
+          format: uuid
+        use_balance:
+          type: boolean
+          default: true
+        return_url:
+          type: string
+      required: [order_id]
+      additionalProperties: false
+    AutoRenewSet:
+      type: object
+      properties:
+        auto_renew:
+          type: boolean
+      required:
+        - auto_renew
+      additionalProperties: false
+    OrderStatus:
+      type: string
+      description: |-
+        Follows the items. `pending` is not yet accepted and may be paid or unpaid. `active` is
+        accepted with items still being set up. `completed` means every item was set up.
+        `partially_completed` means some items were set up and the others failed and were
+        refunded to their original payment sources. `failed` means every item failed and the
+        whole order was refunded. `canceled` means the order was withdrawn before payment and
+        nothing was charged.
+      enum:
+        - pending
+        - active
+        - completed
+        - partially_completed
+        - failed
+        - canceled
+    OrderItemStatus:
+      type: string
+      description: |-
+        `pending` is waiting to be set up. `completed` was confirmed by the service.
+        `failed` was not set up and its amount was refunded to the original payment sources.
+        `canceled` was withdrawn with its unpaid order. A completed item is ended by canceling
+        its subscription.
+      enum:
+        - pending
+        - completed
+        - failed
+        - canceled
+    Order:
+      type: object
+      properties:
+        coupon_id: {type: string, format: uuid}
+        coupon:
+          $ref: '#/components/schemas/ObjectIdentity'
+        promotion_code_id: {type: string, format: uuid}
+        promotion_code:
+          description: Code text frozen when this order applied the coupon.
+          type: string
+        invoice:
+          $ref: '#/components/schemas/InvoiceSummary'
+        paid_with:
+          description: How the order was paid. Absent until it is paid.
+          allOf:
+            - $ref: "#/components/schemas/PaidWith"
+        account:
+          $ref: '#/components/schemas/AccountIdentity'
+        cancel_reason:
+          type: string
+        change_effective_at:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        project_id:
+          description: |-
+            Which project it was bought for. Absent for a purchase made at account level, such
+            as a membership.
+          type:
+            - string
+            - "null"
+          format: uuid
+        billing_account_id:
+          description: |-
+            The billing account the order was placed with. It does not change when the project is later
+            linked to another billing account. While this account is suspended or closed the order cannot
+            be accepted, and a change scheduled for the end of a period is not invoiced and is called off
+            when the current period ends; such requests fail with BILLING_ACCOUNT_UNAVAILABLE.
+          type: integer
+          format: int64
+        currency:
+          type: string
+        type:
+          description: |-
+            `adopt` brings a resource that already existed under billing. It charges nothing at
+            the time and starts billing from the moment agreed.
+          type: string
+          enum:
+            - purchase
+            - renew
+            - change
+            - adopt
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        change_effective:
+          description: |-
+            When a plan change takes effect. `none` on anything that is not a change.
+
+            `period_end` orders stay pending until the first period at the new price is paid. That period
+            is invoiced shortly before the current paid period ends and starts when it ends; if the
+            invoice is still unpaid by then, the order is canceled and the subscription renews or ends as
+            usual. Renewing in the meantime moves all of this along with it.
+          type: string
+          enum:
+            - none
+            - immediate
+            - period_end
+        expires_at:
+          description: Acceptance deadline. Only pending orders expire automatically.
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        items:
+          description: |-
+            What was bought. Present on a single order and on every order in a list, so a list
+            can be rendered without a further request per row.
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+      required:
+        - id
+        - currency
+        - type
+        - status
+        - items
+        - created_at
+    OrderList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    PaidWith:
+      type: object
+      description: |-
+        How it was paid, as recorded at the time. It is kept as it was: removing the card afterwards
+        does not change it, and `payment_method_id` may then name a card that no longer exists.
+      properties:
+        method_type:
+          description: |-
+            `balance` when the account's balance and credits covered it in full. Otherwise the method used
+            with the gateway, such as `card`.
+          type: string
+        payment_gateway:
+          description: The gateway that collected it. Absent when `method_type` is `balance`.
+          type: string
+        payment_method_id:
+          description: The saved payment method that was charged, when one was.
+          type: string
+          format: uuid
+        brand:
+          type: string
+        last4:
+          type: string
+      required:
+        - method_type
+    PromotionCodePreviewRequest:
+      description: Specify lines to check whether the promotion code applies to new purchases and to estimate its discount. Without lines, the response contains the code terms without a purchase-specific applicability decision.
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        promotion_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+        lines:
+          description: New purchases to test against, in the same shape as a
+            quote.
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/QuoteLine"
+      required:
+        - billing_account_id
+        - promotion_code
+      additionalProperties: false
+    PromotionCodePreview:
+      description: Describes a usable promotion code and its applicability to the requested purchase. Invalid codes return an error response.
+      type: object
+      properties:
+        min_amount: {type: string}
+        type: {type: string, enum: [percentage, fixed_amount, price_override, free_setup]}
+        recurring: {type: boolean}
+        recurring_cycles: {type: integer, minimum: 1}
+        name:
+          type: string
+        amount:
+          description: For a fixed-amount discount.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        percent_off:
+          description: For a percentage discount.
+          type: string
+        max_discount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        applies_to:
+          description: |-
+            What it may be used for. Present whether or not a purchase was given, so that the
+            terms can be shown before anything is chosen.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        summary:
+          description: |-
+            The terms in one sentence, ready to display — for example "Compute, new purchases
+            only, from 100.00" or "No restriction on product or purchase type".
+          type: string
+        valid_until:
+          type:
+            - string
+            - "null"
+          format: date-time
+        applicable:
+          description: |-
+            Whether it applies to the purchase given in `lines`. Absent when no purchase was
+            given.
+          type: boolean
+        applicable_reason:
+          $ref: "#/components/schemas/PromotionCodeRejection"
+        qualifying_amount:
+          description: |-
+            The total of the lines that match the restrictions. This is what the threshold is
+            measured against, not the order total.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        shortfall:
+          description: |-
+            How much more of a qualifying purchase is needed to reach the threshold. `"0"` once
+            it is met.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        estimated_discount:
+          description: |-
+            What it would take off this purchase. An estimate: the amount is settled at the
+            moment the order is placed.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+    PromotionCodeRejection:
+      description: |-
+        Why a code cannot be used. `none` when it can.
+
+        `operation_not_covered` means the code is limited to certain purchase actions — a
+        first-purchase code presented for a renewal, for example.
+
+        `term_not_covered` means the code is limited to certain term lengths. A purchase with
+        no term, such as metered usage, is reported the same way.
+
+        `below_minimum` is accompanied by `shortfall`.
+      type: string
+      enum:
+        - none
+        - not_found
+        - expired
+        - not_yet_valid
+        - exhausted
+        - already_redeemed
+        - currency_mismatch
+        - product_not_covered
+        - plan_not_covered
+        - price_not_covered
+        - price_type_not_covered
+        - operation_not_covered
+        - term_not_covered
+        - not_first_purchase
+        - below_minimum
+    PurchaseOperation:
+      description: |-
+        Which purchase this applies to. `upgrade` and `downgrade` are told apart by money: a change
+        that costs more for the remainder of the period is an upgrade, one that returns money
+        is a downgrade. A change that costs neither more nor less is neither.
+
+        `purchase` means a new purchase as opposed to a renewal or a change. It does not mean the
+        account's first purchase.
+      type: string
+      enum:
+        - purchase
+        - renew
+        - upgrade
+        - downgrade
+    Discount:
+      description: A coupon held on this account. It applies at checkout without a code.
+      type: object
+      properties:
+        min_amount: {type: string}
+        billing_account_id: {type: integer, format: int64}
+        coupon_id: {type: string, format: uuid}
+        promotion_code_id: {type: string, format: uuid}
+        status: {type: string, enum: [active, revoked]}
+        revoked_at: {type: string, format: date-time}
+        type: {type: string, enum: [percentage, fixed_amount, price_override, free_setup]}
+        recurring: {type: boolean}
+        recurring_cycles: {type: integer, minimum: 1}
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        percent_off:
+          description: 'For a percentage discount, out of one hundred.'
+          type: string
+        amount:
+          description: Fixed discount or per-unit interval price override for this account currency.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        max_discount:
+          description: Caps a percentage discount.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        applies_to:
+          description: |-
+            What it may be used for. Absent means it applies to anything on the account,
+            including setup fees and traffic.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - type
+        - applies_to
+        - coupon_id
+        - status
+        - id
+    DiscountList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Discount"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    PriceOption:
+      description: |-
+        A price's display terms, including retired prices referenced by an applicability list.
+      type: object
+      properties:
+        product:
+          $ref: '#/components/schemas/Product'
+        plan:
+          $ref: '#/components/schemas/ObjectIdentity'
+        billing_scheme: {type: string, enum: [per_unit, tiered, rated]}
+        unit_quantity: {type: string}
+        id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        type:
+          type: string
+          enum: [postpaid, prepaid, one_time]
+        interval:
+          type: string
+          enum: [none, day, month, year]
+        interval_count:
+          description: How many periods one purchase covers.
+          type: integer
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - product
+        - plan
+        - currency
+        - type
+        - interval
+        - billing_scheme
+        - unit_quantity
+        - id
+    Applicability:
+      description: |-
+        Product, plan and price lists form a union; three empty lists permit every item.
+        Other conditions apply together. Entries always include their display fields.
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/ObjectIdentity"
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriceOption"
+        price_types:
+          type: array
+          items:
+            type: string
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOperation"
+        first_purchase_only:
+          description: Restricted to your first purchase of a covered product.
+          type: boolean
+        min_term_months:
+          description: |-
+            The shortest term a purchase may have, in months. A purchase with no term, such as
+            metered usage, never qualifies while this is set.
+          type: integer
+        max_term_months:
+          description: The longest term a purchase may have, in months.
+          type: integer
+    OrderItem:
+      type: object
+      description: Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are absent when there is no immediate invoice. Later catalog changes do not reprice this line.
+      properties:
+        position: {type: integer, minimum: 0}
+        configuration: {type: object, additionalProperties: true}
+        subscription_id: {type: string, format: uuid}
+        interval: {type: string, enum: [none, day, month, year]}
+        interval_count: {type: integer, minimum: 1}
+        termination_policy:
+          $ref: '#/components/schemas/TerminationPolicy'
+        refund_policy:
+          $ref: '#/components/schemas/RefundPolicy'
+        completes_on_payment: {type: boolean}
+        recurring_amount: {type: string}
+        setup_amount: {type: string}
+        billing_type:
+          description: The payment timing of the selected price.
+          type: string
+          enum: [postpaid, prepaid, one_time]
+        tax_amount:
+          description: Total tax after discounts, including any tax already included in the price.
+          type: string
+        tax_included_amount:
+          description: The part of tax_amount already included in gross_amount; it is not charged again.
+          type: string
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        price_id:
+          type: string
+          format: uuid
+        product_id:
+          description: Which service this line belongs to.
+          $ref: '#/components/schemas/ProductID'
+        product:
+          $ref: "#/components/schemas/Product"
+        plan_id:
+          description: Which plan was bought.
+          type: string
+          format: uuid
+        plan_name:
+          description: |-
+            What it was called when bought. It does not follow later catalogue renames and is
+            not translated.
+          type: string
+        quantity:
+          type: string
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        gross_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        period_start:
+          type:
+            - string
+            - "null"
+          format: date-time
+        period_end:
+          type:
+            - string
+            - "null"
+          format: date-time
+        status:
+          $ref: '#/components/schemas/OrderItemStatus'
+      required:
+        - id
+        - price_id
+        - quantity
+        - currency
+        - plan_id
+        - plan_name
+        - billing_type
+        - interval
+        - completes_on_payment
+        - status
+    OrderItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Allowance:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          description: Optional issuance key, unique within this billing account.
+        subscription_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        product:
+          $ref: "#/components/schemas/Product"
+        meter:
+          $ref: "#/components/schemas/ObjectIdentity"
+        unit:
+          description: The unit it is counted in, such as `MiB`.
+          type: string
+        source_type:
+          description: |-
+            `included` came with a recurring purchase and ends with its subscription, `promotional` was
+            granted.
+          type: string
+          enum:
+            - included
+            - promotional
+        name:
+          type: string
+        quantity:
+          description: How much was granted.
+          type: string
+        remaining_quantity:
+          description: How much is left.
+          type: string
+        priority:
+          description: |-
+            Lower values are consumed first. At equal priority, earlier expiry and then earlier issuance take
+            precedence.
+          type: integer
+        status:
+          type: string
+          enum:
+            - active
+            - depleted
+            - expired
+            - voided
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          description: |-
+            When it lapses. Anything unused at that point is lost; it is not refunded and does
+            not carry over. Absent when it does not expire on its own.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - product
+        - meter
+        - source_type
+        - name
+        - quantity
+        - remaining_quantity
+        - status
+        - valid_from
+    AllowanceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Allowance"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Entitlement:
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/Product"
+        feature:
+          $ref: "#/components/schemas/ObjectIdentity"
+        name:
+          type: string
+        enabled:
+          type: boolean
+        expires_at:
+          description: |-
+            When the subscription providing it ends. Absent for a metered subscription, which
+            has no end date.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - product
+        - feature
+        - enabled
+    EntitlementList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entitlement"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    InvoiceSummary:
+      type: object
+      description: Purchase-related invoice amounts, without account contact details or payment methods. Absent on an order with no immediate invoice.
+      properties:
+        id: {type: string, format: uuid}
+        number: {type: string}
+        currency: {type: string}
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        subtotal:
+          description: |-
+            Sum of the line amounts before discounts. Where prices include tax, the tax contained in
+            each line's discounted amount is taken out here, so that total = subtotal -
+            discount_amount + tax_amount always holds.
+          type: string
+        discount_amount:
+          description: Sum of the line discounts, taken off before tax.
+          type: string
+        tax_amount: {type: string}
+        total: {type: string}
+        amount_paid: {type: string}
+        amount_refunded: {type: string}
+        due_at: {type: string, format: date-time}
+      required: [id, currency, status, subtotal, discount_amount, tax_amount, total, amount_paid, amount_refunded]
+    TaxItem:
+      type: object
+      description: Tax name, rate and amounts frozen on the invoice.
+      properties:
+        id: {type: string, format: uuid}
+        invoice_id: {type: string, format: uuid}
+        name: {type: string}
+        percentage: {type: string}
+        country: {type: string}
+        state: {type: string}
+        taxable_amount: {type: string}
+        tax_amount: {type: string}
+        currency: {type: string}
+      required: [id, invoice_id, name, percentage, country, taxable_amount, tax_amount, currency]
+    ObjectIdentity:
+      description: A catalog object inlined for display.
+      type: object
+      properties:
+        lookup_key: {type: string}
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+        - id
+        - name
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number; the first page when omitted.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: How many per page, 100 at most.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+    From:
+      name: from
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Exclusive.
+      schema:
+        type: string
+        format: date-time
+    AccountIdQuery:
+      name: billing_account_id
+      in: query
+      required: false
+      description: Restrict to one of your accounts. All of them when omitted.
+      schema:
+        type: integer
+        format: int64
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InvoiceId:
+      name: invoiceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CancellationRequestId:
+      name: cancellationRequestId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    SubscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PaymentMethodId:
+      name: paymentMethodId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

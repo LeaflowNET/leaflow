@@ -9,47 +9,26 @@ paths: {}
 components:
   schemas:
     PlacedOrder:
-      description: 'A billable order has been created. Read it from the billing API to find out what is
-
-        owed and whether payment is still required.
-
-
-        Only the identifier is returned. Amounts and state are not repeated here; the order
-
-        itself is the single source for them.'
+      description: Identifies the original purchase. Replays retain these identifiers. Read the order for purchase
+        progress and its invoice for amounts and payment status.
       type: object
       properties:
+        invoice_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: The invoice for this purchase. Null when there is no immediate invoice. Replays retain this
+            identifier; read the invoice for its current payment state.
         order_id:
-          description: 'Identifies the order. Use it to read the order and, where payment is required,
-
-            to pay it.
-
-
-            An order is created even when nothing is owed, such as a plan with no charge or one
-
-            covered entirely by granted credit. Such an order is already settled, and no
-
-            payment step applies.'
+          description: The original order, including for purchases without an immediate charge. Payment alone does not
+            imply that the service has completed delivery.
           type: string
           format: uuid
       required:
-        - order_id
+      - order_id
+      - invoice_id
       additionalProperties: false
-    PaymentPlan:
-      type: object
-      properties:
-        balance_amount:
-          type: string
-          pattern: ^\d+(\.\d{1,10})?$
-        provider_amount:
-          type: string
-          pattern: ^\d+(\.\d{1,10})?$
-      required:
-        - balance_amount
-        - provider_amount
-      additionalProperties: false
-      description: Requested funding split. This does not select a card or payment provider; complete payment through
-        Billing.
     OrderOptions:
       type: object
       properties:
@@ -57,8 +36,15 @@ components:
           type: string
           minLength: 8
           maxLength: 255
-        payment_plan:
-          $ref: '#/components/schemas/PaymentPlan'
+        auto_pay:
+          type: boolean
+          default: true
+          description: Defaults to true. When true, the purchase is paid from available account funds and applicable
+            grants when it is placed. If they do not cover the amount due, the request fails with HTTP 422 and code
+            BILLING_INSUFFICIENT_FUNDS; no order is created and nothing is charged. The idempotency key remains bound
+            to the refused request. Retrying with the same key returns HTTP 409 with code ORDER_CLOSED, and purchasing
+            again requires a new idempotency key. When false, the order is created without payment, and its invoice,
+            if any, is paid through Billing.
         expected_amount:
           type: string
           pattern: ^\d+(\.\d{1,10})?$
@@ -67,8 +53,8 @@ components:
           minLength: 1
           maxLength: 128
       required:
-        - idempotency_key
+      - idempotency_key
       additionalProperties: false
-      description: Reuse the same key for retries of the same purchase. Reusing it with a different request fails.
-        Billing selects contract pricing, applies eligible grants and promotions, and owns payment challenges and
-        expiry.
+      description: Purchase options. Reuse idempotency_key for retries of the same purchase, including resource
+        creation. Different parameters with the same key return HTTP 409. Replays identify the original purchase
+        and do not create another order.

@@ -1,0 +1,890 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Billing Catalog API
+  version: 1.0.0
+  description: |-
+    What the platform sells and what it costs: services, sellable plans, prices, shared rate
+    cards and estimates. No credentials are required.
+servers:
+  - url: https://billing.leaflow.cloud
+    description: Public catalog and estimates
+
+tags:
+  - name: prices
+    description: What the platform sells and what it costs. No sign-in required.
+  - name: plans
+    description: Sellable plans.
+  - name: products
+    description: Billable services.
+  - name: rate-cards
+    description: Shared rate cards and pricing rules.
+paths:
+  /catalog/v1/prices:
+    get:
+      summary: List what is on sale, with prices
+      description: |-
+        Every sellable thing and what it costs, in one request. A plan appears once per price.
+
+        `currency` is required: a plan has a price in each currency it is sold in, so "what does
+        this cost" has no answer without one.
+
+        Retired prices are left out. Existing subscriptions still reference them, so this is not
+        the place to look up what an existing purchase is paying.
+      operationId: list-prices
+      security: []
+      tags:
+        - prices
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: currency
+          in: query
+          required: true
+          description: ISO 4217, three uppercase letters.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProductID'
+        - name: type
+          in: query
+          required: false
+          description: Narrows to one payment timing.
+          schema:
+            type: string
+            enum: [postpaid, prepaid, one_time]
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog representation changes.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceList"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/products:
+    get:
+      summary: List catalog products
+      operationId: list-products
+      tags:
+        - products
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductList"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/products/{productId}:
+    parameters:
+      - name: productId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ProductID'
+    get:
+      summary: Get a service
+      description: |-
+        Resolves an identifier that was stored elsewhere — on an order line, an invoice line, or
+        the terms of a credit — into something that can be displayed.
+      operationId: get-product
+      security: []
+      tags:
+        - products
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog representation changes.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a sellable item
+      description: |-
+        Resolves a stored identifier into something that can be displayed. Returns items that are
+        no longer on sale: an existing purchase still refers to one.
+      operationId: get-plan
+      security: []
+      tags:
+        - plans
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog representation changes.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/prices/{priceId}:
+    parameters:
+      - name: priceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a price
+      description: Returns the catalog price, including retired prices. Fixed purchase history and renewal agreements are shown on orders and subscriptions rather than reconstructed from today's catalog.
+      operationId: get-price
+      security: []
+      tags:
+        - prices
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog listing changes.
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Price"
+        "304":
+          description: Not Modified
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/plans:
+    parameters:
+      - name: product_id
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ProductID'
+    get:
+      summary: List catalog plans
+      operationId: list-plans
+      tags:
+        - plans
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/plans/{planId}/prices:
+    parameters:
+      - $ref: "#/components/parameters/PlanId"
+    get:
+      summary: List catalog prices
+      description: |-
+        Public list prices only. An account holding a negotiated agreement may be charged less;
+        it is never charged more.
+      operationId: list-prices-by-plan
+      tags:
+        - prices
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceList"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/rate-cards/{rateCardId}/rules:
+    parameters:
+      - $ref: "#/components/parameters/RateCardId"
+    get:
+      summary: List catalog rates
+      description: |-
+        Only public price lists are readable here. A list written for a single agreement is not,
+        and its identifier cannot be used to reach it.
+      operationId: list-rates
+      tags:
+        - rate-cards
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - name: meter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter by the meter UUID.
+        - name: at
+          in: query
+          required: false
+          description: Return the rates in effect at this moment. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateList"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        default:
+          $ref: "#/components/responses/Error"
+  /catalog/v1/estimates:
+    post:
+      summary: Estimate a basket
+      description: |-
+        Uses public list prices. Nothing is reserved and nothing is recorded, so this may be
+        called as often as required.
+
+        `POST` is used because the set of items to price does not fit in a query string. There is
+        no corresponding `GET`, and no estimate is stored to retrieve.
+
+        An account holding a negotiated agreement may be charged less than this. Tax and
+        discounts are not included.
+      operationId: create-estimate
+      tags:
+        - prices
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EstimateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  schemas:
+    TerminationPolicy:
+      type: string
+      enum:
+        - immediate
+        - period_end
+      description:
+        Whether a fulfilled purchase may end immediately or only after its paid term. Does not grant a refund.
+        When absent, the terms are not configured and termination requires review.
+    RefundPolicy:
+      type: string
+      enum:
+        - none
+        - prorated
+      description:
+        Prorated returns the unused value of paid service periods using integer-second duration ratios.
+        Setup fees are excluded. Tax and funds follow the original invoice and payment sources.
+    Error:
+      $ref: ../../../type/v1/error.yaml#/components/schemas/Error
+    Product:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/ProductID'
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - id
+        - name
+    ProductID:
+      description: Immutable platform service identifier, such as compute, canopy or assistant.
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
+    ProductList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Plan:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        lookup_key: {type: string}
+        product:
+          $ref: '#/components/schemas/Product'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanFeature'
+        id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: '#/components/schemas/ProductID'
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - product
+        - features
+        - enabled
+        - id
+        - product_id
+        - name
+    PlanList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Price:
+      type: object
+      properties:
+        rate_card:
+          $ref: '#/components/schemas/ObjectIdentity'
+        lookup_key: {type: string}
+        product:
+          $ref: '#/components/schemas/Product'
+        plan:
+          $ref: '#/components/schemas/ObjectIdentity'
+        meter_id: {type: string, format: uuid}
+        meter:
+          $ref: '#/components/schemas/ObjectIdentity'
+        unit_quantity: {type: string}
+        enabled: {type: boolean}
+        termination_policy:
+          $ref: "#/components/schemas/TerminationPolicy"
+        refund_policy:
+          $ref: "#/components/schemas/RefundPolicy"
+        product_id:
+          $ref: '#/components/schemas/ProductID'
+        id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        type:
+          description: |-
+            `postpaid` charges for what is used, `prepaid` buys a period in advance, `one_time`
+            charges once.
+          type: string
+          enum:
+            - postpaid
+            - prepaid
+            - one_time
+        billing_scheme:
+          description: |-
+            How the amount is arrived at. `rated` means the rate depends on attributes such as
+            region or machine type, and is looked up on a price list.
+          type: string
+          enum:
+            - per_unit
+            - tiered
+            - rated
+        unit_amount:
+          description: Present for `per_unit`.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tiers_mode:
+          description: |-
+            `none` for a price that is not tiered, which is most of them.
+
+            Otherwise `graduated` charges each band at its own rate, and `volume` charges
+            everything at the rate of the band the total falls in.
+          type: string
+          enum:
+            - none
+            - graduated
+            - volume
+        tiers:
+          description: Present for `tiered`, in ascending order.
+          type: array
+          items:
+            $ref: "#/components/schemas/Tier"
+        rate_card_id:
+          description: For `rated` prices, the price list the rates are read
+            from.
+          type: string
+          format: uuid
+        min_quantity:
+          type: string
+          description: |-
+            The smallest quantity that can be bought. Absent means no lower bound.
+        max_quantity:
+          type: string
+          description: |-
+            The largest purchasable quantity. Omitted when no maximum applies. A quantity above this limit is
+            rejected with BILLING_PRICE_INVALID and field=max_quantity.
+        quantity_step:
+          type: string
+          description: |-
+            Quantities must be a multiple of this. Absent means any quantity within the bounds.
+        interval_count:
+          description: For prepaid prices, how many periods one purchase covers.
+          type: integer
+        interval:
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        setup_fee:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - product
+        - plan
+        - interval
+        - unit_quantity
+        - id
+        - plan_id
+        - currency
+        - type
+        - billing_scheme
+    PriceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Price"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    Rate:
+      type: object
+      properties:
+        meter:
+          $ref: "#/components/schemas/ObjectIdentity"
+        unit:
+          description: The unit readings arrive in, such as `core-second`.
+          type: string
+        dimensions:
+          description: The attributes this rate applies to, such as region and
+            machine type.
+          type: object
+          additionalProperties:
+            type: string
+        pricing_model:
+          type: string
+          enum:
+            - per_unit
+            - graduated
+            - volume
+        unit_amount:
+          description: Present for `per_unit`. Tiered rates carry their amounts
+            on the tiers.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tiers:
+          description: Present for `graduated` and `volume`, in ascending order.
+          type: array
+          items:
+            $ref: "#/components/schemas/Tier"
+        unit_quantity:
+          description: |-
+            How many measured units one amount covers. An hourly rate on a per-second meter is
+            `"3600"`.
+          type: string
+        currency:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - meter
+        - dimensions
+        - pricing_model
+        - currency
+        - effective_from
+    RateList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rate"
+        total_count:
+          type: integer
+          format: int64
+      required:
+        - items
+    QuoteLine:
+      description: |-
+        Identify a price directly, or select a price for a plan. For each resource give its ID or lookup key, never both. Lookup keys require product_id.
+
+        A line that gives a meter, `dimensions` or `duration_seconds` estimates usage and is
+        priced only at a postpaid price. Such a line is refused with HTTP 400
+        `BILLING_PURCHASE_INVALID` when `price_type` is `prepaid` or `one_time`, or when the price
+        it names is not postpaid; `meta.field` is `price_type`, `price_id` or `price_lookup_key`
+        accordingly. When the plan has no postpaid price, the line is returned unpriced with
+        `no_price`.
+      type: object
+      properties:
+        price_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        plan_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        meter_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        price_id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: '#/components/schemas/ProductID'
+        plan_id:
+          type: string
+          format: uuid
+        meter_id:
+          type: string
+          format: uuid
+        dimensions:
+          description: |-
+            The attributes the price depends on — region, instance type, token class.
+
+            Required when the price draws its rates from a price list, which is how anything
+            sold by region or by machine type is priced. A price that carries a single unit
+            amount, or a ladder, has no attributes to give and takes none.
+
+            Every attribute the meter declares must be present. A combination with no rate
+            covering it is refused rather than priced at zero.
+          type: object
+          additionalProperties:
+            type: string
+        price_type:
+          description: |-
+            Narrows the selection when a plan offers more than one billing type.
+          type: string
+          enum:
+            - postpaid
+            - prepaid
+            - one_time
+        interval: {type: string, enum: [none, day, month, year]}
+        interval_count: {type: integer, minimum: 1}
+        quantity:
+          type: string
+        duration_seconds:
+          description: |-
+            For metered items, how long to price for. This allows an estimate such as "about
+            this much per month" to be shown before anything exists. The priced quantity is
+            `quantity` multiplied by this duration.
+          type: integer
+          format: int64
+      required:
+        - quantity
+    EstimateRequest:
+      type: object
+      properties:
+        currency:
+          description: Must be one the catalogue publishes.
+          type: string
+          minLength: 3
+          maxLength: 3
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/QuoteLine"
+      required:
+        - currency
+        - lines
+      additionalProperties: false
+    QuoteLineResult:
+      type: object
+      properties:
+        tax_amount:
+          description: Tax included in the account quote. Absent in public catalogue estimates.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tax_included_amount:
+          description: Tax already included in the displayed price.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        index:
+          description: Which line of the request this answers.
+          type: integer
+        priced:
+          description: |-
+            Whether a price was found for this line. Read this before anything else.
+
+            A single item with no price no longer fails the whole request. A catalogue
+            almost always has something not yet priced, and refusing the request would
+            leave no way to render a list in which a few entries are simply not on sale.
+
+            When false, `price_id`, `unit_amount` and `amount` are absent and
+            `unpriced_reason` states what is missing.
+          type: boolean
+        unpriced_reason:
+          description: |-
+            Why no price was found; `none` while `priced` is true.
+
+            The last four are told apart because their remedies differ: the price points
+            at no price list, the list holds no rate for that meter, that exact combination
+            of attributes is not configured, or it is configured but nothing is in effect
+            at the moment asked about.
+          type: string
+          enum:
+            - none
+            - no_price
+            - no_rate_card
+            - no_meter
+            - no_dimensions
+            - no_effective_rule
+        price_id:
+          description: |-
+            The price selected. Returned whenever `priced` is true, including when the
+            request identified the item indirectly, so that the choice can be confirmed.
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        quantity:
+          description: |-
+            The quantity actually priced. When `duration_seconds` is given, it is the requested
+            `quantity` multiplied by that duration.
+          type: string
+        amount:
+          description: Not rounded. Round only for display.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+      required:
+        - index
+        - priced
+        - currency
+    Quote:
+      type: object
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuoteLineResult"
+        total:
+          description: |-
+            What would be owed in total. Amounts to be returned are not netted off it.
+
+            Null when any line could not be priced. What would be owed is not knowable then, and a
+            total that silently left the unpriced lines out would read as a smaller bill rather than
+            an incomplete one — the per-line `priced` flag is easy to skip, a missing total is not.
+          oneOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        currency:
+          type: string
+      required:
+        - currency
+    Tier:
+      type: object
+      properties:
+        up_to:
+          description: The upper bound of this band. Null on the last band,
+            which has no bound.
+          type:
+            - string
+            - "null"
+        unit_amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        flat_amount:
+          description: Charged once when this band is reached, in addition to
+            the per-unit amount.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - unit_amount
+    PlanFeature:
+      type: object
+      properties:
+        feature:
+          $ref: "#/components/schemas/ObjectIdentity"
+        name:
+          type: string
+      required:
+        - feature
+        - name
+    ObjectIdentity:
+      description: A catalog object inlined for display.
+      type: object
+      properties:
+        lookup_key: {type: string}
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+        - id
+        - name
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |-
+        The `ETag` from an earlier reply. When the catalogue has not changed since, the
+        answer is `304` with no body.
+
+        Send it on every catalogue read. An unchanged catalogue is answered without a body.
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1-based page number; the first page when omitted.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: How many per page, 100 at most.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 100
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RateCardId:
+      name: rateCardId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    NotModified:
+      description: Unchanged since the `ETag` that was sent. No body.
+      headers:
+        ETag:
+          description: The same entity tag that was sent.
+          schema:
+            type: string
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
