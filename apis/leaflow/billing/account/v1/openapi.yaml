@@ -885,93 +885,6 @@ paths:
                 $ref: '#/components/schemas/Subscription'
         default:
           $ref: '#/components/responses/Error'
-  /account/v1/subscriptions/{subscriptionId}/cancellation-preview:
-    parameters:
-      - $ref: '#/components/parameters/SubscriptionId'
-    get:
-      summary: Preview cancellation
-      description: |-
-        Reads confirmed terms and paid-period value without recording a request or locking a refund amount.
-
-        Use create-quote with a `cancellation`, which quotes the subscriptions released together.
-      operationId: preview-cancellation
-      deprecated: true
-      tags: [subscriptions]
-      responses:
-        '200':
-          description: Cancellation estimate
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CancellationPreview'
-        default:
-          $ref: '#/components/responses/Error'
-  /account/v1/subscriptions/{subscriptionId}/cancellation-requests:
-    parameters:
-      - $ref: '#/components/parameters/SubscriptionId'
-    post:
-      summary: Request subscription cancellation
-      description: |-
-        Ends the whole subscription under confirmed terms. The request does not itself stop service; actual end is confirmed by the owning service. Refund processing is separate.
-
-        Use create-cancellation, which ends the subscriptions released together and checks the refund.
-      operationId: create-cancellation-request
-      deprecated: true
-      tags: [subscriptions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CancellationRequestCreate'
-      responses:
-        '201':
-          description: Cancellation requested
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CancellationRequest'
-        default:
-          $ref: '#/components/responses/Error'
-  /account/v1/cancellation-requests/{cancellationRequestId}:
-    parameters:
-      - $ref: '#/components/parameters/CancellationRequestId'
-    get:
-      summary: Get cancellation request
-      description: Use get-cancellation.
-      operationId: get-cancellation-request
-      deprecated: true
-      tags: [subscriptions]
-      responses:
-        '200':
-          description: Request and actual end receipt
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CancellationRequest'
-        default:
-          $ref: '#/components/responses/Error'
-  /account/v1/cancellation-requests/{cancellationRequestId}/cancel:
-    parameters:
-      - $ref: '#/components/parameters/CancellationRequestId'
-    post:
-      summary: Cancel a cancellation request
-      description: |-
-        Allowed only before release starts. Does not resume a previously suspended subscription.
-
-        Use withdraw-cancellation, which withdraws the whole cancellation.
-      operationId: cancel-cancellation-request
-      deprecated: true
-      tags: [subscriptions]
-      responses:
-        '200':
-          description: Canceled request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CancellationRequest'
-        default:
-          $ref: '#/components/responses/Error'
   /account/v1/quotes:
     post:
       summary: Quote renewals or a cancellation
@@ -1833,25 +1746,6 @@ components:
           type: integer
           format: int64
       required: [items]
-    CancellationPreview:
-      type: object
-      properties:
-        subscription_id: {type: string, format: uuid}
-        mode:
-          $ref: '#/components/schemas/TerminationPolicy'
-        scheduled_at: {type: string, format: date-time}
-        refundable_amount: {type: string}
-        currency: {type: string}
-      required: [subscription_id, mode, refundable_amount, currency]
-    CancellationRequestCreate:
-      type: object
-      properties:
-        mode:
-          $ref: '#/components/schemas/TerminationPolicy'
-        forfeit_remaining_value: {type: boolean, default: false}
-        reason: {type: string, minLength: 1, maxLength: 1024}
-      required: [reason]
-      additionalProperties: false
     CancellationRequest:
       type: object
       required:
@@ -4481,11 +4375,6 @@ components:
         format: uuid
     CancellationId:
       name: cancellationId
-      in: path
-      required: true
-      schema: {type: string, format: uuid}
-    CancellationRequestId:
-      name: cancellationRequestId
       in: path
       required: true
       schema: {type: string, format: uuid}
