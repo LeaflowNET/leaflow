@@ -150,6 +150,27 @@ paths:
                 $ref: "#/components/schemas/AccountBalance"
         default:
           $ref: "#/components/responses/Error"
+  /account/v1/billing-accounts/{accountId}/metered-usage:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      summary: Get account metered usage
+      description: |-
+        Whether the account has anything billed by usage, and what that usage has cost over the last
+        seven days. Usage is paid from the balance, so this tells how much of the balance it is likely
+        to need: the balance divided by `average_daily_amount` is roughly how many days it lasts.
+      operationId: get-account-metered-usage
+      tags:
+        - accounts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeteredUsage"
+        default:
+          $ref: "#/components/responses/Error"
   /account/v1/billing-accounts/{accountId}/payment-options:
     parameters:
       - $ref: "#/components/parameters/AccountId"
@@ -492,6 +513,46 @@ paths:
                 $ref: "#/components/schemas/PaymentResult"
         default:
           $ref: "#/components/responses/Error"
+  /account/v1/invoices/{invoiceId}/payment-preview:
+    parameters:
+      - $ref: "#/components/parameters/InvoiceId"
+    get:
+      summary: Preview invoice payment
+      description: |-
+        What paying this invoice now would take from credit grants, from the balance and, for the rest,
+        from a payment gateway. It is computed as paying computes it, so paying with the same options
+        straight afterwards takes exactly these amounts unless the account's funds change in between.
+        Nothing is charged, reserved or created.
+
+        Refused with the same errors as paying, except that insufficient funds are not an error here:
+        they show as a `gateway_amount` above zero.
+      operationId: preview-invoice-payment
+      tags:
+        - payments
+      parameters:
+        - name: use_balance
+          in: query
+          required: false
+          description: As in paying. True when omitted.
+          schema:
+            type: boolean
+            default: true
+        - name: use_credits
+          in: query
+          required: false
+          description: As in paying. True when omitted.
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentPreview"
+        default:
+          $ref: "#/components/responses/Error"
   /account/v1/payments:
     post:
       summary: Pay together
@@ -521,6 +582,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaymentResult"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/payments/preview:
+    post:
+      summary: Preview paying together
+      description: |-
+        What paying these invoices together now would take from credit grants and from the balance,
+        invoice by invoice in the order they would be paid. It is computed as paying together computes
+        it. Nothing is charged, reserved or created.
+
+        Refused with the same errors as paying together, except that insufficient funds are not an
+        error here: they show as a `gateway_amount` above zero, and paying together would then be
+        refused with `BILLING_INSUFFICIENT_FUNDS`.
+      operationId: preview-pay-together
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayTogetherRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentPreview"
         default:
           $ref: "#/components/responses/Error"
   /account/v1/invoices:
@@ -898,6 +988,44 @@ paths:
                 $ref: "#/components/schemas/PaymentResult"
         default:
           $ref: "#/components/responses/Error"
+  /account/v1/subscriptions/{subscriptionId}/renewal-orders:
+    parameters:
+      - $ref: "#/components/parameters/SubscriptionId"
+    post:
+      summary: Create renewal order
+      description: |-
+        Places a renewal order and issues its invoice without charging anything; pay the invoice to
+        renew. The periods and price are chosen as for renewing. The order can be paid until the
+        current paid period ends, and never after the end of the first period it renews; unpaid by
+        then, it is canceled. While auto-renew is on, the renewal due at the end of the period pays
+        this order instead of placing another.
+
+        Save `order_id` before submitting and read the order after an unknown outcome; creating it a
+        second time conflicts.
+      operationId: create-renewal-order
+      tags:
+        - subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewalOrderRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "409":
+          description: The order already exists or the subscription has a conflicting renewal, change or cancellation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
   /account/v1/subscriptions/{subscriptionId}/auto-renew:
     parameters:
       - $ref: "#/components/parameters/SubscriptionId"
@@ -1043,6 +1171,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+        default:
+          $ref: "#/components/responses/Error"
+  /account/v1/orders/{orderId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      summary: Cancel order
+      description: |-
+        Withdraws an order that is not paid in full, and tells the service that placed it, so that
+        nothing is delivered. An order with nothing paid becomes `canceled` and its invoice is voided.
+        What was already paid toward it, from credit grants or the balance, is returned the way it was
+        paid, and the order becomes `failed`. Either way `cancel_reason` is `requested_by_customer`.
+        Canceling an order that is already canceled or failed returns it unchanged.
+
+        Refused with 409 and `BILLING_PAID_ORDER_NOT_CANCELABLE` once the invoice is paid in full,
+        `BILLING_ORDER_ALREADY_ACCEPTED` once the order has been accepted,
+        `BILLING_ORDER_PAYMENT_IN_FLIGHT` while an online payment for it is in progress, and
+        `BILLING_SCHEDULED_CHANGE_NOT_CANCELABLE` for a change that takes effect at the end of the
+        period, which only the service that placed it can call off.
+      operationId: cancel-order
+      tags:
+        - billing-history
+      responses:
+        "200":
+          description: The order after the request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "409":
+          description: The order is paid in full, accepted, being paid online, or a scheduled change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         default:
           $ref: "#/components/responses/Error"
   /account/v1/orders/{orderId}/items:
@@ -1499,6 +1662,39 @@ components:
         - restricted_credits
         - credit_groups
         - due
+    MeteredUsage:
+      type: object
+      required: [billing_account_id, currency, active_resource_count, postpaid_subscription_count, window_start, window_end, amount, average_daily_amount]
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        active_resource_count:
+          description: Resources still metered in the projects the account currently pays for.
+          type: integer
+        postpaid_subscription_count:
+          description: Subscriptions billed by usage that the account currently pays for and that have not ended.
+          type: integer
+        window_start:
+          description: The start of the seven days the amounts cover.
+          type: string
+          format: date-time
+        window_end:
+          description: The end of those seven days, the time usage was last priced.
+          type: string
+          format: date-time
+        amount:
+          description: Usage priced in the window, before tax and before credit grants. Usage not yet priced is not included.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        average_daily_amount:
+          description: |-
+            `amount` per day. Over the window, or over the part of it since the account's usage began
+            when that is shorter, counting at least one day.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
     CreditGroup:
       type: object
       properties:
@@ -1951,6 +2147,73 @@ components:
         - processing
         - requires_action
         - failed
+    AppliedCredit:
+      description: A credit grant and what it would pay.
+      type: object
+      required: [credit_grant_id, name, amount]
+      properties:
+        credit_grant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        amount:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+    PaymentPreviewInvoice:
+      type: object
+      required: [invoice_id, amount_due, credit_applied, balance_applied]
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+        order_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        amount_due:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credit_applied:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        balance_applied:
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+    PaymentPreview:
+      description: What paying would take, computed as paying computes it. Nothing is charged or reserved.
+      type: object
+      required: [currency, amount_due, credit_applied, credit_grants, balance_applied, gateway_amount, balance_after]
+      properties:
+        currency:
+          type: string
+        amount_due:
+          description: What is outstanding before paying.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credit_applied:
+          description: What credit grants would pay. Grants restricted to other purchases pay nothing here.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        credit_grants:
+          description: The credit grants that would pay, in the order they would be used.
+          type: array
+          items:
+            $ref: "#/components/schemas/AppliedCredit"
+        balance_applied:
+          description: What the balance would pay.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        gateway_amount:
+          description: What would remain to be paid online. Paying without a gateway is refused with `BILLING_INSUFFICIENT_FUNDS` while this is above zero.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        balance_after:
+          description: The available balance after paying.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        invoices:
+          description: Paying together only. Each invoice, in the order it would be paid.
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentPreviewInvoice"
     PaymentResult:
       type: object
       properties:
@@ -2748,10 +3011,38 @@ components:
           type: string
           format: uuid
         use_balance:
+          description: Whether to pay from the balance, with or without `payment_method_id`.
+          type: boolean
+          default: true
+        use_credits:
+          description: Whether to pay from eligible credit grants before the balance.
           type: boolean
           default: true
         return_url:
           type: string
+      required: [order_id]
+      additionalProperties: false
+    RenewalOrderRequest:
+      description: The periods and price of the renewal, chosen as in renewing.
+      type: object
+      properties:
+        order_id:
+          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown result.
+          type: string
+          format: uuid
+        periods:
+          description: As in renewing.
+          type: integer
+          default: 1
+          minimum: 1
+        interval_count:
+          description: As in renewing.
+          type: integer
+          minimum: 1
+        interval:
+          description: As in renewing.
+          type: string
+          enum: [day, month, year]
       required: [order_id]
       additionalProperties: false
     AutoRenewSet:
