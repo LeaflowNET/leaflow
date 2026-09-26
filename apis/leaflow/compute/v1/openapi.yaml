@@ -167,7 +167,8 @@ paths:
 
 
         Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the backup, including a pay-as-you-go
-        subscription. `meta.resource_id` names the backup. It is released when its subscription ends.'
+        subscription. `meta.resource_id` names the backup. It is released by canceling the subscriptions listed in
+        `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
       operationId: delete-backup
       tags:
       - Backup
@@ -572,7 +573,8 @@ paths:
 
 
         Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the disk, including a pay-as-you-go
-        subscription. `meta.resource_id` names the disk. It is released when its subscription ends.'
+        subscription. `meta.resource_id` names the disk. It is released by canceling the subscriptions listed in
+        `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
       operationId: delete-disk
       tags:
       - Disk
@@ -777,8 +779,9 @@ paths:
 
 
         Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the address or for its bandwidth,
-        including a pay-as-you-go subscription. `meta.resource_id` names the floating IP. It is released when its
-        subscriptions end.'
+        including a pay-as-you-go subscription. `meta.resource_id` names the floating IP. It is released by canceling
+        the subscriptions listed in `meta.subscription_ids` through Billing, the same set as its
+        `release_subscription_ids`.'
       operationId: release-floating-ip
       tags:
       - FloatingIP
@@ -1070,8 +1073,9 @@ paths:
 
 
         Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the instance, or for a disk that
-        is deleted with it, including a pay-as-you-go subscription. `meta.resource_id` names that resource. It is released
-        when its subscription ends.'
+        is deleted with it, including a pay-as-you-go subscription. `meta.resource_id` names that resource. The instance
+        is released by canceling the subscriptions listed in `meta.subscription_ids` through Billing, the same set as
+        its `release_subscription_ids`.'
       operationId: delete-instance
       tags:
       - Instance
@@ -2123,7 +2127,8 @@ paths:
 
 
         Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the image, including a
-        pay-as-you-go subscription. `meta.resource_id` names the image. It is released when its subscription ends.'
+        pay-as-you-go subscription. `meta.resource_id` names the image. It is released by canceling the subscriptions
+        listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
       operationId: delete-private-image
       tags:
       - PrivateImage
@@ -2929,7 +2934,8 @@ paths:
                 $ref: '#/components/schemas/Error'
     delete:
       description: 'Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the snapshot, including a
-        pay-as-you-go subscription. `meta.resource_id` names the snapshot. It is released when its subscription ends.'
+        pay-as-you-go subscription. `meta.resource_id` names the snapshot. It is released by canceling the subscriptions
+        listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
       summary: Delete a snapshot
       operationId: delete-snapshot
       tags:
@@ -3293,6 +3299,14 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this backup: its own.
+            Subscriptions that have ended are not listed, and the list is empty when no subscription pays for any of
+            them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -3332,6 +3346,7 @@ components:
       - order_id
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - generation
@@ -3484,6 +3499,15 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this disk: its own
+            and those of its snapshots. A system disk is released only with its instance, so for a system disk the
+            list is that of the instance. Subscriptions that have ended are not listed, and the list is empty when no
+            subscription pays for any of them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -3525,6 +3549,7 @@ components:
       - order_id
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - generation
@@ -4018,6 +4043,14 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this address: the
+            subscriptions of the address and of its bandwidth. Subscriptions that have ended are not listed, and the
+            list is empty when no subscription pays for any of them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -4080,6 +4113,7 @@ components:
       - order_id
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - generation
@@ -4329,6 +4363,14 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this instance: its
+            own, those of the disks deleted with it, and those of the snapshots of those disks. Subscriptions that
+            have ended are not listed, and the list is empty when no subscription pays for any of them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -4374,6 +4416,7 @@ components:
       - restrictions
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - observed_at
@@ -4973,6 +5016,14 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this private image:
+            its own. Subscriptions that have ended are not listed, and the list is empty when no subscription pays for
+            any of them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -5015,6 +5066,7 @@ components:
       - order_id
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - generation
@@ -5513,6 +5565,14 @@ components:
           - string
           - 'null'
           format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this snapshot: its
+            own. Subscriptions that have ended are not listed, and the list is empty when no subscription pays for any
+            of them.'
+          type: array
+          items:
+            type: string
+            format: uuid
         access_state:
           type:
           - string
@@ -5548,6 +5608,7 @@ components:
       - order_id
       - price_id
       - subscription_item_id
+      - release_subscription_ids
       - access_state
       - task
       - generation
