@@ -893,7 +893,7 @@ paths:
       description: |-
         Reads confirmed terms and paid-period value without recording a request or locking a refund amount.
 
-        Use create-cancellation-preview, which previews the subscriptions released together.
+        Use create-quote with a `cancellation`, which quotes the subscriptions released together.
       operationId: preview-cancellation
       deprecated: true
       tags: [subscriptions]
@@ -972,31 +972,43 @@ paths:
                 $ref: '#/components/schemas/CancellationRequest'
         default:
           $ref: '#/components/responses/Error'
-  /account/v1/cancellations/preview:
+  /account/v1/quotes:
     post:
-      summary: Preview a cancellation
+      summary: Quote renewals or a cancellation
       description: |-
-        What canceling these subscriptions together would return, computed now under the refund terms
-        agreed when each was bought. This request does not create a resource: nothing is recorded or
-        reserved.
+        Priced in the currency of the billing account that pays for the subscriptions, and at any rate
+        negotiated for that account. Nothing is reserved and nothing is recorded, so this may be called
+        as often as required. Prices may change between quoting and renewing, so a quote should be
+        refreshed before a final confirmation is shown.
 
-        It is refused with the same errors as creating the cancellation, except that the amount is not
-        checked. Give the returned `proration_date` and `refundable_amount` when creating it.
-      operationId: create-cancellation-preview
+        A renewal is priced exactly as renewing would charge it: at the agreed amount or the price
+        named, with the discounts the account holds, and with tax.
+
+        A cancellation is quoted as creating it would compute the refund, as of now and under the refund
+        terms agreed when each subscription was bought. It is quoted on its own: combined with renewals
+        the request is refused with HTTP 400 `BILLING_PURCHASE_INVALID` and `meta.field`
+        `cancellation`. It is refused with the same errors as creating the cancellation, except that the
+        amount is not checked. Give the returned `cancellation.proration_date` and
+        `cancellation.refundable_amount` when creating it.
+
+        Every subscription must be paid for by the same one of your billing accounts; otherwise the
+        request is refused with HTTP 400 `BILLING_PURCHASE_INVALID`. Returns 404 when a subscription does
+        not exist, and 403 `BILLING_ACCOUNT_FORBIDDEN` when it is paid for by an account you do not own.
+      operationId: create-quote
       tags: [subscriptions]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancellationPreviewRequest'
+              $ref: '#/components/schemas/QuoteRequest'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CancellationRefundPreview'
+                $ref: '#/components/schemas/Quote'
         default:
           $ref: '#/components/responses/Error'
   /account/v1/cancellations:
@@ -1035,9 +1047,8 @@ paths:
           (`meta.cancellation_id`) or reclaimed (`meta.job_id`);
         - 409 `BILLING_ORDER_PAYMENT_IN_FLIGHT` while an online payment for a renewal of one of them
           is in progress;
-        - 422 `BILLING_CANCELLATION_UNSUPPORTED` when the service cannot yet be canceled here;
         - 409 `BILLING_CANCELLATION_REFUND_CHANGED` when the refund is no longer
-          `expected_refundable_amount`; preview again.
+          `expected_refundable_amount`; quote again.
 
         Sending the same request again, for the same subscriptions, mode and amount while that
         cancellation is still open, returns it with 200 rather than creating another. Renewal orders
@@ -1496,7 +1507,132 @@ components:
       description:
         Prorated returns the unused value of paid service periods using integer-second duration ratios.
         Setup fees are excluded. Tax and funds follow the original invoice and payment sources.
-    CancellationPreviewRequest:
+    QuoteRequest:
+      description: Specify renewals for existing subscriptions, or one cancellation on its own.
+      type: object
+      properties:
+        renewals:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/QuoteRenewal'
+        cancellation:
+          $ref: '#/components/schemas/QuoteCancellation'
+      additionalProperties: false
+    QuoteRenewal:
+      description: |-
+        Price renewing a prepaid subscription. Give `price_id`, or `interval` with
+        `interval_count`, to renew for another term at the price currently sold for it. Naming
+        the current term, or giving neither, renews at the agreed amount.
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        price_id:
+          type: string
+          format: uuid
+        interval:
+          type: string
+          enum: [day, month, year]
+        interval_count:
+          type: integer
+          minimum: 1
+        periods:
+          description: How many consecutive periods to renew for.
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+      required:
+        - subscription_id
+      additionalProperties: false
+    QuoteRenewalResult:
+      description: |-
+        What renewing would charge. Renewing the same subscription for the same term and number
+        of periods charges exactly `total`, unless prices or the discounts the account holds
+        change in between.
+      type: object
+      properties:
+        index:
+          description: Which renewal of the request this answers.
+          type: integer
+        subscription_id:
+          type: string
+          format: uuid
+        price_id:
+          description: The price the renewal is charged under.
+          type: string
+          format: uuid
+        interval:
+          type: string
+          enum: [day, month, year]
+        interval_count:
+          type: integer
+        periods:
+          type: integer
+        amount:
+          description: |-
+            The price of the periods before the discounts the account holds. A discount the
+            subscription already carries is reflected here. Contains tax only where the price
+            itself includes it.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          description: The reduction from a discount the account holds.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          description: Tax on the discounted amount.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        tax_included_amount:
+          description: The part of `tax_amount` already contained in `amount`.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          description: |-
+            What renewing would charge: `amount` less `discount_amount`, plus `tax_amount`, less
+            `tax_included_amount`.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - index
+        - subscription_id
+        - price_id
+        - interval
+        - interval_count
+        - periods
+        - amount
+        - discount_amount
+        - tax_amount
+        - tax_included_amount
+        - total
+    Quote:
+      type: object
+      properties:
+        renewals:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteRenewalResult'
+        cancellation:
+          description: What the cancellation requested would return. Present only when one was requested.
+          allOf:
+            - $ref: '#/components/schemas/CancellationRefundPreview'
+        total:
+          description: |-
+            What the renewals would charge in total. Amounts to be returned are not netted off it: a
+            quote of a cancellation alone has a total of zero, and what it would return is in
+            `cancellation`.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+      required: [total, currency]
+    QuoteCancellation:
+      description: |-
+        A cancellation to quote: what ending these subscriptions together would return. One mode per
+        request; to compare, quote `immediate` and `period_end` separately.
       type: object
       properties:
         subscription_ids:
@@ -1512,7 +1648,8 @@ components:
       additionalProperties: false
     CancellationRefundPreview:
       description: |-
-        What the cancellation would return, subscription by subscription and in total, as of now.
+        What the cancellation would return, subscription by subscription and in total, as of now. Give
+        `proration_date` and `refundable_amount` when creating the cancellation.
 
         - `unused_amount`: before tax, the value of the paid service still unused, whatever the refund
           terms say.
@@ -1555,7 +1692,7 @@ components:
             $ref: '#/components/schemas/CancellationRefundPreviewItem'
       required: [mode, currency, unused_amount, refundable_amount, refund_amount, credit_amount, tax_amount, forfeited_amount, items]
     CancellationRefundPreviewItem:
-      description: One subscription of the preview. The amounts mean what they mean in the preview.
+      description: One subscription of the quoted cancellation. The amounts mean what they mean in the total.
       type: object
       properties:
         subscription_id: {type: string, format: uuid}
@@ -1584,7 +1721,7 @@ components:
       type: object
       properties:
         subscription_ids:
-          description: As in the preview.
+          description: As in the quote.
           type: array
           minItems: 1
           maxItems: 50
@@ -1594,12 +1731,12 @@ components:
           $ref: '#/components/schemas/TerminationPolicy'
         proration_date:
           description: |-
-            For `immediate`, the `proration_date` of the preview: a whole second, not in the future and
+            For `immediate`, the `proration_date` of the quote: a whole second, not in the future and
             at most ten minutes old. The refund is computed as of it. Now when omitted.
           type: string
           format: date-time
         expected_refundable_amount:
-          description: The `refundable_amount` of the preview. The cancellation is refused when the refund differs.
+          description: The `refundable_amount` of the quote. The cancellation is refused when the refund differs.
           type: string
         reason:
           description: A note from the account holder. It is kept with the cancellation and not shown elsewhere.
