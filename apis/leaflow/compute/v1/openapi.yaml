@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Leaflow Compute API
   version: 1.0.0
-  description: 'Leaflow Compute user API for managing instances, disks, snapshots, backups, private images,
+  description: 'Leaflow Compute user API for managing instances, disks, snapshots, backups, images,
     private networks, subnets, routes, security groups, network interfaces and floating IPs.
 
 
@@ -79,7 +79,11 @@ paths:
 
 
         The duration depends on the amount of data. The backup is not complete when this endpoint returns; track
-        the returned task.'
+        the returned task.
+
+
+        The backup is billed for its size, at the backup price of its region. Obtain a price with `create-backup-quote`
+        first.'
       operationId: create-backup
       tags:
       - Backup
@@ -96,6 +100,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseResult'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/backups/quote:
+    post:
+      summary: Quote a backup
+      description: 'Prices the backup `create-backup` would order for the same disk, without ordering anything.
+        Nothing is reserved and nothing is recorded, so this may be called as often as required.
+
+
+        The quantity priced is the size of the disk. When `price_id` is omitted, a price of the region''s backup
+        offering is selected; the returned line names it, and that `price_id` is the one to order with.
+
+
+        Prices may change between quoting and ordering. An order is charged at the price in effect when it is placed,
+        so a quote should be refreshed before a final confirmation is shown.'
+      operationId: create-backup-quote
+      tags:
+      - Backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBackupQuoteRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseQuote'
         default:
           description: Error
           content:
@@ -303,25 +342,39 @@ paths:
                 $ref: '#/components/schemas/Error'
   /api/v1/images:
     get:
-      summary: List images on sale
-      description: 'An image whose `min_ram_mb` exceeds the memory of the selected instance type cannot boot. Filter
-        the options accordingly.
+      summary: List images
+      description: 'Lists the public images on sale together with the private images of this project. `visibility`
+        narrows the list to one of the two.
 
 
-        Only images currently on sale are listed. An image the platform withdraws disappears from here and can no
-        longer install new instances, while the instances already running it keep running and can still be rebuilt
-        onto it.'
+        A public image is offered to every project. Only public images currently on sale are listed: one the platform
+        withdraws disappears from here and can no longer install new instances, while the instances already running
+        it keep running and can still be rebuilt onto it.
+
+
+        A private image belongs to this project, which captured it from one of its instances, and is listed in every
+        status, including while its capture is in progress and after the capture failed.
+
+
+        An image can only be used in the region that holds it. An image whose `min_ram_mb` exceeds the memory of the
+        selected instance type cannot boot; filter the options accordingly.'
       operationId: list-images
       tags:
-      - Catalog
+      - Image
       parameters:
       - name: region_id
         in: query
-        required: true
+        description: Return only the images of this region
         explode: false
         schema:
           type: string
           format: uuid
+      - name: visibility
+        in: query
+        description: Return only public or only private images. Both are returned when omitted
+        explode: false
+        schema:
+          $ref: '#/components/schemas/ImageVisibility'
       - name: page
         in: query
         schema:
@@ -344,6 +397,198 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImageListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Capture an instance as a private image
+      description: 'Creates a private image of this project from the system disk of the instance; data disks are not
+        included. The resulting image can create instances and rebuild them, and remains usable after the source instance
+        is released.
+
+
+        **The image reflects the moment the capture started. Later changes to the instance are not included.**
+
+
+        The capture has two phases, reported by the status of the image:
+
+
+        - `provisioning` — the system disk is being read, usually for tens of seconds. The instance remains usable
+        during this phase, although stopping it first is recommended for consistency.
+
+        - `uploading` — no longer tied to the system disk. **The instance may be started at this point; there is
+        no need to wait for the capture to finish.** The duration of this phase is proportional to the size of the
+        system disk, roughly 3 minutes for 20 GB.
+
+
+        The file system of a running instance may be captured mid-write, in which case the image is equivalent to
+        the disk contents after a power loss. Where consistency matters, stop the instance before starting the capture
+        and start it again once the status becomes `uploading`.
+
+
+        The instance can be started, stopped and used normally during the capture, but cannot be released.
+
+
+        The image is billed for the storage it occupies, at the private image price of its region. Obtain a price with
+        `create-image-quote` first.'
+      operationId: create-image
+      tags:
+      - Image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImageRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseResult'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/images/quote:
+    post:
+      summary: Quote capturing an instance as a private image
+      description: 'Prices the capture `create-image` would order for the same instance, without ordering anything.
+        Nothing is reserved and nothing is recorded, so this may be called as often as required.
+
+
+        The quantity priced is the size of the system disk, which is the most the image can occupy. When `price_id`
+        is omitted, a price of the region''s private image offering is selected; the returned line names it, and that
+        `price_id` is the one to order with.
+
+
+        Prices may change between quoting and ordering. An order is charged at the price in effect when it is placed,
+        so a quote should be refreshed before a final confirmation is shown.'
+      operationId: create-image-quote
+      tags:
+      - Image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateImageQuoteRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseQuote'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/images/{imageId}:
+    get:
+      summary: Retrieve an image
+      description: 'Returns a public image, or a private image of this project; any other image is reported as not
+        found. Use this endpoint to poll capture progress. When `status` is `error`, `failure` states the reason.'
+      operationId: get-image
+      tags:
+      - Image
+      parameters:
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Rename a private image
+      description: Only a private image of this project can be renamed; any other image is reported as not found.
+      operationId: rename-image
+      tags:
+      - Image
+      parameters:
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameImageRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a private image
+      description: 'Only a private image of this project can be deleted; any other image is reported as not found.
+
+
+        Deletion is rejected while instances created from the image still exist, as they need it in order to be rebuilt.
+
+
+        An image whose capture has not finished can be deleted; the capture is aborted.
+
+
+        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the image, including a
+        pay-as-you-go subscription. `meta.resource_id` names the image. It is released by canceling the subscriptions
+        listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
+      operationId: delete-image
+      tags:
+      - Image
+      parameters:
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '409':
+          description: The deletion was refused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '202':
+          description: The action was accepted. Wait for the returned task to finish.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -963,7 +1208,7 @@ paths:
         before submitting again.
 
 
-        Exactly one of image_id, private_image_id or boot_disk_id is required, and exactly one of port_id or subnet_id.
+        Exactly one of image_id or boot_disk_id is required, and exactly one of port_id or subnet_id.
         Existing ports, boot disks or floating IPs require count=1. Image boots require boot_disk; existing disks retain
         their own subscription. Instances, disks and public IPs keep their own subscription items on the same order.
 
@@ -1968,195 +2213,6 @@ paths:
       responses:
         '204':
           description: No Content
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /api/v1/private-images:
-    get:
-      summary: List private images
-      operationId: list-private-images
-      tags:
-      - PrivateImage
-      parameters:
-      - name: region_id
-        in: query
-        description: Return only the images of this region. An image can only be used in the region that holds it
-        explode: false
-        schema:
-          type: string
-          format: uuid
-      - name: page
-        in: query
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
-          default: 1
-      - name: page_size
-        in: query
-        schema:
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 200
-          default: 50
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PrivateImageListResponseBody'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    post:
-      summary: Capture an instance as a private image
-      description: 'Captured from the system disk of the instance; data disks are not included. The resulting image
-        can create instances and rebuild them, and remains usable after the source instance is released.
-
-
-        **The image reflects the moment the capture started. Later changes to the instance are not included.**
-
-
-        The capture has two phases, reported by the status of the image:
-
-
-        - `provisioning` — the system disk is being read, usually for tens of seconds. The instance remains usable
-        during this phase, although stopping it first is recommended for consistency.
-
-        - `uploading` — no longer tied to the system disk. **The instance may be started at this point; there is
-        no need to wait for the capture to finish.** The duration of this phase is proportional to the size of the
-        system disk, roughly 3 minutes for 20 GB.
-
-
-        The file system of a running instance may be captured mid-write, in which case the image is equivalent to
-        the disk contents after a power loss. Where consistency matters, stop the instance before starting the capture
-        and start it again once the status becomes `uploading`.
-
-
-        The instance can be started, stopped and used normally during the capture, but cannot be released.'
-      operationId: create-private-image
-      tags:
-      - PrivateImage
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePrivateImageRequestBody'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PurchaseResult'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /api/v1/private-images/{privateImageId}:
-    get:
-      summary: Retrieve a private image
-      description: Use this endpoint to poll capture progress. When `status` is `error`, `failure` states the reason.
-      operationId: get-private-image
-      tags:
-      - PrivateImage
-      parameters:
-      - name: privateImageId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PrivateImageResource'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    patch:
-      summary: Rename a private image
-      operationId: rename-private-image
-      tags:
-      - PrivateImage
-      parameters:
-      - name: privateImageId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RenamePrivateImageRequestBody'
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PrivateImageResource'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    delete:
-      summary: Delete a private image
-      description: 'Deletion is rejected while instances created from the image still exist, as they need it in
-        order to be rebuilt.
-
-
-        An image whose capture has not finished can be deleted; the capture is aborted.
-
-
-        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the image, including a
-        pay-as-you-go subscription. `meta.resource_id` names the image. It is released by canceling the subscriptions
-        listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.'
-      operationId: delete-private-image
-      tags:
-      - PrivateImage
-      parameters:
-      - name: privateImageId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      responses:
-        '409':
-          description: The deletion was refused.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '202':
-          description: The action was accepted. Wait for the returned task to finish.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -3397,6 +3453,21 @@ components:
       - price_id
       - order
       additionalProperties: false
+    CreateBackupQuoteRequestBody:
+      description: The fields of `CreateBackupRequestBody` that decide the price
+      type: object
+      properties:
+        disk_id:
+          description: The disk that would be backed up
+          type: string
+          format: uuid
+        price_id:
+          description: A price of the region's backup offering. One is selected when omitted
+          type: string
+          format: uuid
+      required:
+      - disk_id
+      additionalProperties: false
     RenameBackupRequestBody:
       type: object
       properties:
@@ -3662,16 +3733,6 @@ components:
           - string
           - 'null'
           format: uuid
-        backup_plan_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        private_image_plan_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
       required:
       - id
       - name
@@ -3689,8 +3750,6 @@ components:
       - product_id
       - plan_id
       - snapshot_plan_id
-      - backup_plan_id
-      - private_image_plan_id
       additionalProperties: false
     DiskTypeListResponseBody:
       type: object
@@ -3704,47 +3763,157 @@ components:
       required:
       - items
       additionalProperties: false
+    ImageVisibility:
+      description: 'Who can see and use an image. `public` — offered to every project by the platform. `private` —
+        usable only by the project that owns it.'
+      type: string
+      enum:
+      - public
+      - private
     ImageResource:
+      description: 'An image that installs the system of an instance. Fields that describe a capture or its billing
+        apply only to private images and are null, zero or empty for public ones.'
       type: object
       properties:
-        architecture:
-          type: string
         id:
           type: string
           format: uuid
-        login_username:
-          description: The account this image lets you log in as. The password set at creation belongs to this account
+        region_id:
           type: string
-          maxLength: 32
-        min_disk_gb:
-          type: integer
-          format: int64
-        min_ram_mb:
-          type: integer
-          format: int64
+          format: uuid
+        visibility:
+          $ref: '#/components/schemas/ImageVisibility'
         name:
           type: string
         os_family:
           type: string
         os_version:
           type: string
-        region_id:
+        architecture:
           type: string
-          format: uuid
+        login_username:
+          description: The account this image lets you log in as. The password set at creation belongs to this account
+          type: string
+          maxLength: 32
+        min_disk_gb:
+          description: The system disk of an instance created from this image cannot be smaller than this
+          type: integer
+          format: int64
+        min_ram_mb:
+          description: The instance type of an instance created from this image must have at least this much memory
+          type: integer
+          format: int64
         supports_password_reset:
           description: False means a new password can only be set by rebuilding an instance created from this image
           type: boolean
+        status:
+          description: 'Only `available` images can install instances. A public image is always `available`; a private
+            image goes through `provisioning` and `uploading` while it is captured.'
+          type: string
+          enum:
+          - provisioning
+          - uploading
+          - available
+          - deleting
+          - error
+        failure:
+          description: Reason the capture failed; non-empty only when `status` is `error`
+          type:
+          - string
+          - 'null'
+        size_bytes:
+          description: Storage occupied by a private image, which is what it is billed for; 0 until its capture
+            completes, and 0 for public images
+          type: integer
+          format: int64
+        source_instance_id:
+          description: The instance a private image was captured from. The image remains usable after that instance
+            is released. Null for public images
+          type:
+          - string
+          - 'null'
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        order_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        price_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        subscription_item_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        release_subscription_ids:
+          description: 'The subscriptions a cancellation through Billing has to cover to release this private image:
+            its own. Subscriptions that have ended are not listed, and the list is empty when no subscription pays for
+            it, and for public images.'
+          type: array
+          items:
+            type: string
+            format: uuid
+        release_set:
+          description: 'The subscriptions of `release_subscription_ids`, in the same order, each with the resource it
+            pays for, so that each line of a cancellation can name what it releases.'
+          type: array
+          items:
+            $ref: '#/components/schemas/ReleaseSetItem'
+        access_state:
+          type:
+          - string
+          - 'null'
+          enum:
+          - pending
+          - enabled
+          - suspended
+          - reclaimed
+          - null
+        task:
+          anyOf:
+          - $ref: '#/components/schemas/Task'
+          - type: 'null'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        observed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
       required:
-      - login_username
       - id
+      - region_id
+      - visibility
       - name
       - os_family
       - os_version
       - architecture
-      - region_id
+      - login_username
       - min_disk_gb
       - min_ram_mb
       - supports_password_reset
+      - status
+      - failure
+      - size_bytes
+      - source_instance_id
+      - created_at
+      - order_id
+      - price_id
+      - subscription_item_id
+      - release_subscription_ids
+      - release_set
+      - access_state
+      - task
+      - generation
+      - observed_at
       additionalProperties: false
     ImageListResponseBody:
       type: object
@@ -4252,7 +4421,7 @@ components:
           type: string
           format: uuid
         image_id:
-          description: Non-empty when the instance was created from a platform image
+          description: Non-empty when the instance was created from an image, public or private
           type:
           - string
           - 'null'
@@ -4284,12 +4453,6 @@ components:
           description: A free-text note about this instance. Empty when never set
           type: string
           maxLength: 4096
-        private_image_id:
-          description: Non-empty when the instance was created from a private image
-          type:
-          - string
-          - 'null'
-          format: uuid
         private_ip:
           description: Private address of the instance
           type:
@@ -4435,7 +4598,6 @@ components:
       - ipv6_address
       - instance_type_id
       - image_id
-      - private_image_id
       - source_disk_id
       - status
       - created_at
@@ -4515,13 +4677,12 @@ components:
           type: boolean
         boot_disk_id:
           description: Boot a disk you already have instead of installing an image. The disk must be available,
-            unattached, and in the same availability zone as the instance type. Exactly one of this, `image_id`
-            and `private_image_id`
+            unattached, and in the same availability zone as the instance type. Exactly one of this and `image_id`
           type: string
           format: uuid
         image_id:
-          description: A platform image, and it must be one currently on sale. Exactly one of this, `private_image_id`
-            and `boot_disk_id`
+          description: A public image currently on sale, or an available private image of this project. Exactly one
+            of this and `boot_disk_id`
           type: string
           format: uuid
           maxLength: 64
@@ -4548,10 +4709,6 @@ components:
         port_id:
           description: Use an existing network interface, which may already have a floating IP bound. Exactly one
             of this and `subnet_id`; only one instance can be created when it is used
-          type: string
-          format: uuid
-        private_image_id:
-          description: A private image. Exactly one of this, `image_id` and `boot_disk_id`
           type: string
           format: uuid
         security_group_ids:
@@ -4718,20 +4875,17 @@ components:
         generate_password:
           type: boolean
         image_id:
-          description: A platform image, which must be on sale unless it is the one this instance already runs.
-            Exactly one of this and `private_image_id`
+          description: A public image, which must be on sale unless it is the one this instance already runs, or an
+            available private image of this project
           type: string
           format: uuid
           maxLength: 64
         password:
           type: string
           maxLength: 128
-        private_image_id:
-          description: A private image. Exactly one of this and `image_id`
-          type: string
-          format: uuid
       additionalProperties: false
-      required: []
+      required:
+      - image_id
     RebuildInstanceResponseBody:
       type: object
       properties:
@@ -4975,168 +5129,7 @@ components:
       - subnet_id
       - security_group_ids
       additionalProperties: false
-    PrivateImageResource:
-      type: object
-      properties:
-        architecture:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        failure:
-          description: Reason the capture failed; non-empty only when `status` is `error`
-          type:
-          - string
-          - 'null'
-        id:
-          type: string
-          format: uuid
-        login_username:
-          description: The account this image lets you log in as. The password set at creation belongs to this account
-          type: string
-          maxLength: 32
-        min_disk_gb:
-          description: The system disk of an instance created from this image cannot be smaller than this
-          type: integer
-          format: int64
-        min_ram_mb:
-          description: The instance type of an instance created from this image must have at least this much memory
-          type: integer
-          format: int64
-        name:
-          type: string
-        os_family:
-          type: string
-        os_version:
-          type: string
-        region_id:
-          type: string
-          format: uuid
-        size_bytes:
-          description: Storage occupied by the image; 0 until the capture completes
-          type: integer
-          format: int64
-        source_instance_id:
-          description: The instance this image was captured from. The image remains usable after that instance is
-            released
-          type:
-          - string
-          - 'null'
-          format: uuid
-        status:
-          type: string
-          enum:
-          - provisioning
-          - uploading
-          - available
-          - deleting
-          - error
-        supports_password_reset:
-          description: False means a new password can only be set by rebuilding an instance created from this image
-          type: boolean
-        order_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        price_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        subscription_item_id:
-          type:
-          - string
-          - 'null'
-          format: uuid
-        release_subscription_ids:
-          description: 'The subscriptions a cancellation through Billing has to cover to release this private image:
-            its own. Subscriptions that have ended are not listed, and the list is empty when no subscription pays for
-            any of them.'
-          type: array
-          items:
-            type: string
-            format: uuid
-        release_set:
-          description: 'The subscriptions of `release_subscription_ids`, in the same order, each with the resource it
-            pays for, so that each line of a cancellation can name what it releases.'
-          type: array
-          items:
-            $ref: '#/components/schemas/ReleaseSetItem'
-        access_state:
-          type:
-          - string
-          - 'null'
-          enum:
-          - pending
-          - enabled
-          - suspended
-          - reclaimed
-          - null
-        task:
-          anyOf:
-          - $ref: '#/components/schemas/Task'
-          - type: 'null'
-        generation:
-          type: integer
-          format: int64
-          minimum: 1
-        observed_at:
-          type:
-          - string
-          - 'null'
-          format: date-time
-      required:
-      - login_username
-      - id
-      - name
-      - source_instance_id
-      - region_id
-      - status
-      - failure
-      - min_disk_gb
-      - min_ram_mb
-      - supports_password_reset
-      - size_bytes
-      - os_family
-      - os_version
-      - architecture
-      - created_at
-      - order_id
-      - price_id
-      - subscription_item_id
-      - release_subscription_ids
-      - release_set
-      - access_state
-      - task
-      - generation
-      - observed_at
-      additionalProperties: false
-    PrivateImageListResponseBody:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PrivateImageResource'
-        page:
-          type: integer
-          format: int64
-          minimum: 1
-        page_size:
-          type: integer
-          format: int64
-          minimum: 1
-        total_count:
-          type: integer
-          format: int64
-          minimum: 0
-      required:
-      - items
-      - page
-      - page_size
-      additionalProperties: false
-    CreatePrivateImageRequestBody:
+    CreateImageRequestBody:
       type: object
       properties:
         instance_id:
@@ -5158,7 +5151,22 @@ components:
       - price_id
       - order
       additionalProperties: false
-    RenamePrivateImageRequestBody:
+    CreateImageQuoteRequestBody:
+      description: The fields of `CreateImageRequestBody` that decide the price
+      type: object
+      properties:
+        instance_id:
+          description: The instance whose system disk would be captured
+          type: string
+          format: uuid
+        price_id:
+          description: A price of the region's private image offering. One is selected when omitted
+          type: string
+          format: uuid
+      required:
+      - instance_id
+      additionalProperties: false
+    RenameImageRequestBody:
       type: object
       properties:
         name:
@@ -5720,6 +5728,9 @@ components:
     PlacedOrder:
       $ref: ../../type/v1/order.yaml#/components/schemas/PlacedOrder
       required: []
+    PurchaseQuote:
+      $ref: ../../type/v1/order.yaml#/components/schemas/PurchaseQuote
+      required: []
     PurchaseResult:
       description: Identifies the Compute task and the Billing order of a purchase. Work on the purchase starts after
         the order's invoice is paid, or without waiting when the order has no immediate invoice. Track the task for
@@ -6179,7 +6190,7 @@ components:
           - disk
           - snapshot
           - backup
-          - private_image
+          - image
           - floating_ip
         id:
           type: string
