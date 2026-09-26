@@ -169,6 +169,10 @@ paths:
       description: |-
         Automatic renewal draws on the project billing account's balance, which a project member may
         commit. Paying by card requires the account owner and is done from the billing centre.
+
+        While the subscription has an open cancellation, turning it on or off is refused with 409
+        `BILLING_SUBSCRIPTION_OPERATION_PENDING` and `meta.cancellation_id`: creating the cancellation
+        turned it off, and withdrawing the cancellation does not turn it back on.
       operationId: set-project-auto-renew
       tags:
         - projects
@@ -232,7 +236,8 @@ paths:
 
         Sending the same request again, for the same subscriptions, mode and amount while that
         cancellation is still open, returns it with 200 rather than creating another. Renewal orders
-        still waiting for payment are canceled along with it.
+        still waiting for payment are canceled along with it, and automatic renewal is turned off for
+        every subscription in the set, for `period_end` as well as `immediate`.
       operationId: create-project-cancellation
       tags: [projects]
       security:
@@ -318,8 +323,10 @@ paths:
       summary: Withdraw a cancellation
       description: |-
         Withdraws the whole cancellation while none of its resources has begun to be released; the
-        subscriptions continue as before. After that it is refused with 409
-        `BILLING_CANCELLATION_CONFLICT`. Withdrawing one that is already withdrawn returns it unchanged.
+        subscriptions continue as before, except that automatic renewal, turned off when the
+        cancellation was created, stays off until it is turned on again. After that it is refused with
+        409 `BILLING_CANCELLATION_CONFLICT`. Withdrawing one that is already withdrawn returns it
+        unchanged.
       operationId: withdraw-project-cancellation
       tags: [projects]
       security:
@@ -652,6 +659,12 @@ components:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
             - type: 'null'
         billing_type: {type: string, enum: [postpaid, prepaid, one_time]}
+        auto_renew:
+          description: |-
+            Whether automatic renewal is on now. Creating the cancellation turns it off, and withdrawing
+            the cancellation does not turn it back on. Always false for a subscription that is not
+            `prepaid`.
+          type: boolean
         unused_amount:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         refundable_amount:
@@ -664,7 +677,7 @@ components:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         forfeited_amount:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
-      required: [subscription_id, plan_id, plan_name, billing_type, unused_amount, refundable_amount, refund_amount, credit_amount, tax_amount, forfeited_amount]
+      required: [subscription_id, plan_id, plan_name, billing_type, auto_renew, unused_amount, refundable_amount, refund_amount, credit_amount, tax_amount, forfeited_amount]
     CancellationCreate:
       type: object
       properties:
@@ -720,6 +733,12 @@ components:
           description: Who asked for it. `project_deletion` means the project was deleted.
           type: string
           enum: [customer, operator, project_deletion]
+        billing_account_id:
+          description: |-
+            The billing account that paid for these subscriptions when the cancellation was created: the
+            account of an account-level purchase, or the account the project was linked to.
+          type: integer
+          format: int64
         currency: {type: string}
         expected_refundable_amount:
           description: The refund confirmed when it was created. Absent when the platform created it.
@@ -737,7 +756,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CancellationItem'
-      required: [id, status, mode, origin, currency, requested_at, items]
+      required: [id, status, mode, origin, billing_account_id, currency, requested_at, items]
     CancellationItem:
       description: One subscription of the cancellation.
       type: object
@@ -749,6 +768,12 @@ components:
         subscription_id: {type: string, format: uuid}
         plan_id: {type: string, format: uuid}
         plan_name: {type: string}
+        billing_type:
+          description: |-
+            How the subscription is paid for. Only a `prepaid` subscription renews automatically; creating
+            the cancellation turned that off, and withdrawing the cancellation leaves it off.
+          type: string
+          enum: [postpaid, prepaid, one_time]
         status:
           type: string
           enum: [requested, scheduled, releasing, completed, canceled, failed]
@@ -769,7 +794,7 @@ components:
           description: Present with `completed`. The part returned to the payment method it was paid with.
           allOf:
             - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
-      required: [id, subscription_id, plan_id, plan_name, status]
+      required: [id, subscription_id, plan_id, plan_name, billing_type, status]
     CancellationList:
       type: object
       properties:
