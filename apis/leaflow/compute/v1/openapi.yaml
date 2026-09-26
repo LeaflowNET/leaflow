@@ -1642,6 +1642,10 @@ paths:
         a new purchase after paying, and reuse the original idempotency key after an uncertain response.
 
 
+        The new instance type takes effect, and is billed from then on, when the returned task succeeds. A completed
+        resize is final and cannot be reverted; to return to the previous type, submit another resize.
+
+
         Replays return HTTP 202 for the original operation. See the idempotency conventions for conflicts and terminal
         outcomes.'
       operationId: resize-instance
@@ -1673,100 +1677,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseResult'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /api/v1/instances/{instanceId}/resize/confirm:
-    post:
-      summary: Confirm a resize
-      description: 'Releases the resources held by the previous size. `pending_instance_type_id` becomes the type
-        in effect and is billed from then on.
-
-
-        Replays return HTTP 202 for the original operation. See the idempotency conventions for conflicts and terminal
-        outcomes.'
-      operationId: confirm-instance-resize
-      tags:
-      - Instance
-      parameters:
-      - name: instanceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 255
-        description: Reuse the same key for retries of the same action. A different request with the same key is
-          rejected.
-      responses:
-        '409':
-          description: The idempotency key was already used with different parameters in this scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '202':
-          description: The action was accepted. Wait for the returned task to finish.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Task'
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /api/v1/instances/{instanceId}/resize/revert:
-    post:
-      summary: Revert a resize
-      description: 'The instance returns to its previous size, `pending_instance_type_id` is discarded, and billing
-        is unaffected by the resize.
-
-
-        Replays return HTTP 202 for the original operation. See the idempotency conventions for conflicts and terminal
-        outcomes.'
-      operationId: revert-instance-resize
-      tags:
-      - Instance
-      parameters:
-      - name: instanceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 255
-        description: Reuse the same key for retries of the same action. A different request with the same key is
-          rejected.
-      responses:
-        '409':
-          description: The idempotency key was already used with different parameters in this scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '202':
-          description: The action was accepted. Wait for the returned task to finish.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Task'
         default:
           description: Error
           content:
@@ -4704,7 +4614,6 @@ components:
           - shelved
           - shelved_offloaded
           - rescued
-          - resized
           - deleting
           - deleted
           - error
