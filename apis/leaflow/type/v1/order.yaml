@@ -9,8 +9,8 @@ paths: {}
 components:
   schemas:
     PlacedOrder:
-      description: Identifies the original purchase. Replays retain these identifiers. Read the order for purchase
-        progress and its invoice for amounts and payment status.
+      description: Identifies the purchase. Read the order for purchase progress and its invoice for amounts and
+        payment status.
       type: object
       properties:
         invoice_id:
@@ -18,10 +18,10 @@ components:
           - string
           - 'null'
           format: uuid
-          description: The invoice for this purchase. Null when there is no immediate invoice. Replays retain this
-            identifier; read the invoice for its current payment state.
+          description: The invoice for this purchase. Null when there is no immediate invoice. Read the invoice for
+            its current payment state.
         order_id:
-          description: The original order, including for purchases without an immediate charge. Payment alone does not
+          description: The order, including for purchases without an immediate charge. Payment alone does not
             imply that the service has completed delivery.
           type: string
           format: uuid
@@ -32,19 +32,13 @@ components:
     OrderOptions:
       type: object
       properties:
-        idempotency_key:
-          type: string
-          minLength: 8
-          maxLength: 255
         auto_pay:
           type: boolean
           default: true
           description: Defaults to true. When true, the purchase is paid from available account funds and applicable
             grants when it is placed. If they do not cover the amount due, the request fails with HTTP 422 and code
-            BILLING_INSUFFICIENT_FUNDS; no order is created and nothing is charged. The idempotency key remains bound
-            to the refused request. Retrying with the same key returns HTTP 409 with code ORDER_CLOSED, and purchasing
-            again requires a new idempotency key. When false, the order is created without payment, and its invoice,
-            if any, is paid through Billing.
+            BILLING_INSUFFICIENT_FUNDS; no order is created and nothing is charged. When false, the order is created
+            without payment, and its invoice, if any, is paid through Billing.
         expected_amount:
           type: string
           pattern: ^\d+(\.\d{1,10})?$
@@ -52,9 +46,5 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-      required:
-      - idempotency_key
       additionalProperties: false
-      description: Purchase options. Reuse idempotency_key for retries of the same purchase, including resource
-        creation. Different parameters with the same key return HTTP 409. Replays identify the original purchase
-        and do not create another order.
+      description: Purchase options. Every request places an order of its own.
