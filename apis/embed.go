@@ -2,7 +2,8 @@
 // the layout of the contracts repository:
 //
 //	leaflow/<service>/v1/openapi.yaml
-//	leaflow/type/v1/error.yaml        shared, referenced by every contract
+//	leaflow/<service>/<subpackage>/v1/openapi.yaml   a service split by function
+//	leaflow/type/v1/error.yaml                       shared, referenced by every contract
 //
 // Keeping the layout is what lets each contract's relative reference to the
 // shared error schema resolve, and means a synced file is byte-identical to

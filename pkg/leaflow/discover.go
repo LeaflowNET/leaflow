@@ -185,5 +185,5 @@ func (o *Operation) AccountToken() bool {
 // Command is the equivalent command line, which is what lets an assistant tell
 // someone how to do the same thing themselves.
 func (o *Operation) Command() string {
-	return fmt.Sprintf("leaflow %s %s", o.spec.Service, o.spec.ID)
+	return fmt.Sprintf("leaflow %s %s", strings.ReplaceAll(o.spec.Service, "/", " "), o.spec.ID)
 }

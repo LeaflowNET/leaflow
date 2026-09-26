@@ -2,6 +2,7 @@ package dynamic
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -15,6 +16,13 @@ import (
 //
 //	leaflow <service> <operation-id>
 //	leaflow compute    create-disk
+//
+// A service split by function into subpackages adds one level, named after the
+// subpackage, because that is how its contracts, its Go import paths and its
+// TypeScript namespaces are named too:
+//
+//	leaflow <service> <subpackage> <operation-id>
+//	leaflow billing   catalog      list-prices
 //
 // The name is a literal value from the contract, lowercased and hyphenated.
 // Nothing is inferred, so nothing can drift: an operationId is already treated
@@ -37,9 +45,14 @@ import (
 func Build(specs *spec.Set, rt *Runtime) []*cobra.Command {
 	var roots []*cobra.Command
 
+	// parents holds the command each subpackage is attached to: the service's own
+	// command when it also has a contract, otherwise a group made for the purpose.
+	parents := map[string]*cobra.Command{}
+	subpackages := map[string][]*spec.Service{}
+
 	for _, service := range specs.Services() {
 		cmd := &cobra.Command{
-			Use:   service.Name,
+			Use:   path.Base(service.Name),
 			Short: writeServiceSummary(service),
 			Long:  writeServiceDetails(service),
 			Annotations: map[string]string{
@@ -49,7 +62,29 @@ func Build(specs *spec.Set, rt *Runtime) []*cobra.Command {
 
 		addOperations(cmd, service, rt)
 
-		roots = append(roots, cmd)
+		head, _, nested := strings.Cut(service.Name, "/")
+		if !nested {
+			parents[service.Name] = cmd
+			roots = append(roots, cmd)
+
+			continue
+		}
+
+		parent, ok := parents[head]
+		if !ok {
+			parent = &cobra.Command{Use: head}
+			parents[head] = parent
+			roots = append(roots, parent)
+		}
+
+		parent.AddCommand(cmd)
+		subpackages[head] = append(subpackages[head], service)
+	}
+
+	for head, services := range subpackages {
+		if parent := parents[head]; parent.Short == "" {
+			parent.Short = writeGroupSummary(head, services)
+		}
 	}
 
 	sort.Slice(roots, func(i, j int) bool {
@@ -174,6 +209,44 @@ func cutAtNewline(text string) string {
 	}
 
 	return text
+}
+
+// writeGroupSummary describes a service that exists only as subpackages, from
+// the words its subpackages' titles share ("Leaflow Billing Catalog API" and
+// "Leaflow Billing Account API" share "Leaflow Billing") followed by the
+// subpackages themselves. There is no contract to take a title from, and a
+// hand-written one would be the only text in the tree not read from a contract.
+func writeGroupSummary(head string, services []*spec.Service) string {
+	var shared []string
+
+	names := make([]string, 0, len(services))
+
+	for index, service := range services {
+		names = append(names, path.Base(service.Name))
+
+		words := strings.Fields(writeServiceSummary(service))
+		if index == 0 {
+			shared = words
+
+			continue
+		}
+
+		length := 0
+		for length < len(shared) && length < len(words) && shared[length] == words[length] {
+			length++
+		}
+
+		shared = shared[:length]
+	}
+
+	title := strings.Join(shared, " ")
+	if title == "" {
+		title = head
+	}
+
+	sort.Strings(names)
+
+	return title + ": " + strings.Join(names, ", ")
 }
 
 func writeServiceSummary(service *spec.Service) string {

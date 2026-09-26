@@ -29,11 +29,11 @@ func TestAnonymousCommandsWithoutLoginOrProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.CredentialStore = "file"
-	cfg.EditContext("").Endpoints = map[string]string{"account": server.URL, "billing": server.URL}
+	cfg.EditContext("").Endpoints = map[string]string{"account": server.URL, "billing/catalog": server.URL}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range [][]string{{"account", "list-locales"}, {"billing", "list-catalog-products"}} {
+	for _, command := range [][]string{{"account", "list-locales"}, {"billing", "catalog", "list-products"}} {
 		var out, stderr bytes.Buffer
 		app := &App{Out: &out, Err: &stderr, In: strings.NewReader("")}
 		if code := app.Run(append(command, "-o", "json")); code != ExitOK {

@@ -79,6 +79,10 @@ type Operation struct {
 }
 
 type Service struct {
+	// Name is the contract's path under leaflow/ without its version: compute,
+	// or billing/catalog for a service split by function into subpackages. The
+	// command tree nests the same way (leaflow billing catalog ...), as do the
+	// SDKs, so one name holds across all of them.
 	Name string
 
 	Version string
@@ -140,7 +144,8 @@ func embedPath(service string) string {
 }
 
 // parse resolves the contract, including the shared error schema every service
-// references as ../../type/v1/error.yaml.
+// references as ../../type/v1/error.yaml (../../../type/v1/error.yaml from a
+// subpackage).
 //
 // External references are allowed but served from the embedded tree, never from
 // disk or the network: the document is loaded under its published path so the
@@ -312,6 +317,12 @@ func (s *Service) Operations() []*Operation {
 }
 
 // EmbeddedNames lists the services that ship with a contract.
+//
+// A contract sits at leaflow/<service>/v1, or one level deeper at
+// leaflow/<service>/<subpackage>/v1 when a service is split by function. Both
+// depths are searched: looking at the first level only makes a split service
+// vanish from the command tree without an error, because its directory holds no
+// contract of its own.
 func EmbeddedNames() ([]string, error) {
 	entries, err := fs.ReadDir(embedded, embedRoot)
 	if err != nil {
@@ -325,14 +336,30 @@ func EmbeddedNames() ([]string, error) {
 			continue
 		}
 
-		if _, err := embedded.Open(embedPath(entry.Name())); err != nil {
-			continue
+		if hasContract(entry.Name()) {
+			names = append(names, entry.Name())
 		}
 
-		names = append(names, entry.Name())
+		children, err := fs.ReadDir(embedded, path.Join(embedRoot, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrNoEmbeddedSpecs, err)
+		}
+
+		for _, child := range children {
+			name := entry.Name() + "/" + child.Name()
+			if child.IsDir() && hasContract(name) {
+				names = append(names, name)
+			}
+		}
 	}
 
 	sort.Strings(names)
 
 	return names, nil
+}
+
+func hasContract(service string) bool {
+	_, err := fs.Stat(embedded, embedPath(service))
+
+	return err == nil
 }

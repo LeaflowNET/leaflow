@@ -72,7 +72,7 @@ func printCommands() error {
 
 	for _, service := range specs.Services() {
 		for _, op := range service.Operations() {
-			parts := []string{service.Name}
+			parts := strings.Split(service.Name, "/")
 			if len(op.Tags) > 0 {
 				parts = append(parts, naming.Kebab(op.Tags[0]))
 			}
@@ -102,6 +102,7 @@ func check() ([]string, error) {
 	var problems []string
 
 	problems = append(problems, checkCollisions(specs)...)
+	problems = append(problems, checkSubpackageCollisions(specs)...)
 	problems = append(problems, checkMissingIDs(specs)...)
 
 	sort.Strings(problems)
@@ -157,6 +158,34 @@ func checkCollisions(specs *spec.Set) []string {
 				problems = append(problems, fmt.Sprintf(
 					"%s: tag %q and untagged operation %q both become %q",
 					service.Name, tag, id, group))
+			}
+		}
+	}
+
+	return problems
+}
+
+// checkSubpackageCollisions mirrors the tree builder, where a subpackage becomes
+// a command next to the operations of its service's own contract, if it has
+// one. An operation named like a subpackage would shadow the whole subpackage.
+func checkSubpackageCollisions(specs *spec.Set) []string {
+	var problems []string
+
+	for _, service := range specs.Services() {
+		head, subpackage, nested := strings.Cut(service.Name, "/")
+		if !nested {
+			continue
+		}
+
+		parent, ok := specs.Service(head)
+		if !ok {
+			continue
+		}
+
+		for _, op := range parent.Operations() {
+			if naming.Kebab(op.ID) == subpackage {
+				problems = append(problems, fmt.Sprintf(
+					"%s: operation %q and subpackage %s both become %q", head, op.ID, service.Name, head+" "+subpackage))
 			}
 		}
 	}

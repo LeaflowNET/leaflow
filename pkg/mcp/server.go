@@ -257,13 +257,16 @@ func (s *Server) bindOperation(op *leaflow.Operation) sdk.ToolHandler {
 }
 
 // toolName is the operation on this surface: `compute-create-disk` for what the
-// command line spells `leaflow compute create-disk`.
+// command line spells `leaflow compute create-disk`, and
+// `billing-catalog-list-prices` for `leaflow billing catalog list-prices`.
 //
 // Both are the contract's operationId, so a tool name cannot drift from a
 // command name — and neither can change without changing the identifier the
-// SDKs generate their method names from.
+// SDKs generate their method names from. A subpackage's slash becomes a hyphen:
+// tool names allow letters, digits, hyphens and underscores only, and a name
+// outside that set is refused by the client rather than by this server.
 func buildToolName(op *leaflow.Operation) string {
-	return op.Service() + "-" + op.Name()
+	return strings.ReplaceAll(op.Service(), "/", "-") + "-" + op.Name()
 }
 
 // toolDescription is what the model reads to decide whether this is the

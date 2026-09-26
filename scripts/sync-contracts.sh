@@ -10,7 +10,8 @@
 # The embedded tree mirrors the contracts repository exactly:
 #
 #   leaflow/<service>/v1/openapi.yaml
-#   leaflow/type/v1/error.yaml        shared, referenced by every contract
+#   leaflow/<service>/<subpackage>/v1/openapi.yaml   a service split by function
+#   leaflow/type/v1/error.yaml                       shared, referenced by every contract
 #
 # Keeping the layout is what lets the relative reference in each contract
 # resolve, and means a synced file is byte-identical to upstream — so the review
@@ -40,39 +41,46 @@ destination="$root/apis/leaflow"
 updated=0
 missing=0
 
-for existing in "$destination"/*/; do
-  service="$(basename "$existing")"
-  found="$source_repo/leaflow/$service/v1/openapi.yaml"
+# type/ holds the shared schemas and security schemes rather than a service
+# contract, and there is more than one document in it. Copying the whole
+# directory keeps every relative reference resolvable; syncing a named subset
+# would leave a contract referring to a file that is not there, and the CLI
+# only finds out when it parses one.
+if [ -d "$destination/type" ]; then
+  mkdir -p "$destination/type/v1"
+  for shared in "$source_repo"/leaflow/type/v1/*.yaml; do
+    [ -f "$shared" ] || continue
+    cp "$shared" "$destination/type/v1/$(basename "$shared")"
+    echo "type <- $shared"
+    updated=$((updated + 1))
+  done
+fi
 
-  # type/ holds the shared schemas and security schemes rather than a service
-  # contract, and there is more than one document in it. Copying the whole
-  # directory keeps every relative reference resolvable; syncing a named subset
-  # would leave a contract referring to a file that is not there, and the CLI
-  # only finds out when it parses one.
-  if [ "$service" = "type" ]; then
-    mkdir -p "$destination/type/v1"
-    for shared in "$source_repo"/leaflow/type/v1/*.yaml; do
-      [ -f "$shared" ] || continue
-      cp "$shared" "$destination/type/v1/$(basename "$shared")"
-      echo "type <- $shared"
-      updated=$((updated + 1))
-    done
-    continue
-  fi
-
-  target="$destination/$service/v1/openapi.yaml"
+# Every embedded contract at either depth. Globbing one level only would skip a
+# split service's subpackages, and they would silently stop being updated.
+while IFS= read -r target; do
+  relative="${target#"$destination"/}"
+  service="${relative%/v1/openapi.yaml}"
+  found="$source_repo/leaflow/$relative"
 
   if [ ! -f "$found" ]; then
     echo "no contract found for $service" >&2
+    # A service split into subpackages upstream has no contract of its own any
+    # more. Embedding the subpackages brings new command trees, so it is left to a
+    # person, but the reason is stated rather than left to be rediscovered.
+    split=$(cd "$source_repo/leaflow" && find "$service" -mindepth 3 -maxdepth 3 -path '*/v1/openapi.yaml' 2>/dev/null | sort || true)
+    if [ -n "$split" ]; then
+      echo "  it is now split into subpackages; embed these and remove $service/v1:" >&2
+      echo "$split" | sed 's/^/    leaflow\//' >&2
+    fi
     missing=$((missing + 1))
     continue
   fi
 
-  mkdir -p "$(dirname "$target")"
   cp "$found" "$target"
   echo "$service <- $found"
   updated=$((updated + 1))
-done
+done < <(find "$destination" -mindepth 3 -maxdepth 4 -path '*/v1/openapi.yaml' -not -path "$destination/type/*" | sort)
 
 echo
 echo "updated $updated file(s)"
