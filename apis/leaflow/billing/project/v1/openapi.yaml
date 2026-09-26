@@ -1736,13 +1736,39 @@ components:
         quantity:
           type: string
         unit_amount:
-          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+          description: |-
+            The unit amount of the price this line is charged under. Absent for a tiered price, which has no
+            single unit amount, and for a change that takes effect at once, which is charged the prorated
+            difference.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         gross_amount:
-          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+          description: |-
+            Before discounts: the price applied to the quantity, which for a per-unit price is `unit_amount`
+            times `quantity`; a minimum charge can make it higher. For a change that takes effect at once it is
+            the prorated difference. The setup fee is not part of it; see `setup_amount`.
+
+            Under an inclusive tax rate it includes tax, as the price does, and the included part is
+            `tax_included_amount`. A renewal at the agreed terms is the exception: the agreed amount excludes
+            tax, and tax is added to it.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         discount_amount:
-          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+          description: |-
+            The reduction on this line: from the coupon the order uses and, for a renewal at the agreed terms,
+            from the discount the subscription carries.
+
+            A carried discount is part of the agreed amount. It is listed here, and `gross_amount` is then
+            `unit_amount` times `quantity`, except in two cases where `gross_amount` is the agreed amount and
+            the carried discount is already reflected in it: the renewal order also uses a coupon the account
+            holds, or the account's tax rate is inclusive.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         amount:
-          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+          description: |-
+            `gross_amount` less `discount_amount`.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         period_start:
