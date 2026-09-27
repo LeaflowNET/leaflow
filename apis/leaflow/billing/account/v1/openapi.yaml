@@ -35,10 +35,13 @@ paths:
       summary: List currencies accounts can be opened in
       description: |-
         The currencies a new billing account can be opened in. A retired currency is not listed,
-        although accounts already opened in it keep working. Not paged: the set is a few rows.
+        although accounts already opened in it keep working. Results are paginated.
       operationId: list-currencies
       tags:
         - accounts
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
           description: OK
@@ -179,11 +182,14 @@ paths:
       description: |-
         Lists the payment gateways and methods that currently accept payment in this account's currency, the
         preferred gateway first. Top-ups and invoice payments must name a gateway and method listed here;
-        others are refused. An empty list means no online payment is available for this account. Not paged: the
-        set is a few rows.
+        others are refused. An empty result means no online payment is available for this account.
+        Results are paginated.
       operationId: list-payment-options
       tags:
         - payments
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
           description: OK
@@ -222,7 +228,8 @@ paths:
       - $ref: "#/components/parameters/ProjectId"
     get:
       summary: Get project billing account
-      description: Returns 404 when the project has no billing account. No resources can be
+      description:
+        Returns 404 when the project has no billing account. No resources can be
         created until one is linked.
       operationId: get-project-billing-account
       tags:
@@ -817,7 +824,7 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/ProductID'
+            $ref: "#/components/schemas/ProductID"
         - name: resource_id
           in: query
           required: false
@@ -850,7 +857,7 @@ paths:
       parameters:
         - name: expiring_before
           in: query
-          schema: {type: string, format: date-time}
+          schema: { type: string, format: date-time }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/AccountIdQuery"
@@ -871,20 +878,20 @@ paths:
           $ref: "#/components/responses/Error"
   /account/v1/subscriptions/{subscriptionId}:
     parameters:
-      - $ref: '#/components/parameters/SubscriptionId'
+      - $ref: "#/components/parameters/SubscriptionId"
     get:
       summary: Get subscription
       operationId: get-subscription
       tags: [subscriptions]
       responses:
-        '200':
+        "200":
           description: Purchase and renewal agreement
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Subscription'
+                $ref: "#/components/schemas/Subscription"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
   /account/v1/quotes:
     post:
       summary: Quote renewals or a cancellation
@@ -914,16 +921,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/QuoteRequest'
+              $ref: "#/components/schemas/QuoteRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Quote'
+                $ref: "#/components/schemas/Quote"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
   /account/v1/cancellations:
     post:
       summary: Cancel subscriptions
@@ -974,22 +981,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancellationCreate'
+              $ref: "#/components/schemas/CancellationCreate"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
-        '200':
+                $ref: "#/components/schemas/Cancellation"
+        "200":
           description: The same cancellation, already open
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
     get:
       summary: List cancellations
       description: Newest first. Filter by `subscription_id` and `status=open` to find the cancellation now under way for a subscription.
@@ -1012,35 +1019,44 @@ paths:
           description: Only cancellations in this status. `open` means requested, scheduled or releasing.
           schema:
             type: string
-            enum: [open, requested, scheduled, releasing, completed, canceled, failed]
+            enum:
+              [
+                open,
+                requested,
+                scheduled,
+                releasing,
+                completed,
+                canceled,
+                failed,
+              ]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CancellationList'
+                $ref: "#/components/schemas/CancellationList"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
   /account/v1/cancellations/{cancellationId}:
     parameters:
-      - $ref: '#/components/parameters/CancellationId'
+      - $ref: "#/components/parameters/CancellationId"
     get:
       summary: Get a cancellation
       operationId: get-cancellation
       tags: [subscriptions]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
   /account/v1/cancellations/{cancellationId}/withdraw:
     parameters:
-      - $ref: '#/components/parameters/CancellationId'
+      - $ref: "#/components/parameters/CancellationId"
     post:
       summary: Withdraw a cancellation
       description: |-
@@ -1052,14 +1068,14 @@ paths:
       operationId: withdraw-cancellation
       tags: [subscriptions]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
-          $ref: '#/components/responses/Error'
+          $ref: "#/components/responses/Error"
   /account/v1/subscriptions/{subscriptionId}/renewal-prices:
     parameters:
       - name: subscriptionId
@@ -1074,6 +1090,9 @@ paths:
       operationId: list-renewal-prices
       tags:
         - subscriptions
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
       responses:
         "200":
           description: OK
@@ -1110,12 +1129,12 @@ paths:
             schema:
               $ref: "#/components/schemas/RenewRequest"
       responses:
-        '409':
+        "409":
           description: The order already exists or the subscription has a conflicting renewal, change or cancellation.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/Error"
         "200":
           description: OK
           content:
@@ -1255,7 +1274,7 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/ProductID'
+            $ref: "#/components/schemas/ProductID"
       responses:
         "200":
           description: OK
@@ -1437,9 +1456,9 @@ components:
           type: array
           maxItems: 100
           items:
-            $ref: '#/components/schemas/QuoteRenewal'
+            $ref: "#/components/schemas/QuoteRenewal"
         cancellation:
-          $ref: '#/components/schemas/QuoteCancellation'
+          $ref: "#/components/schemas/QuoteCancellation"
       additionalProperties: false
     QuoteRenewal:
       description: |-
@@ -1536,11 +1555,11 @@ components:
         renewals:
           type: array
           items:
-            $ref: '#/components/schemas/QuoteRenewalResult'
+            $ref: "#/components/schemas/QuoteRenewalResult"
         cancellation:
           description: What the cancellation requested would return. Present only when one was requested.
           allOf:
-            - $ref: '#/components/schemas/CancellationRefundPreview'
+            - $ref: "#/components/schemas/CancellationRefundPreview"
         total:
           description: |-
             What the renewals would charge in total. Amounts to be returned are not netted off it: a
@@ -1563,9 +1582,9 @@ components:
           minItems: 1
           maxItems: 50
           uniqueItems: true
-          items: {type: string, format: uuid}
+          items: { type: string, format: uuid }
         mode:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
       required: [subscription_ids, mode]
       additionalProperties: false
     CancellationRefundPreview:
@@ -1586,7 +1605,7 @@ components:
       type: object
       properties:
         mode:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
         scheduled_at:
           description: For `period_end`, when release begins, the end of the paid terms.
           type: string
@@ -1595,7 +1614,7 @@ components:
           description: For `immediate`, the second the refund is computed as of. Give it when creating the cancellation.
           type: string
           format: date-time
-        currency: {type: string}
+        currency: { type: string }
         unused_amount:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         refundable_amount:
@@ -1611,21 +1630,32 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CancellationRefundPreviewItem'
-      required: [mode, currency, unused_amount, refundable_amount, refund_amount, credit_amount, tax_amount, forfeited_amount, items]
+            $ref: "#/components/schemas/CancellationRefundPreviewItem"
+      required:
+        [
+          mode,
+          currency,
+          unused_amount,
+          refundable_amount,
+          refund_amount,
+          credit_amount,
+          tax_amount,
+          forfeited_amount,
+          items,
+        ]
     CancellationRefundPreviewItem:
       description: One subscription of the quoted cancellation. The amounts mean what they mean in the total.
       type: object
       properties:
-        subscription_id: {type: string, format: uuid}
-        plan_id: {type: string, format: uuid}
-        plan_name: {type: string}
+        subscription_id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        plan_name: { type: string }
         project:
           description: The project and its current name, for display. Absent for a purchase at account level, and when the project details cannot be read at the moment.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
-        billing_type: {type: string, enum: [postpaid, prepaid, one_time]}
+            - type: "null"
+        billing_type: { type: string, enum: [postpaid, prepaid, one_time] }
         auto_renew:
           description: |-
             Whether automatic renewal is on now. Creating the cancellation turns it off, and withdrawing
@@ -1644,7 +1674,20 @@ components:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         forfeited_amount:
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
-      required: [subscription_id, plan_id, plan_name, billing_type, auto_renew, unused_amount, refundable_amount, refund_amount, credit_amount, tax_amount, forfeited_amount]
+      required:
+        [
+          subscription_id,
+          plan_id,
+          plan_name,
+          billing_type,
+          auto_renew,
+          unused_amount,
+          refundable_amount,
+          refund_amount,
+          credit_amount,
+          tax_amount,
+          forfeited_amount,
+        ]
     CancellationCreate:
       type: object
       properties:
@@ -1654,9 +1697,9 @@ components:
           minItems: 1
           maxItems: 50
           uniqueItems: true
-          items: {type: string, format: uuid}
+          items: { type: string, format: uuid }
         mode:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
         proration_date:
           description: |-
             For `immediate`, the `proration_date` of the quote: a whole second, not in the future and
@@ -1685,13 +1728,13 @@ components:
           subscriptions continue and can be canceled again.
       type: object
       properties:
-        id: {type: string, format: uuid}
+        id: { type: string, format: uuid }
         status:
           type: string
           enum: [requested, scheduled, releasing, completed, canceled, failed]
         mode:
-          $ref: '#/components/schemas/TerminationPolicy'
-        scheduled_at: {type: string, format: date-time}
+          $ref: "#/components/schemas/TerminationPolicy"
+        scheduled_at: { type: string, format: date-time }
         proration_date:
           description: For `immediate`, the second the refund is computed as of.
           type: string
@@ -1706,7 +1749,7 @@ components:
             account of an account-level purchase, or the account the project was linked to.
           type: integer
           format: int64
-        currency: {type: string}
+        currency: { type: string }
         expected_refundable_amount:
           description: The refund confirmed when it was created. Absent when the platform created it.
           allOf:
@@ -1716,14 +1759,24 @@ components:
             Present with `failed`. A code of the service that provides the resources, such as a disk
             that can only be released with its server. Clients map it to their own wording.
           type: string
-        requested_at: {type: string, format: date-time}
-        completed_at: {type: string, format: date-time}
-        canceled_at: {type: string, format: date-time}
+        requested_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        canceled_at: { type: string, format: date-time }
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CancellationItem'
-      required: [id, status, mode, origin, billing_account_id, currency, requested_at, items]
+            $ref: "#/components/schemas/CancellationItem"
+      required:
+        [
+          id,
+          status,
+          mode,
+          origin,
+          billing_account_id,
+          currency,
+          requested_at,
+          items,
+        ]
     CancellationItem:
       description: One subscription of the cancellation.
       type: object
@@ -1732,9 +1785,9 @@ components:
           description: The cancellation request of this subscription, the same as `Subscription.cancellation_request.id`.
           type: string
           format: uuid
-        subscription_id: {type: string, format: uuid}
-        plan_id: {type: string, format: uuid}
-        plan_name: {type: string}
+        subscription_id: { type: string, format: uuid }
+        plan_id: { type: string, format: uuid }
+        plan_name: { type: string }
         billing_type:
           description: |-
             How the subscription is paid for. Only a `prepaid` subscription renews automatically; creating
@@ -1744,7 +1797,7 @@ components:
         status:
           type: string
           enum: [requested, scheduled, releasing, completed, canceled, failed]
-        release_started_at: {type: string, format: date-time}
+        release_started_at: { type: string, format: date-time }
         effective_at:
           description: When the service ended, as confirmed by the service that provides it.
           type: string
@@ -1768,11 +1821,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Cancellation'
-        total_count:
-          type: integer
-          format: int64
-      required: [items]
+            $ref: "#/components/schemas/Cancellation"
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
+      required:
+        - items
+        - pagination
     CancellationRequest:
       type: object
       required:
@@ -1783,7 +1837,7 @@ components:
         - requested_at
         - forfeit_remaining_value
       properties:
-        reason: {type: string}
+        reason: { type: string }
         cancellation_id:
           description: The cancellation this request belongs to, with the other subscriptions released together.
           type: string
@@ -1841,7 +1895,7 @@ components:
       type: object
       properties:
         id:
-          $ref: '#/components/schemas/ProductID'
+          $ref: "#/components/schemas/ProductID"
         name:
           type: string
         description:
@@ -1854,7 +1908,7 @@ components:
       type: string
       minLength: 1
       maxLength: 64
-      pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
+      pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
     QuoteLine:
       description: |-
         Identify a price directly, or select a price for a plan. For each resource give its ID or lookup key, never both. Lookup keys require product_id.
@@ -1867,14 +1921,14 @@ components:
         `no_price`.
       type: object
       properties:
-        price_lookup_key: {type: string, minLength: 1, maxLength: 128}
-        plan_lookup_key: {type: string, minLength: 1, maxLength: 128}
-        meter_lookup_key: {type: string, minLength: 1, maxLength: 128}
+        price_lookup_key: { type: string, minLength: 1, maxLength: 128 }
+        plan_lookup_key: { type: string, minLength: 1, maxLength: 128 }
+        meter_lookup_key: { type: string, minLength: 1, maxLength: 128 }
         price_id:
           type: string
           format: uuid
         product_id:
-          $ref: '#/components/schemas/ProductID'
+          $ref: "#/components/schemas/ProductID"
         plan_id:
           type: string
           format: uuid
@@ -1902,8 +1956,8 @@ components:
             - postpaid
             - prepaid
             - one_time
-        interval: {type: string, enum: [none, day, month, year]}
-        interval_count: {type: integer, minimum: 1}
+        interval: { type: string, enum: [none, day, month, year] }
+        interval_count: { type: integer, minimum: 1 }
         quantity:
           type: string
         duration_seconds:
@@ -2001,12 +2055,16 @@ components:
     CurrencyList:
       type: object
       additionalProperties: false
-      required: [items]
+      required:
+        - items
+        - pagination
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/Currency"
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
     BillingAccountCreate:
       type: object
       properties:
@@ -2068,11 +2126,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BillingAccount"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     AccountBalance:
       description: |-
         Account balance, credits, and unpaid charges are reported separately.
@@ -2136,7 +2194,17 @@ components:
         - due
     MeteredUsage:
       type: object
-      required: [billing_account_id, currency, active_resource_count, postpaid_subscription_count, window_start, window_end, amount, average_daily_amount]
+      required:
+        [
+          billing_account_id,
+          currency,
+          active_resource_count,
+          postpaid_subscription_count,
+          window_start,
+          window_end,
+          amount,
+          average_daily_amount,
+        ]
       properties:
         billing_account_id:
           type: integer
@@ -2171,7 +2239,8 @@ components:
       type: object
       properties:
         applies_to:
-          description: What the credit in this group may pay for. No restrictions means
+          description:
+            What the credit in this group may pay for. No restrictions means
             anything on the account.
           allOf:
             - $ref: "#/components/schemas/Applicability"
@@ -2192,7 +2261,7 @@ components:
             details cannot be read at the moment; `project_id` still identifies it.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
+            - type: "null"
         billing_account_id:
           type: integer
           format: int64
@@ -2220,11 +2289,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectBillingInfo"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     ProjectBillingInfoSet:
       type: object
       properties:
@@ -2245,7 +2314,7 @@ components:
           type: integer
           format: int64
         account:
-          $ref: '#/components/schemas/AccountIdentity'
+          $ref: "#/components/schemas/AccountIdentity"
         amount:
           description: What is credited to the account, in the account's own
             currency.
@@ -2279,7 +2348,7 @@ components:
             - canceled
         cancellation_reason:
           description: Why the top-up was withdrawn. Present with `canceled`.
-          $ref: '#/components/schemas/PaymentCancellationReason'
+          $ref: "#/components/schemas/PaymentCancellationReason"
         payment_gateway:
           description: Which payment gateway collected it.
           type: string
@@ -2310,7 +2379,7 @@ components:
             The customer's next step while the top-up is `pending` and the gateway still awaits them. Returned
             by create-top-up and get-top-up as the gateway currently reports it; absent from list-top-ups and
             once the top-up has a result. Completing it does not replace confirmation of receipt.
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
         created_at:
           type: string
           format: date-time
@@ -2381,9 +2450,9 @@ components:
       type: object
       required: [id, name, currency]
       properties:
-        id: {type: integer, format: int64}
-        name: {type: string}
-        currency: {type: string}
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        currency: { type: string }
     TopUpList:
       type: object
       properties:
@@ -2391,11 +2460,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TopUp"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     PaymentCancellationReason:
       description: |-
         Why a gateway payment was withdrawn. `abandoned` means the customer did not complete it within the time
@@ -2441,8 +2510,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PaymentOption"
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     PaymentMethod:
       type: object
       properties:
@@ -2487,11 +2559,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PaymentMethod"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     PaymentMethodSetup:
       type: object
       properties:
@@ -2523,7 +2595,7 @@ components:
           type: string
         action:
           description: Browser configuration and credentials for this card setup, including the provider's public key. No server secret is returned.
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
       required:
         - setup_id
         - payment_gateway
@@ -2652,7 +2724,16 @@ components:
     PaymentPreview:
       description: What paying would take, computed as paying computes it. Nothing is charged or reserved.
       type: object
-      required: [currency, amount_due, credit_applied, credit_grants, balance_applied, gateway_amount, balance_after]
+      required:
+        [
+          currency,
+          amount_due,
+          credit_applied,
+          credit_grants,
+          balance_applied,
+          gateway_amount,
+          balance_after,
+        ]
       properties:
         currency:
           type: string
@@ -2692,7 +2773,7 @@ components:
         transactions:
           type: array
           items:
-            $ref: '#/components/schemas/Transaction'
+            $ref: "#/components/schemas/Transaction"
         transaction_id:
           description: The gateway transaction, when one is involved. Balance and credit-grant payments are separate transactions.
           type: string
@@ -2726,7 +2807,7 @@ components:
           allOf:
             - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         action:
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
         retriable:
           description: |-
             Whether paying again is worth attempting. False for a refusal that will keep
@@ -2781,12 +2862,12 @@ components:
     Invoice:
       type: object
       properties:
-        due_at: {type: string, format: date-time}
-        amount_refunded: {type: string}
+        due_at: { type: string, format: date-time }
+        amount_refunded: { type: string }
         tax_items:
           type: array
           items:
-            $ref: '#/components/schemas/TaxItem'
+            $ref: "#/components/schemas/TaxItem"
         order_id:
           description: The purchase that produced this invoice. Absent on usage invoices.
           type: string
@@ -2887,16 +2968,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Invoice"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     InvoiceItem:
       type: object
       properties:
-        recurring_amount: {type: string}
-        taxable: {type: boolean}
+        recurring_amount: { type: string }
+        taxable: { type: boolean }
         discount_amount:
           description: Discount applied to this line before tax.
           type: string
@@ -2933,7 +3014,7 @@ components:
             the moment; `project_id` still identifies it then.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
+            - type: "null"
         resource_id:
           type: string
         description:
@@ -2977,11 +3058,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InvoiceItem"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     TransactionType:
       description: topup adds to the balance; payment settles an invoice; refund returns original funds; payout withdraws from the balance; adjustment changes the balance with an audit reason.
       type: string
@@ -2995,15 +3076,15 @@ components:
       description: A funds operation. Each payment has one source; refunds identify the original successful transaction. Unknown gateway results remain pending. Payments from the balance or a gateway are distinct from credit-grant payments.
       type: object
       properties:
-        invoice_id: {type: string, format: uuid}
-        transaction_id: {type: string, format: uuid}
+        invoice_id: { type: string, format: uuid }
+        transaction_id: { type: string, format: uuid }
         credit_grant_id:
           description: The credit grant that paid, or for a refund, the credit grant restored.
           type: string
           format: uuid
         credit_grant:
-          $ref: '#/components/schemas/ObjectIdentity'
-        refund_id: {type: string, format: uuid}
+          $ref: "#/components/schemas/ObjectIdentity"
+        refund_id: { type: string, format: uuid }
         refund_destination:
           description: |-
             Present on refunds. Where this part of the refund goes.
@@ -3025,9 +3106,9 @@ components:
           enum: [pending, succeeded, failed, canceled]
         cancellation_reason:
           description: Why the payment was withdrawn. Present with `canceled`.
-          $ref: '#/components/schemas/PaymentCancellationReason'
-        payment_gateway: {type: string}
-        method_type: {type: string}
+          $ref: "#/components/schemas/PaymentCancellationReason"
+        payment_gateway: { type: string }
+        method_type: { type: string }
         failure_reason:
           description: |-
             Why it failed. Present with `failed`. For a declined gateway payment the value is the
@@ -3037,7 +3118,7 @@ components:
             payment_intent_authentication_failure). Clients map it to their own wording and treat an
             unknown value as a generic decline.
           type: string
-        settled_at: {type: string, format: date-time}
+        settled_at: { type: string, format: date-time }
         id:
           type: string
           format: uuid
@@ -3076,15 +3157,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Transaction"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     CreditGrant:
       type: object
       properties:
-        min_amount: {type: string}
+        min_amount: { type: string }
         id:
           type: string
           format: uuid
@@ -3135,21 +3216,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditGrant"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     Refund:
       type: object
       properties:
-        transaction_id: {type: string, format: uuid}
-        cancellation_request_id: {type: string, format: uuid}
+        transaction_id: { type: string, format: uuid }
+        cancellation_request_id: { type: string, format: uuid }
         transactions:
           description: Original funds-return split and each result. Unknown gateway results remain pending.
           type: array
           items:
-            $ref: '#/components/schemas/Transaction'
+            $ref: "#/components/schemas/Transaction"
         id:
           type: string
           format: uuid
@@ -3193,7 +3274,8 @@ components:
           type: string
         destination:
           deprecated: true
-          description: Use balance_amount, credit_amount and gateway_amount, which also show a refund
+          description:
+            Use balance_amount, credit_amount and gateway_amount, which also show a refund
             split between several destinations.
           type: string
           enum:
@@ -3222,7 +3304,7 @@ components:
           type: string
           format: date-time
         reason:
-          $ref: '#/components/schemas/RefundReason'
+          $ref: "#/components/schemas/RefundReason"
         created_at:
           type: string
           format: date-time
@@ -3274,15 +3356,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Refund"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     UsageCharge:
       type: object
       properties:
-        subscription_id: {type: string, format: uuid}
+        subscription_id: { type: string, format: uuid }
         id:
           type: string
           format: uuid
@@ -3295,7 +3377,7 @@ components:
             details cannot be read at the moment; `project_id` still identifies it.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
+            - type: "null"
         product:
           $ref: "#/components/schemas/Product"
         resource_id:
@@ -3362,11 +3444,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UsageCharge"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     SubscriptionList:
       type: object
       properties:
@@ -3374,36 +3456,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Subscription"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     Subscription:
       type: object
       description: An independently billed purchase. Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their original value. Technical state belongs to the owning service.
       properties:
-        currency: {type: string}
-        billing_type: {type: string, enum: [postpaid, prepaid, one_time]}
-        interval: {type: string, enum: [none, day, month, year]}
-        interval_count: {type: integer, minimum: 1}
+        currency: { type: string }
+        billing_type: { type: string, enum: [postpaid, prepaid, one_time] }
+        interval: { type: string, enum: [none, day, month, year] }
+        interval_count: { type: integer, minimum: 1 }
         recurring_amount:
           description: Whole-subscription prepaid renewal amount, after continuing discounts and before tax. Absent for other billing types.
           type: string
         termination_policy:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
         refund_policy:
-          $ref: '#/components/schemas/RefundPolicy'
-        order_item_id: {type: string, format: uuid}
-        replaces_subscription_id: {type: string, format: uuid}
-        coupon_id: {type: string, format: uuid}
+          $ref: "#/components/schemas/RefundPolicy"
+        order_item_id: { type: string, format: uuid }
+        replaces_subscription_id: { type: string, format: uuid }
+        coupon_id: { type: string, format: uuid }
         coupon:
-          $ref: '#/components/schemas/ObjectIdentity'
-        discounted_renewals_remaining: {type: integer, minimum: 0}
-        suspend_reason: {type: string}
-        billing_cycle_anchor: {type: string, format: date-time}
+          $ref: "#/components/schemas/ObjectIdentity"
+        discounted_renewals_remaining: { type: integer, minimum: 0 }
+        suspend_reason: { type: string }
+        billing_cycle_anchor: { type: string, format: date-time }
         cancellation_request:
-          $ref: '#/components/schemas/CancellationRequest'
+          $ref: "#/components/schemas/CancellationRequest"
         paid_with:
           description: |-
             How the purchase, or the latest renewal paid with a saved card, was paid. Automatic renewal
@@ -3411,7 +3493,7 @@ components:
             that.
           allOf:
             - $ref: "#/components/schemas/PaidWith"
-        created_at: {type: string, format: date-time}
+        created_at: { type: string, format: date-time }
         id:
           type: string
           format: uuid
@@ -3420,9 +3502,9 @@ components:
           type: integer
           format: int64
         account:
-          $ref: '#/components/schemas/AccountIdentity'
+          $ref: "#/components/schemas/AccountIdentity"
         product_id:
-          $ref: '#/components/schemas/ProductID'
+          $ref: "#/components/schemas/ProductID"
         project_id:
           description: |-
             Which project this is for. Absent when it was bought at account level, such as a
@@ -3438,7 +3520,7 @@ components:
             `project_id` still identifies it then.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
+            - type: "null"
         product:
           $ref: "#/components/schemas/Product"
         plan_id:
@@ -3497,9 +3579,9 @@ components:
       type: object
       properties:
         termination_policy:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
         refund_policy:
-          $ref: '#/components/schemas/RefundPolicy'
+          $ref: "#/components/schemas/RefundPolicy"
         price_id:
           type: string
           format: uuid
@@ -3532,8 +3614,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RenewalPrice"
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     RenewRequest:
       type: object
       properties:
@@ -3644,21 +3729,21 @@ components:
     Order:
       type: object
       properties:
-        coupon_id: {type: string, format: uuid}
+        coupon_id: { type: string, format: uuid }
         coupon:
-          $ref: '#/components/schemas/ObjectIdentity'
-        promotion_code_id: {type: string, format: uuid}
+          $ref: "#/components/schemas/ObjectIdentity"
+        promotion_code_id: { type: string, format: uuid }
         promotion_code:
           description: Code text frozen when this order applied the coupon.
           type: string
         invoice:
-          $ref: '#/components/schemas/InvoiceSummary'
+          $ref: "#/components/schemas/InvoiceSummary"
         paid_with:
           description: How the order was paid. Absent until it is paid.
           allOf:
             - $ref: "#/components/schemas/PaidWith"
         account:
-          $ref: '#/components/schemas/AccountIdentity'
+          $ref: "#/components/schemas/AccountIdentity"
         cancel_reason:
           type: string
         change_effective_at:
@@ -3682,7 +3767,7 @@ components:
             `project_id` still identifies it then.
           oneOf:
             - $ref: ../../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: 'null'
+            - type: "null"
         billing_account_id:
           description: |-
             The billing account the order was placed with. It does not change when the project is later
@@ -3748,11 +3833,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     PaidWith:
       type: object
       description: |-
@@ -3803,10 +3888,14 @@ components:
       description: Describes a usable promotion code and its applicability to the requested purchase. Invalid codes return an error response.
       type: object
       properties:
-        min_amount: {type: string}
-        type: {type: string, enum: [percentage, fixed_amount, price_override, free_setup]}
-        recurring: {type: boolean}
-        recurring_cycles: {type: integer, minimum: 1}
+        min_amount: { type: string }
+        type:
+          {
+            type: string,
+            enum: [percentage, fixed_amount, price_override, free_setup],
+          }
+        recurring: { type: boolean }
+        recurring_cycles: { type: integer, minimum: 1 }
         name:
           type: string
         amount:
@@ -3907,22 +3996,26 @@ components:
       description: A coupon held on this account. It applies at checkout without a code.
       type: object
       properties:
-        min_amount: {type: string}
-        billing_account_id: {type: integer, format: int64}
-        coupon_id: {type: string, format: uuid}
-        promotion_code_id: {type: string, format: uuid}
-        status: {type: string, enum: [active, revoked]}
-        revoked_at: {type: string, format: date-time}
-        type: {type: string, enum: [percentage, fixed_amount, price_override, free_setup]}
-        recurring: {type: boolean}
-        recurring_cycles: {type: integer, minimum: 1}
+        min_amount: { type: string }
+        billing_account_id: { type: integer, format: int64 }
+        coupon_id: { type: string, format: uuid }
+        promotion_code_id: { type: string, format: uuid }
+        status: { type: string, enum: [active, revoked] }
+        revoked_at: { type: string, format: date-time }
+        type:
+          {
+            type: string,
+            enum: [percentage, fixed_amount, price_override, free_setup],
+          }
+        recurring: { type: boolean }
+        recurring_cycles: { type: integer, minimum: 1 }
         id:
           type: string
           format: uuid
         name:
           type: string
         percent_off:
-          description: 'For a percentage discount, out of one hundred.'
+          description: "For a percentage discount, out of one hundred."
           type: string
         amount:
           description: Fixed discount or per-unit interval price override for this account currency.
@@ -3960,22 +4053,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Discount"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     PriceOption:
       description: |-
         A price's display terms, including retired prices referenced by an applicability list.
       type: object
       properties:
         product:
-          $ref: '#/components/schemas/Product'
+          $ref: "#/components/schemas/Product"
         plan:
-          $ref: '#/components/schemas/ObjectIdentity'
-        billing_scheme: {type: string, enum: [per_unit, tiered, rated]}
-        unit_quantity: {type: string}
+          $ref: "#/components/schemas/ObjectIdentity"
+        billing_scheme: { type: string, enum: [per_unit, tiered, rated] }
+        unit_quantity: { type: string }
         id:
           type: string
           format: uuid
@@ -4042,18 +4135,18 @@ components:
       type: object
       description: Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are absent when there is no immediate invoice. Later catalog changes do not reprice this line.
       properties:
-        position: {type: integer, minimum: 0}
-        configuration: {type: object, additionalProperties: true}
-        subscription_id: {type: string, format: uuid}
-        interval: {type: string, enum: [none, day, month, year]}
-        interval_count: {type: integer, minimum: 1}
+        position: { type: integer, minimum: 0 }
+        configuration: { type: object, additionalProperties: true }
+        subscription_id: { type: string, format: uuid }
+        interval: { type: string, enum: [none, day, month, year] }
+        interval_count: { type: integer, minimum: 1 }
         termination_policy:
-          $ref: '#/components/schemas/TerminationPolicy'
+          $ref: "#/components/schemas/TerminationPolicy"
         refund_policy:
-          $ref: '#/components/schemas/RefundPolicy'
-        completes_on_payment: {type: boolean}
-        recurring_amount: {type: string}
-        setup_amount: {type: string}
+          $ref: "#/components/schemas/RefundPolicy"
+        completes_on_payment: { type: boolean }
+        recurring_amount: { type: string }
+        setup_amount: { type: string }
         billing_type:
           description: The payment timing of the selected price.
           type: string
@@ -4075,7 +4168,7 @@ components:
           format: uuid
         product_id:
           description: Which service this line belongs to.
-          $ref: '#/components/schemas/ProductID'
+          $ref: "#/components/schemas/ProductID"
         product:
           $ref: "#/components/schemas/Product"
         plan_id:
@@ -4136,7 +4229,7 @@ components:
             - "null"
           format: date-time
         status:
-          $ref: '#/components/schemas/OrderItemStatus'
+          $ref: "#/components/schemas/OrderItemStatus"
       required:
         - id
         - price_id
@@ -4155,11 +4248,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrderItem"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     Allowance:
       type: object
       properties:
@@ -4238,11 +4331,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Allowance"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     Entitlement:
       type: object
       properties:
@@ -4273,20 +4366,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Entitlement"
-        total_count:
-          type: integer
-          format: int64
+        pagination:
+          $ref: "../../../type/v1/pagination.yaml#/components/schemas/OffsetPagination"
       required:
         - items
+        - pagination
     InvoiceSummary:
       type: object
       description: Purchase-related invoice amounts, without account contact details or payment methods. Absent on an order with no immediate invoice.
       properties:
-        id: {type: string, format: uuid}
-        number: {type: string}
-        currency: {type: string}
+        id: { type: string, format: uuid }
+        number: { type: string }
+        currency: { type: string }
         status:
-          $ref: '#/components/schemas/InvoiceStatus'
+          $ref: "#/components/schemas/InvoiceStatus"
         subtotal:
           description: |-
             Sum of the line amounts before discounts. Where prices include tax, the tax contained in
@@ -4296,31 +4389,52 @@ components:
         discount_amount:
           description: Sum of the line discounts, taken off before tax.
           type: string
-        tax_amount: {type: string}
-        total: {type: string}
-        amount_paid: {type: string}
-        amount_refunded: {type: string}
-        due_at: {type: string, format: date-time}
-      required: [id, currency, status, subtotal, discount_amount, tax_amount, total, amount_paid, amount_refunded]
+        tax_amount: { type: string }
+        total: { type: string }
+        amount_paid: { type: string }
+        amount_refunded: { type: string }
+        due_at: { type: string, format: date-time }
+      required:
+        [
+          id,
+          currency,
+          status,
+          subtotal,
+          discount_amount,
+          tax_amount,
+          total,
+          amount_paid,
+          amount_refunded,
+        ]
     TaxItem:
       type: object
       description: Tax name, rate and amounts frozen on the invoice.
       properties:
-        id: {type: string, format: uuid}
-        invoice_id: {type: string, format: uuid}
-        name: {type: string}
-        percentage: {type: string}
-        country: {type: string}
-        state: {type: string}
-        taxable_amount: {type: string}
-        tax_amount: {type: string}
-        currency: {type: string}
-      required: [id, invoice_id, name, percentage, country, taxable_amount, tax_amount, currency]
+        id: { type: string, format: uuid }
+        invoice_id: { type: string, format: uuid }
+        name: { type: string }
+        percentage: { type: string }
+        country: { type: string }
+        state: { type: string }
+        taxable_amount: { type: string }
+        tax_amount: { type: string }
+        currency: { type: string }
+      required:
+        [
+          id,
+          invoice_id,
+          name,
+          percentage,
+          country,
+          taxable_amount,
+          tax_amount,
+          currency,
+        ]
     ObjectIdentity:
       description: A catalog object inlined for display.
       type: object
       properties:
-        lookup_key: {type: string}
+        lookup_key: { type: string }
         id:
           type: string
           format: uuid
@@ -4404,7 +4518,7 @@ components:
       name: cancellationId
       in: path
       required: true
-      schema: {type: string, format: uuid}
+      schema: { type: string, format: uuid }
     SubscriptionId:
       name: subscriptionId
       in: path
