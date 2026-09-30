@@ -355,8 +355,8 @@ paths:
     get:
       summary: List project orders
       description: |-
-        An order awaiting payment shows what is outstanding. Paying it is done from the billing
-        centre by the account owner.
+        A draft order invoice shows base amounts awaiting checkout. A confirmed invoice shows what
+        is outstanding. Checkout and payment are performed in the billing centre by the account owner.
       operationId: list-project-orders
       tags:
         - projects
@@ -436,15 +436,27 @@ paths:
     post:
       summary: Quote for a project
       description: |-
-        Priced in the project billing account's currency, and at any rate negotiated for that account.
-        Nothing is reserved and nothing is recorded, so this may be called as often as required.
+        Computes a price preview without creating a resource or saving a quote. Nothing is charged,
+        reserved or applied to an order, and no discount redemption is consumed. The response has no
+        quote ID and does not guarantee a price or reserve a promotion code.
 
-        Prices may change between quoting and ordering. An order is charged at the price in
-        effect when it is placed, so a quote should be refreshed before a final confirmation is
-        shown.
+        New purchases use the project's current billing account and currency. With order_id, the order
+        must belong to this project; its recorded purchase terms, billing account and currency are used.
+        An optional promotion_code previews one code for the purchase or order. Without it, Billing
+        selects an applicable account discount. An invalid or inapplicable explicit code is refused
+        rather than silently replaced. Give total as expected_amount when confirming checkout through
+        Billing; eligibility and availability are checked again. An order already checked out returns
+        its confirmed amounts without reapplying its discount; a different code is refused with
+        BILLING_ORDER_CHECKOUT_CONFLICT.
+
+        Prices may change before an order is created; confirmed purchase terms are not repriced from
+        today's catalog. Usage estimates describe future usage and are not checkout amounts. They do
+        not accept a promotion code, including when mixed with fixed purchase lines.
 
         A renewal is priced exactly as renewing would charge it: at the agreed amount or the price
-        named, with the discounts the account holds, and with tax.
+        named, with the discounts the account holds, and with tax. A renewal list does not accept a
+        promotion code because its entries create separate orders. To use a new code on a renewal,
+        first create a renewal order and quote its checkout by order_id.
 
         A cancellation is quoted as creating it would compute the refund, as of now and under the refund
         terms agreed when each subscription was bought. It is quoted on its own: combined with lines or
@@ -453,8 +465,8 @@ paths:
         amount is not checked. Give the returned `cancellation.proration_date` and
         `cancellation.refundable_amount` when creating it.
 
-        Returns 404 when the project has no billing account, or when a subscription to be renewed or
-        canceled does not belong to this project.
+        Returns 404 when the project has no billing account for a new purchase quote, or when the order
+        or a subscription to be renewed or canceled does not belong to this project.
       operationId: create-project-quote
       tags:
         - projects
@@ -466,6 +478,19 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/QuoteRequest"
+            examples:
+              purchase:
+                summary: Preview a code for one proposed purchase without consuming it.
+                value:
+                  lines:
+                    - price_id: 019c0000-0000-7000-8000-000000000002
+                      quantity: "1"
+                  promotion_code: WELCOME
+              order_checkout:
+                summary: Preview checkout using the order's recorded purchase terms.
+                value:
+                  order_id: 019c0000-0000-7000-8000-000000000001
+                  promotion_code: WELCOME
       responses:
         "200":
           description: OK
@@ -936,17 +961,12 @@ components:
       description: |-
         Identify a price directly, or select a price for a plan. For each resource give its ID or lookup key, never both. Lookup keys require product_id.
 
-        A line that gives a meter, `dimensions` or `duration_seconds` estimates usage and is
-        priced only at a postpaid price. Such a line is refused with HTTP 400
-        `BILLING_PURCHASE_INVALID` when `price_type` is `prepaid` or `one_time`, or when the price
-        it names is not postpaid; `meta.field` is `price_type`, `price_id` or `price_lookup_key`
-        accordingly. When the plan has no postpaid price, the line is returned unpriced with
-        `no_price`.
+        Charges for future usage are not estimated here; the service that sells the product quotes
+        them with its purchase.
       type: object
       properties:
         price_lookup_key: { type: string, minLength: 1, maxLength: 128 }
         plan_lookup_key: { type: string, minLength: 1, maxLength: 128 }
-        meter_lookup_key: { type: string, minLength: 1, maxLength: 128 }
         price_id:
           type: string
           format: uuid
@@ -955,22 +975,6 @@ components:
         plan_id:
           type: string
           format: uuid
-        meter_id:
-          type: string
-          format: uuid
-        dimensions:
-          description: |-
-            The attributes the price depends on — region, instance type, token class.
-
-            Required when the price draws its rates from a price list, which is how anything
-            sold by region or by machine type is priced. A price that carries a single unit
-            amount, or a ladder, has no attributes to give and takes none.
-
-            Every attribute the meter declares must be present. A combination with no rate
-            covering it is refused rather than priced at zero.
-          type: object
-          additionalProperties:
-            type: string
         price_type:
           description: |-
             Narrows the selection when a plan offers more than one billing type.
@@ -983,13 +987,6 @@ components:
         interval_count: { type: integer, minimum: 1 }
         quantity:
           type: string
-        duration_seconds:
-          description: |-
-            For metered items, how long to price for. This allows an estimate such as "about
-            this much per month" to be shown before anything exists. The priced quantity is
-            `quantity` multiplied by this duration.
-          type: integer
-          format: int64
       required:
         - quantity
     QuoteRenewal:
@@ -1021,36 +1018,92 @@ components:
         - subscription_id
       additionalProperties: false
     QuoteRequest:
+      description: Quote exactly one target. Purchase lines, an existing order, a renewal list and a cancellation are mutually exclusive.
+      oneOf:
+        - $ref: "#/components/schemas/PurchaseQuoteRequest"
+        - $ref: "#/components/schemas/OrderQuoteRequest"
+        - $ref: "#/components/schemas/RenewalQuoteRequest"
+        - $ref: "#/components/schemas/CancellationQuoteRequest"
+    PurchaseQuoteRequest:
       description: |-
-        Specify lines for new purchases and renewals for existing subscriptions, or one cancellation on
-        its own. The total includes all requested lines and renewals.
+        Preview one proposed purchase using the project's current billing account. Without a code,
+        an applicable account discount is selected. An explicit code is evaluated without reserving or
+        consuming a redemption and must be supplied again when confirming checkout through Billing.
+        Future usage estimates cannot be combined with a promotion code or used as a checkout amount.
       type: object
       properties:
         lines:
           type: array
+          minItems: 1
           maxItems: 100
           items:
             $ref: "#/components/schemas/QuoteLine"
+        promotion_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+      required: [lines]
+      additionalProperties: false
+    OrderQuoteRequest:
+      description: |-
+        Preview checkout of one existing order. Its recorded purchase terms supply every line.
+        Without a code, an applicable account discount is selected. A preview neither changes the
+        order nor reserves or consumes a redemption. A confirmed order returns its recorded amounts.
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        promotion_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Code to evaluate for this order. Must be supplied again when confirming checkout.
+      required: [order_id]
+      additionalProperties: false
+    RenewalQuoteRequest:
+      description: |-
+        Preview renewing subscriptions, each at most once. Each entry represents a separate renewal
+        order. To preview a new promotion code, create a renewal order and quote it by order_id.
+      type: object
+      properties:
         renewals:
           type: array
+          minItems: 1
           maxItems: 100
           items:
             $ref: "#/components/schemas/QuoteRenewal"
+      required: [renewals]
+      additionalProperties: false
+    CancellationQuoteRequest:
+      description: Preview one cancellation without combining it with a purchase, renewal or promotion code.
+      type: object
+      properties:
         cancellation:
           $ref: "#/components/schemas/QuoteCancellation"
+      required: [cancellation]
       additionalProperties: false
-    QuoteLineResult:
+    QuotedLine:
+      description: |-
+        A purchase quote line or one recorded order item. Monetary fields use the account currency.
+        Fixed purchase amounts are rounded as checkout rounds them. Usage estimates are not amounts
+        collectible at checkout. When priced is false, monetary fields and price_id are absent.
       type: object
       properties:
         tax_amount:
-          description: Tax included in the account quote. Absent in public catalogue estimates.
+          description: Tax on the discounted amount, including any tax already contained in that amount.
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         tax_included_amount:
-          description: Tax already included in the displayed price.
+          description: The part of tax_amount already contained in amount minus discount_amount.
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         index:
-          description: Which line of the request this answers.
+          description: Zero-based request line index, or the recorded order item's position for an order quote.
           type: integer
+          minimum: 0
+        order_item_id:
+          description: Present for an existing order quote; identifies the recorded item being priced.
+          type: string
+          format: uuid
         priced:
           description: |-
             Whether a price was found for this line. Read this before anything else.
@@ -1065,19 +1118,10 @@ components:
         unpriced_reason:
           description: |-
             Why no price was found; `none` while `priced` is true.
-
-            The last four are told apart because their remedies differ: the price points
-            at no price list, the list holds no rate for that meter, that exact combination
-            of attributes is not configured, or it is configured but nothing is in effect
-            at the moment asked about.
           type: string
           enum:
             - none
             - no_price
-            - no_rate_card
-            - no_meter
-            - no_dimensions
-            - no_effective_rule
         price_id:
           description: |-
             The price selected. Returned whenever `priced` is true, including when the
@@ -1087,16 +1131,24 @@ components:
         plan_name:
           type: string
         unit_amount:
+          description: Unit price before discounts, with tax included only where the price includes it.
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         quantity:
           description: |-
-            The quantity actually priced. When `duration_seconds` is given, it is the requested
-            `quantity` multiplied by that duration.
+            The quantity priced.
           type: string
         amount:
-          description: Not rounded. Round only for display.
+          description: |-
+            Before discounts, including any setup charges. Contains tax only where the price includes it.
+            Zero for a priced order item with no immediate charge.
           allOf:
             - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          description: Total reduction on this line, including any committed recurring discount.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          description: amount minus discount_amount plus tax_amount minus tax_included_amount.
+          $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
       required:
@@ -1165,12 +1217,40 @@ components:
         - tax_included_amount
         - total
     Quote:
+      description: |-
+        A computed price preview, without a saved quote or a price guarantee. No funds or discount
+        redemptions are reserved. Amounts use currency and exclude payment from credit grants or balance.
       type: object
       properties:
+        subtotal:
+          description: |-
+            Sum before discounts, less tax already included in the discounted line amounts, as on an
+            invoice. Null when any line cannot be priced. Zero for a cancellation-only quote.
+          oneOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        discount_amount:
+          description: Total line discounts. Null when any line cannot be priced; zero for a cancellation-only quote.
+          oneOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_amount:
+          description: Total tax on the discounted amounts. Null when any line cannot be priced; zero for a cancellation-only quote.
+          oneOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        discount:
+          description: |-
+            The one new discount evaluated for a purchase or order, without applying it. Null when
+            none is selected, pricing is incomplete, or the quote targets a renewal list or cancellation.
+            A confirmed order instead reports its recorded discount.
+          oneOf:
+            - $ref: "#/components/schemas/QuotedDiscount"
+            - type: "null"
         lines:
           type: array
           items:
-            $ref: "#/components/schemas/QuoteLineResult"
+            $ref: "#/components/schemas/QuotedLine"
         renewals:
           type: array
           items:
@@ -1181,9 +1261,11 @@ components:
             - $ref: "#/components/schemas/CancellationRefundPreview"
         total:
           description: |-
-            What would be owed in total, renewals included. Amounts to be returned are not netted
-            off it: a quote of a cancellation alone has a total of zero, and what it would return is
-            in `cancellation`.
+            subtotal minus discount_amount plus tax_amount, before applying credit grants or balance.
+            For a purchase or order with no usage estimates, pass this as expected_amount at checkout.
+            A renewal list sums separate orders; use each renewal's total when confirming that order.
+            Refunds are not netted off: a cancellation-only quote has zero totals and its refund is in
+            cancellation. Usage estimates are projections, not checkout amounts.
 
             Null when any line could not be priced. What would be owed is not knowable then, and a
             total that silently left the unpriced lines out would read as a smaller bill rather than
@@ -1194,7 +1276,30 @@ components:
         currency:
           type: string
       required:
+        - subtotal
+        - discount_amount
+        - tax_amount
+        - total
+        - discount
         - currency
+    QuotedDiscount:
+      description: |-
+        The discount selected for this calculation. Its presence in a quote does not apply it or
+        reserve a redemption. Discount amounts are reported on the quote and its lines.
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [promotion_code, account_discount]
+        name:
+          type: string
+        promotion_code:
+          description: Code text for a promotion_code discount; null for an account_discount.
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 64
+      required: [type, name, promotion_code]
+      additionalProperties: false
     ProjectBillingAccount:
       description: |-
         A narrow view of the project's billing account, restricted to what a project member needs in order
@@ -1253,6 +1358,10 @@ components:
         currency: { type: string }
     InvoiceStatus:
       description: |-
+        An order invoice stays `draft` until checkout confirms its discount and final amounts. It
+        cannot be collected while draft. Confirmation makes it `open`, or `paid` when its total is zero
+        without creating a payment transaction. A quote never changes this status.
+
         `refunded` means the invoice was paid and has since been refunded in full; a partial refund
         leaves it `paid`, with the refunded part in `amount_refunded`.
 
@@ -1403,14 +1512,38 @@ components:
         - pagination
     Subscription:
       type: object
-      description: An independently billed purchase. Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their original value. Technical state belongs to the owning service.
+      description: |-
+        An independently billed purchase relationship, separate from the owning service's resource.
+        Placing a new prepaid or postpaid service order creates a pending subscription for each line
+        in the same purchase transaction. Its ID is returned on the order item and remains stable
+        through checkout and delivery. One order may create several subscriptions, such as an instance,
+        its system disk and its address; it has no single subscription ID.
+
+        Pending does not grant service or accrue usage. Payment confirmation and order acceptance do
+        not activate a service-owned subscription. It becomes active when the owning service confirms
+        delivery, with started_at set to the confirmed effective time. Prepaid service periods start
+        then; postpaid usage starts only when the service reports actual delivery and metering.
+
+        One-time delivery may omit a subscription. Renewals reference and extend existing subscriptions
+        rather than creating another; changes may create pending replacements. Canceling or failing an
+        unfulfilled purchase closes its pending subscriptions without starting a service period.
+        Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their
+        original value. Technical state belongs to the owning service.
+
+        A purchased shared capacity limit, such as a regional snapshot count quota, can have its own
+        subscription. Activating that capacity confirms delivery of the quota, not individual snapshots.
+        Creating or deleting snapshots within it does not create, activate or terminate more subscriptions;
+        the owning service enforces current holdings against the purchased count.
       properties:
         currency: { type: string }
         billing_type: { type: string, enum: [postpaid, prepaid, one_time] }
         interval: { type: string, enum: [none, day, month, year] }
         interval_count: { type: integer, minimum: 1 }
         recurring_amount:
-          description: Whole-subscription prepaid renewal amount, after continuing discounts and before tax. Absent for other billing types.
+          description: |-
+            Whole-subscription prepaid renewal amount, after continuing discounts and before tax.
+            Pending subscriptions show base terms until checkout confirms any new continuing discount.
+            Absent for other billing types.
           type: string
         termination_policy:
           $ref: "#/components/schemas/TerminationPolicy"
@@ -1474,8 +1607,9 @@ components:
         quantity:
           type: string
         paid_until:
-          description: Present for prepaid items. Absent for metered ones, which
-            have no end date.
+          description: |-
+            End of the prepaid service already activated. Null for a new pending subscription, even
+            when its purchase has been paid, and for postpaid subscriptions with no prepaid end date.
           type:
             - string
             - "null"
@@ -1483,6 +1617,9 @@ components:
         auto_renew:
           type: boolean
         status:
+          description: |-
+            pending means the purchase relationship exists but service has not started. For a
+            service-owned purchase, only confirmed delivery moves it to active; paying alone does not.
           type: string
           enum:
             - pending
@@ -1491,6 +1628,7 @@ components:
             - canceled
             - terminated
         started_at:
+          description: Confirmed start of service. Null for a new pending subscription, including after payment.
           type:
             - string
             - "null"
@@ -1593,13 +1731,18 @@ components:
     OrderStatus:
       type: string
       description: |-
-        Follows the items. `pending` is not yet accepted and may be paid or unpaid. `active` is
+        pending_checkout has recorded purchase terms but no confirmed checkout. An absent invoice
+        or zero total does not permit acceptance. Confirmation moves it to pending. Both pending_checkout
+        and pending can expire or be canceled; neither establishes service delivery.
+
+        Follows the items. `pending` has confirmed checkout, is not yet accepted and may be paid or unpaid. `active` is
         accepted with items still being set up. `completed` means every item was set up.
         `partially_completed` means some items were set up and the others failed and were
         refunded to their original payment sources. `failed` means every item failed and the
         whole order was refunded. `canceled` means the order was withdrawn before payment and
         nothing was charged.
       enum:
+        - pending_checkout
         - pending
         - active
         - completed
@@ -1619,6 +1762,11 @@ components:
         - failed
         - canceled
     Order:
+      description: |-
+        A recorded purchase. pending_checkout requires explicit Billing confirmation before collection
+        or acceptance, even without an invoice. Coupon fields describe a discount confirmed at checkout and are absent
+        before confirmation; a quote never populates them. A draft invoice contains base purchase
+        amounts awaiting checkout. Payment and acceptance remain separate from resource delivery.
       type: object
       properties:
         coupon_id: { type: string, format: uuid }
@@ -1626,7 +1774,7 @@ components:
           $ref: "#/components/schemas/ObjectIdentity"
         promotion_code_id: { type: string, format: uuid }
         promotion_code:
-          description: Code text frozen when this order applied the coupon.
+          description: Code text frozen when checkout applied the coupon. Absent for an account discount.
           type: string
         invoice:
           $ref: "#/components/schemas/InvoiceSummary"
@@ -1696,7 +1844,7 @@ components:
             - immediate
             - period_end
         expires_at:
-          description: Acceptance deadline. Only pending orders expire automatically.
+          description: Acceptance deadline. pending_checkout and pending orders can expire automatically.
           type:
             - string
             - "null"
@@ -1756,11 +1904,20 @@ components:
         - method_type
     OrderItem:
       type: object
-      description: Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are absent when there is no immediate invoice. Later catalog changes do not reprice this line.
+      description: |-
+        Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are absent
+        when there is no immediate invoice. Later catalog changes do not reprice this line. A new service
+        purchase creates its pending subscription when this item is recorded, not when payment succeeds.
       properties:
         position: { type: integer, minimum: 0 }
         configuration: { type: object, additionalProperties: true }
-        subscription_id: { type: string, format: uuid }
+        subscription_id:
+          description: |-
+            Stable Billing subscription ID. A new prepaid or postpaid service purchase returns the
+            pending subscription here; renewals reference the existing subscription and changes the
+            replacement. Absent for delivery without a subscription. This is not a business resource ID.
+          type: string
+          format: uuid
         interval: { type: string, enum: [none, day, month, year] }
         interval_count: { type: integer, minimum: 1 }
         termination_policy:
@@ -1996,7 +2153,10 @@ components:
         - pagination
     InvoiceSummary:
       type: object
-      description: Purchase-related invoice amounts, without account contact details or payment methods. Absent on an order with no immediate invoice.
+      description: |-
+        Purchase-related invoice amounts, without account contact details or payment methods. A draft
+        order invoice shows base amounts awaiting checkout, not a confirmed discount or collectible total.
+        Absent when no invoice has been created; absence does not establish acceptance or delivery.
       properties:
         id: { type: string, format: uuid }
         number: { type: string }

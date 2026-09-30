@@ -703,14 +703,17 @@ components:
         - currency
         - lines
       additionalProperties: false
-    QuoteLineResult:
+    QuotedLine:
+      description: |-
+        One public catalog estimate. Prices are used as listed, before account discounts; tax is not
+        evaluated. Monetary fields are absent when the line cannot be priced.
       type: object
       properties:
         tax_amount:
           description: Tax included in the account quote. Absent in public catalogue estimates.
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         tax_included_amount:
-          description: Tax already included in the displayed price.
+          description: Tax already included in the displayed price. Absent in public catalogue estimates.
           $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         index:
           description: Which line of the request this answers.
@@ -758,7 +761,7 @@ components:
             `quantity` multiplied by that duration.
           type: string
         amount:
-          description: Not rounded. Round only for display.
+          description: Public list-price amount including any setup charges, before account discounts. Not rounded; round only for display.
           allOf:
             - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
         currency:
@@ -768,15 +771,18 @@ components:
         - priced
         - currency
     Quote:
+      description: |-
+        A public catalog estimate. No account discounts or tax are evaluated. Its total is a list-price
+        estimate, not an expected checkout amount. Nothing is saved, charged or reserved.
       type: object
       properties:
         lines:
           type: array
           items:
-            $ref: "#/components/schemas/QuoteLineResult"
+            $ref: "#/components/schemas/QuotedLine"
         total:
           description: |-
-            What would be owed in total. Amounts to be returned are not netted off it.
+            Sum of the public list-price line amounts, without evaluating account discounts or tax.
 
             Null when any line could not be priced. What would be owed is not knowable then, and a
             total that silently left the unpriced lines out would read as a smaller bill rather than
