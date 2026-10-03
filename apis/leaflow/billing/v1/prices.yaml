@@ -1,0 +1,528 @@
+paths:
+  /api/v1/subscriptions/{subscriptionId}/renewal-prices:
+    parameters:
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the terms this item can be renewed for
+      description: Lists the current renewal agreement and available intervals. The current option preserves recurring_amount; other options use current prices. Amounts cover the whole subscription quantity and exclude tax.
+      operationId: list-renewal-prices
+      tags:
+        - prices
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenewalPriceList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/prices:
+    get:
+      summary: List what is on sale, with prices
+      description: |-
+        Every sellable thing and what it costs, in one request. A plan appears once per price.
+
+        `currency` is required: a plan has a price in each currency it is sold in, so "what does
+        this cost" has no answer without one.
+
+        Archived prices are left out. Existing subscriptions keep the terms they were bought at, so
+        this is not the place to look up what an existing purchase is paying.
+      operationId: list-prices
+      tags:
+        - prices
+      security: []
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+        - name: currency
+          in: query
+          required: true
+          description: ISO 4217, three uppercase letters.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 3
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - name: type
+          in: query
+          required: false
+          description: Narrows to one payment timing.
+          schema:
+            type: string
+            enum:
+              - postpaid
+              - prepaid
+              - one_time
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog representation changes.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceList"
+        "304":
+          description: Not Modified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/prices/{priceId}:
+    parameters:
+      - name: priceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a price
+      description: Returns the catalog price, including archived prices. Fixed purchase history and renewal agreements are shown on orders and subscriptions rather than reconstructed from today's catalog.
+      operationId: get-price
+      tags:
+        - prices
+      security: []
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog listing changes.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Price"
+        "304":
+          description: Not Modified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/plans/{planId}/prices:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/PlanId
+    get:
+      summary: List catalog prices
+      description: |-
+        Public list prices only. An account holding a negotiated agreement may be charged less;
+        it is never charged more.
+      operationId: list-prices-by-plan
+      tags:
+        - prices
+      security: []
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceList"
+        "304":
+          $ref: ./openapi.yaml#/components/responses/NotModified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/rate-cards/{rateCardId}/rules:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/RateCardId
+    get:
+      summary: List catalog rates
+      description: |-
+        Only public price lists are readable here. A list written for a single agreement is not,
+        and its identifier cannot be used to reach it.
+      operationId: list-rates
+      tags:
+        - prices
+      security: []
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+        - name: meter_id
+          in: query
+          required: false
+          description: Filter by the meter UUID.
+          schema:
+            type: string
+            format: uuid
+        - name: at
+          in: query
+          required: false
+          description: Return the rates in effect at this moment. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateList"
+        "304":
+          $ref: ./openapi.yaml#/components/responses/NotModified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    TerminationPolicy:
+      description: Whether a fulfilled purchase may end immediately or only after its paid term. Does not grant a refund. When absent, the terms are not configured and termination requires review.
+      type: string
+      enum:
+        - immediate
+        - period_end
+    RefundPolicy:
+      description: |-
+        none refunds nothing. prorated refunds the amount paid for the current period minus the value of
+        the time used, never below zero and never more than what remains unrefunded. The time used runs
+        from the period start to the effective cancellation time and is valued at the plan's
+        shorter-period prices in the same currency, frozen at purchase as the order item's
+        refund_monthly_amount and refund_hourly_amount: each full calendar month at the one-month prepaid
+        price, the remainder at the postpaid hourly price or, without one, at the one-month price by the
+        second. When the plan has no prepaid period shorter than the one bought, the time used is valued
+        at the price paid, pro rata by the second. Discounts are not refunded, as they were never paid,
+        and setup fees are excluded. The refunded part returns to the payment sources it came from. Tax
+        paid is refunded in the same proportion as the amount it was paid on.
+      type: string
+      enum:
+        - none
+        - prorated
+    RenewalPrice:
+      type: object
+      properties:
+        termination_policy:
+          $ref: "#/components/schemas/TerminationPolicy"
+        refund_policy:
+          $ref: "#/components/schemas/RefundPolicy"
+        price_id:
+          type: string
+          format: uuid
+        interval_count:
+          description: How many periods one renewal covers.
+          type: integer
+        interval:
+          type: string
+          enum:
+            - day
+            - month
+            - year
+        amount:
+          description: What renewing for this term costs, for the quantity held.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        current:
+          description: |-
+            The term this item already bills at. Renewing for it uses the price bought
+            originally, so a later price change does not affect it.
+          type: boolean
+      required:
+        - price_id
+        - interval_count
+        - interval
+        - current
+    RenewalPriceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RenewalPrice"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+    PriceOption:
+      description: A price's display terms, including archived prices referenced by an applicability list.
+      type: object
+      properties:
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        plan:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        billing_scheme:
+          type: string
+          enum:
+            - per_unit
+            - tiered
+            - rated
+        unit_quantity:
+          type: string
+        id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        type:
+          type: string
+          enum:
+            - postpaid
+            - prepaid
+            - one_time
+        interval:
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        interval_count:
+          description: How many periods one purchase covers.
+          type: integer
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        active:
+          description: False once the price is archived. It still applies to purchases already made at this price.
+          type: boolean
+      required:
+        - product
+        - plan
+        - currency
+        - type
+        - interval
+        - billing_scheme
+        - unit_quantity
+        - id
+        - active
+    Price:
+      type: object
+      properties:
+        rate_card:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        lookup_key:
+          type: string
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        plan:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        meter_id:
+          type: string
+          format: uuid
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit_quantity:
+          type: string
+        active:
+          description: False once archived. An archived price cannot be bought until it is active again.
+          type: boolean
+        termination_policy:
+          $ref: "#/components/schemas/TerminationPolicy"
+        refund_policy:
+          $ref: "#/components/schemas/RefundPolicy"
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+        id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        type:
+          description: |-
+            `postpaid` charges for what is used, `prepaid` buys a period in advance, `one_time`
+            charges once.
+          type: string
+          enum:
+            - postpaid
+            - prepaid
+            - one_time
+        billing_scheme:
+          description: |-
+            How the amount is arrived at. `rated` means the rate depends on attributes such as
+            region or machine type, and is looked up on a price list.
+          type: string
+          enum:
+            - per_unit
+            - tiered
+            - rated
+        unit_amount:
+          description: Present for `per_unit`.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tiers_mode:
+          description: |-
+            `none` for a price that is not tiered, which is most of them.
+
+            Otherwise `graduated` charges each band at its own rate, and `volume` charges
+            everything at the rate of the band the total falls in.
+          type: string
+          enum:
+            - none
+            - graduated
+            - volume
+        tiers:
+          description: Present for `tiered`, in ascending order.
+          type: array
+          items:
+            $ref: "#/components/schemas/Tier"
+        rate_card_id:
+          description: For `rated` prices, the price list the rates are read from.
+          type: string
+          format: uuid
+        min_quantity:
+          description: The smallest quantity that can be bought. Absent means no lower bound.
+          type: string
+        max_quantity:
+          description: |-
+            The largest purchasable quantity. Omitted when no maximum applies. A quantity above this limit is
+            rejected with BILLING_PRICE_INVALID and field=max_quantity.
+          type: string
+        quantity_step:
+          description: Quantities must be a multiple of this. Absent means any quantity within the bounds.
+          type: string
+        interval_count:
+          description: For prepaid prices, how many periods one purchase covers.
+          type: integer
+        interval:
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        setup_fee:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - product
+        - plan
+        - interval
+        - unit_quantity
+        - active
+        - id
+        - plan_id
+        - currency
+        - type
+        - billing_scheme
+    PriceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Price"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+    Rate:
+      type: object
+      properties:
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit:
+          description: The unit readings arrive in, such as `core-second`.
+          type: string
+        dimensions:
+          description: The attributes this rate applies to, such as region and machine type.
+          type: object
+          additionalProperties:
+            type: string
+        pricing_model:
+          type: string
+          enum:
+            - per_unit
+            - graduated
+            - volume
+        unit_amount:
+          description: Present for `per_unit`. Tiered rates carry their amounts on the tiers.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tiers:
+          description: Present for `graduated` and `volume`, in ascending order.
+          type: array
+          items:
+            $ref: "#/components/schemas/Tier"
+        unit_quantity:
+          description: |-
+            How many measured units one amount covers. An hourly rate on a per-second meter is
+            `"3600"`.
+          type: string
+        currency:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - meter
+        - dimensions
+        - pricing_model
+        - currency
+        - effective_from
+    RateList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rate"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+    Tier:
+      type: object
+      properties:
+        up_to:
+          description: The upper bound of this band. Null on the last band, which has no bound.
+          type:
+            - string
+            - "null"
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        flat_amount:
+          description: Charged once when this band is reached, in addition to the per-unit amount.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - unit_amount

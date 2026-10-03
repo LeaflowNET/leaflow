@@ -1,0 +1,203 @@
+paths:
+  /api/v1/billing-accounts/{accountId}/metered-usage:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
+    get:
+      summary: Get account metered usage
+      description: |-
+        Whether the account has anything billed by usage, and what that usage has cost over the last
+        seven days. Usage is paid from the balance, so this tells how much of the balance it is likely
+        to need: the balance divided by `average_daily_amount` is roughly how many days it lasts.
+      operationId: get-account-metered-usage
+      tags:
+        - usage-charges
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeteredUsage"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage-charges:
+    get:
+      summary: List usage charges
+      description: |-
+        Each charge is added to the month's usage invoice as it is priced, summed into one line per
+        subscription, project, resource, meter and rate. Filter by `invoice_item_id` to see the
+        charges behind a line. Charges still waiting to be priced are included too.
+
+        Only charges recorded against your billing accounts are included, before filtering, counting and pagination. Reassigning a project does not move previously recorded charges to its new account.
+      operationId: list-usage-charges
+      tags:
+        - usage-charges
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - name: resource_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: invoice_item_id
+          in: query
+          required: false
+          description: Only the charges summed into this usage invoice line.
+          schema:
+            type: string
+            format: uuid
+        - $ref: ./openapi.yaml#/components/parameters/From
+        - $ref: ./openapi.yaml#/components/parameters/To
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+        - name: meter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageChargeList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    MeteredUsage:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        active_resource_count:
+          description: Resources still metered in the projects the account currently pays for.
+          type: integer
+        postpaid_subscription_count:
+          description: Subscriptions billed by usage that the account currently pays for and that have not ended.
+          type: integer
+        window_start:
+          description: The start of the seven days the amounts cover.
+          type: string
+          format: date-time
+        window_end:
+          description: The end of those seven days, the time usage was last priced.
+          type: string
+          format: date-time
+        amount:
+          description: Usage priced in the window, before tax and before credit grants. Usage not yet priced is not included.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        average_daily_amount:
+          description: |-
+            `amount` per day. Over the window, or over the part of it since the account's usage began
+            when that is shorter, counting at least one day.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - billing_account_id
+        - currency
+        - active_resource_count
+        - postpaid_subscription_count
+        - window_start
+        - window_end
+        - amount
+        - average_daily_amount
+    UsageCharge:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project:
+          description: |-
+            The project and its current name, for display. Absent when the project no longer exists or its
+            details cannot be read at the moment; `project_id` still identifies it.
+          oneOf:
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+            - type: "null"
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        resource_id:
+          description: Which resource this was charged for. Empty for charges not tied to one.
+          type: string
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit:
+          type: string
+        dimensions:
+          description: The attributes the rate was chosen by, such as region and machine type.
+          type: object
+          additionalProperties:
+            type: string
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          description: Exclusive.
+          type: string
+          format: date-time
+        gross_quantity:
+          description: How much was used, before any included allowance.
+          type: string
+        deducted_quantity:
+          description: How much of that was covered by an allowance.
+          type: string
+        quantity:
+          description: What was charged for — the gross quantity less the part covered.
+          type: string
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        invoice_id:
+          description: The usage invoice this charge was added to. Absent while it waits to be priced.
+          type:
+            - string
+            - "null"
+          format: uuid
+        invoice_item_id:
+          description: The usage invoice line this charge was summed into. Absent while it waits to be priced.
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - id
+        - product
+        - meter
+        - window_start
+        - window_end
+        - quantity
+        - currency
+    UsageChargeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageCharge"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

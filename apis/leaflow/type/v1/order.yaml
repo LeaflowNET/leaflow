@@ -1,10 +1,8 @@
-openapi: 3.1.0
+openapi: 3.2.1
 info:
   title: Order Types
   version: v1
-  description: 'The handle a service returns after creating a billable order, and the quote it returns before one. Types only; this document
-
-    declares no operations.'
+  description: Order references returned by product purchases. Types only; this document declares no operations.
 paths: {}
 components:
   schemas:
@@ -28,101 +26,4 @@ components:
       required:
       - order_id
       - invoice_id
-      additionalProperties: false
-    OrderOptions:
-      type: object
-      properties:
-        auto_pay:
-          type: boolean
-          default: true
-          description: Defaults to true. When true, the purchase is paid from available account funds and applicable
-            grants when it is placed. If they do not cover the amount due, the request fails with HTTP 422 and code
-            BILLING_INSUFFICIENT_FUNDS; no order is created and nothing is charged. When false, the order is created
-            without payment, and its invoice, if any, is paid through Billing.
-        expected_amount:
-          type: string
-          pattern: ^\d+(\.\d{1,10})?$
-        redemption_code:
-          type: string
-          minLength: 1
-          maxLength: 128
-      additionalProperties: false
-      description: Purchase options. Every request places an order of its own.
-    PurchaseQuote:
-      description: 'What a purchase would be charged, priced as a service would order it, without ordering anything.
-        Nothing is reserved and nothing is recorded.'
-      type: object
-      properties:
-        lines:
-          description: One line for each item the purchase would order, in the order it would order them.
-          type: array
-          items:
-            $ref: '#/components/schemas/PurchaseQuoteLine'
-        total:
-          description: 'What would be owed for the whole purchase. Null when any line could not be priced: what would
-            be owed is not knowable then.'
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
-        currency:
-          type: string
-      required:
-      - lines
-      - total
-      - currency
-      additionalProperties: false
-    PurchaseQuoteLine:
-      type: object
-      properties:
-        priced:
-          description: Whether a price was found for this line. When false, `price_id`, `unit_amount` and `amount` are
-            null and `unpriced_reason` states what is missing.
-          type: boolean
-        unpriced_reason:
-          description: Why no price was found; `none` while `priced` is true.
-          type: string
-          enum:
-          - none
-          - no_price
-          - no_rate_card
-          - no_meter
-          - no_dimensions
-          - no_effective_rule
-        price_id:
-          description: The price selected, including when the request left the choice to the service. Order with this
-            price.
-          type:
-          - string
-          - 'null'
-          format: uuid
-        plan_name:
-          type: string
-        unit_amount:
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
-        quantity:
-          description: The quantity priced.
-          type: string
-        amount:
-          description: Not rounded. Round only for display.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
-        tax_amount:
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
-        currency:
-          type: string
-      required:
-      - priced
-      - unpriced_reason
-      - price_id
-      - plan_name
-      - unit_amount
-      - quantity
-      - amount
-      - tax_amount
-      - currency
       additionalProperties: false

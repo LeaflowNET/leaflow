@@ -1,0 +1,130 @@
+paths:
+  /api/v1/active-resources:
+    get:
+      summary: List active resources
+      description: |-
+        Lists continuous metering registrations paid for by your billing accounts. Their state does not
+        describe machine runtime or health. Project filters narrow the authorized accounts; they do not
+        grant project-based access.
+      operationId: list-active-resources
+      tags:
+        - active-resources
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: resource_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+        - name: meter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - suspended
+              - closing
+              - completed
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveResourceList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ActiveResource:
+      description: A resource currently accruing charges by the second.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ended_at:
+          type: string
+          format: date-time
+        suspended_at:
+          type: string
+          format: date-time
+        state_changed_at:
+          type: string
+          format: date-time
+        subscription_id:
+          description: The postpaid subscription charged for this metering record, including shared services.
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        resource_type:
+          description: What it is, as its own service names it.
+          type: string
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit:
+          type: string
+        quantity:
+          description: How much is held — cores, MiB, cards. Not how much has been used.
+          type: string
+        dimensions:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - closing
+            - completed
+        started_at:
+          type: string
+          format: date-time
+        metered_until:
+          description: Usage has been generated up to this boundary; it does not imply invoicing or payment.
+          type: string
+          format: date-time
+        project_id:
+          type: string
+          format: uuid
+      required:
+        - id
+        - subscription_id
+        - metered_until
+        - resource_id
+        - product
+        - meter
+        - quantity
+        - status
+        - started_at
+    ActiveResourceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActiveResource"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
