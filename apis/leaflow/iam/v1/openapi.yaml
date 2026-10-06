@@ -967,17 +967,30 @@ components:
         - rules
         - roles
       additionalProperties: false
+    ProjectTraitResource:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        effect:
+          type: string
+          enum: [NoWrite, NoAccess]
+        reason:
+          type: string
+      required: [key, value, effect, reason]
+      additionalProperties: false
     ProjectResource:
       type: object
       properties:
-        locked_at:
-          description: A read-only management lock. Running resources and billing remain unchanged. Only an operator can release it.
+        traits:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTraitResource"
+        deletion_requested_at:
           type: [string, "null"]
           format: date-time
-        lock_reason:
-          type: string
-        ban_reason:
-          type: string
         created_at:
           type: string
           format: date-time
@@ -996,29 +1009,15 @@ components:
           format: uuid
         name:
           type: string
-        status:
-          type: string
-          enum:
-            - ACTIVE
-            - SUSPENDED
-            - BANNED
-            - DELETING
-            - DELETED
-        status_reason:
-          description: Written for a reader; it takes part in no query
-          type: string
         updated_at:
           type: string
           format: date-time
       required:
-        - locked_at
-        - lock_reason
+        - traits
+        - deletion_requested_at
         - id
         - name
         - description
-        - status
-        - status_reason
-        - ban_reason
         - deleted_at
         - created_by
         - created_at
@@ -1048,19 +1047,29 @@ components:
     MembershipResource:
       type: object
       properties:
+        traits:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTraitResource"
+        deleted_at:
+          type: [string, "null"]
+          format: date-time
+        deletion_requested_at:
+          type: [string, "null"]
+          format: date-time
         grant:
           $ref: "#/components/schemas/GrantResource"
         member:
           type: boolean
-        project_status:
-          type: string
         user_status:
           type: string
       required:
+        - traits
+        - deleted_at
+        - deletion_requested_at
         - member
         - grant
         - user_status
-        - project_status
       additionalProperties: false
     InvitationResource:
       type: object

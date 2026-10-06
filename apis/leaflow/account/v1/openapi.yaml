@@ -433,19 +433,12 @@ paths:
             description: Matches against name or description
             type: string
             maxLength: 128
-        - name: status
+        - name: include_deleted
           in: query
-          description: Filters by external status. Deleted projects are excluded while this is absent
-          explode: false
+          required: false
           schema:
-            description: Filters by external status. Deleted projects are excluded while this is absent
-            type: string
-            enum:
-              - ACTIVE
-              - SUSPENDED
-              - BANNED
-              - DELETING
-              - DELETED
+            type: boolean
+            default: false
       responses:
         "200":
           description: OK
@@ -959,17 +952,30 @@ components:
       required:
         - token
       additionalProperties: false
+    ProjectTraitResource:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        effect:
+          type: string
+          enum: [NoWrite, NoAccess]
+        reason:
+          type: string
+      required: [key, value, effect, reason]
+      additionalProperties: false
     ProjectResource:
       type: object
       properties:
-        locked_at:
-          description: A read-only management lock. Running resources and billing remain unchanged. Only an operator can release it.
+        traits:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectTraitResource"
+        deletion_requested_at:
           type: [string, "null"]
           format: date-time
-        lock_reason:
-          type: string
-        ban_reason:
-          type: string
         created_at:
           type: string
           format: date-time
@@ -988,29 +994,15 @@ components:
           format: uuid
         name:
           type: string
-        status:
-          type: string
-          enum:
-            - ACTIVE
-            - SUSPENDED
-            - BANNED
-            - DELETING
-            - DELETED
-        status_reason:
-          description: Written for a reader; it takes part in no query
-          type: string
         updated_at:
           type: string
           format: date-time
       required:
-        - locked_at
-        - lock_reason
+        - traits
+        - deletion_requested_at
         - id
         - name
         - description
-        - status
-        - status_reason
-        - ban_reason
         - deleted_at
         - created_by
         - created_at

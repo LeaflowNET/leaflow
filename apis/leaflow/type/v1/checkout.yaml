@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Checkout Types
+  version: v1
+  description: Shared checkout choices for product purchases. Types only; this document declares no operations.
+paths: {}
+components:
+  schemas:
+    CheckoutMode:
+      type: string
+      enum:
+      - automatic
+      - deferred
+      description: |-
+        automatic confirms checkout with applicable account discounts and collects payment from eligible
+        credit grants and available balance. Insufficient funds fail the purchase with HTTP 422
+        BILLING_INSUFFICIENT_FUNDS; no Billing order, charge or discount redemption is committed.
+        deferred creates a pending_checkout order for subsequent confirmation and payment through Billing.
+        An absent invoice or zero immediate amount does not bypass confirmation. No new discount
+        redemption or payment is made when the order is created.
+    CheckoutOptions:
+      type: object
+      properties:
+        mode:
+          allOf:
+          - $ref: '#/components/schemas/CheckoutMode'
+          default: automatic
+        expected_amount:
+          allOf:
+          - $ref: ./money.yaml#/components/schemas/Money
+          pattern: '^\d+(\.\d{1,10})?$'
+          description: |-
+            Expected invoice total after discounts and tax, before applying credit grants or balance.
+            A different total fails with BILLING_AMOUNT_CHANGED without charging or reserving a discount.
+            Accepted only in automatic mode; with deferred it is refused with HTTP 400. For deferred
+            checkout, confirm the amount through Billing.
+      additionalProperties: false
+      description: |-
+        Shared checkout choices for a product purchase. Omitting this object or mode selects
+        automatic checkout. Each purchase creates its own order. Promotion codes are supplied only to
+        Billing quote and checkout operations. A service may retain a failed creation record when Billing
+        refuses a purchase; no infrastructure is created for that refusal.
