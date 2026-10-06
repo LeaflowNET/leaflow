@@ -1,0 +1,99 @@
+paths:
+  /api/v1/spend:
+    get:
+      summary: List account spend
+      description: |-
+        Sums priced usage for one billing account by UTC day, including usage not yet invoiced. Amounts are
+        before tax and before the tier adjustments made when a statement closes; minimum charges added at
+        closing are included. `from` and `to` must fall on UTC day boundaries and span at most 92 days.
+        Project filters use the account recorded on each charge, including charges for projects later
+        assigned to another account. The total covers all matching groups, not just the returned page.
+      operationId: list-spend
+      tags:
+        - spend
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - name: group_by
+          in: query
+          required: false
+          description: |-
+            `plan` groups by the plan of the price each charge was priced with, which stays the same after the
+            subscription changes plan. `resource` groups by the resource each charge names. Items billed under their own
+            identifier — a disk, a public address — appear as their own rows rather than under
+            the machine they are attached to, since the relationship between them is known to
+            the owning service and not here.
+          schema:
+            type: string
+            enum:
+              - product
+              - plan
+              - resource
+            default: product
+        - name: product_id
+          in: query
+          required: false
+          description: Filter by the fixed platform service ID.
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: billing_account_id
+          in: query
+          required: true
+          description: The authorized billing account whose currency and charges are used for this report.
+          schema:
+            type: integer
+            format: int64
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendRowList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    SpendRow:
+      type: object
+      properties:
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        resource_id:
+          description: Present only when grouped by resource.
+          type: string
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+      required:
+        - amount
+        - currency
+    SpendRowList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendRow"
+        total:
+          description: The sum over the whole period, not only the page returned.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - total
+        - currency
+        - pagination

@@ -1,0 +1,70 @@
+paths:
+  /api/v1/entitlements:
+    get:
+      summary: List entitlements
+      description: |-
+        Capabilities that come with what has been bought. A capability that is not held simply
+        does not appear, so that "this does not exist" and "this has not been bought" cannot be
+        confused.
+
+        Derived from live subscriptions rather than stored, so this always agrees with what is
+        being paid for. It stops being listed as soon as the subscription providing it ends.
+      operationId: list-entitlements
+      tags:
+        - entitlements
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Entitlement:
+      type: object
+      properties:
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        feature:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        name:
+          type: string
+        enabled:
+          type: boolean
+        expires_at:
+          description: |-
+            When the subscription providing it ends. Absent for a metered subscription, which
+            has no end date.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - product
+        - feature
+        - enabled
+    EntitlementList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entitlement"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

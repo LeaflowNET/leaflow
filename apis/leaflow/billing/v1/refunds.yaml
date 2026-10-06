@@ -1,0 +1,185 @@
+paths:
+  /api/v1/refunds:
+    get:
+      summary: List refunds
+      description: Newest first.
+      operationId: list-refunds
+      tags:
+        - refunds
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: invoice_id
+          in: query
+          required: false
+          description: Only the refunds of this invoice.
+          schema:
+            type: string
+            format: uuid
+        - name: order_id
+          in: query
+          required: false
+          description: |-
+            Only the refunds that belong to this order: those of its invoice, such as the refund of a
+            purchase that could not be delivered, and those it caused on an earlier invoice, such as
+            the difference returned after a downgrade.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Refund:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        cancellation_request_id:
+          type: string
+          format: uuid
+        transactions:
+          description: Original funds-return split and each result. Unknown gateway results remain pending.
+          type: array
+          items:
+            $ref: ./transactions.yaml#/components/schemas/Transaction
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        invoice_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        order_id:
+          description: |-
+            The order the refund belongs to: the order that caused it, such as a downgrade, otherwise
+            the order of the refunded invoice. Null for refunds of top-ups and of usage invoices.
+          type:
+            - string
+            - "null"
+          format: uuid
+        amount:
+          description: The whole refund. Equals balance_amount plus credit_amount plus gateway_amount.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        balance_amount:
+          description: The part returned to the account balance.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credit_amount:
+          description: The part restored to the credit grants that paid for it.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        gateway_amount:
+          description: The part returned to the payment method it was paid with.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        settled_amount:
+          description: What has actually been returned.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        destination:
+          description: Use balance_amount, credit_amount and gateway_amount, which also show a refund split between several destinations.
+          type: string
+          enum:
+            - balance
+            - gateway
+          deprecated: true
+        status:
+          description: |-
+            Summary of the parts in `transactions`.
+
+            - `pending`: nothing has been returned yet, and at least one part is in progress.
+            - `processing`: some parts have been returned, and at least one is still in progress.
+            - `succeeded`: every part has been returned.
+            - `failed`: no part is in progress and at least one has failed. What was returned is in
+              settled_amount.
+
+            Returns to the balance and to credit grants complete shortly after the refund is made; a
+            return to a payment method completes when the gateway confirms it.
+          type: string
+          enum:
+            - pending
+            - processing
+            - succeeded
+            - failed
+        settled_at:
+          description: When the last part was returned. Present with `succeeded`.
+          type: string
+          format: date-time
+        reason:
+          $ref: "#/components/schemas/RefundReason"
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - currency
+        - status
+        - reason
+        - created_at
+        - amount
+        - balance_amount
+        - credit_amount
+        - gateway_amount
+        - transactions
+    RefundReason:
+      description: |-
+        Why the refund was made. Clients map the code to their own wording. More codes may be added;
+        treat an unknown code as a refund without a stated reason.
+
+        - `provisioning_failed`: the purchase could not be delivered.
+        - `order_expired`: the order expired after part of it had been paid.
+        - `order_canceled`: the account holder canceled the order after part of it had been paid.
+        - `change_canceled`: a scheduled change was withdrawn after part of it had been paid.
+        - `change_expired`: a scheduled change could not take effect before its time passed.
+        - `subscription_canceled`: the subscription was canceled and its unused value returned under
+          its refund terms.
+        - `future_period_canceled`: a renewal that had not started yet was withdrawn.
+        - `downgrade_difference`: after a downgrade, the remaining value of what was paid, valued as refund
+          policy `prorated` describes, minus the new configuration's cost for the remaining time at the
+          change item's `refund_monthly_amount` and `refund_hourly_amount`. Nothing is refunded when that is
+          zero or less.
+        - `usage_true_up`: usage priced again over the whole month cost less than was charged.
+        - `payment_not_applied`: a payment arrived after its invoice could no longer be paid.
+        - `operator`: made by the platform operator.
+      type: string
+      enum:
+        - provisioning_failed
+        - order_expired
+        - order_canceled
+        - change_canceled
+        - change_expired
+        - subscription_canceled
+        - future_period_canceled
+        - downgrade_difference
+        - usage_true_up
+        - payment_not_applied
+        - operator
+    RefundList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Refund"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

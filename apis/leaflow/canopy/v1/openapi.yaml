@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.2.1
 info:
   title: Leaflow Canopy API
   version: 1.0.0
@@ -26,6 +26,7 @@ info:
     - **A usage query must carry a time range**, spanning no more than 31 days. `from` and `to` carry a timezone offset, which the server does not infer.
     - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the `upstream_request_id` from the response when reporting a problem.
     - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
+    - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates stated in each model's `pricing`.
 servers:
   - url: https://canopy.leaflow.cloud
     description: Model gateway keys and usage
@@ -39,27 +40,8 @@ paths:
       tags:
         - APIKey
       parameters:
-        - name: limit
-          in: query
-          description: Maximum number of items in this page
-          explode: false
-          schema:
-            description: Maximum number of items in this page
-            type: integer
-            format: int64
-            default: 50
-            minimum: 1
-            maximum: 200
-        - name: offset
-          in: query
-          description: Number of items to skip. Use the cursor-paged endpoint to page deeper
-          explode: false
-          schema:
-            description: Number of items to skip. Use the cursor-paged endpoint to page deeper
-            type: integer
-            format: int64
-            minimum: 0
-            maximum: 10000
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
         - name: status
           in: query
           description: Restricts the result to the specified status. Every status is returned while this is absent
@@ -268,6 +250,8 @@ paths:
         A model that has been retired does not appear here, while it remains readable individually.
 
         `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
+
+        `pricing` states what requests to each model cost in the currency of the project's current billing account.
       operationId: list-models
       tags:
         - Model
@@ -320,6 +304,8 @@ paths:
         **The request and response bodies are not returned**; they are not recorded. Quote the `upstream_request_id` when reporting a problem.
 
         A `usage_source` of `estimated` indicates that the upstream provider reported no usage for that request, and that the figures are derived from the character classes of the payload.
+
+        Omit cursor on the first page. Stop when next_cursor is empty; do not send an empty cursor.
       operationId: list-requests
       tags:
         - Usage
@@ -370,25 +356,8 @@ paths:
               - refused
               - upstream_failed
               - client_aborted
-        - name: limit
-          in: query
-          description: Maximum number of items in this page
-          explode: false
-          schema:
-            description: Maximum number of items in this page
-            type: integer
-            format: int64
-            default: 50
-            minimum: 1
-            maximum: 200
-        - name: cursor
-          in: query
-          description: The `next_cursor` returned by the previous page. Omitted on the first page
-          explode: false
-          schema:
-            description: The `next_cursor` returned by the previous page. Omitted on the first page
-            type: string
-            maxLength: 512
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
       responses:
         "200":
           description: OK
@@ -422,6 +391,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RequestResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service:
+    get:
+      summary: Get the model platform service
+      description: |-
+        The model platform service of the authenticated project. The forwarding endpoints accept its requests only while `status` is `active`; each request is then billed under `subscription_id`, per token, at the rates stated in each model's `pricing`.
+
+        When the project is deleted, its API keys are revoked and the subscription is canceled; the service then reads `inactive` with `ended_at` set.
+      operationId: get-service
+      tags:
+        - Service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Enable the model platform service
+      description: |-
+        Purchases the model platform service for this project. The service itself has no charge; requests are billed under it postpaid, by the tokens they use. It takes no billing choice. Returns the service as `pending` with its order; it becomes `active` once the order is accepted, which for an order with nothing to pay happens without further action.
+
+        Refused with 409 `SERVICE_ALREADY_ENABLED` while an enablement is pending or the service is active. A refusal of the order by Billing is returned with Billing's code, such as `BILLING_PRICE_UNAVAILABLE` when the service has no price in the currency of the project's billing account.
+      operationId: create-service
+      tags:
+        - Service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceRequestBody"
+      responses:
+        "202":
+          description: The service and its order were created; the service is not active yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateServiceResponseBody"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service/quote:
+    post:
+      summary: Quote enabling the model platform service
+      description: |-
+        Prices what `create-service` would order, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount.
+
+        Token usage is priced per model, as each model's `pricing` states, and is neither part of `total` nor projected: `estimated_usage_amount` is null. A request the purchase would refuse is refused the same way.
+      operationId: create-service-quote
+      tags:
+        - Service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "409":
+          $ref: "#/components/responses/Conflict"
         default:
           description: Error
           content:
@@ -949,6 +996,11 @@ components:
           description: The maximum output length. Advisory only
           type: integer
           format: int64
+        pricing:
+          description: What requests to this model cost. Null when the project has no billing account.
+          anyOf:
+            - $ref: "#/components/schemas/ModelPricing"
+            - type: "null"
         reasoning_tiers:
           description: The values accepted for `reasoning_effort`. Empty means it is not supported
           type: array
@@ -977,6 +1029,51 @@ components:
         - supports_tools
         - supports_reasoning
         - reasoning_tiers
+        - pricing
+      additionalProperties: false
+    ModelPricing:
+      description: |-
+        What requests to a model cost, as Billing prices them in the currency of the project's current billing account. These are list amounts before promotion codes, not a checkout guarantee; usage is billed afterwards under the service's subscription.
+
+        Each token kind is priced on its own. `input` excludes cached input, which is `cache_read`, and `output` excludes reasoning the provider reports separately, which is `reasoning`; a request is billed for each kind it used.
+      type: object
+      properties:
+        currency:
+          type: string
+        token_kinds:
+          description: One entry for each of the five token kinds, in the order input, output, cache_read, cache_write, reasoning.
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenPrice"
+      required:
+        - currency
+        - token_kinds
+      additionalProperties: false
+    TokenPrice:
+      type: object
+      properties:
+        token_kind:
+          type: string
+          enum:
+            - input
+            - output
+            - cache_read
+            - cache_write
+            - reasoning
+        unit_amount:
+          description: The charge for `unit_quantity` tokens of this kind. Null when the kind has no rate in the currency, in which case the model cannot be billed for it.
+          anyOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        unit_quantity:
+          description: How many tokens `unit_amount` is for, such as `1000000`. Null when `unit_amount` is null.
+          type:
+            - string
+            - "null"
+      required:
+        - token_kind
+        - unit_amount
+        - unit_quantity
       additionalProperties: false
     ModelListResponseBody:
       type: object
@@ -1257,3 +1354,90 @@ components:
       required:
         - items
       additionalProperties: false
+    ServiceResource:
+      description: The model platform service of a project.
+      type: object
+      properties:
+        status:
+          description: "`inactive` has never been enabled or its subscription has ended; `pending` awaits acceptance of its order; `active` accepts requests on the forwarding endpoints; `failed` means the enablement failed, as `failure_reason` states. An `inactive` or `failed` service can be enabled again."
+          type: string
+          enum:
+            - inactive
+            - pending
+            - active
+            - failed
+        failure_reason:
+          description: Why the enablement failed; null unless `status` is `failed`. `order_declined` means Billing did not accept the order, for example because the billing account is suspended; `order_canceled` means the order was withdrawn; `order_expired` means its checkout was not confirmed in time.
+          type:
+            - string
+            - "null"
+          enum:
+            - order_declined
+            - order_canceled
+            - order_expired
+            - null
+        order_id:
+          description: The order that enabled the service, or that the latest enablement placed; null before any enablement.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_id:
+          description: The Billing subscription that requests are billed under; null before any enablement.
+          type:
+            - string
+            - "null"
+          format: uuid
+        activated_at:
+          description: When the service became active and billing began; null until then.
+          type:
+            - string
+            - "null"
+          format: date-time
+        ended_at:
+          description: When the subscription ended; null unless it has.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - status
+        - failure_reason
+        - order_id
+        - subscription_id
+        - activated_at
+        - ended_at
+      additionalProperties: false
+    CreateServiceRequestBody:
+      type: object
+      properties:
+        checkout:
+          $ref: "#/components/schemas/CheckoutOptions"
+      additionalProperties: false
+    CreateServiceResponseBody:
+      description: The service, `pending` until its order is accepted, and the order.
+      type: object
+      properties:
+        service:
+          $ref: "#/components/schemas/ServiceResource"
+        order:
+          $ref: "#/components/schemas/PlacedOrder"
+      required:
+        - service
+        - order
+      additionalProperties: false
+    CheckoutOptions:
+      $ref: ../../type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+    PlacedOrder:
+      $ref: ../../type/v1/order.yaml#/components/schemas/PlacedOrder
+    Quote:
+      $ref: ../../type/v1/quote.yaml#/components/schemas/Quote
+    Money:
+      $ref: ../../type/v1/money.yaml#/components/schemas/Money
+  responses:
+    Conflict:
+      description: The request conflicts with the current state of the service. The codes are described where they apply.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

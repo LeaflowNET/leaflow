@@ -1,0 +1,165 @@
+paths:
+  /api/v1/credit-notes:
+    get:
+      summary: List credit notes
+      description: Newest issued_at first, then ID. Requires authorization for the invoice's billing account. Filters narrow authorized results and apply before counting and paging.
+      operationId: list-credit-notes
+      tags:
+      - credit-notes
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: invoice_id
+        in: query
+        required: false
+        description: Only the notes for this invoice.
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditNoteList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/credit-notes/{creditNoteId}:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
+    get:
+      summary: Get credit note
+      description: Requires authorization for the invoice's billing account.
+      operationId: get-credit-note
+      tags:
+      - credit-notes
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditNote'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/credit-notes/{creditNoteId}/items:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
+    get:
+      summary: List credit note items
+      description: The original invoice lines reduced by this note. Requires authorization for their invoice's billing account.
+      operationId: list-credit-note-items
+      tags:
+      - credit-notes
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditNoteItemList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    CreditNote:
+      description: An issued invoice reduction. Its credited amount is unpaid_amount plus paid_amount. A paid credit records a return obligation; refund_id identifies its refund, whose outcome may still be pending. Original invoice amounts remain unchanged.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        issued_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - issued
+          - void
+        voided_at:
+          description: When this note was voided; null while issued.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        unpaid_amount:
+          description: The reduction of unpaid receivables. A void note no longer reduces what is due.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        paid_amount:
+          description: The credited part of payments already received. This is not proof that its refund has completed.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refund_id:
+          description: The refund to the original payment sources, or null when no paid amount was credited.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - id
+      - invoice_id
+      - currency
+      - issued_at
+      - status
+      - voided_at
+      - unpaid_amount
+      - paid_amount
+      - refund_id
+    CreditNoteItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        credit_note_id:
+          type: string
+          format: uuid
+        invoice_item_id:
+          type: string
+          format: uuid
+        unpaid_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        paid_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+      - id
+      - credit_note_id
+      - invoice_item_id
+      - unpaid_amount
+      - paid_amount
+    CreditNoteList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditNote'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+    CreditNoteItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditNoteItem'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination

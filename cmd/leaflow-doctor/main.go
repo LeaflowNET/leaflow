@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -172,8 +173,9 @@ func checkSubpackageCollisions(specs *spec.Set) []string {
 	var problems []string
 
 	for _, service := range specs.Services() {
-		head, subpackage, nested := strings.Cut(service.Name, "/")
-		if !nested {
+		head, subpackage := path.Split(service.Name)
+		head = strings.TrimSuffix(head, "/")
+		if head == "" {
 			continue
 		}
 

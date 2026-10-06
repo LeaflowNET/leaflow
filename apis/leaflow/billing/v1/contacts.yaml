@@ -1,0 +1,209 @@
+paths:
+  /api/v1/billing-accounts/{accountId}/contacts:
+    parameters:
+    - name: accountId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    get:
+      summary: List contacts
+      description: Paginated contact profiles belonging to the billing account in the path, including inactive
+        contacts. Returns 404 if the account does not exist.
+      operationId: list-contacts
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+    post:
+      summary: Create contact
+      description: Creates a contact profile for the billing account in the path. Creating a contact does not select
+        it for invoicing; set the account invoice_contact_id separately.
+      operationId: create-contact
+      tags:
+      - accounts
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactCreate'
+  /api/v1/billing-accounts/{accountId}/contacts/{contactId}:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/AccountId
+    - name: contactId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Get contact
+      description: Returns a contact belonging to this billing account. Returns 404 if the contact does not exist in this account.
+      operationId: get-contact
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update contact
+      description: Updates a contact belonging to this billing account. Returns 404 if the contact does not exist in this account.
+      operationId: update-contact
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactUpdate'
+    delete:
+      summary: Delete contact
+      description: Deletes a contact belonging to this billing account. Returns 404 if the contact does not exist in this account.
+        The selected invoice contact must be cleared or replaced before deletion. Issued invoice snapshots are retained.
+      operationId: delete-contact
+      tags:
+      - accounts
+      responses:
+        '204':
+          description: Deleted
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Contact:
+      type: object
+      description: A billing-account contact profile with one address. An account can hold multiple contacts; this is not
+        a login identity.
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        name: &id001
+          type: string
+          minLength: 1
+          maxLength: 255
+        legal_name: &id002
+          type: string
+          maxLength: 255
+        email: &id003
+          type: string
+          maxLength: 255
+        tax_id: &id004
+          type: string
+          maxLength: 64
+        address_line1: &id005
+          type: string
+          maxLength: 255
+        address_line2: &id006
+          type: string
+          maxLength: 255
+        address_city: &id007
+          type: string
+          maxLength: 128
+        address_state: &id008
+          type: string
+          maxLength: 128
+        address_postal_code: &id009
+          type: string
+          maxLength: 32
+        address_country: &id010
+          type: string
+          pattern: ^([A-Z]{2})?$
+        tax_exempt:
+          type: boolean
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - billing_account_id
+      - name
+      - tax_exempt
+      - active
+      - created_at
+    ContactCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: *id001
+        legal_name: *id002
+        email: *id003
+        tax_id: *id004
+        address_line1: *id005
+        address_line2: *id006
+        address_city: *id007
+        address_state: *id008
+        address_postal_code: *id009
+        address_country: *id010
+      required:
+      - name
+    ContactUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: *id001
+        legal_name: *id002
+        email: *id003
+        tax_id: *id004
+        address_line1: *id005
+        address_line2: *id006
+        address_city: *id007
+        address_state: *id008
+        address_postal_code: *id009
+        address_country: *id010
+        active:
+          type: boolean
+    ContactList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Contact'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination

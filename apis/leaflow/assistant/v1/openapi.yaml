@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.2.1
 info:
   title: Leaflow Assistant API
   version: 1.0.0
@@ -163,27 +163,8 @@ paths:
       tags:
         - Onboarding
       parameters:
-        - name: limit
-          in: query
-          description: How many entries this page returns at most
-          explode: false
-          schema:
-            description: How many entries this page returns at most
-            type: integer
-            format: int64
-            default: 50
-            minimum: 1
-            maximum: 200
-        - name: offset
-          in: query
-          description: How many to skip. To page deeper, use the cursor-paged operation instead
-          explode: false
-          schema:
-            description: How many to skip. To page deeper, use the cursor-paged operation instead
-            type: integer
-            format: int64
-            minimum: 0
-            maximum: 10000
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
         - name: platform
           in: query
           explode: false
@@ -269,27 +250,8 @@ paths:
       tags:
         - Onboarding
       parameters:
-        - name: limit
-          in: query
-          description: How many entries this page returns at most
-          explode: false
-          schema:
-            description: How many entries this page returns at most
-            type: integer
-            format: int64
-            default: 50
-            minimum: 1
-            maximum: 200
-        - name: offset
-          in: query
-          description: How many to skip. To page deeper, use the cursor-paged operation instead
-          explode: false
-          schema:
-            description: How many to skip. To page deeper, use the cursor-paged operation instead
-            type: integer
-            format: int64
-            minimum: 0
-            maximum: 10000
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
         - name: platform
           in: query
           explode: false
@@ -1012,7 +974,10 @@ paths:
   /api/v1/threads:
     get:
       summary: List conversations
-      description: "Ordered by most recent activity, limited to the current account's conversations in the current project. `archived` selects between two sets rather than widening one: archived conversations are absent from the default list, and turning the flag on shows those instead."
+      description: |-
+        Ordered by most recent activity, limited to the current account's conversations in the current project. `archived` selects between two sets rather than widening one: archived conversations are absent from the default list, and turning the flag on shows those instead.
+
+        Pass the returned nextCursor as cursor; omit cursor on the first page. Continue with the same q, archived and folder filters. The cursor marks a position in the activity order, so changing filters between pages does not continue the same list.
       operationId: list-threads
       tags:
         - Thread
@@ -1040,26 +1005,8 @@ paths:
             description: A folder id, or empty for the conversations in no folder
             type: string
             maxLength: 64
-        - name: cursor
-          in: query
-          description: |-
-            Where the previous page ended, from its `nextCursor`. Omit it for the first page.
-
-            It is a position, not an offset, and that matters here: this list is ordered by recent activity, and the activity happens while it is being read. An offset would hand back a conversation twice when one moves up in between, and skip one when it moves down — silently, because a conversation that was skipped simply is not there.
-
-            Pass the same `q`, `archived` and `folder` along with it. A cursor carries a position, not the question that produced it, so changing the filters mid-scroll walks a range nobody asked for.
-          explode: false
-          schema:
-            type: string
-            maxLength: 128
-        - name: limit
-          in: query
-          explode: false
-          schema:
-            type: integer
-            format: int64
-            minimum: 0
-            maximum: 200
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
       responses:
         "200":
           description: OK
@@ -1419,17 +1366,17 @@ components:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
     ModelResource:
-      type: object
       description: A read-only view of a Canopy model. No model definition is created or edited through Assistant.
+      type: object
       properties:
         id:
+          description: Canopy model id, used unchanged in settings, conversation preferences and inference. There is no second assistant model id.
           type: string
           minLength: 1
           maxLength: 128
-          description: Canopy model id, used unchanged in settings, conversation preferences and inference. There is no second assistant model id.
         displayName:
-          type: string
           description: The display_name maintained in Canopy
+          type: string
         contextWindow:
           description: The context_length maintained in Canopy. The assistant reserves room for instructions, tools and an answer rather than using this entire window for history.
           type: integer
@@ -1441,11 +1388,11 @@ components:
           format: int64
           minimum: 1
         supportsTools:
-          type: boolean
           description: Canopy supports_tools. Must be true before the model can be allowed for Assistant.
-        supportsReasoning:
           type: boolean
+        supportsReasoning:
           description: Canopy supports_reasoning. False requires reasoning_effort to be omitted.
+          type: boolean
         reasoningTiers:
           description: Levels reported by Canopy reasoning_tiers. An empty list requires reasoning_effort to be omitted. List order does not imply reasoning strength.
           type: array

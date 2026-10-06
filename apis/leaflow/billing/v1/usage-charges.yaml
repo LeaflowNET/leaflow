@@ -1,0 +1,154 @@
+paths:
+  /api/v1/usage-charges:
+    get:
+      summary: List usage charges
+      description: 'Lists priced and unrated usage charges. Requires `statement_id`, `invoice_item_id`, or both `from` and
+        `to` spanning at most 31 days; use the statement summary or spend report for longer periods. Charges are summed into
+        one line per subscription, project, resource, meter and rate when their statement closes; filter by `invoice_item_id`
+        to see the charges behind a line. Unrated charges had no applicable price when the usage occurred and are not billed.
+
+
+        Only charges recorded against your billing accounts are included, before filtering, counting and pagination. Reassigning
+        a project does not move previously recorded charges to its new account.'
+      operationId: list-usage-charges
+      tags:
+      - usage-charges
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: product_id
+        in: query
+        required: false
+        schema:
+          $ref: ./products.yaml#/components/schemas/ProductID
+      - name: resource_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: invoice_item_id
+        in: query
+        required: false
+        description: Only the charges summed into this usage invoice line.
+        schema:
+          type: string
+          format: uuid
+      - $ref: ./openapi.yaml#/components/parameters/From
+      - $ref: ./openapi.yaml#/components/parameters/To
+      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      - name: meter_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: statement_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageChargeList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    UsageCharge:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        project:
+          description: 'The project and its current name, for display. Absent when the project no longer exists or its
+
+            details cannot be read at the moment; `project_id` still identifies it.'
+          oneOf:
+          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+          - type: 'null'
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        resource_id:
+          description: Which resource this was charged for. Empty for charges not tied to one.
+          type: string
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit:
+          type: string
+        dimensions:
+          description: The attributes the rate was chosen by, such as region and machine type.
+          type: object
+          additionalProperties:
+            type: string
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          description: Exclusive.
+          type: string
+          format: date-time
+        gross_quantity:
+          description: How much was used, before any included allowance.
+          type: string
+        deducted_quantity:
+          description: How much of that was covered by an allowance.
+          type: string
+        quantity:
+          description: What was charged for — the gross quantity less the part covered.
+          type: string
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        invoice_id:
+          description: The usage invoice this charge was added to. Absent until its statement closes and always absent for
+            unrated charges.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        invoice_item_id:
+          description: The usage invoice line this charge was summed into. Absent until its statement closes and always absent
+            for unrated charges.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        statement_id:
+          type: string
+          format: uuid
+          description: The statement this charge was collected into.
+      required:
+      - id
+      - product
+      - meter
+      - window_start
+      - window_end
+      - quantity
+      - currency
+    UsageChargeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageCharge'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination

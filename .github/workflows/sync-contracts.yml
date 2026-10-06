@@ -82,7 +82,10 @@ jobs:
         if: github.event_name == 'push'
         run: |
           git fetch origin "${GITHUB_REF_NAME}"
-          git checkout "origin/${GITHUB_REF_NAME}" -- apis/
+          source_dir=$(mktemp -d)
+          trap 'rm -rf "$source_dir"' EXIT
+          git archive "origin/${GITHUB_REF_NAME}" apis/leaflow | tar -x -C "$source_dir"
+          ./scripts/sync-contracts.sh "$source_dir/apis"
 
       - name: take contracts from the source repository
         if: github.event_name != 'push'

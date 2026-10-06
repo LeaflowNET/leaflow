@@ -45,45 +45,38 @@ import (
 func Build(specs *spec.Set, rt *Runtime) []*cobra.Command {
 	var roots []*cobra.Command
 
-	// parents holds the command each subpackage is attached to: the service's own
-	// command when it also has a contract, otherwise a group made for the purpose.
-	parents := map[string]*cobra.Command{}
-	subpackages := map[string][]*spec.Service{}
+	commands := map[string]*cobra.Command{}
+	groups := map[string][]*spec.Service{}
 
 	for _, service := range specs.Services() {
-		cmd := &cobra.Command{
-			Use:   path.Base(service.Name),
-			Short: writeServiceSummary(service),
-			Long:  writeServiceDetails(service),
-			Annotations: map[string]string{
-				"contract-tags": tagDescriptions(service),
-			},
+		parts := strings.Split(service.Name, "/")
+		var parent *cobra.Command
+		for i, part := range parts {
+			name := strings.Join(parts[:i+1], "/")
+			cmd := commands[name]
+			if cmd == nil {
+				cmd = &cobra.Command{Use: part}
+				commands[name] = cmd
+				if parent == nil {
+					roots = append(roots, cmd)
+				} else {
+					parent.AddCommand(cmd)
+				}
+			}
+			parent = cmd
+			if i < len(parts)-1 {
+				groups[name] = append(groups[name], service)
+			}
 		}
-
-		addOperations(cmd, service, rt)
-
-		head, _, nested := strings.Cut(service.Name, "/")
-		if !nested {
-			parents[service.Name] = cmd
-			roots = append(roots, cmd)
-
-			continue
-		}
-
-		parent, ok := parents[head]
-		if !ok {
-			parent = &cobra.Command{Use: head}
-			parents[head] = parent
-			roots = append(roots, parent)
-		}
-
-		parent.AddCommand(cmd)
-		subpackages[head] = append(subpackages[head], service)
+		parent.Short = writeServiceSummary(service)
+		parent.Long = writeServiceDetails(service)
+		parent.Annotations = map[string]string{"contract-tags": tagDescriptions(service)}
+		addOperations(parent, service, rt)
 	}
 
-	for head, services := range subpackages {
-		if parent := parents[head]; parent.Short == "" {
-			parent.Short = writeGroupSummary(head, services)
+	for name, services := range groups {
+		if parent := commands[name]; parent.Short == "" {
+			parent.Short = writeGroupSummary(name, services)
 		}
 	}
 

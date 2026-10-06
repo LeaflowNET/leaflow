@@ -1,4 +1,4 @@
-openapi: 3.1.0
+openapi: 3.2.1
 info:
   title: Quote Types
   version: v1
@@ -12,139 +12,131 @@ components:
         charged or reserved, and no discount redemption is consumed. Account discounts and tax are
         evaluated as for automatic checkout. Promotion codes are evaluated through Billing quote operations.
         All amounts use currency. This preview does not lock prices or guarantee discount availability.
+        Success includes complete checkout amounts and every requested usage estimate. If any item or
+        requested usage estimate cannot be calculated, the operation returns its existing structured
+        error response; it never returns a partial quote with HTTP 200.
       type: object
       properties:
-        lines:
+        items:
           description: One line for each item the purchase would order, in the order it would order them.
           type: array
           items:
-            $ref: '#/components/schemas/QuotedLine'
+            $ref: "#/components/schemas/QuoteItem"
         subtotal:
           description: |-
             Sum of line amounts before discounts, less tax already included in the discounted line
-            amounts, as on an invoice. Null when any line cannot be priced.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+            amounts, as on an invoice.
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         discount_amount:
-          description: Sum of line discounts. Null when any line cannot be priced.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          description: Sum of line discounts.
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         tax_amount:
-          description: Sum of tax on the discounted line amounts. Null when any line cannot be priced.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          description: Sum of tax on the discounted line amounts.
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         total:
           description: |-
             subtotal minus discount_amount plus tax_amount: what checkout collects, before applying
             credit grants or balance. Equals the sum of line totals and excludes estimated_usage_amount.
-            Null when any line cannot be priced.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         estimated_usage_amount:
           description: |-
             Sum of the lines' estimated_usage_amount. A projection, not part of total and not collected at
-            checkout. Null when no line is billed for usage or when any usage cannot be priced.
+            checkout. Null when no usage estimate is requested.
           oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+            - $ref: ./money.yaml#/components/schemas/Money
+            - type: "null"
         currency:
           type: string
+        proration_date:
+          description: |-
+            Changes only; null otherwise. The instant the change is priced from. Pass it with the change so the
+            order is priced from the same instant.
+          type:
+            - string
+            - "null"
+          format: date-time
+        refundable_amount:
+          description: |-
+            Changes that lower the price only; null otherwise. What the change would return to the original
+            payment sources, including the tax paid on it. total is zero for such a change.
+          oneOf:
+            - $ref: ./money.yaml#/components/schemas/Money
+            - type: "null"
       required:
-      - lines
-      - subtotal
-      - discount_amount
-      - tax_amount
-      - total
-      - estimated_usage_amount
-      - currency
+        - items
+        - subtotal
+        - discount_amount
+        - tax_amount
+        - total
+        - estimated_usage_amount
+        - currency
+        - proration_date
+        - refundable_amount
       additionalProperties: false
-    QuotedLine:
+    QuoteItem:
       description: |-
         One calculated purchase line. Fixed purchase amounts are rounded as checkout rounds them.
-        When priced is false, price_id and every monetary field are null. A priced line without an
-        immediate charge has zero amounts; an unavailable unit price remains null.
+        A line without an immediate charge has zero checkout amounts. unit_amount remains null when
+        no single unit price applies; an unrequested usage estimate remains null.
       type: object
       properties:
-        priced:
-          description: Whether the line can be priced. When false, unpriced_reason states what is missing.
-          type: boolean
-        unpriced_reason:
-          description: Why no price was found; `none` while `priced` is true.
-          type: string
-          enum:
-          - none
-          - no_price
-        price_id:
-          description: The price selected, including when the request left the choice to the service. Order with this
-            price.
-          type:
-          - string
-          - 'null'
-          format: uuid
         plan_name:
           type: string
         unit_amount:
-          description: Unit price before discounts, with tax included only where the price includes it.
+          description: |-
+            Unit price before discounts, with tax included only where the price includes it. Null when
+            no single unit price applies, such as tiered or multiple-rate pricing or an immediate change.
           oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+            - $ref: ./money.yaml#/components/schemas/Money
+            - type: "null"
         quantity:
           description: The quantity priced.
           type: string
         amount:
           description: |-
             Before discounts, including any setup charges. Contains tax only where the price includes it.
-            Zero for a priced order item with no immediate charge.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+            Zero for an item with no immediate charge.
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         discount_amount:
           description: Total reduction on this line, including any committed recurring discount.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         tax_amount:
           description: Tax on the discounted amount, including any tax already contained in that amount.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         tax_included_amount:
           description: The part of tax_amount already contained in amount minus discount_amount.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         total:
           description: amount minus discount_amount plus tax_amount minus tax_included_amount.
-          oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+          allOf:
+            - $ref: ./money.yaml#/components/schemas/Money
         estimated_usage_amount:
           description: |-
             Projected charge for this line's future usage over the period stated by the quoting operation,
             at current rates, before discounts and tax and not rounded. Not part of amount or total and
-            not collected at checkout. Null when the line is not billed for usage or its usage cannot be
-            priced.
+            not collected at checkout. Null when no usage estimate is requested for this line.
           oneOf:
-          - $ref: ./money.yaml#/components/schemas/Money
-          - type: 'null'
+            - $ref: ./money.yaml#/components/schemas/Money
+            - type: "null"
         currency:
           type: string
       required:
-      - priced
-      - unpriced_reason
-      - price_id
-      - plan_name
-      - unit_amount
-      - quantity
-      - amount
-      - discount_amount
-      - tax_amount
-      - tax_included_amount
-      - total
-      - estimated_usage_amount
-      - currency
+        - plan_name
+        - unit_amount
+        - quantity
+        - amount
+        - discount_amount
+        - tax_amount
+        - tax_included_amount
+        - total
+        - estimated_usage_amount
+        - currency
       additionalProperties: false

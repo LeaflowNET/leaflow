@@ -1,0 +1,136 @@
+paths:
+  /api/v1/allowances:
+    get:
+      summary: List allowances
+      description: |-
+        Lists remaining usage quantities, such as bytes, seconds or tokens. Applicable allowances are
+        consumed before usage is charged. Lower priority values are consumed first, followed by earlier
+        expiry and earlier issuance.
+
+        Unused quantity expires without a refund or carry-over. Promotional allowances apply to usage paid
+        by their holding account. Included allowances apply only to the associated subscription, including
+        after its project moves to another billing account.
+      operationId: list-allowances
+      tags:
+        - allowances
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: meter_id
+          in: query
+          required: false
+          description: Filter by the meter UUID.
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - depleted
+              - expired
+              - voided
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowanceList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Allowance:
+      type: object
+      properties:
+        idempotency_key:
+          description: Optional issuance key, unique within this billing account.
+          type: string
+        subscription_id:
+          type: string
+          format: uuid
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        meter:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        unit:
+          description: The unit it is counted in, such as `MiB`.
+          type: string
+        source_type:
+          description: |-
+            `included` came with a recurring purchase and ends with its subscription, `promotional` was
+            granted.
+          type: string
+          enum:
+            - included
+            - promotional
+        name:
+          type: string
+        quantity:
+          description: How much was granted.
+          type: string
+        remaining_quantity:
+          description: How much is left.
+          type: string
+        priority:
+          description: |-
+            Lower values are consumed first. At equal priority, earlier expiry and then earlier issuance take
+            precedence.
+          type: integer
+        status:
+          type: string
+          enum:
+            - active
+            - depleted
+            - expired
+            - voided
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          description: |-
+            When it lapses. Anything unused at that point is lost; it is not refunded and does
+            not carry over. Absent when it does not expire on its own.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - product
+        - meter
+        - source_type
+        - name
+        - quantity
+        - remaining_quantity
+        - status
+        - valid_from
+    AllowanceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Allowance"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

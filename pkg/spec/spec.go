@@ -107,7 +107,7 @@ type Set struct {
 
 // Load reads every embedded contract.
 func Load() (*Set, error) {
-	names, err := EmbeddedNames()
+	contracts, err := embeddedContracts()
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +116,12 @@ func Load() (*Set, error) {
 		services: map[string]*Service{},
 	}
 
-	for _, name := range names {
-		doc, err := parse(readEmbedded(name), name)
+	for name, location := range contracts {
+		data, err := embedded.ReadFile(location)
+		if err != nil {
+			return nil, fmt.Errorf("%w %s: %v", ErrSpecUnparsable, name, err)
+		}
+		doc, err := parse(data, location)
 		if err != nil {
 			return nil, fmt.Errorf("%w %s: %v", ErrSpecUnparsable, name, err)
 		}
@@ -128,19 +132,6 @@ func Load() (*Set, error) {
 	sort.Strings(set.names)
 
 	return set, nil
-}
-
-func readEmbedded(service string) []byte {
-	data, err := embedded.ReadFile(embedPath(service))
-	if err != nil {
-		return nil
-	}
-
-	return data
-}
-
-func embedPath(service string) string {
-	return path.Join(embedRoot, service, "v1", "openapi.yaml")
 }
 
 // parse resolves the contract, including the shared error schema every service
@@ -154,7 +145,7 @@ func embedPath(service string) string {
 // doc.Validate() is deliberately not called. Contracts are generated artefacts,
 // not user input, and revalidating one on every startup re-confirms what the
 // producer already guarantees.
-func parse(data []byte, service string) (*openapi3.T, error) {
+func parse(data []byte, locationPath string) (*openapi3.T, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty file")
 	}
@@ -164,7 +155,7 @@ func parse(data []byte, service string) (*openapi3.T, error) {
 	loader.ReadFromURIFunc = readEmbeddedURI
 
 	location := &url.URL{
-		Path: embedPath(service),
+		Path: locationPath,
 	}
 
 	return loader.LoadFromDataWithPath(data, location)
@@ -318,48 +309,48 @@ func (s *Service) Operations() []*Operation {
 
 // EmbeddedNames lists the services that ship with a contract.
 //
-// A contract sits at leaflow/<service>/v1, or one level deeper at
-// leaflow/<service>/<subpackage>/v1 when a service is split by function. Both
-// depths are searched: looking at the first level only makes a split service
-// vanish from the command tree without an error, because its directory holds no
-// contract of its own.
+// Contracts may be nested at any depth. The enclosing version directory is
+// discovered along with the document rather than assumed to be v1.
 func EmbeddedNames() ([]string, error) {
-	entries, err := fs.ReadDir(embedded, embedRoot)
+	contracts, err := embeddedContracts()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrNoEmbeddedSpecs, err)
+		return nil, err
 	}
-
-	var names []string
-
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == typeService {
-			continue
-		}
-
-		if hasContract(entry.Name()) {
-			names = append(names, entry.Name())
-		}
-
-		children, err := fs.ReadDir(embedded, path.Join(embedRoot, entry.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrNoEmbeddedSpecs, err)
-		}
-
-		for _, child := range children {
-			name := entry.Name() + "/" + child.Name()
-			if child.IsDir() && hasContract(name) {
-				names = append(names, name)
-			}
-		}
+	names := make([]string, 0, len(contracts))
+	for name := range contracts {
+		names = append(names, name)
 	}
-
 	sort.Strings(names)
-
 	return names, nil
 }
 
-func hasContract(service string) bool {
-	_, err := fs.Stat(embedded, embedPath(service))
-
-	return err == nil
+func embeddedContracts() (map[string]string, error) {
+	contracts := map[string]string{}
+	err := fs.WalkDir(embedded, embedRoot, func(location string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Name() != "openapi.yaml" {
+			return nil
+		}
+		name := strings.TrimPrefix(path.Dir(path.Dir(location)), embedRoot+"/")
+		if name == embedRoot {
+			return fmt.Errorf("contract has no service directory: %s", location)
+		}
+		if name == typeService || strings.HasPrefix(name, typeService+"/") {
+			return nil
+		}
+		if previous, exists := contracts[name]; exists {
+			return fmt.Errorf("multiple versions of %s: %s and %s", name, previous, location)
+		}
+		contracts[name] = location
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrNoEmbeddedSpecs, err)
+	}
+	if len(contracts) == 0 {
+		return nil, ErrNoEmbeddedSpecs
+	}
+	return contracts, nil
 }

@@ -1,0 +1,278 @@
+paths:
+  /api/v1/statements:
+    get:
+      summary: List statements
+      description: Paginated consumption statement batches for owned billing accounts, filtered by billing_account_id,
+        open or closed state and period-start interval. A closed batch is not proof that the whole month has finished.
+      operationId: list-statements
+      tags:
+      - statements
+      parameters:
+      - name: billing_account_id
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/StatementStatus'
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/statements/{statementId}:
+    parameters:
+    - name: statementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Get statement
+      description: Returns an owned-account consumption batch with its period, estimated or closed amounts and invoice
+        reference. Returns 404 for a missing batch and 403 when the billing account belongs to another user.
+      operationId: get-statement
+      tags:
+      - statements
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statement'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/statements/{statementId}/usage-summary:
+    parameters:
+    - name: statementId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Get grouped consumption
+      description: Reads the consumption summary that is updated in the same transaction as usage is priced. Group by project,
+        product or meter and filter within the statement. Quantities are included only for meter groups so different units
+        are never combined.
+      operationId: get-statement-usage
+      tags:
+      - statements
+      parameters:
+      - name: group_by
+        in: query
+        schema:
+          type: string
+          enum:
+          - project
+          - product
+          - meter
+          default: meter
+      - name: project_ids
+        in: query
+        schema:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+      - name: product_id
+        in: query
+        schema:
+          type: string
+          maxLength: 64
+      - name: meter_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementSummary'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    StatementAmounts:
+      type: object
+      properties:
+        subtotal:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+      - subtotal
+      - discount_amount
+      - tax_amount
+      - total
+    Statement:
+      type: object
+      description: An account's consumption for one billing period, collected at one closing. The first statement of a period
+        (sequence 1) closes after the period ends. Usage priced after that closing is collected in a later statement for the
+        same period, which closes and invoices separately; a closed statement is never rewritten. Payments apply to issued
+        invoices.
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        sequence:
+          type: integer
+          format: int32
+          description: 1 for the first closing of the period; higher for statements that collect usage priced after an earlier
+            closing.
+        status:
+          $ref: '#/components/schemas/StatementStatus'
+        estimated:
+          type: boolean
+          description: True while the statement is open. The estimate applies tier pricing to the period's usage so far and
+            adds tax for the current invoice contact. Minimum charges are added at closing, and a tier reduction larger than
+            this statement's own charges is credited to earlier invoices of the period at closing.
+        amounts:
+          $ref: '#/components/schemas/StatementAmounts'
+          description: The current estimate while open, or the invoiced result when closed.
+        closed_at:
+          type: string
+          format: date-time
+        invoice_id:
+          type: string
+          format: uuid
+          description: The invoice issued at this closing, when it produced one.
+        created_at:
+          type: string
+          format: date-time
+        calculated_at:
+          type: string
+          format: date-time
+        credited_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Credit issued at this closing against invoices already issued for the same period, including tax. Not
+            part of `amounts`.
+      required:
+      - id
+      - billing_account_id
+      - currency
+      - period_start
+      - period_end
+      - status
+      - estimated
+      - created_at
+      - amounts
+      - sequence
+      - credited_amount
+    StatementStatus:
+      type: string
+      enum:
+      - open
+      - closed
+    StatementList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Statement'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+    StatementItem:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+        meter_id:
+          type: string
+          format: uuid
+        unit:
+          type: string
+        quantity:
+          type: string
+          description: Net usage quantity. Included only when grouping by meter.
+        deducted_quantity:
+          type: string
+        unrated_quantity:
+          type: string
+          description: Usage that had no applicable price when it occurred. It is not charged, either now or later.
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Priced amount before tax. Minimum charges added at closing are included; tier adjustments and tax appear
+            only in the statement amounts.
+      required:
+      - amount
+    StatementSummary:
+      type: object
+      properties:
+        statement_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        estimated:
+          type: boolean
+        calculated_at:
+          type: string
+          format: date-time
+        group_by:
+          type: string
+          enum:
+          - project
+          - product
+          - meter
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementItem'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - statement_id
+      - currency
+      - estimated
+      - group_by
+      - items
+      - pagination

@@ -1,0 +1,390 @@
+paths:
+  /api/v1/invoices:
+    get:
+      summary: List invoices
+      description: Paginated issued invoices belonging to owned billing accounts, filtered by billing_account_id,
+        status and creation interval. Drafts are excluded; top-ups do not create invoices.
+      operationId: list-invoices
+      tags:
+      - invoices
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/InvoiceStatus'
+      - $ref: ./openapi.yaml#/components/parameters/From
+      - $ref: ./openapi.yaml#/components/parameters/To
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/invoices/{invoiceId}:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/InvoiceId
+    get:
+      summary: Get invoice
+      description: Returns an issued invoice for an owned billing account with its amounts, tax lines and payment
+        state. Returns 404 for a missing or unissued invoice and 403 when its account belongs to another user.
+      operationId: get-invoice
+      tags:
+      - invoices
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/invoices/{invoiceId}/items:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/InvoiceId
+    get:
+      summary: List invoice items
+      description: Paginated lines of an issued invoice belonging to an owned billing account, including their service
+        periods and project references. A missing or unissued invoice returns 404; another user account returns 403.
+      operationId: list-invoice-items
+      tags:
+      - invoices
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceItemList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    InvoiceStatus:
+      description: |-
+        Draft invoices are private to administrators and cannot be read, listed or paid by customers.
+        An issued invoice is open until settled; a zero-total issued invoice is immediately paid.
+        Unbilled usage remains separate from invoices until it is invoiced.
+        refunded means a full refund; a partial refund leaves the invoice paid.
+        void means collection has stopped and any funds received have been returned.
+      type: string
+      enum:
+      - draft
+      - open
+      - paid
+      - refunded
+      - void
+      - uncollectible
+    Invoice:
+      type: object
+      properties:
+        void_requested_at:
+          description: Collection has been stopped; any accepted return obligations are completed before final voiding.
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        amount_refunded:
+          type: string
+        tax_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxItem'
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        number:
+          description: Numbered per account and per month.
+          type: string
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        subtotal:
+          description: |-
+            Sum of the line amounts before discounts. Where prices include tax, the tax contained in
+            each line's discounted amount is taken out here, so that total = subtotal -
+            discount_amount + tax_amount always holds.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        discount_amount:
+          description: Sum of the line discounts, taken off before tax.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credit_applied:
+          description: Successful credit-grant payments included in amount_paid. Does not reduce the receivable or tax base.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        total:
+          description: Subtotal less discount plus tax. Balance and credit grants are payment sources, not reductions of the receivable.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount_paid:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        unpaid_credit_notes_amount:
+          description: Issued, non-void credit notes that reduced unpaid receivables. Does not rewrite the original invoice total.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        paid_credit_notes_amount:
+          description: Issued credit notes against payments already received. This is a return obligation, not evidence of completed refunds.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount_due:
+          description: What is still collectible after unpaid credit notes and successful payments; never below zero. A draft order invoice is not collectible until checkout confirms it, and a paid or void invoice has none.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        period_start:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        period_end:
+          description: Exclusive.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        customer_name:
+          description: |-
+            Who this was billed to, as recorded when the invoice was issued. Later changes to
+            the account do not alter it.
+          type: string
+        customer_email:
+          type: string
+        customer_tax_id:
+          type: string
+        customer_address_line1:
+          type: string
+        customer_address_line2:
+          type: string
+        customer_address_city:
+          type: string
+        customer_address_state:
+          type: string
+        customer_address_postal_code:
+          type: string
+        customer_address_country:
+          type: string
+        paid_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - tax_items
+      - id
+      - billing_account_id
+      - number
+      - currency
+      - status
+      - total
+      - amount_due
+      - unpaid_credit_notes_amount
+      - paid_credit_notes_amount
+    InvoiceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+    InvoiceItem:
+      type: object
+      properties:
+        taxable:
+          type: boolean
+        discount_amount:
+          description: Discount applied to this line before tax.
+          type: string
+        tax_amount:
+          description: Tax on the discounted line, including tax already included in the price.
+          type: string
+        tax_included_amount:
+          description: The part of tax_amount already included in amount.
+          type: string
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - usage
+          - subscription
+          - one_time
+          - setup
+          - adjustment
+        project_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        project:
+          description: |-
+            The project the charge was for and its current name, for display. Absent when the line is
+            not for a project, and when the project no longer exists or its details cannot be read at
+            the moment; `project_id` still identifies it then.
+          oneOf:
+          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+          - type: 'null'
+        resource_id:
+          type: string
+        description:
+          description: |-
+            The wording as recorded when the invoice was issued. It is not re-translated
+            afterwards, so that an invoice continues to read as it did when it was sent.
+          type: string
+        unit:
+          type: string
+        quantity:
+          type: string
+        deducted_quantity:
+          description: The part covered by an included allowance, and therefore not charged.
+          type: string
+        unit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        period_start:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        period_end:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - description
+      - amount
+      - currency
+    InvoiceItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceItem'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+    InvoiceSummary:
+      description: |-
+        Purchase-related invoice amounts, without account contact details or payment methods. A draft
+        order invoice shows base amounts awaiting checkout, not a confirmed discount or collectible total.
+        Absent when no invoice has been created; absence does not establish acceptance or delivery.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+        subtotal:
+          description: |-
+            Sum of the line amounts before discounts. Where prices include tax, the tax contained in
+            each line's discounted amount is taken out here, so that total = subtotal -
+            discount_amount + tax_amount always holds.
+          type: string
+        discount_amount:
+          description: Sum of the line discounts, taken off before tax.
+          type: string
+        tax_amount:
+          type: string
+        total:
+          type: string
+        amount_paid:
+          type: string
+        unpaid_credit_notes_amount:
+          description: Issued, non-void credit notes that reduced unpaid receivables. Does not rewrite the original invoice total.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        paid_credit_notes_amount:
+          description: Issued credit notes against payments already received. This is a return obligation, not evidence of completed refunds.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        amount_due:
+          description: What is still collectible after unpaid credit notes and successful payments; never below zero.
+          type: string
+          pattern: ^\d+(\.\d{1,10})?$
+        amount_refunded:
+          type: string
+        due_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - currency
+      - status
+      - subtotal
+      - discount_amount
+      - tax_amount
+      - total
+      - amount_paid
+      - amount_due
+      - unpaid_credit_notes_amount
+      - paid_credit_notes_amount
+      - amount_refunded
+    TaxItem:
+      description: Tax name, rate and amounts frozen on the invoice.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        percentage:
+          type: string
+        country:
+          type: string
+        state:
+          type: string
+        taxable_amount:
+          type: string
+        tax_amount:
+          type: string
+        currency:
+          type: string
+      required:
+      - id
+      - invoice_id
+      - name
+      - percentage
+      - country
+      - taxable_amount
+      - tax_amount
+      - currency

@@ -1,0 +1,127 @@
+paths:
+  /api/v1/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a sellable item
+      description: |-
+        Resolves a stored identifier into something that can be displayed. Returns items that are
+        no longer on sale: an existing purchase still refers to one.
+      operationId: get-plan
+      tags:
+        - plans
+      security: []
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: Changes whenever this catalog representation changes.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "304":
+          description: Not Modified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/plans:
+    parameters:
+      - name: product_id
+        in: query
+        required: true
+        schema:
+          $ref: ./products.yaml#/components/schemas/ProductID
+    get:
+      summary: List catalog plans
+      description: Paginated active plans for the required product_id, with their feature allocations. An unknown
+        product returns 404; If-None-Match can return 304 for an unchanged page.
+      operationId: list-plans
+      tags:
+        - plans
+      security: []
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: |-
+                Changes whenever the catalogue changes. Send it back as `If-None-Match`
+                to be told `304` instead of receiving the same listing again.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+        "304":
+          $ref: ./openapi.yaml#/components/responses/NotModified
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Plan:
+      type: object
+      properties:
+        active:
+          description: False once archived. An archived plan cannot be bought until it is active again.
+          type: boolean
+        lookup_key:
+          type: string
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanFeature"
+        id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - product
+        - features
+        - active
+        - id
+        - product_id
+        - name
+    PlanList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+    PlanFeature:
+      type: object
+      properties:
+        feature:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        name:
+          type: string
+      required:
+        - feature
+        - name

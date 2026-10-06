@@ -1,0 +1,174 @@
+paths:
+  /api/v1/discounts:
+    get:
+      summary: List the coupons held on this account
+      description: |-
+        Coupons placed on the account directly, which apply at checkout without a code being
+        entered. A coupon reached through a code is not listed here.
+      operationId: list-account-discounts
+      tags:
+        - discounts
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscountList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    Discount:
+      description: A coupon held on this account. It applies at checkout without a code.
+      type: object
+      properties:
+        min_amount:
+          type: string
+        billing_account_id:
+          type: integer
+          format: int64
+        coupon_id:
+          type: string
+          format: uuid
+        promotion_code_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - active
+            - revoked
+        revoked_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum:
+            - percentage
+            - fixed_amount
+            - price_override
+            - free_setup
+        recurring:
+          type: boolean
+        recurring_cycles:
+          type: integer
+          minimum: 1
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        percent_off:
+          description: For a percentage discount, out of one hundred.
+          type: string
+        amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Fixed discount or per-unit interval price override for this account currency.
+        max_discount:
+          description: Caps a percentage discount.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        currency:
+          type: string
+        applies_to:
+          description: |-
+            What it may be used for. Absent means it applies to anything on the account,
+            including setup fees and traffic.
+          allOf:
+            - $ref: "#/components/schemas/Applicability"
+        first_purchase_only:
+          description: Restricted to your first purchase of anything it applies to.
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - type
+        - applies_to
+        - coupon_id
+        - status
+        - id
+    DiscountList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Discount"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+    Applicability:
+      description: |-
+        Anything not excluded that matches an inclusion, or anything not excluded when no inclusion is
+        given, subject to the billing type, operation and term conditions. Entries always include their
+        display fields; archived plans and prices stay listed with active set to false.
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: ./products.yaml#/components/schemas/Product
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicablePlan"
+        prices:
+          type: array
+          items:
+            $ref: ./prices.yaml#/components/schemas/PriceOption
+        price_types:
+          type: array
+          items:
+            type: string
+        operations:
+          type: array
+          items:
+            $ref: ./orders.yaml#/components/schemas/PurchaseOperation
+        min_term_months:
+          description: |-
+            The shortest term a purchase may have, in months. A purchase with no term, such as
+            metered usage, never qualifies while this is set.
+          type: integer
+        max_term_months:
+          description: The longest term a purchase may have, in months.
+          type: integer
+        excluded_products:
+          type: array
+          items:
+            $ref: ./products.yaml#/components/schemas/Product
+        excluded_plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicablePlan"
+        excluded_prices:
+          type: array
+          items:
+            $ref: ./prices.yaml#/components/schemas/PriceOption
+    ApplicablePlan:
+      description: A plan it refers to. active is false once the plan is archived; it still applies to subscriptions already on this plan.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        active:
+          type: boolean
+      required:
+        - id
+        - name
+        - active
