@@ -121,6 +121,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/quotas:
+    get:
+      summary: List this project's quotas
+      description: |-
+        How much of something this project may have in each service, such as instances or VPCs, with the limit in effect for it. A request that would exceed a limit is refused by the service concerned. Each service shows what the project currently has.
+      operationId: list-quotas
+      tags:
+        - Quota
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuotaListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/invitations:
     get:
       summary: List the invitations this project is still waiting on
@@ -994,6 +1015,36 @@ components:
         name:
           type: string
           maxLength: 128
+      additionalProperties: false
+    QuotaResource:
+      type: object
+      properties:
+        service:
+          description: The service enforcing the quota.
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        limit:
+          description: The most this project may have.
+          type: integer
+          format: int64
+      required:
+        - service
+        - name
+        - description
+        - limit
+      additionalProperties: false
+    QuotaListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuotaResource"
+      required:
+        - items
       additionalProperties: false
     MembershipResource:
       type: object
