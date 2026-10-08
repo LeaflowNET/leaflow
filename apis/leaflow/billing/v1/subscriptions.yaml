@@ -5,94 +5,111 @@ paths:
       description: Lists subscriptions visible to the authorized billing account. Soft-deleted subscriptions are excluded.
       operationId: list-subscriptions
       tags:
-        - subscriptions
+      - subscriptions
       parameters:
-        - name: expiring_before
-          in: query
-          schema:
-            type: string
-            format: date-time
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      - name: expiring_before
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SubscriptionList"
+                $ref: '#/components/schemas/SubscriptionList'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}:
     parameters:
-      - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
+    - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     get:
       summary: Get subscription
-      description: Returns a subscription visible to the authorized billing account. Soft-deleted subscriptions are reported as not found.
+      description: Returns a subscription visible to the authorized billing account. Soft-deleted subscriptions are reported
+        as not found.
       operationId: get-subscription
       tags:
-        - subscriptions
+      - subscriptions
       responses:
-        "200":
+        '200':
           description: Purchase and renewal agreement
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Subscription"
+                $ref: '#/components/schemas/Subscription'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
       summary: Delete subscription
       operationId: delete-subscription
-      description: |-
-        Sets deleted_at on a canceled or terminated subscription, hiding it from your subscription
-        list and detail. Your account access token must authorize the subscription's current billing
+      description: 'Sets deleted_at on a canceled or terminated subscription, hiding it from your subscription
+
+        list and detail. Your account access token must authorize the subscription''s current billing
+
         account. Preserves commercial status, ended_at and billing and financial history. Completed
+
         cancellations and canceled unfulfilled purchases can be deleted directly, without termination.
+
         Pending, provisioning, active and suspended subscriptions are refused with 409
+
         BILLING_SUBSCRIPTION_NOT_ENDED and status in error params. A scheduled or releasing cancellation
+
         does not make a subscription canceled.
+
         There is no force, skip-cleanup or override option. Repeating deletion preserves the original
-        deleted_at. Sends no cleanup command and creates no refund; outstanding cleanup continues.
+
+        deleted_at. Sends no cleanup command and creates no refund; outstanding cleanup continues.'
       tags:
-        - subscriptions
+      - subscriptions
       responses:
-        "204":
+        '204':
           description: Hidden from subscription reads; financial history retained.
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}/cancel:
     parameters:
-      - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
+    - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Cancel subscription
       operationId: cancel-subscription
-      description: |-
-        Requests cancellation on the purchase's agreed terms. Uses the same quotation, eligibility,
+      description: 'Requests cancellation on the purchase''s agreed terms. Uses the same quotation, eligibility,
+
         metering and original-payment-source refund rules as creating a cancellation.
+
         Supply the refund amount from create-quote with this subscription in cancellation.subscription_ids.
-        Your account access token must authorize the subscription's current billing account.
+
+        Your account access token must authorize the subscription''s current billing account.
+
 
         Immediate cancellation asks the owning service to clean up now. Period-end cancellation keeps
+
         the subscription active or suspended until the paid term ends. Neither payment nor acceptance
+
         of this request proves cleanup. The subscription becomes canceled only after the service
+
         confirms release and the end of metering; follow the returned cancellation for progress.
 
+
         Related subscriptions released together must be submitted as one group to create-cancellation.
+
         Pending or provisioning purchases are canceled through their order, not this operation.
-        Repeating the same open cancellation returns it without another refund or command.
+
+        Repeating the same open cancellation returns it without another refund or command.'
       tags:
-        - subscriptions
+      - subscriptions
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CancelSubscriptionRequest"
+              $ref: '#/components/schemas/CancelSubscriptionRequest'
       responses:
-        "202":
+        '202':
           description: Cancellation requested; cleanup and any refund can still be pending.
           content:
             application/json:
@@ -102,38 +119,45 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}/renew:
     parameters:
-      - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
+    - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Renew subscription
-      description: |-
-        Purchases prepaid periods from paid_until using the agreed recurring amount, and pays for them at
+      description: 'Purchases prepaid periods from paid_until using the agreed recurring amount, and pays for them at
+
         once. A changed interval selects a current price and freezes new terms on the order, applied
+
         only after fulfillment. Existing paid periods keep their value.
 
+
         Without `payment_method_id`, the renewal is paid from credit grants and the balance as
+
         `use_credits` and `use_balance` allow; when they cannot pay it all, the renewal is refused with
+
         `BILLING_INSUFFICIENT_FUNDS` and no order is left. To pay another way, create a renewal order
+
         and pay its invoice instead.
 
+
         Save order_id before submitting and query the order after an unknown outcome; duplicate
-        creation conflicts.
+
+        creation conflicts.'
       operationId: renew-subscription
       tags:
-        - subscriptions
+      - subscriptions
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RenewRequest"
+              $ref: '#/components/schemas/RenewRequest'
       responses:
-        "409":
+        '409':
           description: The order already exists or the subscription has a conflicting renewal, change or cancellation.
           content:
             application/json:
               schema:
                 $ref: ./openapi.yaml#/components/schemas/Error
-        "200":
+        '200':
           description: OK
           content:
             application/json:
@@ -143,32 +167,35 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}/auto-renew:
     parameters:
-      - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
+    - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     put:
       summary: Set auto renew
-      description: |-
-        Controls automatic prepaid renewal. Disabling it does not shorten paid_until and still permits
+      description: 'Controls automatic prepaid renewal. Disabling it does not shorten paid_until and still permits
+
         manual renewal. Postpaid subscriptions do not renew and keep this false.
 
+
         While the subscription has an open cancellation, turning it on or off is refused with 409
+
         `BILLING_SUBSCRIPTION_OPERATION_PENDING` and `meta.cancellation_id`: creating the cancellation
-        turned it off, and withdrawing the cancellation does not turn it back on.
+
+        turned it off, and withdrawing the cancellation does not turn it back on.'
       operationId: set-auto-renew
       tags:
-        - subscriptions
+      - subscriptions
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AutoRenewSet"
+              $ref: '#/components/schemas/AutoRenewSet'
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Subscription"
+                $ref: '#/components/schemas/Subscription'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -186,51 +213,69 @@ components:
         expected_refundable_amount:
           description: The cancellation quote's refundable amount, including an explicit zero.
           allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-            - type: string
-              pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - type: string
+            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
         reason:
           type: string
           maxLength: 1024
       required:
-        - mode
-        - expected_refundable_amount
+      - mode
+      - expected_refundable_amount
     SubscriptionList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Subscription"
+            $ref: '#/components/schemas/Subscription'
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-        - items
-        - pagination
+      - items
+      - pagination
     Subscription:
-      description: |-
-        An independently billed purchase relationship, separate from the owning service's resource.
+      description: 'An independently billed purchase relationship, separate from the owning service''s resource.
+
         Placing a new prepaid or postpaid service order creates a pending subscription for each line
+
         in the same purchase transaction. Its ID is returned on the order item and remains stable
+
         through checkout and delivery. One order may create several subscriptions, such as an instance,
+
         its system disk and its address; it has no single subscription ID.
 
+
         Pending and provisioning do not grant service or accrue usage. A service-owned subscription
+
         becomes provisioning when the owning service accepts the order, and active when the service
-        confirms delivery, with started_at set to the confirmed effective time; payment changes neither. Prepaid service periods start
+
+        confirms delivery, with started_at set to the confirmed effective time; payment changes neither. Prepaid service periods
+        start
+
         then; postpaid usage starts only when the service reports actual delivery and metering.
 
+
         One-time delivery may omit a subscription. Renewals reference and extend existing subscriptions
+
         rather than creating another; a change keeps the subscription ID and switches its terms when it
+
         takes effect. Canceling or failing an unfulfilled purchase sets its pending or provisioning
+
         subscriptions to canceled without starting a service period.
+
         Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their
+
         original value. Technical state belongs to the owning service.
 
+
         A purchased shared capacity limit, such as a regional snapshot count quota, can have its own
+
         subscription. Activating that capacity confirms delivery of the quota, not individual snapshots.
+
         Creating or deleting snapshots within it does not create, activate or terminate more subscriptions;
-        the owning service enforces current holdings against the purchased count.
+
+        the owning service enforces current holdings against the purchased count.'
       type: object
       properties:
         currency:
@@ -238,24 +283,25 @@ components:
         billing_type:
           type: string
           enum:
-            - postpaid
-            - prepaid
-            - one_time
+          - postpaid
+          - prepaid
+          - one_time
         interval:
           type: string
           enum:
-            - none
-            - day
-            - month
-            - year
+          - none
+          - day
+          - month
+          - year
         interval_count:
           type: integer
           minimum: 1
         recurring_amount:
-          description: |-
-            Whole-subscription prepaid renewal amount, after continuing discounts and before tax.
+          description: 'Whole-subscription prepaid renewal amount, after continuing discounts and before tax.
+
             Pending subscriptions show base terms until checkout confirms any new continuing discount.
-            Absent for other billing types.
+
+            Absent for other billing types.'
           type: string
         termination_policy:
           $ref: ./prices.yaml#/components/schemas/TerminationPolicy
@@ -265,7 +311,8 @@ components:
           type: string
           format: uuid
         replaces_subscription_id:
-          description: Present only on subscriptions created by an earlier change that replaced the subscription. A change now keeps the subscription ID.
+          description: Present only on subscriptions created by an earlier change that replaced the subscription. A change
+            now keeps the subscription ID.
           type: string
           format: uuid
         coupon_id:
@@ -284,12 +331,13 @@ components:
         cancellation_request:
           $ref: ./cancellations.yaml#/components/schemas/CancellationRequest
         paid_with:
-          description: |-
-            How the purchase, or the latest renewal paid with a saved card, was paid. Automatic renewal
-            tries this card after the account's balance and credits, and the account's default card after
-            that.
+          description: 'How the purchase, or the latest renewal paid with a saved card, was paid. Automatic renewal
+
+            tries this card after the account''s balance and credits, and the account''s default card after
+
+            that.'
           allOf:
-            - $ref: ./orders.yaml#/components/schemas/PaidWith
+          - $ref: ./orders.yaml#/components/schemas/PaidWith
         created_at:
           type: string
           format: date-time
@@ -297,7 +345,8 @@ components:
           type: string
           format: uuid
         billing_account_id:
-          description: The billing account that made the purchase. Renewals of a project subscription are charged to the project's current billing account.
+          description: The billing account that made the purchase. Renewals of a project subscription are charged to the project's
+            current billing account.
           type: integer
           format: int64
         account:
@@ -305,21 +354,22 @@ components:
         product_id:
           $ref: ./products.yaml#/components/schemas/ProductID
         project_id:
-          description: |-
-            Which project this is for. Absent when it was bought at account level, such as a
-            membership, which belongs to no single project.
+          description: 'Which project this is for. Absent when it was bought at account level, such as a
+
+            membership, which belongs to no single project.'
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: uuid
         project:
-          description: |-
-            The project and its current name, for display. Absent for a purchase at account level,
+          description: 'The project and its current name, for display. Absent for a purchase at account level,
+
             and when the project no longer exists or its details cannot be read at the moment;
-            `project_id` still identifies it then.
+
+            `project_id` still identifies it then.'
           oneOf:
-            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-            - type: "null"
+          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+          - type: 'null'
         product:
           $ref: ./products.yaml#/components/schemas/Product
         plan_id:
@@ -333,98 +383,111 @@ components:
         quantity:
           type: string
         paid_until:
-          description: |-
-            End of the prepaid service already activated. Null until a new subscription becomes active,
-            even when its purchase has been paid, and for postpaid subscriptions with no prepaid end date.
+          description: 'End of the prepaid service already activated. Null until a new subscription becomes active,
+
+            even when its purchase has been paid, and for postpaid subscriptions with no prepaid end date.'
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
         auto_renew:
           type: boolean
         status:
-          description: |-
-            pending means the purchase relationship exists but its order has not been accepted.
+          description: 'pending means the purchase relationship exists but its order has not been accepted.
+
             provisioning means the service accepted the order and is delivering. For a service-owned
+
             purchase, only confirmed delivery moves it to active; paying alone does not.
+
             canceled means cancellation completed, or an unfulfilled purchase was canceled or failed without delivery.
-            terminated means an administrator or the owning service immediately ended the commercial relationship.
+
+            terminated means an administrator or the owning service immediately ended the commercial relationship.'
           type: string
           enum:
-            - pending
-            - provisioning
-            - active
-            - suspended
-            - canceled
-            - terminated
+          - pending
+          - provisioning
+          - active
+          - suspended
+          - canceled
+          - terminated
         started_at:
           description: Confirmed start of service. Null until a new subscription becomes active, including after payment.
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
         ended_at:
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
       required:
-        - id
-        - plan_id
-        - price_id
-        - quantity
-        - status
-        - billing_account_id
-        - account
-        - product_id
-        - product
-        - plan_name
-        - billing_type
-        - currency
-        - interval
-        - auto_renew
+      - id
+      - plan_id
+      - price_id
+      - quantity
+      - status
+      - billing_account_id
+      - account
+      - product_id
+      - product
+      - plan_name
+      - billing_type
+      - currency
+      - interval
+      - auto_renew
     RenewRequest:
       type: object
       properties:
         order_id:
-          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown result.
+          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown
+            result.
           type: string
           format: uuid
         periods:
-          description: |-
-            How many further periods to buy, each at the price this item already bills at.
+          description: 'How many further periods to buy, each at the price this item already bills at.
+
 
             Buying twelve monthly periods is not the same as buying one yearly term: a longer
+
             term is usually sold at a lower price, and that price is only reached by naming the
-            interval. Use `interval_count` and `interval` for that.
+
+            interval. Use `interval_count` and `interval` for that.'
           type: integer
           default: 1
           minimum: 1
         interval_count:
-          description: |-
-            Renew for a term of this length instead, at the price currently sold for it. Give
+          description: 'Renew for a term of this length instead, at the price currently sold for it. Give
+
             `interval` with it.
 
+
             Leaving both out renews at the price this item already bills at, which a later price
+
             change does not affect. Naming a term that differs from the current one is a fresh
-            choice, so it is bought at today's price. Naming the current term changes nothing. A
+
+            choice, so it is bought at today''s price. Naming the current term changes nothing. A
+
             term sold at several prices that differ in termination policy is refused with 409
+
             `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `termination_policy` is given.
 
-            List the terms on offer with the renewal prices operation.
+
+            List the terms on offer with the renewal prices operation.'
           type: integer
           minimum: 1
         interval:
           description: The unit interval_count counts in.
           type: string
           enum:
-            - day
-            - month
-            - year
+          - day
+          - month
+          - year
         termination_policy:
-          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination policy.
+          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination
+            policy.
           allOf:
-            - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
         payment_method_id:
           type: string
           format: uuid
@@ -439,14 +502,15 @@ components:
         return_url:
           type: string
       required:
-        - order_id
+      - order_id
       additionalProperties: false
     RenewalOrderRequest:
       description: The periods and price of the renewal, chosen as in renewing.
       type: object
       properties:
         order_id:
-          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown result.
+          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown
+            result.
           type: string
           format: uuid
         periods:
@@ -462,11 +526,11 @@ components:
           description: As in renewing.
           type: string
           enum:
-            - day
-            - month
-            - year
+          - day
+          - month
+          - year
       required:
-        - order_id
+      - order_id
       additionalProperties: false
     AutoRenewSet:
       type: object
@@ -474,5 +538,5 @@ components:
         auto_renew:
           type: boolean
       required:
-        - auto_renew
+      - auto_renew
       additionalProperties: false
