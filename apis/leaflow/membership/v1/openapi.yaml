@@ -1,0 +1,749 @@
+openapi: 3.2.1
+info:
+  title: Leaflow Membership API
+  version: 1.0.0
+  description: |-
+    Membership plans and the memberships held by billing accounts.
+
+    A membership is a prepaid subscription sold through Billing. For each paid period it issues the plan's benefits to the billing account. A plan can carry several benefits across services: credit for chosen services, coupons on purchases and metered usage, and usage allowances such as model tokens, and access to features of other services. Benefits are shared by every project paid for by the account.
+
+    ## Authentication
+
+    Plans are public. Memberships require an access token; see the `accessTokenAuth` security scheme. Only the owner of a billing account can read or change its membership; anyone else receives 403 `MEMBERSHIP_ACCOUNT_FORBIDDEN`.
+
+    ## Conventions
+
+    - **One membership per billing account.** A pending or active membership must end before another is bought; change plans with upgrade and downgrade instead.
+    - **Payment goes through Billing.** Purchases and upgrades return a Billing order. With `checkout.mode` `deferred`, pay the order's invoice through Billing. Benefits are issued once Billing reports the order ready; every order has an invoice, including a zero-total one, which is paid automatically.
+    - **Cancellation and auto-renewal are managed in Billing** on the membership's `subscription_id`. A cancellation takes effect at the end of the paid period without a refund, and the period's benefits remain until then.
+    - **An upgrade takes effect immediately** for the full difference between the two plans' period prices, whatever remains of the period. The difference in credit is issued in full and the new plan's discount applies from payment. Renewals are charged at the new plan's price.
+    - **A downgrade takes effect at the end of the paid period.** The current period keeps its benefits and nothing is refunded.
+    - **Amounts are decimal strings** in the billing account's currency. There is no currency conversion: a plan without a price or credit in the account's currency cannot be bought with it.
+servers:
+  - url: https://membership.leaflow.cloud
+    description: Membership plans and memberships
+security:
+  - accessTokenAuth: []
+paths:
+  /api/v1/plans:
+    get:
+      summary: List plans
+      description: Lists the plans on sale, in ascending rank, with their prices and benefits. No authentication is required.
+      operationId: list-plans
+      tags:
+        - Plan
+      security: []
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: currency
+          in: query
+          required: false
+          description: Restricts prices and currency-specific benefits to this currency. All currencies are returned while it is absent.
+          schema:
+            $ref: "#/components/schemas/Currency"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanList"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/plans/{planId}:
+    get:
+      summary: Get a plan
+      description: Returns a plan on sale with its prices and benefits. No authentication is required.
+      operationId: get-plan
+      tags:
+        - Plan
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PlanId"
+        - name: currency
+          in: query
+          required: false
+          description: Restricts prices and currency-specific benefits to this currency.
+          schema:
+            $ref: "#/components/schemas/Currency"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/memberships:
+    get:
+      summary: List memberships
+      description: Lists the memberships of a billing account you own, newest first, including ended ones.
+      operationId: list-memberships
+      tags:
+        - Membership
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: "#/components/parameters/BillingAccountIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipList"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Buy a membership
+      description: |-
+        Places a Billing order for the plan's price on a billing account you own, and returns the pending membership with the order.
+        The membership becomes active, and its first period's benefits are issued, once Billing reports the order ready.
+
+        Fails with 409 `MEMBERSHIP_EXISTS` when the account already has a pending or active membership, and with 422 `MEMBERSHIP_PLAN_UNAVAILABLE` when the plan is not on sale or has no price or credit in the account's currency. Billing refusals, such as `BILLING_INSUFFICIENT_FUNDS`, are returned as Billing reports them.
+      operationId: create-membership
+      tags:
+        - Membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipPurchase"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/memberships/{membershipId}:
+    get:
+      summary: Get a membership
+      operationId: get-membership
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/memberships/{membershipId}/periods:
+    get:
+      summary: List membership periods
+      description: Lists the paid periods of a membership, newest first, each with the benefits issued for it.
+      operationId: list-membership-periods
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeriodList"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/memberships/{membershipId}/upgrade:
+    post:
+      summary: Upgrade a membership
+      description: |-
+        Places a Billing order for the full difference between the current and the chosen plan's period prices. Once Billing reports it ready, the membership moves to the chosen plan for the rest of the period: the difference in credit is issued and the new plan's discount and allowances apply. Renewals are charged at the chosen plan's price.
+
+        Fails with 409 `MEMBERSHIP_NOT_ACTIVE` unless the membership is active, and with 422 `MEMBERSHIP_UPGRADE_UNAVAILABLE` when the chosen plan does not rank above the current one or no upgrade is priced in the account's currency. A pending upgrade or a scheduled downgrade must finish or be canceled first (409 `MEMBERSHIP_CHANGE_PENDING`).
+      operationId: upgrade-membership
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipUpgrade"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipPurchase"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/memberships/{membershipId}/downgrade:
+    post:
+      summary: Schedule a downgrade
+      description: |-
+        Schedules a move to a lower-ranked plan at the end of the paid period. Nothing is charged or refunded and the current period keeps its benefits. The membership's `scheduled_plan` shows the pending move.
+
+        Fails with 409 `MEMBERSHIP_NOT_ACTIVE` unless the membership is active, 409 `MEMBERSHIP_CHANGE_PENDING` while another change is pending, and 422 `MEMBERSHIP_DOWNGRADE_INVALID` when the chosen plan does not rank below the current one or has no price in the account's currency for the membership's billing interval.
+      operationId: schedule-membership-downgrade
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipDowngrade"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Cancel a scheduled downgrade
+      description: Keeps the current plan at renewal. Fails with 409 `MEMBERSHIP_CHANGE_PENDING` when no downgrade is scheduled.
+      operationId: cancel-membership-downgrade
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    accessTokenAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/AccessToken
+  parameters:
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BillingAccountIdQuery:
+      name: billing_account_id
+      in: query
+      required: true
+      description: A billing account you own.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    Money:
+      $ref: ../../type/v1/money.yaml#/components/schemas/Money
+    Currency:
+      description: ISO 4217 code.
+      type: string
+      pattern: ^[A-Z]{3}$
+    PlanSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lookup_key:
+          type: string
+        name:
+          type: string
+        rank:
+          description: Higher ranks are higher plans. Upgrades move up and downgrades move down.
+          type: integer
+      required:
+        - id
+        - lookup_key
+        - name
+        - rank
+      additionalProperties: false
+    PlanPrice:
+      description: A price of the plan in Billing.
+      type: object
+      properties:
+        price_id:
+          type: string
+          format: uuid
+        currency:
+          $ref: "#/components/schemas/Currency"
+        unit_amount:
+          description: Charged for each period, before tax and discounts.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        interval:
+          type: string
+          enum:
+            - month
+            - year
+        interval_count:
+          type: integer
+          minimum: 1
+      required:
+        - price_id
+        - currency
+        - unit_amount
+        - interval
+        - interval_count
+      additionalProperties: false
+    CreditBenefit:
+      description: Credit issued for each period in one currency. It never pays for memberships.
+      type: object
+      properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        amount:
+          $ref: "#/components/schemas/Money"
+        applies_to:
+          description: The services and plans the credit can pay for.
+          allOf:
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+        valid_days:
+          description: Days the credit can be used from issue. Null means it does not expire.
+          type:
+            - integer
+            - "null"
+          minimum: 1
+      required:
+        - currency
+        - amount
+        - applies_to
+        - valid_days
+      additionalProperties: false
+    DiscountBenefit:
+      description: |-
+        A Billing coupon the account holds during each period. Every type applies to purchases within its scope; a percentage coupon also reduces metered usage. Only one coupon applies to a purchase or a usage charge, the one that saves the most.
+      type: object
+      properties:
+        name:
+          type: string
+        coupon_type:
+          type: string
+          enum:
+            - percentage
+            - fixed_amount
+            - price_override
+            - free_setup
+        percent_off:
+          description: Decimal string for a percentage coupon, such as "10" for ten per cent; null for other types.
+          type:
+            - string
+            - "null"
+        applies_to:
+          description: The services and plans the coupon applies to. Null means every service other than memberships.
+          oneOf:
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+            - type: "null"
+      required:
+        - name
+        - coupon_type
+        - percent_off
+        - applies_to
+      additionalProperties: false
+    FeatureBenefit:
+      description: Access to a feature of a service for every project of the account during each period.
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/ProductIdentity"
+        lookup_key:
+          type: string
+        name:
+          type: string
+      required:
+        - product
+        - lookup_key
+        - name
+      additionalProperties: false
+    ProductIdentity:
+      description: A Leaflow service, such as compute or canopy.
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+      additionalProperties: false
+    AllowanceBenefit:
+      description: Usage of a service included in each period. Usage with the listed dimension values draws from it before it is charged.
+      type: object
+      properties:
+        product:
+          $ref: "#/components/schemas/ProductIdentity"
+        meter_id:
+          type: string
+          format: uuid
+        meter_name:
+          type: string
+        unit:
+          type: string
+        quantity:
+          description: Decimal string in the meter's unit.
+          type: string
+        dimensions:
+          description: Exact dimension values the allowance is limited to, such as a model. Empty means every usage of the meter.
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - product
+        - meter_id
+        - meter_name
+        - unit
+        - quantity
+        - dimensions
+      additionalProperties: false
+    Benefit:
+      description: One benefit of a plan. Exactly the object named by type is present.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - credit
+            - discount
+            - allowance
+            - feature
+        credit:
+          $ref: "#/components/schemas/CreditBenefit"
+        discount:
+          $ref: "#/components/schemas/DiscountBenefit"
+        allowance:
+          $ref: "#/components/schemas/AllowanceBenefit"
+        feature:
+          $ref: "#/components/schemas/FeatureBenefit"
+      required:
+        - id
+        - type
+      additionalProperties: false
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lookup_key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        rank:
+          description: Higher ranks are higher plans.
+          type: integer
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanPrice"
+        benefits:
+          type: array
+          items:
+            $ref: "#/components/schemas/Benefit"
+      required:
+        - id
+        - lookup_key
+        - name
+        - description
+        - rank
+        - prices
+        - benefits
+      additionalProperties: false
+    PlanList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    Grant:
+      description: A benefit issued for a period, with the terms it was issued on. The Billing resource is listed in Billing.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        benefit_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - credit
+            - discount
+            - allowance
+            - feature
+        status:
+          description: revoked means it was withdrawn before the period ended; what had been used is kept.
+          type: string
+          enum:
+            - issued
+            - revoked
+        credit:
+          $ref: "#/components/schemas/CreditBenefit"
+        discount:
+          $ref: "#/components/schemas/DiscountBenefit"
+        allowance:
+          $ref: "#/components/schemas/AllowanceBenefit"
+        feature:
+          $ref: "#/components/schemas/FeatureBenefit"
+        credit_grant_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        discount_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        allowance_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        feature_grant_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        issued_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - benefit_id
+        - type
+        - status
+        - credit_grant_id
+        - discount_id
+        - allowance_id
+        - feature_grant_id
+        - issued_at
+      additionalProperties: false
+    Period:
+      description: A paid period of a membership.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        plan:
+          $ref: "#/components/schemas/PlanSummary"
+        order_id:
+          description: The Billing order that paid for the period.
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Grant"
+      required:
+        - id
+        - plan
+        - order_id
+        - starts_at
+        - ends_at
+        - grants
+      additionalProperties: false
+    PeriodList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Period"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    Membership:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        plan:
+          $ref: "#/components/schemas/PlanSummary"
+        status:
+          description: pending until Billing reports the first order ready; active while paid; ended afterwards.
+          type: string
+          enum:
+            - pending
+            - active
+            - ended
+        ended_reason:
+          description: |-
+            canceled: the subscription was canceled and the paid period ended.
+            reclaimed: Billing reclaimed the subscription after non-payment.
+            revoked: an operator ended the membership.
+            abandoned: the first order was canceled or expired before payment.
+          type:
+            - string
+            - "null"
+          enum:
+            - canceled
+            - reclaimed
+            - revoked
+            - abandoned
+            - null
+        subscription_id:
+          description: The Billing subscription. Cancel it or change auto-renewal in Billing. Null until Billing reports the first order ready.
+          type:
+            - string
+            - "null"
+          format: uuid
+        current_period:
+          description: The period in effect now. Null when the membership is pending or ended.
+          oneOf:
+            - $ref: "#/components/schemas/Period"
+            - type: "null"
+        scheduled_plan:
+          description: The plan a scheduled downgrade moves to at the end of the paid period.
+          oneOf:
+            - $ref: "#/components/schemas/PlanSummary"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - billing_account_id
+        - plan
+        - status
+        - ended_reason
+        - subscription_id
+        - current_period
+        - scheduled_plan
+        - created_at
+        - ended_at
+      additionalProperties: false
+    MembershipList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    MembershipPurchase:
+      description: The membership and the Billing order placed for it.
+      type: object
+      properties:
+        membership:
+          $ref: "#/components/schemas/Membership"
+        order:
+          $ref: ../../billing/type/v1/order.yaml#/components/schemas/PlacedOrder
+      required:
+        - membership
+        - order
+      additionalProperties: false
+    MembershipCreate:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+        plan_id:
+          type: string
+          format: uuid
+        price_id:
+          description: One of the plan's prices in the account's currency. It sets the billing interval.
+          type: string
+          format: uuid
+        checkout:
+          $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+      required:
+        - billing_account_id
+        - plan_id
+        - price_id
+      additionalProperties: false
+    MembershipUpgrade:
+      type: object
+      properties:
+        plan_id:
+          description: A plan ranked above the current one.
+          type: string
+          format: uuid
+        checkout:
+          $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+      required:
+        - plan_id
+      additionalProperties: false
+    MembershipDowngrade:
+      type: object
+      properties:
+        plan_id:
+          description: A plan ranked below the current one, priced for the membership's billing interval in the account's currency.
+          type: string
+          format: uuid
+      required:
+        - plan_id
+      additionalProperties: false

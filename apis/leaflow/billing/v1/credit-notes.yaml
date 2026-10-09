@@ -68,7 +68,7 @@ paths:
 components:
   schemas:
     CreditNote:
-      description: An issued invoice reduction. Its credited amount is unpaid_amount plus paid_amount. A paid credit records a return obligation; refund_id identifies its refund, whose outcome may still be pending. Original invoice amounts remain unchanged.
+      description: An issued invoice reduction. Its credited amount is pre_payment_amount plus post_payment_amount. A paid credit records a return obligation; refund_id identifies its refund, whose outcome may still be pending. Original invoice amounts remain unchanged.
       type: object
       properties:
         id:
@@ -93,11 +93,11 @@ components:
           - string
           - 'null'
           format: date-time
-        unpaid_amount:
+        pre_payment_amount:
           description: The reduction of unpaid receivables. A void note no longer reduces what is due.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        paid_amount:
+        post_payment_amount:
           description: The credited part of payments already received. This is not proof that its refund has completed.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -107,6 +107,21 @@ components:
           - string
           - 'null'
           format: uuid
+        reason:
+          description: |-
+            Why the note was issued. Notes from canceled, expired or failed orders carry the order's reason;
+            `usage_true_up` returns a tier price reduction settled after the original invoice; `operator` is
+            issued by Leaflow on request.
+          type: string
+          enum:
+          - provisioning_failed
+          - order_expired
+          - order_canceled
+          - change_canceled
+          - change_expired
+          - subscription_canceled
+          - usage_true_up
+          - operator
       required:
       - id
       - invoice_id
@@ -114,9 +129,10 @@ components:
       - issued_at
       - status
       - voided_at
-      - unpaid_amount
-      - paid_amount
+      - pre_payment_amount
+      - post_payment_amount
       - refund_id
+      - reason
     CreditNoteItem:
       type: object
       properties:
@@ -129,16 +145,16 @@ components:
         invoice_item_id:
           type: string
           format: uuid
-        unpaid_amount:
+        pre_payment_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        paid_amount:
+        post_payment_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
       - id
       - credit_note_id
       - invoice_item_id
-      - unpaid_amount
-      - paid_amount
+      - pre_payment_amount
+      - post_payment_amount
     CreditNoteList:
       type: object
       properties:

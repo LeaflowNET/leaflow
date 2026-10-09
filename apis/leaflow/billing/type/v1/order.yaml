@@ -1,0 +1,34 @@
+openapi: 3.2.1
+info:
+  title: Billing Order Types
+  version: v1
+  description: The Billing order a product purchase placed. Types only; this document declares no operations.
+paths: {}
+components:
+  schemas:
+    PlacedOrder:
+      description: |-
+        The Billing order this purchase placed and its invoice as they stood at placement. Read the order and
+        the invoice in Billing for current progress: the service starts delivery only after Billing accepts the
+        order, and payment alone does not mean delivery has completed.
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        invoice_id:
+          description: The order's invoice, the same as invoice.id.
+          type: string
+          format: uuid
+        invoice:
+          description: |-
+            What the purchase charges. A draft shows the base price in total and is paid through Billing, where a
+            promotion code can still be applied; an open invoice is issued and awaits its amount_due; a paid one
+            needs nothing further. A zero-total invoice is issued and paid at placement.
+          allOf:
+          - $ref: ../../v1/invoices.yaml#/components/schemas/InvoiceSummary
+      required:
+      - order_id
+      - invoice_id
+      - invoice
+      additionalProperties: false

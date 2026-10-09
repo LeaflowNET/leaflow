@@ -462,10 +462,18 @@ components:
           type: object
           additionalProperties:
             type: string
-        pricing_model:
+        billing_scheme:
+          description: '`per_unit` multiplies `unit_amount`; `tiered` walks the tiers as `tiers_mode` says.'
           type: string
           enum:
             - per_unit
+            - tiered
+        tiers_mode:
+          description: '`graduated` charges each band at its own rate; `volume` charges everything at the rate of the band
+            the total lands in. `none` for a `per_unit` rate.'
+          type: string
+          enum:
+            - none
             - graduated
             - volume
         unit_amount:
@@ -473,7 +481,7 @@ components:
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         tiers:
-          description: Present for `graduated` and `volume`, in ascending order.
+          description: Present for a tiered rate, in ascending order.
           type: array
           items:
             $ref: "#/components/schemas/Tier"
@@ -495,7 +503,8 @@ components:
       required:
         - meter
         - dimensions
-        - pricing_model
+        - billing_scheme
+        - tiers_mode
         - currency
         - effective_from
     RateList:

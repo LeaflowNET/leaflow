@@ -231,15 +231,26 @@ paths:
         Applies eligible credit grants and available balance as requested, then collects the remainder
         through the selected payment gateway and method. With no gateway selection, insufficient
         account funds fail without starting an online payment. Card and non-card methods use this same
-        operation. Promotion codes are confirmed by checkout, before collecting payment.
+        operation.
+
+        The draft invoice of a deferred order is priced when it is first paid: Billing applies
+        promotion_code, or the best applicable account discount when it is omitted, compares the total
+        with expected_amount, records the discount on the order and issues the invoice before collecting.
+        An invalid or inapplicable code fails rather than collecting full price, and a different total
+        fails with `BILLING_AMOUNT_CHANGED`; in both cases nothing changes. The terms are fixed before
+        any funds are collected and stay fixed when collection does not complete, for example with
+        insufficient funds or a declined card: later attempts reuse them, and a different promotion_code
+        is then refused with `BILLING_ORDER_CHECKOUT_CONFLICT`. A deferred period-end change can be paid
+        once its first period is due to be invoiced; earlier attempts are refused with
+        `BILLING_CHANGE_NOT_INVOICED`.
 
         Returns a payment action when customer interaction is required. requires_action and processing
         do not mean paid; the invoice is marked paid after payment is confirmed. An unresolved payment
         attempt is reused, and retries do not apply credit grants or balance twice.
 
         Calling this on an invoice that is already paid returns the existing payment result without
-        another charge. A draft order invoice must first be confirmed through checkout. It and a void
-        invoice are refused with `BILLING_INVOICE_NOT_PAYABLE`; the invoice of an order that has failed or was
+        another charge. A void invoice is refused with `BILLING_INVOICE_NOT_PAYABLE`; the invoice of an
+        order that has failed or was
         canceled, with `BILLING_ORDER_FAILED` or `BILLING_ORDER_CANCELED`; and that of an order whose
         payment deadline has passed, with `BILLING_ORDER_EXPIRED`.
       operationId: pay-invoice
@@ -271,12 +282,22 @@ paths:
         straight afterwards takes exactly these amounts unless the account's funds change in between.
         Nothing is charged, reserved or created.
 
+        A draft order invoice is priced as paying it with the same promotion_code would price it.
+
         Refused with the same errors as paying, except that insufficient funds are not an error here:
         they show as a `gateway_amount` above zero.
       operationId: preview-invoice-payment
       tags:
         - payments
       parameters:
+        - name: promotion_code
+          in: query
+          required: false
+          description: As in paying. Considered only while the order's terms are not yet fixed.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
         - name: use_balance
           in: query
           required: false
@@ -306,13 +327,17 @@ paths:
       description: |-
         Pays outstanding invoices, including the invoices of the listed orders, from the account's
         eligible credit grants and then its balance. No payment gateway is used; an invoice to be
-        paid online is paid on its own.
+        paid online is paid on its own. The draft invoice of a deferred order takes the best applicable
+        account discount and is issued first, and stays issued if the payment fails; pay it on its own to
+        apply a promotion code.
 
         Either every invoice is paid or none is. When the credit grants and balance cannot cover
         them all, the request fails with `BILLING_INSUFFICIENT_FUNDS` and nothing is charged.
+        A total different from expected_amount fails with `BILLING_AMOUNT_CHANGED` and nothing is charged.
         Invoices that are already paid are not charged again. An invoice with an online payment
-        still in progress is refused with `BILLING_PAYMENT_PENDING`, a draft order invoice or void invoice with
-        `BILLING_INVOICE_NOT_PAYABLE`, an order that has failed or was canceled with
+        still in progress is refused with `BILLING_PAYMENT_PENDING`, a void invoice with
+        `BILLING_INVOICE_NOT_PAYABLE`, a deferred period-end change not yet due to be invoiced with
+        `BILLING_CHANGE_NOT_INVOICED`, an order that has failed or was canceled with
         `BILLING_ORDER_FAILED` or `BILLING_ORDER_CANCELED`, and an order whose payment deadline has
         passed with `BILLING_ORDER_EXPIRED`.
       operationId: pay-together
@@ -384,7 +409,7 @@ components:
           type: string
         remaining_amount:
           description: |-
-            The part of this top-up still held in the balance. Pending refunds and payouts can temporarily
+            The part of this top-up still held in the balance. Pending refunds can temporarily
             reserve part of it; it is not a promise that the whole amount is immediately withdrawable.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -687,6 +712,22 @@ components:
           default: true
         return_url:
           type: string
+        promotion_code:
+          description: |-
+            The code to apply while the order's terms are not yet fixed. Omit to apply the best applicable
+            account discount, or to keep the discount already recorded.
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_amount:
+          description: |-
+            The invoice total to expect, after discounts and tax and before credit grants or balance, as the
+            payment preview or an order quote gave it. A different total fails with BILLING_AMOUNT_CHANGED
+            and nothing is charged. Omit to skip the comparison; an explicit zero is compared.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: string
+              pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       additionalProperties: false
       dependentRequired:
         payment_gateway:
@@ -714,6 +755,15 @@ components:
           items:
             type: string
             format: uuid
+        expected_amount:
+          description: |-
+            The amount due to expect across all of them, before credit grants or balance, as preview-pay-together
+            gave it. A different amount fails with BILLING_AMOUNT_CHANGED and nothing is charged. Omit to skip
+            the comparison.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: string
+              pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       additionalProperties: false
     PaymentAction:
       description: The customer's next interaction. The gateway reports the actual payment outcome separately.

@@ -3,11 +3,11 @@ paths:
     post:
       summary: Create a quote
       description: |-
-        Calculates exactly one target for a billing account you own: proposed items, existing order checkout, renewals, cancellation or order refund. Returns all requested calculations or a structured error. No quote is saved and no resource, payment, reservation or redemption is created.
+        Calculates exactly one target for a billing account you own: proposed items, an existing order, renewals, cancellation or order refund. Returns all requested calculations or a structured error. No quote is saved and no resource, payment, reservation or redemption is created.
 
         Existing orders use their recorded purchase account and terms. Renewals and cancellations use the account currently paying for each subscription. Every target must belong to the requested account. A project association or project token does not authorize a quote.
 
-        Use an existing order quote's total as expected_amount at checkout. A confirmed order returns its recorded amounts; a different promotion code is refused. Requested future usage estimates are not collectible checkout amounts. An unknown delivery outcome is not proof of refund eligibility.
+        Use an existing order quote's total as expected_amount when paying the order's invoice. An order whose terms are fixed returns its recorded amounts; a different promotion code is refused. Requested future usage estimates are not collectible checkout amounts. An unknown delivery outcome is not proof of refund eligibility.
       operationId: create-quote
       tags:
         - quotes
@@ -239,7 +239,7 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: |-
             subtotal minus discount_amount plus tax_amount, before credit grants or balance. For an existing
-            order, pass this as expected_amount at checkout. Renewal entries are separate orders; use each
+            order, pass this as expected_amount when paying its invoice. Renewal entries are separate orders; use each
             entry's total. Future usage estimates are not checkout amounts. Cancellation and refund targets have
             zero totals and report returned value separately.
         currency:
@@ -377,7 +377,7 @@ components:
           oneOf:
             - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
             - type: "null"
-        billing_type:
+        charge_type:
           type: string
           enum:
             - postpaid
@@ -385,9 +385,9 @@ components:
             - one_time
         auto_renew:
           description: |-
-            Whether automatic renewal is on now. Creating the cancellation turns it off, and withdrawing
-            the cancellation does not turn it back on. Always false for a subscription that is not
-            `prepaid`.
+            Whether automatic renewal is on now. Creating the cancellation turns it off. Withdrawing the
+            cancellation does not turn it back on for a prepaid subscription; a postpaid subscription continues
+            until it is canceled and turns it back on.
           type: boolean
         unused_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -405,7 +405,7 @@ components:
         - subscription_id
         - plan_id
         - plan_name
-        - billing_type
+        - charge_type
         - auto_renew
         - unused_amount
         - refundable_amount
@@ -438,7 +438,7 @@ components:
           type: string
           format: uuid
         price_type:
-          description: Narrows the selection when a plan offers more than one billing type.
+          description: Narrows the selection when a plan offers more than one charge type.
           type: string
           enum:
             - postpaid
@@ -566,8 +566,8 @@ components:
             $ref: "#/components/schemas/QuoteItemInput"
         order_id:
           description: |-
-            Preview checkout of this existing order. Its recorded purchase terms supply every line, and a
-            confirmed order returns its recorded amounts. A preview does not change the order.
+            Preview paying this existing order. Its recorded purchase terms supply every line, and an order
+            whose terms are fixed returns its recorded amounts. A preview does not change the order.
           type: string
           format: uuid
         renewals:

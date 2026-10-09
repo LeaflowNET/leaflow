@@ -6,7 +6,7 @@ paths:
       summary: Create renewal order
       description: 'Places a renewal order with a draft invoice, without applying a new discount or charging anything.
 
-        Quote and confirm its checkout before collecting payment to renew. Existing subscription
+        Pay its invoice to renew; a promotion code can be applied when paying. Existing subscription
 
         discount commitments are retained. The periods and price are chosen as for renewing. The order
 
@@ -14,9 +14,9 @@ paths:
 
         then, it is canceled. While auto-renew is on, the renewal due at the end of the period pays
 
-        this order instead of placing another, confirming checkout with an applicable account discount
+        this order instead of placing another, applying an applicable account discount first if the
 
-        first if it has not already been confirmed.
+        order''s terms are not fixed yet.
 
 
         Save `order_id` before submitting and read the order after an unknown outcome; creating it a
@@ -49,11 +49,11 @@ paths:
   /api/v1/orders:
     get:
       summary: List orders
-      description: 'Lists acceptance status and associated invoice amounts. pending_checkout awaits confirmation;
+      description: 'Lists acceptance status and associated invoice amounts. A pending order is not yet accepted;
 
-        pending has confirmed checkout and may be unpaid or paid. active means accepted, not delivered.
+        its invoice shows whether it still needs payment. accepted means accepted, not delivered.
 
-        pending_checkout and pending orders can expire at expires_at.'
+        Pending orders can expire at expires_at.'
       operationId: list-orders
       tags:
       - orders
@@ -97,89 +97,6 @@ paths:
                 $ref: '#/components/schemas/Order'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
-  /api/v1/orders/{orderId}/checkout:
-    parameters:
-    - $ref: ./openapi.yaml#/components/parameters/OrderId
-    post:
-      summary: Confirm order checkout
-      description: 'Confirms the purchase''s final amount and discount. Supply the same promotion_code used for the
-
-        preview, or omit it to select an applicable account discount. At most one new coupon is applied
-
-        to an order; existing subscription discount commitments are not stacked with a new coupon on
-
-        the same line. Promotion codes are evaluated against the order, not client-supplied line amounts.
-
-
-        Rechecks eligibility and redemption availability. A different total fails with
-
-        BILLING_AMOUNT_CHANGED. An invalid or inapplicable code fails rather than collecting full price.
-
-        A failed confirmation leaves the invoice draft and reserves no discount redemption.
-
-
-        A successful confirmation records the discount, including any recurring discount terms,
-
-        reserves its redemption, moves pending_checkout to pending and finalizes the invoice when one
-
-        is required. The reservation counts toward the code''s limits and is consumed when the invoice
-
-        is paid, or at confirmation when nothing is due. Use pay-invoice to collect
-
-        its outstanding amount from account funds or a payment gateway. No payment attempt or checkout
-
-        session is created by this operation. An order whose total is zero completes checkout at
-
-        placement in either mode and does not need this operation; an order with an amount due, even
-
-        when credits would cover it, still does. Checkout alone does not confirm resource delivery.
-
-
-        Retrying with the same code and expected amount returns the existing order without another
-
-        redemption. Omitting the code on a confirmed checkout retains its recorded discount. Changing
-
-        that code is refused with BILLING_ORDER_CHECKOUT_CONFLICT. Payment retries reuse the confirmed
-
-        terms. Cancellation, expiry or complete fulfillment failure releases the reservation or returns
-
-        the consumed redemption; a refund alone does not.
-
-
-        The order must belong to one of your billing accounts. A canceled, failed or expired order
-
-        cannot be checked out. A period-end change cannot be checked out before its renewal invoice is
-
-        available. Orders retain their billing account and currency after a project is linked elsewhere;
-
-        discounts from another account cannot be used for them.'
-      operationId: checkout-order
-      tags:
-      - orders
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CheckoutOrderRequest'
-            example:
-              promotion_code: WELCOME
-              expected_amount: '90.00'
-      responses:
-        '200':
-          description: The order with confirmed checkout terms and its invoice, when applicable.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Order'
-        '409':
-          description: The order no longer permits checkout or another discount has already been confirmed.
-          content:
-            application/json:
-              schema:
-                $ref: ./openapi.yaml#/components/schemas/Error
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}/cancel:
     parameters:
     - $ref: ./openapi.yaml#/components/parameters/OrderId
@@ -198,13 +115,13 @@ paths:
         item outcomes. Previously failed items keep their failure outcome.
 
 
-        Payment may be absent, partial or complete. Confirmed checkout keeps the selected items''
+        Payment may be absent, partial or complete. Once the order''s terms are fixed, the selected items
 
-        agreed amounts and discounts; credit notes reduce issued invoices, and collected amounts
+        keep their agreed amounts and discounts; credit notes reduce issued invoices, and collected amounts
 
-        are returned to their original payment sources. When checkout has not been confirmed, the
+        are returned to their original payment sources. While the terms of a deferred order are not fixed,
 
-        remaining items are quoted again. External payment-method refunds can finish asynchronously.
+        the remaining items are priced again. External payment-method refunds can finish asynchronously.
 
         The order and financial history are retained; the same cancellation does not refund twice.
 
@@ -266,54 +183,22 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
-    CheckoutOrderRequest:
-      type: object
-      properties:
-        promotion_code:
-          description: 'The code to apply, evaluated again at confirmation. Omit to select an applicable account
-
-            discount. On an already confirmed checkout, omission retains the recorded discount.'
-          type: string
-          minLength: 1
-          maxLength: 64
-        expected_amount:
-          description: 'Quote.total in the order''s currency, after discounts and tax but before applying credit
-
-            grants or balance. Omit to skip the amount comparison; an explicit zero is compared.
-
-            A different total fails with BILLING_AMOUNT_CHANGED. Must be a non-negative decimal
-
-            string; empty strings, null, JSON numbers, signs and exponent notation are rejected.'
-          allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
-      additionalProperties: false
     OrderStatus:
-      description: 'pending_checkout has recorded purchase terms but no confirmed checkout; only a deferred order
+      description: 'Follows the items. `pending` is not yet accepted and may be unpaid or paid; its invoice shows
 
-        with an amount due reaches it, since a zero-total order completes checkout at placement.
+        whether payment is still needed, and it can expire or be canceled. `accepted` is accepted with items still
 
-        Confirmation moves it to pending. Both pending_checkout
+        being set up. `completed` means every item was set up. `partially_completed` means some items were set up
 
-        and pending can expire or be canceled; neither establishes service delivery.
+        and the others failed or were canceled and were refunded to their original payment sources. `failed` means
 
+        no item was delivered and at least one failed; collected amounts for the undelivered items are refunded.
 
-        Follows the items. `pending` has confirmed checkout, is not yet accepted and may be paid or unpaid. `accepted` is
+        `canceled` means every item was withdrawn without delivery; collected amounts are returned to their original
 
-        accepted with items still being set up. `completed` means every item was set up.
-
-        `partially_completed` means some items were set up and the others failed or were canceled and were
-
-        refunded to their original payment sources. `failed` means no item was delivered and at least one failed; collected
-        amounts for the
-
-        undelivered items are refunded. `canceled` means every item was withdrawn without delivery; collected amounts are
-
-        returned to their original payment sources.'
+        payment sources. No status establishes service delivery by itself.'
       type: string
       enum:
-      - pending_checkout
       - pending
       - accepted
       - completed
@@ -336,13 +221,15 @@ components:
       - failed
       - canceled
     Order:
-      description: 'A recorded purchase. pending_checkout requires explicit Billing confirmation before collection
+      description: 'A recorded purchase with its invoice from placement; a zero-total invoice, such as for postpaid
 
-        or acceptance, even without an invoice. Coupon fields describe a discount confirmed at checkout and are absent
+        admission, is issued and paid at placement whatever the checkout mode. Until checkout_confirmed_at is set, the
 
-        before confirmation; a quote never populates them. A draft invoice contains base purchase
+        invoice is a draft at base prices: paying it fixes the discount and amount, issues it and collects it, and the
 
-        amounts awaiting checkout. Payment and acceptance remain separate from resource delivery.'
+        order cannot be accepted before then. Coupon fields describe the discount fixed at that point and are absent
+
+        before it; a quote never populates them. Payment and acceptance remain separate from resource delivery.'
       type: object
       properties:
         coupon_id:
@@ -354,8 +241,12 @@ components:
           type: string
           format: uuid
         promotion_code:
-          description: Code text frozen when checkout applied the coupon. Absent for an account discount.
+          description: Code text frozen when the coupon was applied. Absent for an account discount.
           type: string
+        invoice_id:
+          description: The order's invoice, the same as invoice.id.
+          type: string
+          format: uuid
         invoice:
           $ref: ./invoices.yaml#/components/schemas/InvoiceSummary
         paid_with:
@@ -392,7 +283,7 @@ components:
 
             linked to another billing account. While this account is suspended or closed the order cannot
 
-            be accepted, and a change scheduled for the end of a period is not invoiced and is called off
+            be accepted, and the invoice of a change scheduled for the end of a period is not issued and the change is called off
 
             when the current period ends; such requests fail with BILLING_ACCOUNT_UNAVAILABLE.'
           type: integer
@@ -400,15 +291,13 @@ components:
         currency:
           type: string
         type:
-          description: '`adopt` brings a resource that already existed under billing. It charges nothing at
-
-            the time and starts billing from the moment agreed.'
+          description: '`new` buys, `renew` extends a prepaid subscription, `modify` changes a subscription''s
+            configuration or billing terms.'
           type: string
           enum:
-          - purchase
+          - new
           - renew
-          - change
-          - adopt
+          - modify
         status:
           $ref: '#/components/schemas/OrderStatus'
         change_effective:
@@ -428,7 +317,15 @@ components:
           - immediate
           - period_end
         expires_at:
-          description: Acceptance deadline. pending_checkout and pending orders can expire automatically.
+          description: Acceptance deadline. Pending orders can expire automatically.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        checkout_confirmed_at:
+          description: 'When the discount and amount were fixed: at placement for automatic checkout and for a
+
+            zero total, otherwise when the invoice was first paid. Null while a deferred order awaits payment.'
           type:
           - string
           - 'null'
@@ -445,6 +342,8 @@ components:
             $ref: '#/components/schemas/OrderItem'
       required:
       - id
+      - invoice_id
+      - invoice
       - currency
       - type
       - status
@@ -463,9 +362,9 @@ components:
       - items
       - pagination
     PaidWith:
-      description: 'How it was paid, as recorded at the time. It is kept as it was: removing the card afterwards
+      description: 'How it was paid. Removing the payment method afterwards does not change it; `payment_method_id`
 
-        does not change it, and `payment_method_id` may then name a card that no longer exists.'
+        then names a removed payment method.'
       type: object
       properties:
         method_type:
@@ -491,7 +390,7 @@ components:
 
         zero-charge purchases. It does not mean the account''s first purchase; use
 
-        `first_purchase_only` for that restriction. `renew` covers renewals. `change` covers
+        `first_purchase_only` for that restriction. `renew` covers renewals. `modify` covers
 
         configuration or billing-term changes, including changes that increase or decrease
 
@@ -500,11 +399,11 @@ components:
       enum:
       - new
       - renew
-      - change
+      - modify
     OrderItem:
-      description: 'Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are absent
+      description: 'Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are zero
 
-        when there is no immediate invoice. Later catalog changes do not reprice this line. A new service
+        for a line with no immediate charge, such as postpaid admission. Later catalog changes do not reprice this line. A new service
 
         purchase creates its pending subscription when this item is recorded, not when payment succeeds.'
       type: object
@@ -566,7 +465,7 @@ components:
           type: string
         setup_amount:
           type: string
-        billing_type:
+        charge_type:
           description: The payment timing of the selected price.
           type: string
           enum:
@@ -672,7 +571,7 @@ components:
       - currency
       - plan_id
       - plan_name
-      - billing_type
+      - charge_type
       - interval
       - completes_on_payment
       - status

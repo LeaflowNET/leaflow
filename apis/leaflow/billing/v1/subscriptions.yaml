@@ -122,7 +122,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Renew subscription
-      description: 'Purchases prepaid periods from paid_until using the agreed recurring amount, and pays for them at
+      description: 'Purchases prepaid periods from current_term_end using the agreed recurring amount, and pays for them at
 
         once. A changed interval selects a current price and freezes new terms on the order, applied
 
@@ -170,9 +170,11 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     put:
       summary: Set auto renew
-      description: 'Controls automatic prepaid renewal. Disabling it does not shorten paid_until and still permits
+      description: 'Controls automatic prepaid renewal. Disabling it does not shorten current_term_end and still permits
 
-        manual renewal. Postpaid subscriptions do not renew and keep this false.
+        manual renewal. A postpaid subscription always continues until it is canceled; setting it is refused with 409
+
+        `BILLING_SUBSCRIPTION_AUTO_RENEW_FIXED`.
 
 
         While the subscription has an open cancellation, turning it on or off is refused with 409
@@ -280,7 +282,7 @@ components:
       properties:
         currency:
           type: string
-        billing_type:
+        charge_type:
           type: string
           enum:
           - postpaid
@@ -299,9 +301,9 @@ components:
         recurring_amount:
           description: 'Whole-subscription prepaid renewal amount, after continuing discounts and before tax.
 
-            Pending subscriptions show base terms until checkout confirms any new continuing discount.
+            Pending subscriptions show base terms until paying the order fixes any new continuing discount.
 
-            Absent for other billing types.'
+            Absent for other charge types.'
           type: string
         termination_policy:
           $ref: ./prices.yaml#/components/schemas/TerminationPolicy
@@ -328,16 +330,18 @@ components:
         billing_cycle_anchor:
           type: string
           format: date-time
-        cancellation_request:
-          $ref: ./cancellations.yaml#/components/schemas/CancellationRequest
-        paid_with:
-          description: 'How the purchase, or the latest renewal paid with a saved card, was paid. Automatic renewal
+        cancellation:
+          $ref: ./cancellations.yaml#/components/schemas/SubscriptionCancellation
+        default_payment_method_id:
+          description: 'The saved payment method automatic renewal charges after the account''s balance and credits,
 
-            tries this card after the account''s balance and credits, and the account''s default card after
+            before the account''s default payment method. Set when the purchase, or a renewal, is paid with a saved
 
-            that.'
-          allOf:
-          - $ref: ./orders.yaml#/components/schemas/PaidWith
+            payment method. It is used only while it belongs to the account that pays the renewal.'
+          type:
+          - string
+          - 'null'
+          format: uuid
         created_at:
           type: string
           format: date-time
@@ -382,15 +386,33 @@ components:
           format: uuid
         quantity:
           type: string
-        paid_until:
-          description: 'End of the prepaid service already activated. Null until a new subscription becomes active,
+        current_term_end:
+          description: 'When a prepaid subscription renews or expires, the end of the last service period bought.
 
-            even when its purchase has been paid, and for postpaid subscriptions with no prepaid end date.'
+            Renewing several periods in advance moves it. Null until a new subscription becomes active, even when
+
+            its purchase has been paid, and for postpaid subscriptions.'
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current_period_start:
+          description: Start of the service period in effect now. Null when none is, including for postpaid subscriptions.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        current_period_end:
+          description: 'End of the service period in effect now. Renewing in advance moves `current_term_end`, not
+
+            this. Null when no period is in effect, including for postpaid subscriptions.'
           type:
           - string
           - 'null'
           format: date-time
         auto_renew:
+          description: A prepaid subscription renews automatically while this is on. A postpaid subscription always
+            continues until it is canceled; this is true until a cancellation is requested and cannot be set.
           type: boolean
         status:
           description: 'pending means the purchase relationship exists but its order has not been accepted.
@@ -432,7 +454,7 @@ components:
       - product_id
       - product
       - plan_name
-      - billing_type
+      - charge_type
       - currency
       - interval
       - auto_renew

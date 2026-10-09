@@ -7,8 +7,9 @@ paths:
         does not appear, so that "this does not exist" and "this has not been bought" cannot be
         confused.
 
-        Derived from live subscriptions rather than stored, so this always agrees with what is
-        being paid for. It stops being listed as soon as the subscription providing it ends.
+        Derived from live subscriptions and active feature grants rather than stored, so this always
+        agrees with what is being paid for and granted. It stops being listed as soon as the
+        subscription or grant providing it ends.
       operationId: list-entitlements
       tags:
         - entitlements
@@ -31,8 +32,98 @@ paths:
                 $ref: "#/components/schemas/EntitlementList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/feature-grants:
+    get:
+      summary: List feature grants
+      description: |-
+        Access to features held by a billing account for a period, for example through a membership. While a grant
+        is active, every project whose current billing account holds it has the feature, in addition to the
+        features of its own subscriptions.
+      operationId: list-feature-grants
+      tags:
+        - entitlements
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            $ref: ./products.yaml#/components/schemas/ProductID
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/FeatureGrantStatus"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureGrantList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    FeatureGrantStatus:
+      description: Derived from the validity period. scheduled means valid_from has not yet arrived.
+      type: string
+      enum:
+        - scheduled
+        - active
+        - expired
+        - voided
+    FeatureGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        product:
+          $ref: ./products.yaml#/components/schemas/Product
+        feature:
+          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        name:
+          type: string
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          description: Null means the grant does not expire.
+          type:
+            - string
+            - "null"
+          format: date-time
+        status:
+          $ref: "#/components/schemas/FeatureGrantStatus"
+      required:
+        - id
+        - billing_account_id
+        - product
+        - feature
+        - name
+        - valid_from
+        - valid_until
+        - status
+      additionalProperties: false
+    FeatureGrantList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureGrant"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
     Entitlement:
       type: object
       properties:

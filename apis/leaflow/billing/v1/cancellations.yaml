@@ -112,7 +112,7 @@ paths:
       - $ref: ./openapi.yaml#/components/parameters/CancellationId
     get:
       summary: Get a cancellation
-      description: Returns a cancellation request for an authorized billing account with its schedule, expected
+      description: Returns a cancellation for an authorized billing account with its schedule, expected
         refundable amount and individual subscription outcomes. Read individual item states for per-subscription
         outcomes, including partial success.
       operationId: get-cancellation
@@ -272,7 +272,7 @@ components:
       type: object
       properties:
         id:
-          description: The cancellation request of this subscription, the same as `Subscription.cancellation_request.id`.
+          description: The cancellation item of this subscription, the same as `Subscription.cancellation.id`.
           type: string
           format: uuid
         subscription_id:
@@ -283,10 +283,11 @@ components:
           format: uuid
         plan_name:
           type: string
-        billing_type:
+        charge_type:
           description: |-
-            How the subscription is paid for. Only a `prepaid` subscription renews automatically; creating
-            the cancellation turned that off, and withdrawing the cancellation leaves it off.
+            How the subscription is charged. Creating the cancellation turned automatic renewal off;
+            withdrawing it turns renewal back on for a `postpaid` subscription and leaves it off for a
+            `prepaid` one.
           type: string
           enum:
             - postpaid
@@ -328,7 +329,7 @@ components:
         - subscription_id
         - plan_id
         - plan_name
-        - billing_type
+        - charge_type
         - status
     CancellationList:
       type: object
@@ -342,10 +343,11 @@ components:
       required:
         - items
         - pagination
-    CancellationRequest:
+    SubscriptionCancellation:
       description: |-
-        A cancellation request for the original purchase. scheduled_at is the intended time; effective_at is
-        the confirmed end of service. The request alone does not stop metering or issue a refund.
+        The latest cancellation that includes the subscription, with this subscription's item. `id` is the
+        item; `cancellation_id` is the cancellation. scheduled_at is the intended time; effective_at is the
+        confirmed end of service. A cancellation alone does not stop metering or issue a refund.
       type: object
       properties:
         reason:
