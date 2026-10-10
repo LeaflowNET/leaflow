@@ -379,8 +379,15 @@ components:
       type: object
       properties:
         available_credit:
-          description: Balance minus pending balance returns, unbilled usage estimates and issued unpaid amounts.
-            Credit grants are excluded; the result may be negative.
+          description: Balance minus pending balance returns and the part of unbilled_amount and due that
+            estimated_credit_applied does not cover. Negative only when the balance and applicable credit fall short of
+            what the account owes.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        estimated_credit_applied:
+          description: Credit expected to pay unbilled_amount and due. Each charge is matched to grants whose scope,
+            validity and conditions it meets, in the order credit is applied at payment. Nothing is reserved or deducted
+            until an invoice is paid, so credits still includes this amount.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         unbilled_amount:
@@ -439,6 +446,7 @@ components:
       - credit_groups
       - due
       - available_credit
+      - estimated_credit_applied
       - unbilled_amount
       - pending_returns_amount
     ProjectAssignment:
