@@ -252,7 +252,10 @@ paths:
         another charge. A void invoice is refused with `BILLING_INVOICE_NOT_PAYABLE`; the invoice of an
         order that has failed or was
         canceled, with `BILLING_ORDER_FAILED` or `BILLING_ORDER_CANCELED`; and that of an order whose
-        payment deadline has passed, with `BILLING_ORDER_EXPIRED`.
+        payment deadline has passed, with `BILLING_ORDER_EXPIRED`. A renewal invoice is also refused with
+        `BILLING_INVOICE_NOT_PAYABLE` while its subscription is being canceled, is being reclaimed or has
+        ended, with `meta.reason` `subscription_canceling`, `subscription_reclaiming` or
+        `subscription_ended` respectively.
       operationId: pay-invoice
       tags:
         - payments
@@ -339,7 +342,10 @@ paths:
         `BILLING_INVOICE_NOT_PAYABLE`, a deferred period-end change not yet due to be invoiced with
         `BILLING_CHANGE_NOT_INVOICED`, an order that has failed or was canceled with
         `BILLING_ORDER_FAILED` or `BILLING_ORDER_CANCELED`, and an order whose payment deadline has
-        passed with `BILLING_ORDER_EXPIRED`.
+        passed with `BILLING_ORDER_EXPIRED`. A renewal invoice is refused with
+        `BILLING_INVOICE_NOT_PAYABLE` while its subscription is being canceled, is being reclaimed or has
+        ended, with `meta.reason` `subscription_canceling`, `subscription_reclaiming` or
+        `subscription_ended` respectively.
       operationId: pay-together
       tags:
         - payments
@@ -686,6 +692,9 @@ components:
         through the selected gateway. Grants restricted to other purchases are not counted as available funds.
         An unresolved channel payment is reused; retries do not apply the grant or balance portions twice.
         Without a gateway selection, insufficient account funds fail without starting an online payment.
+
+        `payment_gateway` and `method_type` are given together, and `payment_method_id` only with both;
+        otherwise the request is refused with `BILLING_PURCHASE_INVALID`.
       type: object
       properties:
         payment_gateway:

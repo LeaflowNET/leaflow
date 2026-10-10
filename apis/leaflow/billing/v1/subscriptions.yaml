@@ -152,7 +152,11 @@ paths:
               $ref: '#/components/schemas/RenewRequest'
       responses:
         '409':
-          description: The order already exists or the subscription has a conflicting renewal, change or cancellation.
+          description: 'The order already exists, or the subscription has an operation in progress, refused with
+
+            `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a change that is pending or paid and waiting
+
+            to switch, an open cancellation or a committed reclaim.'
           content:
             application/json:
               schema:
@@ -335,9 +339,11 @@ components:
         default_payment_method_id:
           description: 'The saved payment method automatic renewal charges after the account''s balance and credits,
 
-            before the account''s default payment method. Set when the purchase, or a renewal, is paid with a saved
+            before the account''s default payment method. Set when the purchase, a renewal or a change is paid with a
 
-            payment method. It is used only while it belongs to the account that pays the renewal.'
+            saved payment method; paying any other way leaves it unchanged. It is used only while it belongs to the
+
+            account that pays the renewal.'
           type:
           - string
           - 'null'
@@ -551,6 +557,10 @@ components:
           - day
           - month
           - year
+        termination_policy:
+          description: As in renewing.
+          allOf:
+          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
       required:
       - order_id
       additionalProperties: false
