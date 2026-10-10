@@ -1,4 +1,42 @@
 paths:
+  /api/v1/monthly-statements:
+    get:
+      summary: List monthly statements
+      description: Usage billing by UTC calendar month for owned billing accounts, newest first. Each period combines its
+        statements, the invoices they issued and how those invoices were paid; usage is billed about hourly, so a month
+        holds many statements. Filter by billing_account_id and by period start.
+      operationId: list-monthly-statements
+      tags:
+      - statements
+      parameters:
+      - name: billing_account_id
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: from
+        in: query
+        description: Earliest period start, inclusive.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        description: Latest period start, exclusive.
+        schema:
+          type: string
+          format: date-time
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonthlyStatementList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/statements:
     get:
       summary: List statements
@@ -119,6 +157,82 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    MonthlyStatement:
+      type: object
+      description: One billing account's usage billing for one UTC calendar month, summed over the month's statements. It
+        is a summary, not something to pay; each closing's invoice is collected on its own.
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+        finalized:
+          type: boolean
+          description: True after the period's final closing, which applies minimum charges for the whole month. Usage
+            priced later is still billed in supplement statements and added here.
+        finalized_at:
+          type: string
+          format: date-time
+        statement_count:
+          type: integer
+          format: int32
+          description: Statements of the period, including the open one.
+        billed:
+          $ref: '#/components/schemas/StatementAmounts'
+          description: The sum of the closed statements' invoiced amounts.
+        credited_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Credit issued at closings against the period's earlier invoices, including tax. The period's net
+            charge is the billed total less this amount.
+        unbilled:
+          $ref: '#/components/schemas/StatementAmounts'
+          description: The open statement's estimate for usage priced since the last closing. Absent when the period has
+            no open statement.
+        credit_applied:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Paid from credit grants on the period's invoices.
+        amount_paid:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Paid on the period's invoices, including credit grants.
+        amount_due:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Still owed on the period's invoices. It is collected from balance and credits as soon as they are
+            available.
+        amount_refunded:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Returned from the period's invoices after credit was issued against paid amounts.
+      required:
+      - billing_account_id
+      - currency
+      - period_start
+      - period_end
+      - finalized
+      - statement_count
+      - billed
+      - credited_amount
+      - credit_applied
+      - amount_paid
+      - amount_due
+      - amount_refunded
+    MonthlyStatementList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MonthlyStatement'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
     StatementAmounts:
       type: object
       properties:
