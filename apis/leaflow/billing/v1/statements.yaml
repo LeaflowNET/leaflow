@@ -137,10 +137,10 @@ components:
       - total
     Statement:
       type: object
-      description: An account's consumption for one billing period, collected at one closing. The first statement of a period
-        (sequence 1) closes after the period ends. Usage priced after that closing is collected in a later statement for the
-        same period, which closes and invoices separately; a closed statement is never rewritten. Payments apply to issued
-        invoices.
+      description: An account's consumption for one billing period, collected at one closing. Usage is billed after every
+        settlement run, about hourly; each closing issues an invoice for the usage priced since the previous closing and
+        collects it from credits and balance at once, and later usage is collected in the next statement of the same period.
+        A closed statement is never rewritten. The period's consumption is the sum of its statements.
       properties:
         id:
           type: string
@@ -159,15 +159,16 @@ components:
         sequence:
           type: integer
           format: int32
-          description: 1 for the first closing of the period; higher for statements that collect usage priced after an earlier
-            closing.
+          description: Increases with each closing of the period.
         status:
           $ref: '#/components/schemas/StatementStatus'
+        type:
+          $ref: '#/components/schemas/StatementType'
         estimated:
           type: boolean
           description: True while the statement is open. The estimate applies tier pricing to the period's usage so far and
-            adds tax for the current invoice contact. Minimum charges are added at closing, and a tier reduction larger than
-            this statement's own charges is credited to earlier invoices of the period at closing.
+            adds tax for the current invoice contact. Minimum charges are added at the period's final closing, and a tier
+            reduction larger than this statement's own charges is credited to earlier invoices of the period at closing.
         amounts:
           $ref: '#/components/schemas/StatementAmounts'
           description: The current estimate while open, or the invoiced result when closed.
@@ -199,12 +200,22 @@ components:
       - created_at
       - amounts
       - sequence
+      - type
       - credited_amount
     StatementStatus:
       type: string
       enum:
       - open
       - closed
+    StatementType:
+      description: 'interim: a closing before the period''s usage is final; minimum charges are not applied. final: the first
+        closing after the period ended and its late usage was settled; minimum charges for the whole period are applied.
+        supplement: a closing after the final one, for usage priced late. An open statement is interim.'
+      type: string
+      enum:
+      - interim
+      - final
+      - supplement
     StatementList:
       type: object
       properties:
