@@ -1,0 +1,444 @@
+paths:
+  /api/v1/withdrawals:
+    get:
+      summary: List withdrawals
+      description: Paginated account withdrawal history, newest first. Account authorization applies to
+        every record.
+      operationId: list-withdrawals
+      tags:
+      - withdrawals
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - name: billing_account_id
+        in: query
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create withdrawal
+      description: Withdraws the requested account balance through the original top-ups in receipt order.
+        Fees are calculated independently per source. expected_items and expected_refund_amount must match
+        the accepted preview. Reusing the same ID with different terms fails. Only successful items collect
+        a fee.
+      operationId: create-withdrawal
+      tags:
+      - withdrawals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Withdrawal'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/withdrawals/preview:
+    post:
+      summary: Preview withdrawal
+      description: Previews the available balance deduction, fees and exact refund allocation by original
+        source. Omit amount to preview all available principal. Creates no withdrawal and reserves no
+        funds. Fails if a selected source has no configured refund route or its original processing cost
+        is not yet available.
+      operationId: preview-withdrawal
+      tags:
+      - withdrawals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalPreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalPreview'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/withdrawals/{withdrawalId}:
+    parameters:
+    - name: withdrawalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: Get withdrawal
+      description: Reads the accepted amounts and aggregate outcome of an authorized withdrawal. List
+        its source items for each original-method refund result.
+      operationId: get-withdrawal
+      tags:
+      - withdrawals
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Withdrawal'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/withdrawals/{withdrawalId}/items:
+    parameters:
+    - name: withdrawalId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      summary: List withdrawal items
+      description: Paginated fixed source allocations and their outcomes. A failed source does not undo
+        refunds already completed through other sources.
+      operationId: list-withdrawal-items
+      tags:
+      - withdrawals
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalItemList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    WithdrawalAllocation:
+      type: object
+      properties:
+        source_transaction_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+      required:
+      - source_transaction_id
+      - amount
+      - fee_amount
+      - refund_amount
+      additionalProperties: false
+    WithdrawalItem:
+      type: object
+      properties:
+        source_transaction_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        id:
+          type: string
+          format: uuid
+        withdrawal_id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        refund_id:
+          type: string
+          format: uuid
+        fee_transaction_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - pending
+          - succeeded
+          - failed
+          - reversed
+        completed_at:
+          type: string
+          format: date-time
+        payment_gateway:
+          type: string
+        method_type:
+          type: string
+        source:
+          $ref: '#/components/schemas/WithdrawalSource'
+        failure_code:
+          type: string
+          description: The original gateway failure code when a refund failed, or refund_reversed when
+            a completed refund was reversed. Absent while pending or successful.
+      required:
+      - source_transaction_id
+      - amount
+      - fee_amount
+      - refund_amount
+      - id
+      - withdrawal_id
+      - billing_account_id
+      - currency
+      - refund_id
+      - status
+      - payment_gateway
+      - method_type
+      - source
+      additionalProperties: false
+      description: The fixed principal deduction, withdrawal fee and exact refund obligation for one original
+        top-up. Each item has its own refund; payment_gateway and method_type identify the original route.
+    Withdrawal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        deducted_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        settled_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        charged_fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        status:
+          type: string
+          enum:
+          - pending
+          - processing
+          - succeeded
+          - partially_completed
+          - failed
+          - reversed
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          description: Identity that submitted this withdrawal. It can differ from the billing account
+            owner.
+      required:
+      - id
+      - billing_account_id
+      - currency
+      - amount
+      - fee_amount
+      - refund_amount
+      - deducted_amount
+      - settled_amount
+      - charged_fee_amount
+      - status
+      - created_at
+      additionalProperties: false
+      description: An account withdrawal to the original payment methods of its unused top-ups. Accepted
+        amounts are fixed. deducted_amount, settled_amount and charged_fee_amount report completed source
+        items. Failed items release their principal and fee reservations; successful items are retained
+        when another source fails.
+    WithdrawalPreview:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        available_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/WithdrawalPreviewItem'
+      required:
+      - billing_account_id
+      - currency
+      - available_amount
+      - amount
+      - fee_amount
+      - refund_amount
+      - items
+      additionalProperties: false
+    WithdrawalPreviewRequest:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+      required:
+      - billing_account_id
+      additionalProperties: false
+    WithdrawalCreate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        expected_refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        expected_items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/WithdrawalAllocation'
+      required:
+      - id
+      - billing_account_id
+      - amount
+      - expected_refund_amount
+      - expected_items
+      additionalProperties: false
+    WithdrawalList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Withdrawal'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    WithdrawalItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WithdrawalItem'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    WithdrawalSource:
+      type: object
+      description: The original top-up and its refund destination. Card details are included when the
+        original payment method was saved; missing card details do not change the original refund route.
+      properties:
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        received_at:
+          type: string
+          format: date-time
+        payment_gateway:
+          type: string
+        method_type:
+          type: string
+        card_brand:
+          type: string
+        card_last4:
+          type: string
+          pattern: ^[0-9]{4}$
+      required:
+      - amount
+      - currency
+      - received_at
+      - payment_gateway
+      - method_type
+      additionalProperties: false
+    WithdrawalPreviewItem:
+      type: object
+      properties:
+        source_transaction_id:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        fee_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_amount:
+          type: string
+          pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        source:
+          $ref: '#/components/schemas/WithdrawalSource'
+      required:
+      - source_transaction_id
+      - amount
+      - fee_amount
+      - refund_amount
+      - source
+      additionalProperties: false
