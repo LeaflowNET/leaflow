@@ -232,6 +232,56 @@ components:
       required:
       - mode
       - expected_refundable_amount
+    ScheduledChange:
+      description: The next accepted period-end change for a subscription. It describes the target terms and does not change
+        the current subscription until effective_at.
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        status:
+          $ref: ./orders.yaml#/components/schemas/OrderStatus
+        effective_at:
+          description: When the target terms take effect, normally the end of the current paid period.
+          type: string
+          format: date-time
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        price_id:
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        recurring_amount:
+          description: The target prepaid renewal amount before tax.
+          type: string
+        currency:
+          type: string
+        interval:
+          type: string
+          enum:
+          - day
+          - month
+          - year
+        interval_count:
+          type: integer
+          minimum: 1
+      required:
+      - order_id
+      - status
+      - effective_at
+      - plan_id
+      - plan_name
+      - price_id
+      - quantity
+      - recurring_amount
+      - currency
+      - interval
+      - interval_count
     SubscriptionList:
       type: object
       properties:
@@ -340,6 +390,11 @@ components:
           format: date-time
         cancellation:
           $ref: ./cancellations.yaml#/components/schemas/SubscriptionCancellation
+        scheduled_change:
+          description: The accepted period-end change currently scheduled for this subscription. Null when no such change exists.
+          oneOf:
+          - $ref: '#/components/schemas/ScheduledChange'
+          - type: 'null'
         default_payment_method_id:
           description: 'The saved payment method automatic renewal charges after the account''s balance and credits,
 
