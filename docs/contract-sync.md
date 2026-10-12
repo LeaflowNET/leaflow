@@ -28,12 +28,21 @@ go build ./...
 go test ./...
 ```
 
-The source directory must contain the complete `leaflow/` tree. For the current
-sync, the public source is `main` at commit
-`8bf267d562b2291a6117dd090a1205ecfd6b5ddd`, matching the latest published
-Go SDK release, `v0.201.0`.
+The source directory must contain the complete `leaflow/` tree. The current
+release uses public source `main` at
+`e22c03df0840db2364c992de00501a18c40afdf6`. The CLI embeds that public tree;
+its version is independent of the private Go SDK version.
 
 To inspect command changes, capture `go run ./cmd/leaflow-doctor -commands`
 before and after the sync, then pass the files to
 `scripts/contract-changes.sh`. That summary names additions and removals without
 requiring tests to assert a particular production command layout.
+
+Canopy project inference is under `leaflow canopy inference`. JSON responses
+use the selected output format. A `create-chat-completion` JSON body with
+`"stream": true` writes raw SSE frames immediately, including `[DONE]`, without adding an `ok` trailer. Ctrl-C
+cancels the request; an SSE call has no total HTTP timeout. Library callers may
+supply `leaflow.Call.Stream` to receive the same frames, with a context deadline
+when they need a time limit. Without a stream writer the library returns the
+complete SSE text as the result value. OpenAI error objects retain their error
+code and message, including authentication refusals that allow token refresh.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/LeaflowNET/leaflow/pkg/output"
 	"github.com/LeaflowNET/leaflow/pkg/transport"
@@ -46,6 +47,9 @@ type Call struct {
 	// alternative is that the caller's own retry has to know which errors mean
 	// "expired", which is the knowledge this package exists to hold.
 	Credentials transport.Credentials
+
+	// Stream receives raw SSE frames; use ctx to cancel or bound the call.
+	Stream io.Writer
 }
 
 // Result is what came back.
@@ -53,6 +57,9 @@ type Result struct {
 	// Status is the HTTP status. Worth having even on success: a 204 carries no
 	// body, and "deleted" is otherwise indistinguishable from "returned nothing".
 	Status int
+
+	// Streamed is true when the response was written directly to Call.Stream.
+	Streamed bool
 
 	// Value is the decoded reply — map[string]any, []any or a scalar — or nil
 	// when the operation returned no body.
@@ -94,9 +101,14 @@ func (c *Client) Call(ctx context.Context, call Call) (*Result, error) {
 		return nil, err
 	}
 
+	request.Stream = call.Stream
 	value, status, err := c.transport(credentials).Do(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+
+	if _, streamed := value.(transport.Streamed); streamed {
+		return &Result{Status: status, Streamed: true}, nil
 	}
 
 	return &Result{

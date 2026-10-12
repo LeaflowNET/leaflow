@@ -2,6 +2,7 @@ package dynamic
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -62,14 +63,23 @@ func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error
 		return err
 	}
 
+	var stream io.Writer
+	if fields, ok := body.(map[string]any); ok && fields["stream"] == true {
+		stream = cmd.OutOrStdout()
+	}
 	result, _, err := rt.Client.Do(cmd.Context(), &transport.Request{
 		Operation: binding.Operation,
 		Path:      fillPath(binding, path),
 		Query:     url.Values(query),
 		Body:      body,
+		Stream:    stream,
 	})
 	if err != nil {
 		return err
+	}
+
+	if _, streamed := result.(transport.Streamed); streamed {
+		return nil
 	}
 
 	// A 204 prints something rather than nothing: an empty screen after a

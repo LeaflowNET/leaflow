@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -88,7 +89,13 @@ type Request struct {
 	Query  url.Values
 	Header http.Header
 	Body   any
+
+	// Stream receives an SSE response as it arrives. Its lifetime is bounded by ctx.
+	Stream io.Writer
 }
+
+// Streamed marks a response already written to the supplied stream.
+type Streamed struct{}
 
 // APIError is a refusal from a service. Callers branch on Code rather than
 // matching prose: the wording changes, the code is contract.
@@ -197,30 +204,46 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 		httpRequest.Header.Del("Authorization")
 	}
 	httpRequest.Header.Set("Accept", "application/json")
+	if request.Stream != nil {
+		httpRequest.Header.Set("Accept", "text/event-stream, application/json")
+	}
 
 	if body != nil {
 		httpRequest.Header.Set("Content-Type", "application/json")
 	}
 
-	response, err := c.http.Do(httpRequest)
+	httpClient := c.http
+	if request.Stream != nil {
+		streaming := *c.http
+		streaming.Timeout = 0
+		httpClient = &streaming
+	}
+	response, err := httpClient.Do(httpRequest)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %s: %v", ErrRequestFailed, target, err)
 	}
 	defer response.Body.Close()
 
+	c.trace("< %d %s\n", response.StatusCode, http.StatusText(response.StatusCode))
+	mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if response.StatusCode < 400 && mediaType == "text/event-stream" && request.Stream != nil {
+		if _, err := io.Copy(request.Stream, response.Body); err != nil {
+			return nil, response.StatusCode, fmt.Errorf("%w: %v", ErrRequestFailed, err)
+		}
+		return Streamed{}, response.StatusCode, nil
+	}
 	raw, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, response.StatusCode, fmt.Errorf("%w: %v", ErrRequestFailed, err)
 	}
-
-	c.trace("< %d %s\n", response.StatusCode, http.StatusText(response.StatusCode))
-
 	if response.StatusCode >= 400 {
 		return nil, response.StatusCode, parseError(response.StatusCode, raw)
 	}
-
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, response.StatusCode, nil
+	}
+	if mediaType == "text/event-stream" {
+		return string(raw), response.StatusCode, nil
 	}
 
 	var result any
@@ -253,9 +276,19 @@ func parseError(status int, raw []byte) error {
 		Detail  string         `json:"detail"`
 		Title   string         `json:"title"`
 		Meta    map[string]any `json:"meta"`
+		Error   *struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Meta    map[string]any `json:"meta"`
+		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(raw, &parsed); err == nil {
+		if parsed.Error != nil {
+			parsed.Code = parsed.Error.Code
+			parsed.Message = parsed.Error.Message
+			parsed.Meta = parsed.Error.Meta
+		}
 		failure.Code = parsed.Code
 		failure.Meta = parsed.Meta
 
