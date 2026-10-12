@@ -307,11 +307,51 @@ components:
           - string
           - 'null'
           format: date-time
+        prorations:
+          description: |-
+            Present on a line that changes a subscription immediately, one entry for each paid period it
+            covers. `amount` is the sum of `remaining_amount` minus `credited_amount` over the entries.
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceItemProration'
       required:
       - id
       - description
       - amount
       - currency
+    InvoiceItemProration:
+      description: The value of one paid period moved to the new configuration of a subscription.
+      type: object
+      properties:
+        credited_invoice_item_id:
+          description: The earlier invoice line that paid for the period.
+          type: string
+          format: uuid
+        description:
+          description: The wording of the earlier invoice line as recorded when this invoice was created.
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          description: Exclusive.
+          type: string
+          format: date-time
+        remaining_amount:
+          description: Before tax and discounts, the new configuration for the period.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credited_amount:
+          description: Before tax, the unused value of the earlier line for the period, credited against `remaining_amount`.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+      - credited_invoice_item_id
+      - description
+      - period_start
+      - period_end
+      - remaining_amount
+      - credited_amount
     InvoiceItemList:
       type: object
       properties:
