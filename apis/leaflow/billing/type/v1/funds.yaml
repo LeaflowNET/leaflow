@@ -1,0 +1,47 @@
+openapi: 3.2.1
+info:
+  title: Purchase Funds
+  version: v1
+  description: Current account funds and the additional balance needed for a quoted purchase. Types only.
+paths: {}
+components:
+  schemas:
+    Funds:
+      description: |
+        Account funding for this purchase, calculated by Billing. Amounts use the enclosing response currency.
+        Credit eligibility and all purchase requirements are already evaluated. Nothing is charged or reserved.
+        A prepaid purchase may instead use an online payment method.
+      type: object
+      properties:
+        available_balance_amount:
+          description: Spendable balance after pending returns.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        usable_credit_amount:
+          description: Currently effective credits eligible for the quoted purchases or postpaid usage. Each grant is counted once.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        restricted_credit_amount:
+          description: Currently effective credits that cannot fund any quoted purchase or postpaid target. Unused eligible credits are not restricted.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        required_balance_amount:
+          description: Minimum spendable balance needed after eligible credits, covering immediate charges and every new postpaid admission requirement.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        balance_shortfall_amount:
+          description: Additional balance needed now. Zero means account funds satisfy this quote. No funds are reserved.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+        required_top_up_amount:
+          description: Minimum recharge that covers the shortfall, respecting the currency minimum recharge and currency precision. Zero when no additional balance is needed.
+          allOf:
+            - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - available_balance_amount
+        - usable_credit_amount
+        - restricted_credit_amount
+        - required_balance_amount
+        - balance_shortfall_amount
+        - required_top_up_amount
+      additionalProperties: false
