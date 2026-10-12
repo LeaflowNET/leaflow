@@ -29,8 +29,9 @@ go test ./...
 ```
 
 The source directory must contain the complete `leaflow/` tree. For the current
-sync, the public source is `v43.0.0`, commit
-`e9455d107dba87f0c49f1ca029a1d80e4b3b9165`.
+sync, the public source is `main` at commit
+`8bf267d562b2291a6117dd090a1205ecfd6b5ddd`, matching the latest published
+Go SDK release, `v0.201.0`.
 
 To inspect command changes, capture `go run ./cmd/leaflow-doctor -commands`
 before and after the sync, then pass the files to
