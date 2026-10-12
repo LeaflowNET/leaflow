@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: Leaflow Canopy Project Inference API
+  version: 1.0.0
+  description: OpenAI-compatible inference authenticated with an IAM project token.
+    The verified token is the sole billing project authority; OpenAI-Project and historical
+    identity headers cannot override it. Chat completions support stream=true SSE.
+    The project must have an active Canopy subscription; admission precedes inference
+    and usage is billed to that subscription. Model metadata includes context length,
+    output limits and capabilities. Provider credentials remain in Canopy.
+servers:
+- url: https://canopy.leaflow.cloud
+  description: Canopy userapi; use /v1 as the OpenAI SDK base URL
+security:
+- bearerAuth: []
+paths:
+  /v1/chat/completions:
+    post:
+      operationId: create-chat-completion
+      summary: Create a chat completion
+      description: Authenticated project inference. Billing ownership comes only from
+        the verified project token; no Canopy API key or project header is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: Model response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletion'
+            text/event-stream:
+              schema:
+                type: string
+                format: binary
+                description: 'OpenAI chat.completion.chunk SSE frames, ending with
+                  data: [DONE].'
+        default: &id001
+          description: OpenAI error object. Billing refusals occur before inference
+            starts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/embeddings:
+    post:
+      operationId: create-embeddings
+      summary: Create embeddings
+      description: Authenticated project inference. Billing ownership comes only from
+        the verified project token; no Canopy API key or project header is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+      responses:
+        '200':
+          description: Model response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+        default: *id001
+  /v1/models:
+    get:
+      operationId: list-models
+      summary: List callable models with capabilities and parameter limits
+      responses:
+        '200':
+          description: OpenAI model list with Canopy capability fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+        default: *id001
+  /v1/models/{model}:
+    get:
+      operationId: get-model
+      summary: Get a callable model with capabilities and parameter limits
+      parameters:
+      - name: model
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OpenAI model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Model'
+        default: *id001
+components:
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          minLength: 1
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: true
+        stream:
+          type: boolean
+        max_tokens:
+          type: integer
+          minimum: 1
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+        reasoning_effort:
+          type: string
+      required:
+      - model
+      - messages
+      additionalProperties: true
+    ChatCompletion:
+      type: object
+      additionalProperties: true
+    EmbeddingRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          minLength: 1
+        input:
+          description: A nonempty string, string array, token integer array, or array
+            of token integer arrays.
+          oneOf:
+          - type: string
+            minLength: 1
+          - type: array
+            minItems: 1
+            items: {}
+        encoding_format:
+          type: string
+          enum:
+          - float
+          - base64
+        dimensions:
+          type: integer
+          minimum: 1
+        user:
+          type: string
+      required:
+      - model
+      - input
+      additionalProperties: true
+    EmbeddingResponse:
+      type: object
+      additionalProperties: true
+    Model:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: model
+        created:
+          type: integer
+          format: int64
+        owned_by:
+          type: string
+        display_name:
+          type: string
+        context_length:
+          type: integer
+          format: int64
+        max_output_tokens:
+          type: integer
+          format: int64
+        supports_vision:
+          type: boolean
+        supports_tools:
+          type: boolean
+        supports_reasoning:
+          type: boolean
+        reasoning_tiers:
+          type: array
+          items:
+            type: string
+      required:
+      - id
+      - object
+      - created
+      - owned_by
+      - display_name
+      - context_length
+      - max_output_tokens
+      - supports_vision
+      - supports_tools
+      - supports_reasoning
+      - reasoning_tiers
+      additionalProperties: false
+    ModelList:
+      type: object
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+      required:
+      - object
+      - data
+      additionalProperties: false
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            param:
+              type:
+              - string
+              - 'null'
+            code:
+              type:
+              - string
+              - 'null'
+          required:
+          - message
+          - type
+          additionalProperties: true
+      required:
+      - error
+      additionalProperties: false
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
