@@ -185,14 +185,14 @@ result, err := client.Call(ctx, leaflow.Call{
 
 ## Pointing elsewhere
 
-Addresses come from the contracts. Override them per service — inside a cluster
-that means the service name — or rewrite the domain for a whole deployment:
+Addresses come from the public contracts. Override them per service for another
+deployment, or rewrite the domain for a whole deployment:
 
 ```go
 leaflow.New(leaflow.Options{
     Endpoints: transport.Endpoints{
         Overrides: map[string]string{
-            "compute": "http://compute.leaflow.svc.cluster.local:8080",
+            "compute": "https://compute.example.com",
         },
     },
 })
