@@ -15,8 +15,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 func TestProjectInferenceCLI(t *testing.T) {
@@ -31,36 +29,17 @@ func TestProjectInferenceCLI(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
-	contract, err := os.ReadFile(filepath.Join(repo, "apis/leaflow/canopy/inference/v1/openapi.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Paths map[string]map[string]struct {
-			OperationID string `yaml:"operationId"`
-		} `yaml:"paths"`
-	}
-	if err := yaml.Unmarshal(contract, &doc); err != nil {
-		t.Fatal(err)
-	}
-	operation := func(path, method string) string {
-		id := doc.Paths[path][method].OperationID
-		if id == "" {
-			t.Fatalf("contract does not define %s %s", method, path)
-		}
-		return id
-	}
 	command := func(t *testing.T, endpoint, id string, arguments ...string) *exec.Cmd {
 		t.Helper()
 		directory := t.TempDir()
-		config := fmt.Sprintf("current: e2e\ncredential_store: file\ncontexts:\n  e2e:\n    project: 11111111-1111-4111-8111-111111111111\n    endpoints:\n      canopy/inference: %q\n", endpoint)
+		config := fmt.Sprintf("current: e2e\ncredential_store: file\ncontexts:\n  e2e:\n    project: 11111111-1111-4111-8111-111111111111\n    endpoints:\n      canopy: %q\n", endpoint)
 		configPath := filepath.Join(directory, "config.yaml")
 		if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		t.Cleanup(cancel)
-		args := append([]string{"--config", configPath, "--output", "json", "canopy", "inference", id}, arguments...)
+		args := append([]string{"--config", configPath, "--output", "json", "canopy", id}, arguments...)
 		cmd := exec.CommandContext(ctx, binary, args...)
 		for _, item := range os.Environ() {
 			if !strings.HasPrefix(item, "LEAFLOW_") {
@@ -71,10 +50,10 @@ func TestProjectInferenceCLI(t *testing.T) {
 		return cmd
 	}
 
-	for _, example := range []struct{ name, path, method, body, response string }{
-		{"models", "/v1/models", "get", "", `{"object":"list","data":[{"id":"e2e-model"}]}`},
-		{"completion", "/v1/chat/completions", "post", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}]}`, `{"object":"chat.completion","choices":[{"message":{"content":"hello"}}]}`},
-		{"embeddings", "/v1/embeddings", "post", `{"model":"e2e-model","input":["hello"],"dimensions":2}`, `{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2]}]}`},
+	for _, example := range []struct{ name, operation, path, method, body, response string }{
+		{"models", "list-inference-models", "/v1/models", "get", "", `{"object":"list","data":[{"id":"e2e-model"}]}`},
+		{"completion", "create-chat-completion", "/v1/chat/completions", "post", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}]}`, `{"object":"chat.completion","choices":[{"message":{"content":"hello"}}]}`},
+		{"embeddings", "create-embeddings", "/v1/embeddings", "post", `{"model":"e2e-model","input":["hello"],"dimensions":2}`, `{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2]}]}`},
 	} {
 		t.Run(example.name, func(t *testing.T) {
 			observed := make(chan string, 1)
@@ -109,7 +88,7 @@ func TestProjectInferenceCLI(t *testing.T) {
 			if example.body != "" {
 				arguments = []string{"--body", "@-"}
 			}
-			cmd := command(t, server.URL, operation(example.path, example.method), arguments...)
+			cmd := command(t, server.URL, example.operation, arguments...)
 			cmd.Stdin = strings.NewReader(example.body)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
@@ -155,7 +134,7 @@ func TestProjectInferenceCLI(t *testing.T) {
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 		}))
 		defer server.Close()
-		cmd := command(t, server.URL, operation("/v1/chat/completions", "post"), "--body", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+		cmd := command(t, server.URL, "create-chat-completion", "--body", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		stdout, err := cmd.StdoutPipe()
@@ -191,7 +170,7 @@ func TestProjectInferenceCLI(t *testing.T) {
 			_, _ = io.WriteString(w, `{"error":{"code":"E2E_PROJECT_REFUSED","message":"project inference is refused","type":"invalid_request_error"}}`)
 		}))
 		defer server.Close()
-		cmd := command(t, server.URL, operation("/v1/models", "get"))
+		cmd := command(t, server.URL, "list-inference-models")
 		output, err := cmd.CombinedOutput()
 		if err == nil || !bytes.Contains(output, []byte("E2E_PROJECT_REFUSED")) || !bytes.Contains(output, []byte("project inference is refused")) {
 			t.Fatalf("refusal lost its meaning: %v\n%s", err, output)
