@@ -1,0 +1,122 @@
+paths:
+  /v1/responses:
+    post:
+      operationId: create-response
+      tags:
+      - Inference
+      summary: Create a model response
+      description: Supports JSON, SSE and native upstream response storage. Stored
+        continuation is restricted to the current project and original provider credential.
+        WebSocket clients connect with GET /v1/responses and send response.create
+        events; one response may be active on a connection at a time. The connection
+        stays on its initial model and provider credential.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponseCreate'
+      responses:
+        '200':
+          description: Native model response or Responses SSE events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseResource'
+            text/event-stream:
+              schema:
+                type: string
+                format: binary
+        default: &id001_1
+          description: OpenAI error object.
+          content:
+            application/json:
+              schema:
+                $ref: ./inference.yaml#/components/schemas/InferenceError
+  /v1/responses/{response}:
+    parameters:
+    - name: response
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      operationId: get-response
+      tags:
+      - Inference
+      summary: Get a stored response
+      responses:
+        '200':
+          description: Upstream response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseResource'
+        default: *id001_1
+    delete:
+      operationId: delete-response
+      tags:
+      - Inference
+      summary: Delete a stored response
+      responses:
+        '200':
+          description: Upstream response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseDeleted'
+        default: *id001_1
+components:
+  schemas:
+    ResponseCreate:
+      type: object
+      properties:
+        model:
+          type: string
+        input: {}
+        instructions:
+          type:
+          - string
+          - 'null'
+        store:
+          type: boolean
+          default: false
+        stream:
+          type: boolean
+          default: false
+        previous_response_id:
+          type:
+          - string
+          - 'null'
+        reasoning:
+          type: object
+          additionalProperties: true
+        tools:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        max_output_tokens:
+          type: integer
+          minimum: 1
+      additionalProperties: true
+      description: Native Responses request. model may be omitted when continuing
+        a project-owned stored response. store defaults to false. Only caller-executed
+        function and custom tools are supported. background, conversation and WebSocket-only
+        fields are rejected over HTTP.
+    ResponseResource:
+      type: object
+      additionalProperties: true
+    ResponseDeleted:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        deleted:
+          type: boolean
+      required:
+      - id
+      - object
+      - deleted

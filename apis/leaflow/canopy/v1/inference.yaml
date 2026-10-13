@@ -23,7 +23,7 @@ paths:
                 type: string
                 format: binary
                 description: 'OpenAI chat.completion.chunk SSE frames, ending with data: [DONE].'
-        default: &id001
+        default: &id001_1
           description: OpenAI error object. Billing refusals occur before inference starts.
           content:
             application/json:
@@ -50,7 +50,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EmbeddingResponse'
-        default: *id001
+        default: *id001_1
       tags:
       - Inference
   /v1/models:
@@ -64,7 +64,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelList'
-        default: *id001
+        default: *id001_1
       tags:
       - Inference
   /v1/models/{model}:
@@ -84,7 +84,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Model'
-        default: *id001
+        default: *id001_1
       tags:
       - Inference
 components:
@@ -171,16 +171,34 @@ components:
         max_output_tokens:
           type: integer
           format: int64
-        supports_vision:
-          type: boolean
-        supports_tools:
-          type: boolean
-        supports_reasoning:
-          type: boolean
-        reasoning_tiers:
+        developer:
+          type: string
+          description: The model developer; not the upstream provider or model family.
+        description:
+          type: string
+        input_modalities:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: './capabilities.yaml#/components/schemas/Modality'
+          description: Accepted input modalities. Null means unknown.
+        output_modalities:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: './capabilities.yaml#/components/schemas/Modality'
+          description: Produced output modalities. Image input does not imply image generation.
+        capabilities:
+          $ref: './capabilities.yaml#/components/schemas/ModelCapabilities'
+        supported_endpoints:
           type: array
           items:
-            type: string
+            $ref: './capabilities.yaml#/components/schemas/ModelEndpoint'
+          uniqueItems: true
+          description: Explicitly supported API endpoints. Requests to any other endpoint are rejected before upstream
+            admission.
       required:
       - id
       - object
@@ -189,10 +207,12 @@ components:
       - display_name
       - context_length
       - max_output_tokens
-      - supports_vision
-      - supports_tools
-      - supports_reasoning
-      - reasoning_tiers
+      - developer
+      - description
+      - input_modalities
+      - output_modalities
+      - capabilities
+      - supported_endpoints
       additionalProperties: false
     ModelList:
       type: object

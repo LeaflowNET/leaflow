@@ -35,6 +35,10 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/responses:
+    $ref: ./responses.yaml#/paths/~1v1~1responses
+  /v1/responses/{response}:
+    $ref: ./responses.yaml#/paths/~1v1~1responses~1{response}
   /v1/chat/completions:
     $ref: ./inference.yaml#/paths/~1v1~1chat~1completions
   /v1/embeddings:
@@ -772,6 +776,24 @@ components:
     bearerAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
+    ReasoningDiagnostics:
+      type: object
+      properties:
+        requested:
+          type: object
+          additionalProperties: true
+        effective:
+          type: object
+          additionalProperties: true
+        translation:
+          type: string
+          enum:
+          - translate
+          - passthrough
+          - strip
+      required:
+      - requested
+      additionalProperties: false
     ChatCompletionRequest:
       $ref: ./inference.yaml#/components/schemas/ChatCompletionRequest
     ChatCompletion:
@@ -1023,37 +1045,56 @@ components:
         pricing:
           description: What requests to this model cost. Null when the project has no billing account.
           anyOf:
-            - $ref: "#/components/schemas/ModelPricing"
-            - type: "null"
-        reasoning_tiers:
-          description: The values accepted for `reasoning_effort`. Empty means it is not supported
-          type: array
-          items:
-            type: string
+          - $ref: '#/components/schemas/ModelPricing'
+          - type: 'null'
         status:
           type: string
           enum:
-            - available
-            - draining
-            - retired
-        supports_reasoning:
-          type: boolean
-        supports_tools:
-          type: boolean
-        supports_vision:
-          type: boolean
+          - available
+          - draining
+          - retired
+        developer:
+          type: string
+          description: The model developer; not the upstream provider or model family.
+        description:
+          type: string
+        input_modalities:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: './capabilities.yaml#/components/schemas/Modality'
+          description: Accepted input modalities. Null means unknown.
+        output_modalities:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: './capabilities.yaml#/components/schemas/Modality'
+          description: Produced output modalities. Image input does not imply image generation.
+        capabilities:
+          $ref: './capabilities.yaml#/components/schemas/ModelCapabilities'
+        supported_endpoints:
+          type: array
+          items:
+            $ref: './capabilities.yaml#/components/schemas/ModelEndpoint'
+          uniqueItems: true
+          description: Explicitly supported API endpoints. Requests to any other endpoint are rejected before upstream
+            admission.
       required:
-        - id
-        - display_name
-        - family
-        - status
-        - context_length
-        - max_output_tokens
-        - supports_vision
-        - supports_tools
-        - supports_reasoning
-        - reasoning_tiers
-        - pricing
+      - id
+      - display_name
+      - family
+      - status
+      - context_length
+      - max_output_tokens
+      - pricing
+      - developer
+      - description
+      - input_modalities
+      - output_modalities
+      - capabilities
+      - supported_endpoints
       additionalProperties: false
     ModelPricing:
       description: |-
@@ -1114,10 +1155,13 @@ components:
       properties:
         api_key_id:
           description: Null for a request made by an internal service directly for the project.
-          type: [string, "null"]
+          type:
+          - string
+          - 'null'
           format: uuid
         cache_read_tokens:
-          description: The portion served from the upstream prefix cache, which costs an order of magnitude less than ordinary input
+          description: The portion served from the upstream prefix cache, which costs an order of magnitude less than
+            ordinary input
           type: integer
           format: int64
         cache_write_tokens:
@@ -1128,13 +1172,13 @@ components:
           type: string
         finished_at:
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
         first_token_at:
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
         id:
           type: string
@@ -1160,11 +1204,11 @@ components:
         status:
           type: string
           enum:
-            - in_flight
-            - succeeded
-            - refused
-            - upstream_failed
-            - client_aborted
+          - in_flight
+          - succeeded
+          - refused
+          - upstream_failed
+          - client_aborted
         stream:
           type: boolean
         upstream_request_id:
@@ -1175,31 +1219,37 @@ components:
           type: integer
           format: int64
         usage_source:
-          description: upstream means the figures were reported by the provider; estimated means they were derived from the character classes of the payload
+          description: upstream means the figures were reported by the provider; estimated means they were derived from
+            the character classes of the payload
           type: string
           enum:
-            - none
-            - upstream
-            - estimated
+          - none
+          - upstream
+          - estimated
+        reasoning:
+          anyOf:
+          - $ref: '#/components/schemas/ReasoningDiagnostics'
+          - type: 'null'
       required:
-        - id
-        - model_id
-        - api_key_id
-        - stream
-        - status
-        - error_code
-        - upstream_status
-        - upstream_request_id
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-        - usage_source
-        - started_at
-        - first_token_at
-        - finished_at
-        - retries
+      - id
+      - model_id
+      - api_key_id
+      - stream
+      - status
+      - error_code
+      - upstream_status
+      - upstream_request_id
+      - input_tokens
+      - output_tokens
+      - cache_read_tokens
+      - cache_write_tokens
+      - reasoning_tokens
+      - usage_source
+      - started_at
+      - first_token_at
+      - finished_at
+      - retries
+      - reasoning
       additionalProperties: false
     CursorPageRequestResource:
       type: object

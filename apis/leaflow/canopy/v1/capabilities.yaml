@@ -1,0 +1,100 @@
+components:
+  schemas:
+    Modality:
+      type: string
+      enum:
+      - text
+      - image
+      - audio
+      - video
+      - file
+      - embedding
+    ModelEndpoint:
+      type: string
+      enum:
+      - /v1/chat/completions
+      - /v1/responses
+      - /v1/embeddings
+      - /v1/images/generations
+      - /v1/images/edits
+      - /v1/audio/transcriptions
+      - /v1/audio/translations
+      - /v1/audio/speech
+      - /v1/realtime
+    ModelCapabilities:
+      type: object
+      description: Verified capabilities keyed by API endpoint, for example /v1/chat/completions or /v1/responses. Missing
+        keys and null values mean unknown. Current route availability is separate.
+      additionalProperties:
+        $ref: '#/components/schemas/EndpointCapabilities'
+    EndpointCapabilities:
+      type: object
+      properties:
+        function_calling:
+          type:
+          - boolean
+          - 'null'
+        structured_output:
+          type:
+          - boolean
+          - 'null'
+        reasoning:
+          anyOf:
+          - $ref: '#/components/schemas/ReasoningCapabilities'
+          - type: 'null'
+      required:
+      - function_calling
+      - structured_output
+      - reasoning
+      additionalProperties: false
+    ReasoningCapabilities:
+      type: object
+      properties:
+        supported:
+          type: boolean
+        effort_levels:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: Null means unknown; an empty array means effort is not configurable.
+        default_effort:
+          type:
+          - string
+          - 'null'
+        modes:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        budget_tokens:
+          type:
+          - object
+          - 'null'
+          properties:
+            min:
+              type: integer
+              minimum: 0
+            max:
+              type: integer
+              minimum: 0
+          required:
+          - min
+          - max
+          additionalProperties: false
+        summary:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+      required:
+      - supported
+      - effort_levels
+      - default_effort
+      - modes
+      - budget_tokens
+      - summary
+      additionalProperties: false
