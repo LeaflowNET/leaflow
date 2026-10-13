@@ -3,21 +3,23 @@ info:
   title: Leaflow Canopy API
   version: 1.0.0
   description: |-
-    Management of API keys, together with the models available and the usage recorded against them.
+    Canopy model inference, API keys, model catalogue, service enablement and recorded usage.
 
-    **These endpoints do not perform inference.** Requests are issued to the forwarding address, which accepts the OpenAI, Anthropic and Gemini request formats:
+    OpenAI-compatible project inference is served on this host at `/v1/chat/completions`,
+    `/v1/embeddings`, `/v1/models` and `/v1/models/{model}`. Use `https://canopy.leaflow.cloud/v1`
+    as the OpenAI SDK base URL. Chat completions support `stream=true` SSE.
 
-    ```
-    POST /v1/chat/completions                    OpenAI
-    POST /v1/messages                            Anthropic
-    POST /v1beta/models/{model}:generateContent  Gemini
-    ```
+    Management operations use `/api/v1`. The management model catalogue includes pricing;
+    `/v1/models` returns the OpenAI model format with Canopy capabilities and parameter limits.
 
     ## Authentication
 
     Every request carries a scoped token; see the `bearerAuth` security scheme.
 
-    These management endpoints do not accept a Canopy API key. On this userapi host, the OpenAI-compatible `/v1/chat/completions`, `/v1/embeddings`, `/v1/models` and `/v1/models/{model}` endpoints accept the same project token; see the project inference contract. The separate API-key gateway continues to accept Canopy API keys.
+    Management and project inference accept the same verified IAM scoped token. The token is the
+    sole billing project authority; `OpenAI-Project` and historical identity headers cannot
+    override it. These endpoints do not accept a Canopy API key. The separate API-key gateway
+    accepts Canopy API keys and supports OpenAI, Anthropic and Gemini request formats.
 
     ## Conventions
 
@@ -29,10 +31,18 @@ info:
     - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates stated in each model's `pricing`.
 servers:
   - url: https://canopy.leaflow.cloud
-    description: Model gateway keys and usage
+    description: Canopy management and OpenAI-compatible project inference
 security:
   - bearerAuth: []
 paths:
+  /v1/chat/completions:
+    $ref: ./inference.yaml#/paths/~1v1~1chat~1completions
+  /v1/embeddings:
+    $ref: ./inference.yaml#/paths/~1v1~1embeddings
+  /v1/models:
+    $ref: ./inference.yaml#/paths/~1v1~1models
+  /v1/models/{model}:
+    $ref: ./inference.yaml#/paths/~1v1~1models~1{model}
   /api/v1/keys:
     get:
       summary: List API keys
@@ -762,6 +772,20 @@ components:
     bearerAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   schemas:
+    ChatCompletionRequest:
+      $ref: ./inference.yaml#/components/schemas/ChatCompletionRequest
+    ChatCompletion:
+      $ref: ./inference.yaml#/components/schemas/ChatCompletion
+    EmbeddingRequest:
+      $ref: ./inference.yaml#/components/schemas/EmbeddingRequest
+    EmbeddingResponse:
+      $ref: ./inference.yaml#/components/schemas/EmbeddingResponse
+    Model:
+      $ref: ./inference.yaml#/components/schemas/Model
+    ModelList:
+      $ref: ./inference.yaml#/components/schemas/ModelList
+    InferenceError:
+      $ref: ./inference.yaml#/components/schemas/InferenceError
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     APIKeyResource:
