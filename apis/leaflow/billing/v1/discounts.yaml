@@ -2,31 +2,27 @@ paths:
   /api/v1/discounts:
     get:
       summary: List the coupons held on this account
-      description: |-
-        Coupons placed on the account directly, which apply at checkout without a code being
-        entered. A coupon reached through a code is not listed here.
+      description: Coupons held by the account, applied at checkout without a code. Coupons reached through a code are not listed.
       operationId: list-account-discounts
       tags:
-        - discounts
+      - discounts
       parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DiscountList"
+                $ref: '#/components/schemas/DiscountList'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
     Discount:
-      description: |-
-        A coupon held on this account for a period. Within the period it applies without a code to purchases and
-        to metered usage that the coupon covers.
+      description: A coupon held by the account for a period, applying without a code to the purchases and metered usage it covers.
       type: object
       properties:
         min_amount:
@@ -41,35 +37,30 @@ components:
           type: string
           format: uuid
         status:
-          description: |-
-            `scheduled` before valid_from, `active` within the validity, `expired` after valid_until, or
-            `voided` once Leaflow withdrew it.
+          description: '`scheduled` before valid_from, `active` within the validity, `expired` after valid_until, or `voided` once withdrawn.'
           type: string
           enum:
-            - scheduled
-            - active
-            - expired
-            - voided
+          - scheduled
+          - active
+          - expired
+          - voided
         voided_at:
           type: string
           format: date-time
         type:
           type: string
           enum:
-            - percentage
-            - fixed_amount
-            - price_override
-            - free_setup
+          - percentage
+          - fixed_amount
+          - price_override
+          - free_setup
         frequency:
-          description: |-
-            Whether the discount continues on renewals of the purchased item. `once` applies only to the
-            purchase or renewal that uses the coupon, `recurring` continues for `frequency_duration` billing
-            periods including the first, and `forever` continues on every renewal.
+          description: 'Whether the discount continues on renewals: `once` applies only to the purchase or renewal using the coupon, `recurring` for `frequency_duration` periods including the first, `forever` on every renewal.'
           type: string
           enum:
-            - once
-            - recurring
-            - forever
+          - once
+          - recurring
+          - forever
         frequency_duration:
           type: integer
           minimum: 1
@@ -83,19 +74,17 @@ components:
           type: string
         amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Fixed discount or per-unit interval price override for this account currency.
+          description: A fixed reduction or per-unit price override in this account currency.
         max_discount:
           description: Caps a percentage discount.
           allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         applies_to:
-          description: |-
-            What it may be used for. Absent means it applies to anything on the account,
-            including setup fees and traffic.
+          description: What it may pay for. Absent means anything on the account, including setup fees and usage.
           allOf:
-            - $ref: "#/components/schemas/Applicability"
+          - $ref: '#/components/schemas/Applicability'
         first_purchase_only:
           description: Restricted to your first purchase of anything it applies to.
           type: boolean
@@ -105,32 +94,29 @@ components:
         valid_until:
           description: Absent follows the coupon's own validity.
           type:
-            - string
-            - "null"
+          - string
+          - 'null'
           format: date-time
       required:
-        - type
-        - applies_to
-        - coupon_id
-        - status
-        - id
+      - type
+      - applies_to
+      - coupon_id
+      - status
+      - id
     DiscountList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Discount"
+            $ref: '#/components/schemas/Discount'
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-        - items
-        - pagination
+      - items
+      - pagination
     Applicability:
-      description: |-
-        Anything not excluded that matches an inclusion, or anything not excluded when no inclusion is
-        given, subject to the charge type, operation and term conditions. Entries always include their
-        display fields; archived plans and prices stay listed with active set to false.
+      description: Covers anything not excluded that matches an inclusion, or anything not excluded when no inclusion is given, subject to the price type, usage type, operation and term conditions. Archived plans and prices stay listed with active false.
       type: object
       properties:
         products:
@@ -140,23 +126,27 @@ components:
         plans:
           type: array
           items:
-            $ref: "#/components/schemas/ApplicablePlan"
+            $ref: '#/components/schemas/ApplicablePlan'
         prices:
           type: array
           items:
             $ref: ./prices.yaml#/components/schemas/PriceOption
         price_types:
+          description: The price types covered; empty covers both.
           type: array
           items:
-            type: string
+            $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_types:
+          description: The usage types covered; empty covers both.
+          type: array
+          items:
+            $ref: ./prices.yaml#/components/schemas/UsageType
         operations:
           type: array
           items:
             $ref: ./orders.yaml#/components/schemas/PurchaseOperation
         min_term_months:
-          description: |-
-            The shortest term a purchase may have, in months. A purchase with no term, such as
-            metered usage, never qualifies while this is set.
+          description: The shortest term a purchase may have, in months. Purchases without a term, such as metered usage, do not qualify while this is set.
           type: integer
         max_term_months:
           description: The longest term a purchase may have, in months.
@@ -168,13 +158,13 @@ components:
         excluded_plans:
           type: array
           items:
-            $ref: "#/components/schemas/ApplicablePlan"
+            $ref: '#/components/schemas/ApplicablePlan'
         excluded_prices:
           type: array
           items:
             $ref: ./prices.yaml#/components/schemas/PriceOption
     ApplicablePlan:
-      description: A plan it refers to. active is false once the plan is archived; it still applies to subscriptions already on this plan.
+      description: A plan referenced by an applicability; active is false once it is archived, and the reference still applies.
       type: object
       properties:
         id:
@@ -185,6 +175,6 @@ components:
         active:
           type: boolean
       required:
-        - id
-        - name
-        - active
+      - id
+      - name
+      - active

@@ -2,7 +2,7 @@ paths:
   /api/v1/subscriptions:
     get:
       summary: List subscriptions
-      description: Lists subscriptions visible to the authorized billing account. Soft-deleted subscriptions are excluded.
+      description: Subscriptions of the authorized billing account. Deleted subscriptions are not listed.
       operationId: list-subscriptions
       tags:
       - subscriptions
@@ -30,8 +30,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     get:
       summary: Get subscription
-      description: Returns a subscription visible to the authorized billing account. Soft-deleted subscriptions are reported
-        as not found.
+      description: A subscription of the authorized billing account. Deleted subscriptions are reported as not found.
       operationId: get-subscription
       tags:
       - subscriptions
@@ -46,29 +45,13 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
       summary: Delete subscription
+      description: Hides a canceled or terminated subscription from your subscription list and detail by setting deleted_at; its status, ended_at and history are kept. The token must authorize the subscription's current billing account. A subscription that has not ended is refused with 409 `BILLING_SUBSCRIPTION_NOT_ENDED` and `status`. Repeating it keeps the original deleted_at. It sends no cleanup command and creates no refund.
       operationId: delete-subscription
-      description: 'Sets deleted_at on a canceled or terminated subscription, hiding it from your subscription
-
-        list and detail. Your account access token must authorize the subscription''s current billing
-
-        account. Preserves commercial status, ended_at and billing and financial history. Completed
-
-        cancellations and canceled unfulfilled purchases can be deleted directly, without termination.
-
-        Pending, provisioning, active and suspended subscriptions are refused with 409
-
-        BILLING_SUBSCRIPTION_NOT_ENDED and status in error params. A scheduled or releasing cancellation
-
-        does not make a subscription canceled.
-
-        There is no force, skip-cleanup or override option. Repeating deletion preserves the original
-
-        deleted_at. Sends no cleanup command and creates no refund; outstanding cleanup continues.'
       tags:
       - subscriptions
       responses:
         '204':
-          description: Hidden from subscription reads; financial history retained.
+          description: Hidden from subscription reads; financial history is kept.
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}/cancel:
@@ -76,30 +59,17 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Cancel subscription
+      description: |-
+        Requests cancellation on the purchase's agreed terms, with the same rules as creating a cancellation. Give the
+        refund amount from a quote with this subscription in `cancellation.subscription_ids`. The token must authorize
+        the subscription's current billing account.
+
+        Immediate cancellation asks the owning service to release the resources now; period-end cancellation keeps the
+        subscription active or suspended until the paid term ends. The subscription becomes canceled when the service
+        confirms the release; follow the returned cancellation. Subscriptions released together must be canceled
+        together through create-cancellation, and pending or provisioning purchases through their order. Repeating the
+        request while the cancellation is open returns it.
       operationId: cancel-subscription
-      description: 'Requests cancellation on the purchase''s agreed terms. Uses the same quotation, eligibility,
-
-        metering and original-payment-source refund rules as creating a cancellation.
-
-        Supply the refund amount from create-quote with this subscription in cancellation.subscription_ids.
-
-        Your account access token must authorize the subscription''s current billing account.
-
-
-        Immediate cancellation asks the owning service to clean up now. Period-end cancellation keeps
-
-        the subscription active or suspended until the paid term ends. Neither payment nor acceptance
-
-        of this request proves cleanup. The subscription becomes canceled only after the service
-
-        confirms release and the end of metering; follow the returned cancellation for progress.
-
-
-        Related subscriptions released together must be submitted as one group to create-cancellation.
-
-        Pending or provisioning purchases are canceled through their order, not this operation.
-
-        Repeating the same open cancellation returns it without another refund or command.'
       tags:
       - subscriptions
       requestBody:
@@ -122,25 +92,16 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Renew subscription
-      description: 'Purchases prepaid periods from current_term_end using the agreed recurring amount, and pays for them at
+      description: |-
+        Buys licensed periods from current_term_end at the agreed recurring amount and pays for them at once. A
+        different interval selects the price currently sold for it and fixes new terms on the order, applied after
+        fulfillment. Paid periods keep their value.
 
-        once. A changed interval selects a current price and freezes new terms on the order, applied
+        Without `payment_method_id`, the renewal is paid from credit grants and balance as `use_credits` and
+        `use_balance` allow; when they cannot cover it, the request fails with `BILLING_INSUFFICIENT_FUNDS` and no
+        order is left. To pay another way, create a renewal order and pay its invoice.
 
-        only after fulfillment. Existing paid periods keep their value.
-
-
-        Without `payment_method_id`, the renewal is paid from credit grants and the balance as
-
-        `use_credits` and `use_balance` allow; when they cannot pay it all, the renewal is refused with
-
-        `BILLING_INSUFFICIENT_FUNDS` and no order is left. To pay another way, create a renewal order
-
-        and pay its invoice instead.
-
-
-        Save order_id before submitting and query the order after an unknown outcome; duplicate
-
-        creation conflicts.'
+        Keep order_id and read the order after an unknown outcome; creating it again conflicts.
       operationId: renew-subscription
       tags:
       - subscriptions
@@ -152,11 +113,7 @@ paths:
               $ref: '#/components/schemas/RenewRequest'
       responses:
         '409':
-          description: 'The order already exists, or the subscription has an operation in progress, refused with
-
-            `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a change that is pending or paid and waiting
-
-            to switch, an open cancellation or a committed reclaim.'
+          description: 'The order already exists, or the subscription has an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a pending or paid change waiting to switch, an open cancellation or a committed reclaim.'
           content:
             application/json:
               schema:
@@ -174,22 +131,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     put:
       summary: Set auto renew
-      description: 'Controls automatic prepaid renewal for an active or suspended subscription. A pending or provisioning
-
-        subscription cannot set this preference and returns 409 `BILLING_SUBSCRIPTION_AUTO_RENEW_INACTIVE`. Disabling it does
-
-        not shorten current_term_end and still permits manual renewal. A postpaid subscription always continues until it is
-
-        canceled; setting it is refused with 409
-
-        `BILLING_SUBSCRIPTION_AUTO_RENEW_FIXED`.
-
-
-        While the subscription has an open cancellation, turning it on or off is refused with 409
-
-        `BILLING_SUBSCRIPTION_OPERATION_PENDING` and `meta.cancellation_id`: creating the cancellation
-
-        turned it off, and withdrawing the cancellation does not turn it back on.'
+      description: 'Turns automatic renewal of an active or suspended licensed subscription on or off. Turning it off does not shorten current_term_end and still allows manual renewal. Refused with 409 `BILLING_SUBSCRIPTION_AUTO_RENEW_INACTIVE` for a pending or provisioning subscription, 409 `BILLING_SUBSCRIPTION_AUTO_RENEW_FIXED` for a metered subscription, which continues until it is canceled, and 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` with `meta.cancellation_id` while a cancellation is open: creating it turned renewal off, and withdrawing it does not turn renewal back on.'
       operationId: set-auto-renew
       tags:
       - subscriptions
@@ -212,7 +154,6 @@ components:
   schemas:
     CancelSubscriptionRequest:
       type: object
-      additionalProperties: false
       properties:
         mode:
           $ref: ./prices.yaml#/components/schemas/TerminationPolicy
@@ -232,9 +173,9 @@ components:
       required:
       - mode
       - expected_refundable_amount
+      additionalProperties: false
     ScheduledChange:
-      description: The next accepted period-end change for a subscription. It describes the target terms and does not change
-        the current subscription until effective_at.
+      description: 'The next accepted period-end change of the subscription: the target terms, applied at effective_at.'
       type: object
       properties:
         order_id:
@@ -257,7 +198,7 @@ components:
         quantity:
           type: string
         recurring_amount:
-          description: The target prepaid renewal amount before tax.
+          description: The target licensed renewal amount before tax.
           type: string
         currency:
           type: string
@@ -283,9 +224,7 @@ components:
       - interval
       - interval_count
     SubscriptionRestriction:
-      description: 'An operation Leaflow prevents on a subscription. billing.subscriptions.use stops the service. renew
-        prevents renewal and payment of a renewal order. modify prevents placing a change order. cancel prevents cancellation.
-        terminate prevents immediate termination.'
+      description: An operation prevented on the subscription. `billing.subscriptions.use` stops the service. `renew` prevents renewal and paying a renewal order. `modify` prevents placing a change order. `cancel` prevents cancellation. `terminate` prevents immediate termination.
       type: string
       enum:
       - billing.subscriptions.use
@@ -306,60 +245,35 @@ components:
       - items
       - pagination
     Subscription:
-      description: 'An independently billed purchase relationship, separate from the owning service''s resource.
+      description: |-
+        A purchase that is billed, renewed and changed on its own, separate from the owning service's resource. A new
+        recurring purchase creates a pending subscription for each order line; its ID is returned on the order item
+        and stays the same through checkout, delivery, renewals and changes. A one-time purchase may create none.
 
-        Placing a new prepaid or postpaid service order creates a pending subscription for each line
+        Pending and provisioning subscriptions grant no service. A subscription becomes provisioning when the owning
+        service accepts the order, and active when the service confirms delivery, which sets started_at; payment
+        changes neither. Licensed service periods start at delivery, and metered usage is charged as the service
+        reports it. Canceling or failing an undelivered purchase cancels its subscriptions without starting a period.
+        Renewals use recurring_amount and the agreed interval; paid periods keep their value.
 
-        in the same purchase transaction. Its ID is returned on the order item and remains stable
-
-        through checkout and delivery. One order may create several subscriptions, such as an instance,
-
-        its system disk and its address; it has no single subscription ID.
-
-
-        Pending and provisioning do not grant service or accrue usage. A service-owned subscription
-
-        becomes provisioning when the owning service accepts the order, and active when the service
-
-        confirms delivery, with started_at set to the confirmed effective time; payment changes neither. Prepaid service periods
-        start
-
-        then; postpaid usage starts only when the service reports actual delivery and metering.
-
-
-        One-time delivery may omit a subscription. Renewals reference and extend existing subscriptions
-
-        rather than creating another; a change keeps the subscription ID and switches its terms when it
-
-        takes effect. Canceling or failing an unfulfilled purchase sets its pending or provisioning
-
-        subscriptions to canceled without starting a service period.
-
-        Fixed renewals use the agreed recurring_amount and interval; already paid periods retain their
-
-        original value. Technical state belongs to the owning service.
-
-
-        A purchased shared capacity limit, such as a regional snapshot count quota, can have its own
-
-        subscription. Activating that capacity confirms delivery of the quota, not individual snapshots.
-
-        Creating or deleting snapshots within it does not create, activate or terminate more subscriptions;
-
-        the owning service enforces current holdings against the purchased count.'
+        A shared capacity limit, such as a regional snapshot quota, has one subscription for the purchased quantity
+        rather than one per item.
       type: object
       properties:
         renewal_discounts_enabled:
-          type: boolean
           description: Whether new account discounts may apply to future renewals. A fixed operator renewal agreement disables automatic discounts; catalog repricing or a newly selected purchase agreement enables them.
+          type: boolean
         currency:
           type: string
-        charge_type:
-          type: string
-          enum:
-          - postpaid
-          - prepaid
-          - one_time
+        type:
+          $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_type:
+          $ref: ./prices.yaml#/components/schemas/UsageType
+        dimensions:
+          description: The dimension values of what was bought, such as region and instance type. Empty when the purchase gave none.
+          type: object
+          additionalProperties:
+            type: string
         interval:
           type: string
           enum:
@@ -371,11 +285,7 @@ components:
           type: integer
           minimum: 1
         recurring_amount:
-          description: 'Whole-subscription prepaid renewal amount, after continuing discounts and before tax.
-
-            Pending subscriptions show base terms until paying the order fixes any new continuing discount.
-
-            Absent for other charge types.'
+          description: The whole licensed subscription's renewal amount, after continuing discounts and before tax. A pending subscription shows base terms until paying the order fixes any new discount. Absent for metered and one-time subscriptions.
           type: string
         termination_policy:
           $ref: ./prices.yaml#/components/schemas/TerminationPolicy
@@ -393,8 +303,7 @@ components:
           type: integer
           minimum: 0
         restrictions:
-          description: The operations currently prevented on the subscription, sorted. The subscription is suspended while
-            this contains billing.subscriptions.use.
+          description: The operations currently prevented on the subscription, sorted; it is suspended while this contains `billing.subscriptions.use`.
           type: array
           items:
             $ref: '#/components/schemas/SubscriptionRestriction'
@@ -404,18 +313,12 @@ components:
         cancellation:
           $ref: ./cancellations.yaml#/components/schemas/SubscriptionCancellation
         scheduled_change:
-          description: The accepted period-end change currently scheduled for this subscription. Null when no such change exists.
+          description: The accepted period-end change scheduled for this subscription; null when there is none.
           oneOf:
           - $ref: '#/components/schemas/ScheduledChange'
           - type: 'null'
         default_payment_method_id:
-          description: 'The saved payment method automatic renewal charges after the account''s balance and credits,
-
-            before the account''s default payment method. Set when the purchase, a renewal or a change is paid with a
-
-            saved payment method; paying any other way leaves it unchanged. It is used only while it belongs to the
-
-            account that pays the renewal.'
+          description: The saved payment method automatic renewal charges after balance and credits, before the account's default payment method. Set when a purchase, renewal or change is paid with a saved payment method. Used only while it belongs to the account paying the renewal.
           type:
           - string
           - 'null'
@@ -427,8 +330,7 @@ components:
           type: string
           format: uuid
         billing_account_id:
-          description: The billing account that made the purchase. Renewals of a project subscription are charged to the project's
-            current billing account.
+          description: The billing account that made the purchase. Renewals of a project subscription are charged to the project's current billing account.
           type: integer
           format: int64
         account:
@@ -436,19 +338,13 @@ components:
         product_id:
           $ref: ./products.yaml#/components/schemas/ProductID
         project_id:
-          description: 'Which project this is for. Absent when it was bought at account level, such as a
-
-            membership, which belongs to no single project.'
+          description: The project it is for. Absent for an account-level purchase, such as a membership.
           type:
           - string
           - 'null'
           format: uuid
         project:
-          description: 'The project and its current name, for display. Absent for a purchase at account level,
-
-            and when the project no longer exists or its details cannot be read at the moment;
-
-            `project_id` still identifies it then.'
+          description: The project and its current name. Absent for an account-level purchase or when the project cannot be read; `project_id` still identifies it.
           oneOf:
           - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
           - type: 'null'
@@ -465,43 +361,28 @@ components:
         quantity:
           type: string
         current_term_end:
-          description: 'When a prepaid subscription renews or expires, the end of the last service period bought.
-
-            Renewing several periods in advance moves it. Null until a new subscription becomes active, even when
-
-            its purchase has been paid, and for postpaid subscriptions.'
+          description: 'When a licensed subscription renews or expires: the end of the last period bought, moved by renewing in advance. Null until the subscription becomes active, even when its purchase has been paid, and for metered subscriptions.'
           type:
           - string
           - 'null'
           format: date-time
         current_period_start:
-          description: Start of the service period in effect now. Null when none is, including for postpaid subscriptions.
+          description: Start of the service period in effect now. Null when none is, including for metered subscriptions.
           type:
           - string
           - 'null'
           format: date-time
         current_period_end:
-          description: 'End of the service period in effect now. Renewing in advance moves `current_term_end`, not
-
-            this. Null when no period is in effect, including for postpaid subscriptions.'
+          description: End of the service period in effect now; renewing in advance moves `current_term_end`, not this. Null when no period is in effect, including for metered subscriptions.
           type:
           - string
           - 'null'
           format: date-time
         auto_renew:
-          description: A prepaid subscription renews automatically while this is on. A postpaid subscription always
-            continues until it is canceled; this is true until a cancellation is requested and cannot be set.
+          description: Whether a licensed subscription renews automatically. A metered subscription continues until it is canceled; for it this is true until a cancellation is requested, and cannot be set.
           type: boolean
         status:
-          description: 'pending means the purchase relationship exists but its order has not been accepted.
-
-            provisioning means the service accepted the order and is delivering. For a service-owned
-
-            purchase, only confirmed delivery moves it to active; paying alone does not.
-
-            canceled means cancellation completed, or an unfulfilled purchase was canceled or failed without delivery.
-
-            terminated means an administrator or the owning service immediately ended the commercial relationship.'
+          description: '`pending`: the order has not been accepted. `provisioning`: the owning service accepted the order and is delivering. `active`: delivery was confirmed; payment alone does not make a subscription active. `suspended`: service is stopped while a lien restricts its use. `canceled`: cancellation completed, or an undelivered purchase was canceled or failed. `terminated`: an operator or the owning service ended it immediately.'
           type: string
           enum:
           - pending
@@ -511,7 +392,7 @@ components:
           - canceled
           - terminated
         started_at:
-          description: Confirmed start of service. Null until a new subscription becomes active, including after payment.
+          description: When service started. Null until a new subscription becomes active, also after payment.
           type:
           - string
           - 'null'
@@ -532,7 +413,9 @@ components:
       - product_id
       - product
       - plan_name
-      - charge_type
+      - type
+      - usage_type
+      - dimensions
       - currency
       - interval
       - auto_renew
@@ -540,40 +423,26 @@ components:
       type: object
       properties:
         order_id:
-          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown
-            result.
+          description: The order ID, chosen by the caller. Creating it again conflicts; read the order after an unknown outcome.
           type: string
           format: uuid
         periods:
-          description: 'How many further periods to buy, each at the price this item already bills at.
-
-
-            Buying twelve monthly periods is not the same as buying one yearly term: a longer
-
-            term is usually sold at a lower price, and that price is only reached by naming the
-
-            interval. Use `interval_count` and `interval` for that.'
+          description: How many further periods to buy, each at the price the subscription already renews at. To buy a longer term at its own price, give `interval` and `interval_count` instead.
           type: integer
           default: 1
           minimum: 1
         interval_count:
-          description: 'Renew for a term of this length instead, at the price currently sold for it. Give
-
+          description: |-
+            Renew for a term of this length instead, at the price currently sold for it. Give
             `interval` with it.
 
-
             Leaving both out renews at the price this item already bills at, which a later price
-
             change does not affect. Naming a term that differs from the current one is a fresh
-
-            choice, so it is bought at today''s price. Naming the current term changes nothing. A
-
+            choice, so it is bought at today's price. Naming the current term changes nothing. A
             term sold at several prices that differ in termination policy is refused with 409
-
             `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `termination_policy` is given.
 
-
-            List the terms on offer with the renewal prices operation.'
+            List the terms on offer with the renewal prices operation.
           type: integer
           minimum: 1
         interval:
@@ -584,8 +453,7 @@ components:
           - month
           - year
         termination_policy:
-          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination
-            policy.
+          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination policy.
           allOf:
           - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
         payment_method_id:
@@ -605,12 +473,11 @@ components:
       - order_id
       additionalProperties: false
     RenewalOrderRequest:
-      description: The periods and price of the renewal, chosen as in renewing.
+      description: The renewal's periods and price, chosen as in renewing.
       type: object
       properties:
         order_id:
-          description: Purchase ID saved before submitting. Duplicate creation conflicts; query this order after an unknown
-            result.
+          description: The order ID, chosen by the caller. Creating it again conflicts; read the order after an unknown outcome.
           type: string
           format: uuid
         periods:

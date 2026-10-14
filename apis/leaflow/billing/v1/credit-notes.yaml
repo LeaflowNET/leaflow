@@ -2,7 +2,7 @@ paths:
   /api/v1/credit-notes:
     get:
       summary: List credit notes
-      description: Newest issued_at first, then ID. Requires authorization for the invoice's billing account. Filters narrow authorized results and apply before counting and paging.
+      description: Credit notes, newest first. Filters apply within the billing accounts you are authorized for.
       operationId: list-credit-notes
       tags:
       - credit-notes
@@ -49,7 +49,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
     get:
       summary: List credit note items
-      description: The original invoice lines reduced by this note. Requires authorization for their invoice's billing account.
+      description: The invoice lines this credit note reduced.
       operationId: list-credit-note-items
       tags:
       - credit-notes
@@ -68,7 +68,7 @@ paths:
 components:
   schemas:
     CreditNote:
-      description: An issued invoice reduction. Its credited amount is pre_payment_amount plus post_payment_amount. A paid credit records a return obligation; refund_id identifies its refund, whose outcome may still be pending. Original invoice amounts remain unchanged.
+      description: A reduction of an issued invoice; the original invoice amounts do not change. The credited amount is pre_payment_amount plus post_payment_amount. A paid part creates a refund, identified by refund_id, whose outcome may still be pending.
       type: object
       properties:
         id:
@@ -98,20 +98,17 @@ components:
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         post_payment_amount:
-          description: The credited part of payments already received. This is not proof that its refund has completed.
+          description: The credited part of payments already received; its refund may not have completed.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         refund_id:
-          description: The refund to the original payment sources, or null when no paid amount was credited.
+          description: The refund to the original payment sources; null when no paid amount was credited.
           type:
           - string
           - 'null'
           format: uuid
         reason:
-          description: |-
-            Why the note was issued. Notes from canceled, expired or failed orders carry the order's reason;
-            `usage_true_up` returns a tier price reduction settled after the original invoice; `operator` is
-            issued by Leaflow on request.
+          description: Why the note was issued. Notes for canceled, expired or failed orders carry the order's reason; `usage_true_up` returns a tier price reduction settled after the original invoice; `operator` was issued on request.
           type: string
           enum:
           - provisioning_failed

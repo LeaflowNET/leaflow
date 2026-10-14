@@ -4,24 +4,15 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
     post:
       summary: Create renewal order
-      description: 'Places a renewal order with a draft invoice, without applying a new discount or charging anything.
+      description: |-
+        Places a renewal order with a draft invoice, without applying a new discount or charging anything. Pay its
+        invoice to renew; a promotion code can be applied when paying. Existing subscription discounts are kept.
+        Periods and price are chosen as for renewing. The order can be paid until the current paid period ends, and
+        never after the end of the first period it renews; unpaid by then, it is canceled. While auto-renew is on, the
+        renewal due at the end of the period pays this order instead of placing another, applying an applicable
+        account discount first if its terms are not fixed yet.
 
-        Pay its invoice to renew; a promotion code can be applied when paying. Existing subscription
-
-        discount commitments are retained. The periods and price are chosen as for renewing. The order
-
-        can be paid until the current paid period ends, and never after the end of the first period it renews; unpaid by
-
-        then, it is canceled. While auto-renew is on, the renewal due at the end of the period pays
-
-        this order instead of placing another, applying an applicable account discount first if the
-
-        order''s terms are not fixed yet.
-
-
-        Save `order_id` before submitting and read the order after an unknown outcome; creating it a
-
-        second time conflicts.'
+        Keep `order_id` and read the order after an unknown outcome; creating it again conflicts.
       operationId: create-renewal-order
       tags:
       - orders
@@ -39,11 +30,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Order'
         '409':
-          description: 'The order already exists, or the subscription has an operation in progress, refused with
-
-            `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a change that is pending or paid and waiting
-
-            to switch, an open cancellation or a committed reclaim.'
+          description: 'The order already exists, or the subscription has an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a pending or paid change waiting to switch, an open cancellation or a committed reclaim.'
           content:
             application/json:
               schema:
@@ -53,11 +40,7 @@ paths:
   /api/v1/orders:
     get:
       summary: List orders
-      description: 'Lists acceptance status and associated invoice amounts. A pending order is not yet accepted;
-
-        its invoice shows whether it still needs payment. accepted means accepted, not delivered.
-
-        Pending orders can expire at expires_at.'
+      description: Orders with their status and invoice amounts. A pending order is not yet accepted and can expire at expires_at; its invoice shows whether payment is needed. Accepted does not mean delivered.
       operationId: list-orders
       tags:
       - orders
@@ -87,8 +70,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/OrderId
     get:
       summary: Get order
-      description: Returns an order charged to an owned billing account with its commercial state and invoice reference. An
-        unknown order returns 404; an order on another user account is forbidden.
+      description: An order of your billing account with its status and invoice. An unknown order returns 404; another user's order returns 403.
       operationId: get-order
       tags:
       - orders
@@ -106,41 +88,20 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/OrderId
     post:
       summary: Cancel order
-      description: 'Cancels the selected, still-undelivered items of an unaccepted order without recording a
+      description: |-
+        Cancels the selected undelivered items of an order that has not been accepted, without recording a delivery
+        failure. Omit order_item_ids to select every pending item. Delivered items stay delivered and are not
+        refunded; failed items keep their outcome. The order stays pending while any item is pending, and its final
+        status follows its items.
 
-        delivery failure. Omit order_item_ids to select every still-pending item, or name one or
+        Once the order's terms are fixed, the canceled items keep their agreed amounts and discounts: credit notes
+        reduce the issued invoice, and collected amounts return to their original payment sources, possibly
+        asynchronously. While a deferred order's terms are not fixed, the remaining items are priced again. An online
+        payment waiting for the payer is canceled with the order; one the gateway is processing is refused with
+        `BILLING_PAYMENT_PENDING` and `meta.transaction_id`. Repeating the cancellation does not refund twice.
 
-        more items. Successful items remain delivered and are not refunded. Whole-order and partial
-
-        cancellation both require confirmed non-delivery and necessary cleanup. The order keeps
-
-        its existing pending phase while any item is still pending; its final outcome follows all
-
-        item outcomes. Previously failed items keep their failure outcome.
-
-
-        Payment may be absent, partial or complete. Once the order''s terms are fixed, the selected items
-
-        keep their agreed amounts and discounts; credit notes reduce issued invoices, and collected amounts
-
-        are returned to their original payment sources. While the terms of a deferred order are not fixed,
-
-        the remaining items are priced again. External payment-method refunds can finish asynchronously.
-        An online payment still waiting for the payer is canceled with the order; one the gateway is
-        already processing is refused with `BILLING_PAYMENT_PENDING` and `meta.transaction_id`.
-
-        The order and financial history are retained; the same cancellation does not refund twice.
-
-
-        Once the order is accepted, its owning service coordinates cancellation and confirms
-
-        non-delivery and cleanup through the cancellation RPC. Delivered items are ended through
-
-        subscription cancellation. Unknown delivery or payment outcomes are not refund evidence;
-
-        in-flight or unknown payments must be reconciled first. Scheduled changes continue to be
-
-        canceled through the owning service. Refund quotations use CreateQuote.refund.'
+        An accepted order is canceled by its owning service, and delivered items through subscription cancellation.
+        Refunds are quoted with the quote operation's `refund` target.
       operationId: cancel-order
       tags:
       - orders
@@ -158,8 +119,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Order'
         '409':
-          description: The order is accepted, its payment outcome is unresolved, or the scheduled change requires its owning
-            service.
+          description: The order is accepted, its payment outcome is unresolved, or the scheduled change must be called off by its owning service.
           content:
             application/json:
               schema:
@@ -190,19 +150,7 @@ paths:
 components:
   schemas:
     OrderStatus:
-      description: 'Follows the items. `pending` is not yet accepted and may be unpaid or paid; its invoice shows
-
-        whether payment is still needed, and it can expire or be canceled. `accepted` is accepted with items still
-
-        being set up. `completed` means every item was set up. `partially_completed` means some items were set up
-
-        and the others failed or were canceled and were refunded to their original payment sources. `failed` means
-
-        no item was delivered and at least one failed; collected amounts for the undelivered items are refunded.
-
-        `canceled` means every item was withdrawn without delivery; collected amounts are returned to their original
-
-        payment sources. No status establishes service delivery by itself.'
+      description: 'Follows the items. `pending`: not yet accepted, paid or unpaid; its invoice shows whether payment is needed, and it can expire or be canceled. `accepted`: items are being set up. `completed`: every item was set up. `partially_completed`: some items were set up and the others failed or were canceled and refunded to their original payment sources. `failed`: no item was delivered and at least one failed; amounts collected for undelivered items are refunded. `canceled`: every item was withdrawn without delivery; collected amounts are returned to their original payment sources. No status by itself means the service was delivered.'
       type: string
       enum:
       - pending
@@ -212,14 +160,7 @@ components:
       - failed
       - canceled
     OrderItemStatus:
-      description: '`pending` is waiting to be set up. `completed` was confirmed by the service.
-
-        `failed` was not set up and its amount was refunded to the original payment sources.
-
-        `canceled` was confirmed withdrawn without delivery; any collected amount is returned. A completed item is ended by
-        canceling
-
-        its subscription.'
+      description: '`pending`: waiting to be set up. `completed`: set up, as confirmed by the service. `failed`: not set up; its amount was refunded to the original payment sources. `canceled`: withdrawn without delivery; any collected amount is returned. A completed item ends when its subscription is canceled.'
       type: string
       enum:
       - pending
@@ -227,15 +168,7 @@ components:
       - failed
       - canceled
     Order:
-      description: 'A recorded purchase with its invoice from placement; a zero-total invoice, such as for postpaid
-
-        admission, is issued and paid at placement whatever the checkout mode. Until checkout_confirmed_at is set, the
-
-        invoice is a draft at base prices: paying it fixes the discount and amount, issues it and collects it, and the
-
-        order cannot be accepted before then. Coupon fields describe the discount fixed at that point and are absent
-
-        before it; a quote never populates them. Payment and acceptance remain separate from resource delivery.'
+      description: 'A recorded purchase with its invoice from placement; a zero-total invoice, such as for a metered purchase, is issued and paid at placement in either checkout mode. Until checkout_confirmed_at is set, the invoice is a draft at base prices: paying it fixes the discount and amount, issues it and collects it, and the order cannot be accepted before then. Coupon fields describe the discount fixed then and are absent before. Payment and acceptance do not mean the resources were delivered.'
       type: object
       properties:
         coupon_id:
@@ -247,7 +180,7 @@ components:
           type: string
           format: uuid
         promotion_code:
-          description: Code text frozen when the coupon was applied. Absent for an account discount.
+          description: The promotion code applied. Absent for an account discount.
           type: string
         invoice_id:
           description: The order's invoice, the same as invoice.id.
@@ -268,37 +201,24 @@ components:
           type: string
           format: uuid
         project_id:
-          description: 'Which project it was bought for. Absent for a purchase made at account level, such
-
-            as a membership.'
+          description: The project it was bought for. Absent for an account-level purchase, such as a membership.
           type:
           - string
           - 'null'
           format: uuid
         project:
-          description: 'The project and its current name, for display. Absent for a purchase at account level,
-
-            and when the project no longer exists or its details cannot be read at the moment;
-
-            `project_id` still identifies it then.'
+          description: The project and its current name. Absent for an account-level purchase or when the project cannot be read; `project_id` still identifies it.
           oneOf:
           - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
           - type: 'null'
         billing_account_id:
-          description: 'The billing account the order was placed with. It does not change when the project is later
-
-            linked to another billing account. While this account is suspended or closed the order cannot
-
-            be accepted, and the invoice of a change scheduled for the end of a period is not issued and the change is called off
-
-            when the current period ends; such requests fail with BILLING_ACCOUNT_UNAVAILABLE.'
+          description: The billing account the order was placed with, unchanged when the project is later linked to another account. While it is suspended or closed, the order cannot be accepted, and a period-end change's invoice is not issued and the change is called off when the current period ends; such requests fail with `BILLING_ACCOUNT_UNAVAILABLE`.
           type: integer
           format: int64
         currency:
           type: string
         type:
-          description: '`new` buys, `renew` extends a prepaid subscription, `modify` changes a subscription''s
-            configuration or billing terms.'
+          description: '`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription''s configuration or billing terms.'
           type: string
           enum:
           - new
@@ -307,31 +227,20 @@ components:
         status:
           $ref: '#/components/schemas/OrderStatus'
         change_effective:
-          description: 'When a plan change takes effect. `none` on anything that is not a change.
-
-
-            `period_end` orders stay pending until the first period at the new price is paid. That period
-
-            is invoiced shortly before the current paid period ends and starts when it ends; if the
-
-            invoice is still unpaid by then, the order is canceled and the subscription renews or ends as
-
-            usual. Renewing in the meantime moves all of this along with it.'
+          description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced shortly before the current paid period ends and starts when it ends; if the invoice is unpaid by then, the order is canceled and the subscription renews or ends as usual. A renewal in the meantime moves the change to the end of the renewed period.
           type: string
           enum:
           - none
           - immediate
           - period_end
         expires_at:
-          description: Acceptance deadline. Pending orders can expire automatically.
+          description: Acceptance deadline; a pending order expires after it.
           type:
           - string
           - 'null'
           format: date-time
         checkout_confirmed_at:
-          description: 'When the discount and amount were fixed: at placement for automatic checkout and for a
-
-            zero total, otherwise when the invoice was first paid. Null while a deferred order awaits payment.'
+          description: 'When the discount and amount were fixed: at placement for automatic checkout or a zero total, otherwise when the invoice was first paid. Null while a deferred order awaits payment.'
           type:
           - string
           - 'null'
@@ -340,9 +249,7 @@ components:
           type: string
           format: date-time
         items:
-          description: 'What was bought. Present on a single order and on every order in a list, so a list
-
-            can be rendered without a further request per row.'
+          description: What was bought.
           type: array
           items:
             $ref: '#/components/schemas/OrderItem'
@@ -368,15 +275,13 @@ components:
       - items
       - pagination
     PaidWith:
-      description: 'How it was paid. Removing the payment method afterwards does not change it; `payment_method_id`
-
-        then names a removed payment method.'
+      description: How it was paid. `payment_method_id` still names the payment method after it is removed.
       type: object
       properties:
         method_type:
-          description: '`balance` when the account''s balance and credits covered it in full. Otherwise the method used
-
-            with the gateway, such as `card`.'
+          description: |-
+            `balance` when the account's balance and credits covered it in full. Otherwise the method used
+            with the gateway, such as `card`.
           type: string
         payment_gateway:
           description: The gateway that collected it. Absent when `method_type` is `balance`.
@@ -392,31 +297,19 @@ components:
       required:
       - method_type
     PurchaseOperation:
-      description: 'Which purchase operation this applies to. `new` covers every new purchase, including
-
-        zero-charge purchases. It does not mean the account''s first purchase; use
-
-        `first_purchase_only` for that restriction. `renew` covers renewals. `modify` covers
-
-        configuration or billing-term changes, including changes that increase or decrease
-
-        the amount due and changes with no additional charge or refund.'
+      description: 'The purchase operation covered. `new`: every new purchase, including zero-charge ones; it does not mean the account''s first purchase, which `first_purchase_only` restricts. `renew`: renewals. `modify`: configuration or billing-term changes, whether they charge, refund or neither.'
       type: string
       enum:
       - new
       - renew
       - modify
     OrderItem:
-      description: 'Frozen purchase terms. Monetary fields come from related invoice-line snapshots and are zero
-
-        for a line with no immediate charge, such as postpaid admission. Later catalog changes do not reprice this line. A new service
-
-        purchase creates its pending subscription when this item is recorded, not when payment succeeds.'
+      description: The purchase terms frozen at placement. Monetary fields come from the order's invoice lines and are zero without an immediate charge, such as for a metered purchase. Later catalog changes do not reprice the line. A new service purchase has its pending subscription from placement.
       type: object
       properties:
         renewal_discounts_enabled:
-          type: boolean
           description: Whether new account discounts may apply to future renewals. A fixed operator renewal agreement disables automatic discounts; catalog repricing or a newly selected purchase agreement enables them.
+          type: boolean
         invoice_item_ids:
           description: Financial lines produced by this purchase item, including setup charges.
           type: array
@@ -430,11 +323,7 @@ components:
           type: object
           additionalProperties: true
         subscription_id:
-          description: 'Stable Billing subscription ID. A new prepaid or postpaid service purchase returns the
-
-            pending subscription here; renewals and changes reference the existing subscription, which
-
-            keeps its ID. Absent for delivery without a subscription. This is not a business resource ID.'
+          description: 'The Billing subscription: the new pending subscription of a recurring purchase, or the existing one renewed or changed, which keeps its ID. Absent for a purchase without a subscription.'
           type: string
           format: uuid
         interval:
@@ -452,19 +341,12 @@ components:
         refund_policy:
           $ref: ./prices.yaml#/components/schemas/RefundPolicy
         refund_monthly_amount:
-          description: 'Prepaid items only: the plan''s one-month prepaid price for this item''s quantity before tax, frozen
-
-            at purchase, used to value time used under a prorated refund or a downgrade. Null when the plan has
-
-            no prepaid period shorter than the one bought.'
+          description: 'Recurring licensed items only: the plan''s one-month licensed price for this item''s quantity, before tax and frozen at purchase, used to value time under a prorated refund or a downgrade. Null when the plan has no licensed period shorter than the one bought.'
           type:
           - string
           - 'null'
         refund_hourly_amount:
-          description: 'Prepaid items only: the plan''s postpaid hourly price for this item''s quantity before tax, frozen
-            at
-
-            purchase, used for time used short of a full month. Null when the plan has no postpaid price.'
+          description: Recurring licensed items only, the plan's metered hourly price for this item's quantity before tax, frozen at purchase, used for time used short of a full month. Null when the licensed price has no meter.
           type:
           - string
           - 'null'
@@ -472,13 +354,15 @@ components:
           type: string
         setup_amount:
           type: string
-        charge_type:
-          description: The payment timing of the selected price.
-          type: string
-          enum:
-          - postpaid
-          - prepaid
-          - one_time
+        type:
+          $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_type:
+          $ref: ./prices.yaml#/components/schemas/UsageType
+        dimensions:
+          description: The dimension values the line was bought with, such as region and instance type. Empty when the purchase gave none.
+          type: object
+          additionalProperties:
+            type: string
         tax_amount:
           description: Total tax after discounts, including any tax already included in the price.
           type: string
@@ -504,53 +388,27 @@ components:
           type: string
           format: uuid
         plan_name:
-          description: 'What it was called when bought. It does not follow later catalogue renames and is
-
-            not translated.'
+          description: The name when bought.
           type: string
         quantity:
           type: string
         unit_amount:
-          description: 'The unit amount of the price this line is charged under. Absent for a tiered price, which has no
-
-            single unit amount, and for a change that takes effect at once, which is charged as `gross_amount`
-
-            describes.'
+          description: The unit amount of the price the line is charged under. Absent for a tiered price, and for an immediate change, which is charged as `gross_amount` describes.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         gross_amount:
-          description: 'Before discounts: the price applied to the quantity, which for a per-unit price is `unit_amount`
+          description: |-
+            Before discounts and setup fees: the price applied to the quantity, `unit_amount` times `quantity` for a per-
+            unit price, raised by any minimum charge. For an immediate upgrade it is the new price for the rest of the
+            paid period minus the amount paid for that time; a downgrade, or a change between equal period prices, charges
+            nothing.
 
-            times `quantity`; a minimum charge can make it higher. For an upgrade that takes effect at once it is
-
-            the new price for the time left in the paid period, at the subscription''s own period price, minus
-
-            the amount paid for that time, and the period end does not move; a downgrade charges nothing and may refund the
-
-            difference instead. A change between equal period prices charges and refunds nothing. The setup fee is not part
-            of it; see `setup_amount`.
-
-
-            Under an inclusive tax rate it includes tax, as the price does, and the included part is
-
-            `tax_included_amount`. A renewal at the agreed terms is the exception: the agreed amount excludes
-
-            tax, and tax is added to it.'
+            Under an inclusive tax rate it includes tax, shown in `tax_included_amount`, except for a renewal at agreed
+            terms, whose amount excludes tax.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         discount_amount:
-          description: 'The reduction on this line: from the coupon the order uses and, for a renewal at the agreed terms,
-
-            from the discount the subscription carries.
-
-
-            A carried discount is part of the agreed amount. It is listed here, and `gross_amount` is then
-
-            `unit_amount` times `quantity`, except in two cases where `gross_amount` is the agreed amount and
-
-            the carried discount is already reflected in it: the renewal order also uses a coupon the account
-
-            holds, or the account''s tax rate is inclusive.'
+          description: 'The reduction on this line, from the order''s coupon and, for a renewal at agreed terms, from the subscription''s carried discount. With a carried discount, `gross_amount` is `unit_amount` times `quantity`, except when the renewal order also uses an account coupon or the tax rate is inclusive: then `gross_amount` is the agreed amount, which already reflects the carried discount.'
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount:
@@ -560,9 +418,7 @@ components:
         currency:
           type: string
         period_start:
-          description: The start of the service period this line paid for. Frozen at placement for renewals and
-            period-end changes; for a prepaid line of a new purchase, fixed from the second its invoice is paid and kept
-            when delivery is confirmed. Absent for postpaid and one-time lines.
+          description: The start of the service period this line paid for. Fixed at placement for renewals and period-end changes, and for a licensed line of a new purchase when its invoice is paid. Absent for metered and one-time lines.
           type:
           - string
           - 'null'
@@ -582,7 +438,9 @@ components:
       - currency
       - plan_id
       - plan_name
-      - charge_type
+      - type
+      - usage_type
+      - dimensions
       - interval
       - status
     OrderItemList:
@@ -601,8 +459,7 @@ components:
       type: object
       properties:
         order_item_ids:
-          description: Omit to select all still-pending items. Explicit selections name one or more items of this order; successful
-            items cannot be reversed here.
+          description: Omit to select all still-pending items. Explicit selections name one or more items of this order; successful items cannot be reversed here.
           type: array
           minItems: 1
           maxItems: 100

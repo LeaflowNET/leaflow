@@ -2,24 +2,23 @@ paths:
   /api/v1/transactions:
     get:
       summary: List transactions
-      description: Paginated ledger entries for owned billing accounts, optionally filtered by billing_account_id and
-        creation interval. Each entry retains its amount, currency and any referenced credit grant.
+      description: Ledger entries of your billing accounts, filtered by billing_account_id and creation time.
       operationId: list-transactions
       tags:
-        - transactions
+      - transactions
       parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-        - $ref: ./openapi.yaml#/components/parameters/From
-        - $ref: ./openapi.yaml#/components/parameters/To
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - $ref: ./openapi.yaml#/components/parameters/From
+      - $ref: ./openapi.yaml#/components/parameters/To
       responses:
-        "200":
+        '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TransactionList"
+                $ref: '#/components/schemas/TransactionList'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -28,13 +27,13 @@ components:
       description: topup adds to the balance; payment settles an invoice; refund returns original funds; adjustment changes the balance with an audit reason.
       type: string
       enum:
-        - topup
-        - payment
-        - refund
-        - adjustment
-        - fee
+      - topup
+      - payment
+      - refund
+      - adjustment
+      - fee
     Transaction:
-      description: A funds operation. Each payment has one source; refunds identify the original successful transaction. Unknown gateway results remain pending. Payments from the balance or a gateway are distinct from credit-grant payments.
+      description: A funds movement with one source. Refunds name the original transaction. Unknown gateway results stay pending.
       type: object
       properties:
         invoice_id:
@@ -53,28 +52,20 @@ components:
           type: string
           format: uuid
         refund_destination:
-          description: |-
-            Present on refunds. Where this part of the refund goes.
-
-            - `balance`: back to the account balance.
-            - `credit`: back to the credit grant that paid, which keeps its original expiry.
-            - `gateway`: back to the payment method it was paid with.
+          description: 'Present on refunds: where this part goes. `balance`: the account balance. `credit`: the credit grant that paid, keeping its original expiry. `gateway`: the payment method it was paid with.'
           type: string
           enum:
-            - balance
-            - credit
-            - gateway
+          - balance
+          - credit
+          - gateway
         status:
-          description: |-
-            `failed` means the operation did not succeed; for a gateway payment, that the gateway declined
-            it. `canceled` means a gateway payment was withdrawn without collecting money. After either,
-            an invoice the payment was meant to pay remains open for another payment.
+          description: '`failed`: the operation did not succeed; for a gateway payment, the gateway declined it. `canceled`: a gateway payment was withdrawn without collecting money. Either way, the invoice it was for stays open.'
           type: string
           enum:
-            - pending
-            - succeeded
-            - failed
-            - canceled
+          - pending
+          - succeeded
+          - failed
+          - canceled
         cancellation_reason:
           $ref: ./payments.yaml#/components/schemas/PaymentCancellationReason
           description: Why the payment was withdrawn. Present with `canceled`.
@@ -83,13 +74,7 @@ components:
         method_type:
           type: string
         failure_reason:
-          description: |-
-            Why it failed. Present with `failed`. For a declined gateway payment the value is the
-            gateway's own code, passed on unchanged: the card issuer's decline code when there is one
-            (Stripe's decline_code, such as insufficient_funds or lost_card), otherwise the gateway's
-            error code (Stripe's code, such as card_declined, expired_card or
-            payment_intent_authentication_failure). Clients map it to their own wording and treat an
-            unknown value as a generic decline.
+          description: 'Why it failed; present with `failed`. For a declined gateway payment, the gateway''s code unchanged: the issuer''s decline code when there is one (Stripe decline_code, such as insufficient_funds), otherwise the gateway''s error code (Stripe code, such as card_declined). Treat an unknown value as a generic decline.'
           type: string
         settled_at:
           type: string
@@ -101,21 +86,15 @@ components:
           type: integer
           format: int64
         type:
-          $ref: "#/components/schemas/TransactionType"
+          $ref: '#/components/schemas/TransactionType'
         amount:
-          description: |-
-            Signed by type: positive for `topup` and `payment`, negative for `refund`.
-            An `adjustment` is positive when it adds to the balance and negative when it takes from
-            it. For the other types the sign does not tell the effect on the balance: a payment from
-            the balance lowers it, while a payment by gateway or by credit leaves it unchanged.
+          description: 'Signed by type: positive for `topup` and `payment`, negative for `refund`. An `adjustment` is positive when it adds to the balance and negative when it takes from it. For other types the sign does not show the effect on the balance: a payment from balance lowers it, a payment by gateway or credit does not.'
           allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         remaining_amount:
-          description: |-
-            How much of this transaction is still available in the balance. Only top-ups, positive
-            adjustments and gateway payments later returned to the balance can be non-zero.
+          description: How much of this transaction is still in the balance. Only top-ups, positive adjustments and gateway payments returned to the balance can be non-zero.
           allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         reason:
@@ -124,12 +103,12 @@ components:
           type: string
           format: date-time
       required:
-        - id
-        - type
-        - amount
-        - remaining_amount
-        - currency
-        - created_at
+      - id
+      - type
+      - amount
+      - remaining_amount
+      - currency
+      - created_at
       additionalProperties: false
     TransactionList:
       type: object
@@ -137,9 +116,9 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Transaction"
+            $ref: '#/components/schemas/Transaction'
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-        - items
-        - pagination
+      - items
+      - pagination

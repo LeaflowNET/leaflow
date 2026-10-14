@@ -1,25 +1,23 @@
 paths:
   /api/v1/plans/{planId}:
     parameters:
-      - name: planId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
+    - name: planId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     get:
       summary: Get a sellable item
-      description: |-
-        Resolves a stored identifier into something that can be displayed. Returns items that are
-        no longer on sale: an existing purchase still refers to one.
+      description: A plan, including one no longer on sale.
       operationId: get-plan
       tags:
-        - plans
+      - plans
       security: []
       parameters:
-        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+      - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
       responses:
-        "200":
+        '200':
           description: OK
           headers:
             ETag:
@@ -29,45 +27,42 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Plan"
-        "304":
+                $ref: '#/components/schemas/Plan'
+        '304':
           description: Not Modified
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/plans:
     parameters:
-      - name: product_id
-        in: query
-        required: true
-        schema:
-          $ref: ./products.yaml#/components/schemas/ProductID
+    - name: product_id
+      in: query
+      required: true
+      schema:
+        $ref: ./products.yaml#/components/schemas/ProductID
     get:
       summary: List catalog plans
-      description: Paginated active plans for the required product_id, with their feature allocations. An unknown
-        product returns 404; If-None-Match can return 304 for an unchanged page.
+      description: Active plans of product_id with their features. An unknown product returns 404; If-None-Match returns 304 for an unchanged page.
       operationId: list-plans
       tags:
-        - plans
+      - plans
       security: []
       parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-        - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
       responses:
-        "200":
+        '200':
           description: OK
           headers:
             ETag:
-              description: |-
-                Changes whenever the catalogue changes. Send it back as `If-None-Match`
-                to be told `304` instead of receiving the same listing again.
+              description: Changes whenever the catalogue changes. Send it as `If-None-Match` to receive `304` for an unchanged response.
               schema:
                 type: string
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanList"
-        "304":
+                $ref: '#/components/schemas/PlanList'
+        '304':
           $ref: ./openapi.yaml#/components/responses/NotModified
         default:
           $ref: ./openapi.yaml#/components/responses/Error
@@ -86,7 +81,7 @@ components:
         features:
           type: array
           items:
-            $ref: "#/components/schemas/PlanFeature"
+            $ref: '#/components/schemas/PlanFeature'
         id:
           type: string
           format: uuid
@@ -97,24 +92,24 @@ components:
         description:
           type: string
       required:
-        - product
-        - features
-        - active
-        - id
-        - product_id
-        - name
+      - product
+      - features
+      - active
+      - id
+      - product_id
+      - name
     PlanList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Plan"
+            $ref: '#/components/schemas/Plan'
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-        - items
-        - pagination
+      - items
+      - pagination
     PlanFeature:
       type: object
       properties:
@@ -123,5 +118,5 @@ components:
         name:
           type: string
       required:
-        - feature
-        - name
+      - feature
+      - name

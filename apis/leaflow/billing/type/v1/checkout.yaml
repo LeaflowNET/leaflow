@@ -7,10 +7,6 @@ paths: {}
 components:
   schemas:
     CheckoutMode:
-      type: string
-      enum:
-      - automatic
-      - deferred
       description: |-
         automatic applies the best applicable account discount, issues the invoice and pays it from eligible
         credit grants and available balance at placement. Insufficient funds fail the purchase with HTTP 422
@@ -19,26 +15,30 @@ components:
         invoice through Billing applies a promotion code or the best applicable account discount, issues the
         invoice and collects it; an order still unpaid at its deadline expires. A zero-total invoice is issued
         and paid at placement in either mode.
+      type: string
+      enum:
+      - automatic
+      - deferred
     CheckoutOptions:
-      type: object
-      properties:
-        mode:
-          allOf:
-          - $ref: '#/components/schemas/CheckoutMode'
-          default: automatic
-        expected_amount:
-          allOf:
-          - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
-          description: |-
-            Expected invoice total after discounts and tax, before applying credit grants or balance.
-            A different total fails with BILLING_AMOUNT_CHANGED without charging or reserving a discount.
-            Accepted only in automatic mode; with deferred it is refused with HTTP 400. For deferred
-            checkout, give the expected amount when paying the invoice through Billing.
-      additionalProperties: false
       description: |-
         Shared checkout choices for a product purchase. Omitting this object or mode selects
         automatic checkout. Each purchase creates its own order. Promotion codes are supplied only to
         Billing quote and payment operations. A service may retain a failed creation record when Billing
         refuses a purchase; no infrastructure is created for that refusal.
+      type: object
+      properties:
+        mode:
+          default: automatic
+          allOf:
+          - $ref: '#/components/schemas/CheckoutMode'
+        expected_amount:
+          description: |-
+            Expected invoice total after discounts and tax, before applying credit grants or balance.
+            A different total fails with BILLING_AMOUNT_CHANGED without charging or reserving a discount.
+            Accepted only in automatic mode; with deferred it is refused with HTTP 400. For deferred
+            checkout, give the expected amount when paying the invoice through Billing.
+          allOf:
+          - $ref: ../../../type/v1/money.yaml#/components/schemas/Money
+          - type: string
+            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+      additionalProperties: false

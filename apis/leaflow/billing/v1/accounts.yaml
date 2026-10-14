@@ -2,9 +2,7 @@ paths:
   /api/v1/currencies:
     get:
       summary: List currencies accounts can be opened in
-      description: 'The currencies a new billing account can be opened in. A retired currency is not listed,
-
-        although accounts already opened in it keep working. Results are paginated.'
+      description: Currencies a new billing account can be opened in; retired currencies are not listed.
       operationId: list-currencies
       tags:
       - accounts
@@ -23,8 +21,7 @@ paths:
   /api/v1/billing-accounts:
     get:
       summary: List billing accounts
-      description: Paginated billing accounts owned by the authenticated user. Accounts owned by other users are
-        excluded; the result is empty when the user owns none.
+      description: Billing accounts owned by the authenticated user.
       operationId: list-billing-accounts
       tags:
       - accounts
@@ -42,12 +39,7 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
       summary: Create billing account
-      description: 'The currency is chosen here and cannot be changed afterwards. Everything charged to the
-
-        account — prices, orders, invoices, balance — is denominated in it.
-
-
-        One person may hold several accounts, for example a personal one and one for a team.'
+      description: 'Creates a billing account. Its currency is fixed: prices, orders, invoices and balance are all in it.'
       operationId: create-billing-account
       tags:
       - accounts
@@ -71,8 +63,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: Get billing account
-      description: Returns an owned account settlement currency, lifecycle state and selected invoice contact. Returns
-        404 if the account does not exist and 403 if it belongs to another user.
+      description: Your billing account with its currency, status and invoice contact. Returns 404 if it does not exist and 403 if it belongs to another user.
       operationId: get-billing-account
       tags:
       - accounts
@@ -87,10 +78,7 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     patch:
       summary: Update billing account
-      description: |-
-        Select an active contact belonging to this account for future invoices. Its legal name,
-        address and tax identifier are copied when an invoice is issued; issued snapshots are
-        retained. Set invoice_contact_id to null to clear the selection. The currency cannot change.
+      description: Selects an active contact of this account for future invoices; its legal name, address and tax identifier are copied when an invoice is issued. Set invoice_contact_id to null to clear it. The currency cannot change.
       operationId: update-billing-account
       tags:
       - accounts
@@ -114,9 +102,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: Get account balance
-      description: Returns the owned account balance, applicable credit groups, unpaid invoice amounts, unbilled
-        estimates and pending returns separately. Returns 404 for a missing account and 403 for an account owned by
-        another user.
+      description: The balance of your account, with credit groups, unpaid invoice amounts, unbilled estimates and pending returns. Returns 404 for a missing account and 403 for another user's account.
       operationId: get-account-balance
       tags:
       - accounts
@@ -132,8 +118,7 @@ paths:
   /api/v1/assignments:
     get:
       summary: List project assignments
-      description: Paginated current project assignments to accounts owned by the authenticated user. Filter by
-        billing_account_id or project_ids; historical financial records keep their original account assignment.
+      description: Current project assignments to your billing accounts, filtered by billing_account_id or project_ids. Past charges keep the account they were assigned to.
       operationId: list-project-assignments
       tags:
       - accounts
@@ -161,9 +146,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/ProjectId
     get:
       summary: Get project assignment
-      description: 'Returns the current assignment for the project identified by projectId. Returns 404 when
-
-        no billing account is assigned; no resources can be created until one is assigned.'
+      description: The project's current assignment. Returns 404 when no billing account is assigned; the project cannot create resources until one is.
       operationId: get-project-assignment
       tags:
       - accounts
@@ -178,25 +161,14 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     put:
       summary: Set project assignment
-      description: 'Charges already incurred remain with the billing account that was linked when they
+      description: |-
+        Links the project to another billing account. Charges already incurred stay with the account linked when they
+        occurred and are invoiced to it; metered resources are settled up to the moment of the change. Amounts the
+        previous account owes do not prevent the change. Orders keep the account they were placed with; paid periods
+        are unaffected, and renewals are charged to the new account.
 
-        occurred, and are still invoiced to it. Metered resources are settled up to the moment of
-
-        the change. Amounts owed by the previous billing account remain owed by it and do not
-
-        prevent the change.
-
-
-        Orders keep the billing account they were placed with and are fulfilled as placed. Periods
-
-        already paid for are unaffected; renewals are charged to the new billing account.
-
-
-        The request is refused once the project no longer accepts purchases because it is being
-
-        deleted, and while a subscription or an order in progress in the project uses a currency
-
-        other than that of the new billing account.'
+        Refused once the project no longer accepts purchases because it is being deleted, and while a subscription or
+        an in-progress order of the project uses a currency other than the new account's.
       operationId: set-project-assignment
       tags:
       - accounts
@@ -217,24 +189,7 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
       summary: Unlink project billing account
-      description: 'Ends the project''s current assignment without deleting its assignment history.
-
-
-        Permitted only when nothing in the project is still running or in progress: no metered
-
-        resources, no subscriptions that have not ended, and no orders in progress, including
-
-        changes scheduled for the end of a period. Orders are not modified by this request; wait
-
-        for them to complete, and have the service that scheduled a change call it off.
-
-
-        Charges already incurred remain with the billing account and are invoiced to it as usual.
-
-        Amounts the billing account owes do not prevent unlinking.
-
-
-        After this the project cannot make purchases until a billing account is linked again.'
+      description: Ends the project's current assignment; the assignment history is kept. Allowed only when the project has no metered resources, no subscriptions that have not ended and no orders in progress, including period-end changes; orders are not modified, so wait for them to complete. Charges already incurred stay with the billing account and are invoiced as usual; amounts it owes do not prevent unlinking. The project cannot make purchases until a billing account is linked again.
       operationId: unlink-project-billing-account
       tags:
       - accounts
@@ -249,7 +204,7 @@ components:
       type: object
       properties:
         invoice_contact_id:
-          description: The active contact used for invoicing. Must belong to this account; null clears the selection.
+          description: The active contact used for invoices, of this account; null clears it.
           type:
           - string
           - 'null'
@@ -258,7 +213,7 @@ components:
           type: integer
           format: int64
         name:
-          description: What you call this account.
+          description: Your name for the account.
           type: string
         currency:
           description: Fixed when the account was opened.
@@ -270,21 +225,17 @@ components:
           - suspended
           - closed
         grace_amount:
-          description: 'How far past the suspension threshold this account may go before its resources are
-
-            suspended. "0" means none: the account is suspended as soon as it crosses the threshold.'
+          description: How far past the suspension threshold the account may go before its resources are suspended; `0` means none.
           type: string
         grace_period_seconds:
-          description: 'How long this account has to top up after crossing the suspension threshold.
-
-            0 means none. Whichever runs out first — this or grace_amount — ends the grace.'
+          description: How long the account has to top up after crossing the suspension threshold, in seconds; `0` means none. Grace ends when this or grace_amount runs out.
           type: integer
           format: int64
         closed_at:
-          description: |-
-            The actual time this account was closed, in UTC (RFC 3339).
-            Null or absent if the account is not closed or its historical close time is unknown.
-          type: [string, "null"]
+          description: When the account was closed. Null if it is not closed or the time is unknown.
+          type:
+          - string
+          - 'null'
           format: date-time
           readOnly: true
         created_at:
@@ -305,7 +256,7 @@ components:
           minLength: 3
           maxLength: 3
         exponent:
-          description: Decimal places of the currency, the ISO 4217 minor unit.
+          description: Decimal places of the ISO 4217 minor unit.
           type: integer
           format: int32
           minimum: 0
@@ -353,7 +304,7 @@ components:
       type: object
       properties:
         invoice_contact_id:
-          description: The active contact used for invoicing. Must belong to this account; null clears the selection.
+          description: The active contact used for invoices, of this account; null clears it.
           type:
           - string
           - 'null'
@@ -375,24 +326,19 @@ components:
       - items
       - pagination
     AccountBalance:
-      description: Account balance, credits, and unpaid charges are reported separately.
+      description: Balance, credits and unpaid charges, each reported separately.
       type: object
       properties:
         available_credit:
-          description: Balance minus pending balance returns and the part of unbilled_amount and due that
-            estimated_credit_applied does not cover. Negative only when the balance and applicable credit fall short of
-            what the account owes.
+          description: Balance minus pending balance returns and the part of unbilled_amount and due that estimated_credit_applied does not cover. Negative only when the balance and applicable credit fall short of what the account owes.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         estimated_credit_applied:
-          description: Credit expected to pay unbilled_amount and due. Each charge is matched to grants whose scope,
-            validity and conditions it meets, in the order credit is applied at payment. Nothing is reserved or deducted
-            until an invoice is paid, so credits still includes this amount.
+          description: Credit expected to pay unbilled_amount and due, matching each charge to the grants whose scope, validity and conditions it meets, in the order credit is applied at payment. Nothing is deducted until an invoice is paid, so credits still includes this amount.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         unbilled_amount:
-          description: Current estimate of rated usage that has not been invoiced. Final pricing and tax are fixed
-            at issuance.
+          description: Current estimate of priced usage that has not been invoiced. Final pricing and tax are fixed at issuance.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         billing_account_id:
@@ -401,43 +347,29 @@ components:
         currency:
           type: string
         balance:
-          description: 'Prepaid funds in the account currency, excluding credits. May be negative after a payment
-
-            dispute. Outstanding charges are reported separately in due; this value is not a withdrawal quote.'
+          description: Topped-up funds in the account's currency, excluding credits. May be negative after a payment dispute. Amounts owed are reported in due; this is not a withdrawable amount.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credits:
-          description: 'The recorded remaining credit, including restricted grants. It is not withdrawable
-
-            and is not part of balance. credit_groups describes currently valid credit by permitted use; a positive
-
-            credits balance does not imply that due is zero.'
+          description: Remaining credit, including restricted grants; not withdrawable and not part of balance. credit_groups shows currently valid credit by permitted use; positive credits do not mean due is zero.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         restricted_credits:
-          description: Currently valid credit whose use has applicable product, operation or eligibility conditions.
-            Included in credits, separate from the balance.
+          description: Currently valid credit restricted to certain products, operations or conditions; part of credits, not of balance.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_groups:
-          description: 'Currently valid, unspent credit grouped by permitted use. Restrictions and
-
-            validity dates determine which charges a group can cover, so these groups are not a general
-
-            spendable balance and may differ from the recorded credits total.'
+          description: Currently valid unspent credit grouped by permitted use. Each group covers only the charges its restrictions and validity allow, and the groups may differ from the recorded credits total.
           type: array
           items:
             $ref: ./credit-grants.yaml#/components/schemas/CreditGroup
         due:
-          description: Amount still payable on issued invoices. The invoice of an order not yet accepted is a request to
-            pay for that order rather than a debt, so it is excluded here and from available_credit. Unbilled usage is
-            reported separately; arrears depend on actual eligible funding and grace terms.
+          description: Amount still payable on issued invoices. The invoice of an order not yet accepted is excluded, here and from available_credit. Usage not yet invoiced is reported separately.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         pending_returns_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Balance committed to pending top-up refunds. Already unavailable for spending;
-            unbilled usage does not freeze the balance.
+          description: Balance held for pending top-up refunds and not spendable. Unbilled usage does not hold balance.
       required:
       - billing_account_id
       - currency
@@ -451,18 +383,14 @@ components:
       - unbilled_amount
       - pending_returns_amount
     ProjectAssignment:
-      description: A project's assignment to a billing account for the interval from effective_from to effective_to.
-        An open-ended assignment has no end time.
+      description: A project's assignment to a billing account from effective_from until effective_to; an open assignment has no end.
       type: object
       properties:
         project_id:
           type: string
           format: uuid
         project:
-          description: 'The project and its current name, for display. Absent when the project no longer exists
-            or its
-
-            details cannot be read at the moment; `project_id` still identifies it.'
+          description: The project and its current name. Absent when the project cannot be read; `project_id` still identifies it.
           oneOf:
           - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
           - type: 'null'

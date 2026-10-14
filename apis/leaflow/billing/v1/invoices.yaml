@@ -2,8 +2,7 @@ paths:
   /api/v1/invoices:
     get:
       summary: List invoices
-      description: Paginated issued invoices belonging to owned billing accounts, filtered by billing_account_id, subscription_id, status and creation interval. Drafts are excluded, including the draft invoice of an order awaiting payment,
-        which is reached through its order; top-ups do not create invoices.
+      description: Issued invoices of your billing accounts. Drafts are not listed; an order's draft invoice is reached through its order. Top-ups have no invoices.
       operationId: list-invoices
       tags:
       - invoices
@@ -19,7 +18,7 @@ paths:
       - name: subscription_id
         in: query
         required: false
-        description: Only invoices containing a charge from this subscription. The returned invoice amount is the total for the whole invoice.
+        description: Only invoices with a charge from this subscription; amounts are for the whole invoice.
         schema:
           type: string
           format: uuid
@@ -39,9 +38,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     get:
       summary: Get invoice
-      description: Returns an invoice for an owned billing account with its amounts, tax lines and payment state,
-        whether issued or the draft invoice of an order. Returns 404 for a missing invoice or another draft and 403
-        when its account belongs to another user.
+      description: An invoice of your billing account, issued or an order's draft, with its amounts, tax lines and payment state. A missing invoice or another draft returns 404; an invoice of another user's account returns 403.
       operationId: get-invoice
       tags:
       - invoices
@@ -59,9 +56,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     get:
       summary: List invoice items
-      description: Paginated lines of an invoice belonging to an owned billing account, issued or the draft invoice
-        of an order, including their service periods and project references. A missing invoice or another draft
-        returns 404; another user account returns 403.
+      description: Lines of an invoice of your billing account, issued or an order's draft, with their service periods and projects. A missing invoice or another draft returns 404; an invoice of another user's account returns 403.
       operationId: list-invoice-items
       tags:
       - invoices
@@ -80,25 +75,18 @@ paths:
 components:
   schemas:
     InvoiceStatus:
-      description: |-
-        A draft is not yet issued. The draft invoice of an order shows base prices until it is paid, when
-        the discount is applied and it is issued; other drafts are private to administrators.
-        An issued invoice is open until settled; a zero-total issued invoice is immediately paid.
-        Unbilled usage remains separate from invoices until it is invoiced.
-        A refund does not change the status: a paid invoice stays paid, with the refunded part in
-        amount_refunded. void means collection has stopped and any funds received have been returned.
+      description: '`draft`: not yet issued; an order''s draft invoice shows base prices until it is paid, when the discount is applied and it is issued. Other drafts are visible only to operators. `open`: issued and not yet settled; a zero-total invoice is paid at once. `paid` stays paid after a refund, with the refunded part in amount_refunded. `void`: collection has stopped and any funds received have been returned. Usage not yet invoiced is not on any invoice.'
       type: string
       enum:
       - draft
       - open
       - paid
       - void
-      - uncollectible
     Invoice:
       type: object
       properties:
         void_requested_at:
-          description: Collection has been stopped; any accepted return obligations are completed before final voiding.
+          description: Collection has stopped; accepted return obligations are completed.
           type: string
           format: date-time
         due_at:
@@ -137,25 +125,25 @@ components:
         tax_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_applied:
-          description: Successful credit-grant payments included in amount_paid. Does not reduce the receivable or tax base.
+          description: Successful credit-grant payments, included in amount_paid; they do not reduce the receivable or tax base.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         total:
-          description: Subtotal less discount plus tax. Balance and credit grants are payment sources, not reductions of the receivable.
+          description: Subtotal less discount plus tax. Balance and credit grants pay it; they do not reduce it.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_paid:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         pre_payment_credit_notes_amount:
-          description: Issued, non-void credit notes that reduced unpaid receivables. Does not rewrite the original invoice total.
+          description: Issued credit notes that reduced unpaid receivables; the original invoice total is unchanged.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         post_payment_credit_notes_amount:
-          description: Issued credit notes against payments already received. This is a return obligation, not evidence of completed refunds.
+          description: Issued credit notes against payments already received; their refunds may not have completed.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_due:
-          description: What is still collectible after unpaid credit notes and successful payments; never below zero. A draft has none; its total is the base price, and a payment preview shows what paying it would collect. A paid or void invoice has none either.
+          description: What is still collectible after unpaid credit notes and successful payments; never below zero. Zero for a draft, whose total is the base price, and for a paid or void invoice.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         period_start:
@@ -170,23 +158,19 @@ components:
           - 'null'
           format: date-time
         customer_name:
-          description: |-
-            Who this was billed to, as recorded when the invoice was issued. Later changes to
-            the account do not alter it.
+          description: The billing details recorded when the invoice was issued.
           type: string
         customer_email:
           type: string
         customer_tax_id:
           type: string
         customer_tax_exempt:
-          description: |-
-            How tax applied to the customer when the invoice was issued. `reverse` means no tax was
-            charged because the customer accounts for it under the reverse-charge mechanism.
+          description: How tax applied to the customer when the invoice was issued; `reverse` means no tax was charged under the reverse-charge mechanism.
           type: string
           enum:
-            - none
-            - exempt
-            - reverse
+          - none
+          - exempt
+          - reverse
         customer_address_line1:
           type: string
         customer_address_line2:
@@ -270,19 +254,14 @@ components:
           - 'null'
           format: uuid
         project:
-          description: |-
-            The project the charge was for and its current name, for display. Absent when the line is
-            not for a project, and when the project no longer exists or its details cannot be read at
-            the moment; `project_id` still identifies it then.
+          description: The project the charge was for and its current name. Absent when the line has no project or the project cannot be read; `project_id` still identifies it.
           oneOf:
           - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
           - type: 'null'
         resource_id:
           type: string
         description:
-          description: |-
-            The wording as recorded when the invoice was issued. It is not re-translated
-            afterwards, so that an invoice continues to read as it did when it was sent.
+          description: The line's wording as recorded when the invoice was issued.
           type: string
         unit:
           type: string
@@ -307,6 +286,11 @@ components:
           - string
           - 'null'
           format: date-time
+        dimensions:
+          description: For a usage line, the values of its meter's presentation dimensions, such as the model and token kind. Empty for other lines.
+          type: object
+          additionalProperties:
+            type: string
         prorations:
           description: |-
             Present on a line that changes a subscription immediately, one entry for each paid period it
@@ -328,7 +312,7 @@ components:
           type: string
           format: uuid
         description:
-          description: The wording of the earlier invoice line as recorded when this invoice was created.
+          description: The earlier invoice line's wording as recorded.
           type: string
         period_start:
           type: string
@@ -365,11 +349,7 @@ components:
       - items
       - pagination
     InvoiceSummary:
-      description: |-
-        Purchase-related invoice amounts, without account contact details or payment methods. Every order
-        has an invoice from placement. A draft shows base prices until it is paid, when the discount is
-        applied and it is issued; a zero-total invoice is issued and paid at placement whatever the
-        checkout mode. Neither establishes acceptance or delivery.
+      description: An order's invoice amounts, without contact details or payment methods. A draft shows base prices until it is paid, when the discount is applied and it is issued; a zero-total invoice is issued and paid at placement.
       type: object
       properties:
         id:
@@ -397,11 +377,11 @@ components:
         amount_paid:
           type: string
         pre_payment_credit_notes_amount:
-          description: Issued, non-void credit notes that reduced unpaid receivables. Does not rewrite the original invoice total.
+          description: Issued credit notes that reduced unpaid receivables; the original invoice total is unchanged.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         post_payment_credit_notes_amount:
-          description: Issued credit notes against payments already received. This is a return obligation, not evidence of completed refunds.
+          description: Issued credit notes against payments already received; their refunds may not have completed.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_due:
