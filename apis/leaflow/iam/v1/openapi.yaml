@@ -60,6 +60,7 @@ paths:
                 $ref: "#/components/schemas/Error"
     patch:
       summary: Update the name and description of a project
+      description: The slug is not affected; it is set through `PUT /api/v1/project/slug`.
       operationId: update-project
       tags:
         - Project
@@ -88,6 +89,41 @@ paths:
       operationId: delete-project
       tags:
         - Project
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccessResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/project/slug:
+    put:
+      summary: Set the custom slug of a project
+      description: |-
+        Replaces the default slug, which is the project's `id`, with a custom one. Only the owner can do this, and only once: a custom slug cannot be changed or removed afterwards. The address under the `id` keeps working.
+
+        Setting the slug the project already holds succeeds without change. Fails with:
+
+        - 400 `PROJECT_SLUG_INVALID` when the slug does not follow the format described on `slug`;
+        - 422 `PROJECT_SLUG_RESERVED` when the name is reserved;
+        - 409 `PROJECT_SLUG_TAKEN` when another project, including a deleted one, holds it;
+        - 412 `PROJECT_SLUG_ALREADY_SET` when the project already holds a different custom slug;
+        - 403 `PROJECT_PERMISSION_DENIED` when the caller is not the owner.
+      operationId: set-project-slug
+      tags:
+        - Project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetProjectSlugRequestBody"
       responses:
         "200":
           description: OK
@@ -979,6 +1015,11 @@ components:
         id:
           type: string
           format: uuid
+        slug:
+          description: The label naming the project in its address. It equals `id` until a custom slug is chosen. A custom slug does not change once set, and stays with the project after deletion
+          type: string
+          minLength: 1
+          maxLength: 36
         name:
           type: string
         updated_at:
@@ -988,6 +1029,7 @@ components:
         - traits
         - deletion_requested_at
         - id
+        - slug
         - name
         - description
         - deleted_at
@@ -1015,6 +1057,17 @@ components:
         name:
           type: string
           maxLength: 128
+      additionalProperties: false
+    SetProjectSlugRequestBody:
+      type: object
+      properties:
+        slug:
+          description: 6 to 32 characters made of lower-case letters, digits and single hyphens, beginning with a letter and ending with a letter or digit
+          type: string
+          minLength: 6
+          maxLength: 32
+      required:
+        - slug
       additionalProperties: false
     QuotaResource:
       type: object

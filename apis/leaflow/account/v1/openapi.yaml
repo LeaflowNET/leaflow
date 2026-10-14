@@ -16,6 +16,10 @@ info:
     3. Every other service is called with that scoped token.
 
     A scoped token cannot be renewed. Repeat step 2 for a new one, and sign in again at auth.leaflow.net once the access token itself has expired.
+
+    ## Project slugs
+
+    Every project carries a `slug`, the label naming it in its address. Until a custom slug is chosen the slug is the project's `id`, and the address under the `id` keeps working after a custom slug is chosen. `GET /account/v1/projects/by-slug/{slug}` finds the project named by either label.
 servers:
   - url: https://account.leaflow.cloud
     description: Account, agreements, projects and scoped tokens
@@ -389,10 +393,10 @@ paths:
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
         - name: keyword
           in: query
-          description: Matches against name or description
+          description: Matches against name, slug or description, and against the id when it is a complete project id
           explode: false
           schema:
-            description: Matches against name or description
+            description: Matches against name, slug or description, and against the id when it is a complete project id
             type: string
             maxLength: 128
         - name: include_deleted
@@ -416,7 +420,14 @@ paths:
                 $ref: "#/components/schemas/Error"
     post:
       summary: Create a project
-      description: The caller becomes its owner. The project is created with the built-in `OWNER` and `ADMIN` roles and a `member` role carrying no permissions.
+      description: |-
+        The caller becomes its owner. The project is created with the built-in `OWNER` and `ADMIN` roles and a `member` role carrying no permissions.
+
+        A custom `slug` may be chosen here; without one the slug is the new project's `id`. A custom slug is refused with:
+
+        - 400 `PROJECT_SLUG_INVALID` when it does not follow the format described on `slug`;
+        - 422 `PROJECT_SLUG_RESERVED` when the name is reserved;
+        - 409 `PROJECT_SLUG_TAKEN` when another project, including a deleted one, holds it.
       operationId: create-project
       tags:
         - Project
@@ -433,6 +444,103 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectAccessResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/projects/by-slug/{slug}:
+    get:
+      summary: Get a project by its slug
+      description: |-
+        Returns a project the caller belongs to, found by an address label: a custom slug is compared exactly, and a label in the form of a project id finds the project with that id, whether or not it has since chosen a custom slug.
+
+        A deleted project is returned, answering that it is gone. Fails with:
+
+        - 400 `PROJECT_SLUG_INVALID` when the value cannot be a slug;
+        - 404 `PROJECT_NOT_FOUND` when no project holds the slug;
+        - 403 `PROJECT_MEMBERSHIP_REQUIRED` when the caller is not a member of the project.
+      operationId: get-project-by-slug
+      tags:
+        - Project
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 63
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccessResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/projects/{projectId}:
+    get:
+      summary: Get a project
+      description: |-
+        Returns a project the caller belongs to. A deleted project is returned, answering that it is gone. Fails with:
+
+        - 404 `PROJECT_NOT_FOUND` when no project has the id;
+        - 403 `PROJECT_MEMBERSHIP_REQUIRED` when the caller is not a member of the project.
+      operationId: get-project
+      tags:
+        - Project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccessResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/project-slugs/{slug}/availability:
+    get:
+      summary: Check whether a custom slug can be chosen
+      description: |-
+        Reports whether a custom slug can be chosen now. Nothing is reserved by asking: the slug is claimed only by creating a project with it or by setting it, either of which may still fail with 409 `PROJECT_SLUG_TAKEN`.
+
+        Fails with 400 `PROJECT_SLUG_INVALID` when the value does not follow the format of a custom slug.
+      operationId: get-project-slug-availability
+      tags:
+        - Project
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 63
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSlugAvailabilityResource"
         default:
           description: Error
           content:
@@ -962,6 +1070,11 @@ components:
         id:
           type: string
           format: uuid
+        slug:
+          description: The label naming the project in its address. It equals `id` until a custom slug is chosen. A custom slug does not change once set, and stays with the project after deletion
+          type: string
+          minLength: 1
+          maxLength: 36
         name:
           type: string
         updated_at:
@@ -971,6 +1084,7 @@ components:
         - traits
         - deletion_requested_at
         - id
+        - slug
         - name
         - description
         - deleted_at
@@ -1100,8 +1214,29 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        slug:
+          description: A custom slug of 6 to 32 characters made of lower-case letters, digits and single hyphens, beginning with a letter and ending with a letter or digit. Omitted or empty, the slug is the new project's `id`, and a custom slug can be set once later
+          type: string
+          maxLength: 32
       required:
         - name
+      additionalProperties: false
+    ProjectSlugAvailabilityResource:
+      type: object
+      properties:
+        slug:
+          description: The slug asked about
+          type: string
+        status:
+          description: "`available` when the slug can be chosen now, `reserved` when the name is reserved, and `taken` when a project, including a deleted one, holds it"
+          type: string
+          enum:
+            - available
+            - reserved
+            - taken
+      required:
+        - slug
+        - status
       additionalProperties: false
     ScopedTokenResponseBody:
       type: object
