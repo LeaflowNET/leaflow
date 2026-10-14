@@ -12,8 +12,8 @@ info:
     ## Conventions
 
     - **Purchases.** A purchase that creates resources returns them together with a PlacedOrder. They are readable at once and start as `pending`: the order has not been accepted, nothing exists in the cloud, no inventory such as an address is held, and fields known only after allocation, such as addresses, are null. Once Billing accepts the order, a resource becomes `provisioning` and then reaches its usual status, such as `active` or `available`. When the order is declined, canceled or expires, or creation fails, the resource ends `failed` and `failure_reason` states why; the charge for a resource that failed after acceptance is refunded. Read the order in Billing for checkout and payment progress.
-    - **Pricing.** Catalog items, such as instance types, disk types and public IP pools, carry `pricing`: the prepaid and postpaid options Billing offers for them, in the currency of the project's current billing account, or null when the project has no billing account. They are list amounts before promotion codes, not a checkout guarantee. A purchase chooses one option with `billing`, which applies to all of its components. Every purchase and change has a quote operation beside it, at the same path followed by `/quote`, which returns what checkout would collect without ordering anything.
-    - **Checkout.** Omit `checkout` for automatic checkout, which pays from eligible credit grants and balance when the order is placed; insufficient funds refuse the request with HTTP 422 `BILLING_INSUFFICIENT_FUNDS`, and nothing is created. With `checkout.mode` set to `deferred`, the resources are returned `pending` and nothing is created until checkout is confirmed and paid through Billing. An order whose total is zero, such as a postpaid purchase with nothing due now, completes checkout at placement in either mode and proceeds to provisioning.
+    - **Pricing.** Catalog items, such as instance types, disk types and public IP pools, carry `pricing`: the licensed and metered options Billing offers for them, in the currency of the project's current billing account, or null when the project has no billing account. They are list amounts before promotion codes, not a checkout guarantee. A purchase chooses one option with `billing`, which applies to all of its components. Every purchase and change has a quote operation beside it, at the same path followed by `/quote`, which returns what checkout would collect without ordering anything.
+    - **Checkout.** Omit `checkout` for automatic checkout, which pays from eligible credit grants and balance when the order is placed; insufficient funds refuse the request with HTTP 422 `BILLING_INSUFFICIENT_FUNDS`, and nothing is created. With `checkout.mode` set to `deferred`, the resources are returned `pending` and nothing is created until checkout is confirmed and paid through Billing. An order whose total is zero, such as a metered purchase with nothing due now, completes checkout at placement in either mode and proceeds to provisioning.
     - **Operations.** Requests such as starting, stopping, attaching or deleting return HTTP 202 with the resource as it is when the request is accepted. While an operation runs, the resource's `operation` field names it; the field is null once the operation has finished, and the resource then shows the result. A resource with an operation in progress refuses another operation with HTTP 409 `COMPUTE_RESOURCE_BUSY`; an operation involving two resources, such as attaching a disk, is refused when either has one. A purchased change, such as a resize, is an operation from the moment its order is placed until it is applied or its order is canceled, including while it awaits checkout. Renaming and replacing labels or notes are not operations and are accepted at any time.
     - **Billing relationships.** A purchased resource records its `order_id`, `order_item_id` and `subscription_id`. The subscription is `pending` until the order is accepted, `provisioning` while the resource is created, and `active` once it is delivered. Bandwidth is a property of its floating IP, not a separate resource. Snapshots use a purchased per-region count quota, and backups are metered on the region's backup service; neither has an order or subscription of its own.
     - **Availability zones.** A disk and an instance must reside in the same availability zone to be attached. Instance types and disk types are each bound to one availability zone, so choosing a type determines the zone.
@@ -223,7 +223,7 @@ paths:
           format: uuid
     post:
       summary: Quote restoring from a backup
-      description: Prices what `restore-backup` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `restore-backup` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-backup-restore-quote
       tags:
         - Backup
@@ -669,7 +669,7 @@ paths:
   /api/v1/disks/quote:
     post:
       summary: Quote creating a disk
-      description: Prices what `create-disk` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `create-disk` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-disk-quote
       tags:
         - Disk
@@ -788,7 +788,7 @@ paths:
     post:
       summary: Resize a disk
       description: |-
-        Capacity can only be increased; shrinking is not supported. Returns the disk with the order for the resize, which keeps the disk's billing mode and period. The disk shows the `resize` operation until the resize is applied or its order is canceled, including while the order awaits checkout, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The disk keeps its current size until the resize is applied; once `size_gb` shows the new size, extend the file system inside the instance. If the order is not accepted or the resize fails, the disk keeps its size and the order shows the outcome.
+        Capacity can only be increased; shrinking is not supported. Returns the disk with the order for the resize, which keeps the disk's usage type and period. The disk shows the `resize` operation until the resize is applied or its order is canceled, including while the order awaits checkout, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The disk keeps its current size until the resize is applied; once `size_gb` shows the new size, extend the file system inside the instance. If the order is not accepted or the resize fails, the disk keeps its size and the order shows the outcome.
 
         **An attached data disk whose performance scales with its size must be detached before it is resized.** The performance of an attached disk does not change until the disk is detached and attached again, so such a request is refused with `DISK_RESIZE_NEEDS_DETACH` rather than providing the new capacity at the performance of the previous size. Detach the disk, resize it, and attach it again.
 
@@ -960,7 +960,7 @@ paths:
   /api/v1/floating-ips/quote:
     post:
       summary: Quote allocating a floating IP
-      description: Prices what `allocate-floating-ip` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `allocate-floating-ip` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-floating-ip-quote
       tags:
         - FloatingIP
@@ -1046,7 +1046,7 @@ paths:
     put:
       summary: Set the bandwidth limit
       description: |-
-        Changes the bandwidth of this floating IP through an order that keeps its billing mode and period; no separate bandwidth resource is created. The limit applies to inbound and outbound traffic alike. The floating IP shows the `set_bandwidth` operation until the change is applied or its order is canceled, including while the order awaits checkout, so other operations and a second change are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The current limit stays in effect until the change is applied. If the order is not accepted or the change fails, `bandwidth_mbps` keeps its value and the order shows the outcome.
+        Changes the bandwidth of this floating IP through an order that keeps its usage type and period; no separate bandwidth resource is created. The limit applies to inbound and outbound traffic alike. The floating IP shows the `set_bandwidth` operation until the change is applied or its order is canceled, including while the order awaits checkout, so other operations and a second change are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The current limit stays in effect until the change is applied. If the order is not accepted or the change fails, `bandwidth_mbps` keeps its value and the order shows the outcome.
 
         While the address is bound to an instance, the limit must not exceed the `max_bandwidth_mbps` of that instance's type; a higher limit is refused with `INSTANCE_BANDWIDTH_CEILING`. The limit of an address that is not bound is checked when the address is bound to an instance.
       operationId: set-floating-ip-bandwidth
@@ -1248,7 +1248,7 @@ paths:
   /api/v1/instances/quote:
     post:
       summary: Quote creating instances
-      description: Prices what `launch-instance` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `launch-instance` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-instance-quote
       tags:
         - Instance
@@ -1690,7 +1690,7 @@ paths:
     post:
       summary: Resize an instance
       description: |-
-        Creates a Billing change order, including for metered pricing, and returns the instance with the order. The instance keeps its billing mode and period, priced with the target type's matching option; a target type without that option is refused with 409 `BILLING_OPTION_UNAVAILABLE`. Do not submit a new purchase after paying. After an uncertain response, look the order up before submitting again.
+        Creates a Billing change order, including for metered pricing, and returns the instance with the order. The instance keeps its usage type and period, priced with the target type's matching option; a target type without that option is refused with 409 `BILLING_OPTION_UNAVAILABLE`. Do not submit a new purchase after paying. After an uncertain response, look the order up before submitting again.
 
         The instance shows the `resize` operation until the resize is applied or its order is canceled, including while the order awaits checkout, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. It keeps its current type until the resize is applied; the new type takes effect, and is billed from then on, when `instance_type_id` shows it. If the order is not accepted or the resize fails, the instance keeps its current type and the order shows the outcome. A completed resize is final and cannot be reverted; to return to the previous type, submit another resize.
       operationId: resize-instance
@@ -2926,7 +2926,7 @@ paths:
         Purchases or changes the maximum number of snapshots this project may hold in this region.
         limit is the target total, not an additional number of slots or a consumable create allowance.
         billing chooses one of the quota's pricing options; a change of an existing purchase keeps its
-        billing mode and period, and billing must name that option. The purchased quantity is this count.
+        usage type and period, and billing must name that option. The purchased quantity is this count.
 
         Returns the quota with the order. pending_limit records the target while the current limit stays
         in force; the new limit applies once the order is accepted and the quota is activated. Snapshots
@@ -2950,7 +2950,7 @@ paths:
             example:
               limit: 20
               billing:
-                mode: prepaid
+                usage_type: licensed
                 period:
                   unit: month
                   count: 1
@@ -2981,7 +2981,7 @@ paths:
           format: uuid
     post:
       summary: Quote setting the regional snapshot quota
-      description: Prices what `set-snapshot-quota` would order, including a change of an existing purchase as of now, for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `set-snapshot-quota` would order, including a change of an existing purchase as of now, for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-snapshot-quota-quote
       tags:
         - Snapshot
@@ -3039,7 +3039,7 @@ paths:
     post:
       summary: Activate the backup service in a region
       description: |-
-        Purchases the backup service for this project and region. The service itself has no charge; backups are billed under it postpaid, by retained capacity. It takes no billing choice. Returns the service as `pending` with its order; it becomes `active` once the order is accepted.
+        Purchases the backup service for this project and region. The service itself has no charge; backups are metered under it by retained capacity. It takes no billing choice. Returns the service as `pending` with its order; it becomes `active` once the order is accepted.
 
         Refused with 409 `BACKUP_SERVICE_EXISTS` while an activation is pending or the service is active or suspended.
       operationId: create-backup-service
@@ -3076,7 +3076,7 @@ paths:
           format: uuid
     post:
       summary: Quote activating the backup service
-      description: Prices what `create-backup-service` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `create-backup-service` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-backup-service-quote
       tags:
         - Backup
@@ -3128,7 +3128,7 @@ paths:
     post:
       summary: Buy a backup capacity pack
       description: |-
-        Purchases a capacity pack, prepaid backup capacity for this project and region bought by month or year: `billing` must be prepaid with a period, as offered in the backup service's `capacity_pack_pricing`. Compute applies the coverage: each hour, retained backup capacity up to the total `capacity_gib` of the packs active in the region is covered, and Compute meters only the excess on the backup service's subscription. A pack is not a Billing allowance or credit; Billing takes its order and payment and handles its renewal and cancellation through the pack's subscription.
+        Purchases a capacity pack, backup capacity for this project and region bought in advance by month or year: `billing` must be licensed with a period, as offered in the backup service's `capacity_pack_pricing`. Compute applies the coverage: each hour, retained backup capacity up to the total `capacity_gib` of the packs active in the region is covered, and Compute meters only the excess on the backup service's subscription. A pack is not a Billing allowance or credit; Billing takes its order and payment and handles its renewal and cancellation through the pack's subscription.
 
         Returns the pack as `pending` with its order; it applies once the order is accepted. Refused with 409 `BACKUP_SERVICE_NOT_ACTIVE` and `meta.region_id` when the region's backup service is not active.
       operationId: create-backup-capacity-pack
@@ -3165,7 +3165,7 @@ paths:
           format: uuid
     post:
       summary: Quote buying a backup capacity pack
-      description: Prices what `create-backup-capacity-pack` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects postpaid usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
+      description: Prices what `create-backup-capacity-pack` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
       operationId: create-backup-capacity-pack-quote
       tags:
         - Backup
@@ -5974,16 +5974,17 @@ components:
         - options
       additionalProperties: false
     PricingOption:
-      description: One way to buy an item. Choose it by giving its mode, period and explicit prepaid termination_policy as billing.
+      description: One way to buy an item. Choose it by giving its usage_type, period and termination_policy as billing.
       type: object
       properties:
-        mode:
+        usage_type:
+          description: "`licensed` pays for a period in advance; `metered` bills usage until canceled."
           type: string
           enum:
-            - prepaid
-            - postpaid
+            - licensed
+            - metered
         period:
-          description: The term of a prepaid option; null for postpaid.
+          description: The term of a licensed option; null for metered.
           anyOf:
             - $ref: "#/components/schemas/BillingPeriod"
             - type: "null"
@@ -5996,27 +5997,27 @@ components:
             - mbps
             - snapshot
         amount:
-          description: Prepaid only; null for postpaid. The amount for one period, per quantity unit.
+          description: Licensed only; null for metered. The amount for one period, per quantity unit.
           type:
             - string
             - "null"
         monthly_amount:
-          description: Prepaid only; null for postpaid. `amount` spread over the months of the period.
+          description: Licensed only; null for metered. `amount` spread over the months of the period.
           type:
             - string
             - "null"
         saving_percent:
-          description: Prepaid only. How much lower `monthly_amount` is than that of the shortest prepaid period of the same item, as a decimal percentage. Null for that shortest period and for postpaid.
+          description: Licensed only. How much lower `monthly_amount` is than that of the shortest licensed period of the same item, as a decimal percentage. Null for that shortest period and for metered.
           type:
             - string
             - "null"
         unit_amount:
-          description: Postpaid only; null for prepaid. The amount for one `unit` of time, per quantity unit.
+          description: Metered only; null for licensed. The amount for one `unit` of time, per quantity unit.
           type:
             - string
             - "null"
         unit:
-          description: Postpaid only; null for prepaid. The time unit of `unit_amount`.
+          description: Metered only; null for licensed. The time unit of `unit_amount`.
           type:
             - string
             - "null"
@@ -6033,7 +6034,7 @@ components:
             - period_end
             - null
       required:
-        - mode
+        - usage_type
         - period
         - quantity_unit
         - amount
@@ -6061,20 +6062,21 @@ components:
         - count
       additionalProperties: false
     BillingChoice:
-      description: The commercial terms for one newly purchased component. Prepaid requires period and termination_policy; postpaid refuses both. Components in one instance order must use the same mode and period, while their termination policies may differ.
+      description: The commercial terms for one newly purchased component. Licensed requires period and termination_policy; metered refuses both. Components in one instance order must use the same usage type and period, while their termination policies may differ.
       type: object
       properties:
-        mode:
+        usage_type:
+          description: "`licensed` pays for a period in advance; `metered` bills usage until canceled."
           type: string
           enum:
-            - prepaid
-            - postpaid
+            - licensed
+            - metered
         period:
           $ref: "#/components/schemas/BillingPeriod"
         termination_policy:
           $ref: "#/components/schemas/TerminationPolicy"
       required:
-        - mode
+        - usage_type
       additionalProperties: false
     TerminationPolicy:
       description: Immediate ends service when cancellation takes effect, with refunds governed by the purchased terms. Period-end keeps service until the paid period ends.
@@ -6179,19 +6181,19 @@ components:
           type: integer
           format: int64
           minimum: 0
-        prepaid_capacity_gib:
+        pack_capacity_gib:
           description: The total `capacity_gib` of the active capacity packs in this region; this much retained capacity is covered each hour.
           type: integer
           format: int64
           minimum: 0
         pricing:
-          description: The postpaid usage price of backups in this region. Null when the project has no billing account.
+          description: The metered usage price of backups in this region. Null when the project has no billing account.
           anyOf:
             - $ref: "#/components/schemas/Pricing"
             - type: "null"
           readOnly: true
         capacity_pack_pricing:
-          description: The prepaid options of capacity packs in this region, per GiB. Null when the project has no billing account.
+          description: The licensed options of capacity packs in this region, per GiB. Null when the project has no billing account.
           anyOf:
             - $ref: "#/components/schemas/Pricing"
             - type: "null"
@@ -6204,7 +6206,7 @@ components:
         - subscription_id
         - release_subscription_ids
         - retained_capacity_gib
-        - prepaid_capacity_gib
+        - pack_capacity_gib
         - pricing
         - capacity_pack_pricing
       additionalProperties: false
@@ -6226,7 +6228,7 @@ components:
         - order
       additionalProperties: false
     BackupCapacityPack:
-      description: Prepaid backup capacity for one region, sold by Compute and bought for a term through its own Billing subscription. Compute applies its coverage to backup usage; it is not a Billing allowance or credit.
+      description: Backup capacity for one region, sold by Compute and bought for a term through its own Billing subscription. Compute applies its coverage to backup usage; it is not a Billing allowance or credit.
       type: object
       properties:
         id:
