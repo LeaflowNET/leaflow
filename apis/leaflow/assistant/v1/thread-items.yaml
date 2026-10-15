@@ -84,6 +84,32 @@ paths:
   /api/v1/threads/{thread}/messages:
     parameters:
       - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    get:
+      summary: List the person's messages
+      description: |-
+        An outline of the messages the person sent in this conversation, from the console or a chat
+        app, oldest first: what a timeline needs to place and preview every message without reading
+        the transcript. Replies, tool calls and messages from subagents, tasks or other conversations
+        are not included, nor are reverted messages or messages waiting in the queue.
+
+        `index` is the message's position, from 1, and matches `messageIndex` on the transcript item.
+        Read the message N with `offset` N-1. Open it in the transcript with list-thread-items
+        `around` its `ordinal`. `total` equals the thread's `messageCount`.
+      operationId: list-thread-messages
+      tags:
+        - Item
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadMessageListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
     post:
       summary: Send a message
       description: |-
@@ -272,6 +298,16 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ToolCallResource"
             - type: "null"
+        messageIndex:
+          description: |-
+            The position of a `user_message` among the person's messages, from 1, as in
+            list-thread-messages. Null for other items, and for messages that are reverted or waiting
+            in the queue.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
         createdAt:
           type: string
           format: date-time
@@ -290,7 +326,62 @@ components:
         - attachments
         - clientContext
         - toolCall
+        - messageIndex
         - createdAt
+      additionalProperties: false
+    ThreadMessageResource:
+      description: One message the person sent, as an entry of the conversation's outline.
+      type: object
+      properties:
+        id:
+          description: The transcript item.
+          type: string
+        index:
+          description: The position among the person's messages, from 1.
+          type: integer
+          format: int64
+          minimum: 1
+        ordinal:
+          description: The item's position in the transcript, for list-thread-items `around`.
+          type: integer
+          format: int64
+        turnId:
+          type: string
+        preview:
+          description: The beginning of the message's text, at most 120 characters. Empty for a message with only attachments.
+          type: string
+        attachments:
+          description: How many files the message carries.
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - index
+        - ordinal
+        - turnId
+        - preview
+        - attachments
+        - createdAt
+      additionalProperties: false
+    ThreadMessageListResponseBody:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadMessageResource"
+        total:
+          description: How many messages the person has sent in this conversation, the same as the thread's `messageCount`.
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - messages
+        - total
       additionalProperties: false
     ItemSourceResource:
       type: object
@@ -355,6 +446,18 @@ components:
           type:
             - string
             - "null"
+        approvalSource:
+          description: |-
+            Who decided the call. `user` is the person, in the console or a chat app; `auto_review` is
+            the automatic reviewer; `policy` is the tool itself, which cannot be called this way. Null
+            when nobody decided, including calls that needed no decision.
+          type:
+            - string
+            - "null"
+          enum:
+            - user
+            - auto_review
+            - policy
         decidedAt:
           description: When a person or the reviewer decided the call or answered its questions.
           type:
@@ -390,6 +493,7 @@ components:
         - presentation
         - approvalStatus
         - approvalReason
+        - approvalSource
         - decidedAt
         - questions
         - answers
