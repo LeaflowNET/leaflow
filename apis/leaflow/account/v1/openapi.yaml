@@ -158,7 +158,7 @@ paths:
       description: |-
         Call this after signing in at auth.leaflow.net, carrying the access token. The name and email address are taken from the sign-in claims and are not read from the request body.
 
-        `consents` must cover every agreement returned by `GET /account/v1/agreements`, at the same versions. A missing agreement answers 400 and a stale version answers 409, in which case fetch the list again. An account that already exists answers 409.
+        `consents` must cover every agreement returned by `GET /account/v1/agreements`, at the same versions. A missing agreement answers 400 and a stale version answers 409, in which case fetch the list again. An account that already exists answers 409, and one that has been deleted answers 410 `USER_DELETED`: the same sign-in cannot register again.
       operationId: register
       tags:
         - Account
@@ -184,7 +184,10 @@ paths:
   /account/v1/me:
     get:
       summary: Get the current account
-      description: "`pending_agreements` holds the agreements not yet consented to. While it is not empty, obtain consent and call `POST /account/v1/me/consents`."
+      description: |-
+        `pending_agreements` holds the agreements not yet consented to. While it is not empty, obtain consent and call `POST /account/v1/me/consents`.
+
+        `status` is `DELETING` while a deletion is open; see `GET /account/v1/me/deletion`. A deleted account answers 410 `USER_DELETED`.
       operationId: get-account
       tags:
         - Account
@@ -220,6 +223,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/me/deletion:
+    get:
+      summary: Get the deletion of the current account
+      description: |-
+        `state` is `none` while no deletion is open. `blocking_projects` lists the projects the caller still owns; a deletion cannot be requested while it is not empty, so each of them must be transferred or deleted first.
+
+        Conditions held by other services, such as an unpaid balance or a billing account still paying for a project, are not listed here. Read them from those services before requesting; they are checked again after the request, and a refusal shows up in `rejected_at` and `objections`.
+      operationId: get-account-deletion
+      tags:
+        - Account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Request deletion of the current account
+      description: |-
+        The account is frozen at once: it can no longer enter a project or change anything in one. The answer is 202 with `state` `checking` while the services holding data for the account are asked whether it can be closed. Poll `GET /account/v1/me/deletion` until `state` leaves `checking`, which normally takes a few seconds.
+
+        - If any service refuses, the account returns to use, `state` becomes `none`, and `rejected_at` and `objections` say why.
+        - Otherwise `state` becomes `scheduled`, and the account is deleted at `scheduled_at`, fifteen days after the request. The conditions are checked once more at that time.
+
+        The deletion can be cancelled with `DELETE /account/v1/me/deletion` until `scheduled_at`, and not after. Once carried out it cannot be undone, and the same sign-in cannot register again. Any remaining balance and prepaid benefits are forfeited, which `acknowledge_forfeiture` confirms.
+
+        Requesting again while a deletion is open returns it unchanged. Fails with 412 `USER_OWNS_PROJECTS` while `blocking_projects` is not empty, and with 401 `INSUFFICIENT_USER_AUTHENTICATION` unless the caller signed in within the last `meta.max_age` seconds; sign in again with that `max_age` and retry.
+      operationId: request-account-deletion
+      tags:
+        - Account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestAccountDeletionRequestBody"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Cancel the deletion of the current account
+      description: Returns the account to use. Cancelling when no deletion is open returns `state` `none`. Fails with 409 `ACCOUNT_DELETION_NOT_CANCELLABLE` once `scheduled_at` has passed.
+      operationId: cancel-account-deletion
+      tags:
+        - Account
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionResource"
         default:
           description: Error
           content:
@@ -809,6 +887,82 @@ components:
         - email_verified_at
         - created_at
         - pending_agreements
+      additionalProperties: false
+    AccountDeletionState:
+      description: "`none` while no deletion is open. `checking` while the services holding data for the account are asked whether it can be closed. `scheduled` once they agree; it is carried out at `scheduled_at` and can be cancelled until then. `executing` once `scheduled_at` has passed; it can no longer be cancelled"
+      type: string
+      enum:
+        - none
+        - checking
+        - scheduled
+        - executing
+    AccountDeletionResource:
+      type: object
+      properties:
+        state:
+          $ref: "#/components/schemas/AccountDeletionState"
+        requested_at:
+          description: Null while `state` is `none`
+          type:
+            - string
+            - "null"
+          format: date-time
+        scheduled_at:
+          description: When the deletion is carried out. Null while `state` is `none`
+          type:
+            - string
+            - "null"
+          format: date-time
+        requested_by_operator:
+          description: True when an operator requested the deletion rather than the account holder. False while `state` is `none`
+          type: boolean
+        blocking_projects:
+          description: Projects the caller owns that are not being deleted. A deletion cannot be requested while this is not empty
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectResource"
+        rejected_at:
+          description: When the most recent request was turned down. Null unless the most recent request was turned down
+          type:
+            - string
+            - "null"
+          format: date-time
+        objections:
+          description: Why the most recent request was turned down. Empty unless `rejected_at` is set
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountDeletionObjectionResource"
+      required:
+        - state
+        - requested_at
+        - scheduled_at
+        - requested_by_operator
+        - blocking_projects
+        - rejected_at
+        - objections
+      additionalProperties: false
+    AccountDeletionObjectionResource:
+      type: object
+      properties:
+        service:
+          description: The service that refused, such as `billing`
+          type: string
+        code:
+          description: A stable code defined by that service, such as `ARREARS`. The service documents what each code means and how to resolve it
+          type: string
+      required:
+        - service
+        - code
+      additionalProperties: false
+    RequestAccountDeletionRequestBody:
+      type: object
+      properties:
+        acknowledge_forfeiture:
+          description: Must be true. Confirms that any remaining balance and prepaid benefits are forfeited when the deletion is carried out
+          type: boolean
+          const: true
+      required:
+        - acknowledge_forfeiture
       additionalProperties: false
     RegisterRequestBody:
       type: object
