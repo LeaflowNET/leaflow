@@ -1,0 +1,84 @@
+paths:
+  /api/v1/memories:
+    get:
+      summary: List what the assistant remembers
+      description:
+        "Facts the assistant has written down for the current account in this project. They
+        appear at the start of every later conversation. Members of the same project each have their own,
+        and this returns only the current account's. Not paginated: there is a cap on how many there
+        can be, and all of them come back at once."
+      operationId: list-memories
+      tags:
+        - Memory
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/memories/{memory}:
+    delete:
+      summary: Delete one memory
+      description:
+        The assistant stops remembering this. It takes effect at once, so the next conversation
+        will not carry it. The assistant may well learn the same thing again.
+      operationId: delete-memory
+      tags:
+        - Memory
+      parameters:
+        - name: memory
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    MemoryListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryResource"
+      required:
+        - items
+      additionalProperties: false
+    MemoryResource:
+      type: object
+      properties:
+        body:
+          description: The fact itself
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+        name:
+          description:
+            The name the assistant gave this fact; it overwrites or deletes its own entries
+            by that name
+          type: string
+        sourceThreadId:
+          description:
+            Which conversation the assistant learned it in. That conversation may since have
+            been deleted
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - body
+        - createdAt
+        - updatedAt
+      additionalProperties: false

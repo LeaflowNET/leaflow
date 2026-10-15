@@ -1,0 +1,682 @@
+paths:
+  /api/v1/threads:
+    post:
+      summary: Create a conversation
+      description: |-
+        Creates a conversation and, when `message` is given, sends it as the first message in the same
+        request, so starting a task is one round trip.
+
+        The model is chosen in this order: `modelId` from the request, the caller's default from
+        /api/v1/settings, then the first model in the Canopy catalogue that can run an agent. Fails with
+        422 and code MODEL_UNAVAILABLE when the chosen model cannot run an agent, and with 422 and code
+        REASONING_UNSUPPORTED when `reasoningEffort` is given for a model without reasoning.
+
+        Without `message`, creating a conversation does not contact a model provider.
+      operationId: create-thread
+      tags:
+        - Thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateThreadRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateThreadResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    query:
+      summary: Search conversations
+      description: |-
+        Lists the caller's conversations in this project with their state, progress and usage. The
+        criteria travel in the request body. Keep the same criteria when following `nextCursor`.
+
+        Subagents are conversations too. They are excluded unless `parentId` or `role` asks for them.
+        `ids` reads a bounded batch, including subagents and archived conversations, and cannot be
+        combined with a cursor.
+
+        Counts over everything the criteria match cost more than the page itself; ask for them with
+        `include: [counts]`, typically on the first page only.
+      operationId: search-threads
+      tags:
+        - Thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchThreadsRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    get:
+      summary: Get a conversation
+      description: |-
+        The conversation's state: model, reasoning effort, approval mode, what it is doing now, its
+        plan, what it is waiting for, context usage and token usage. The transcript is read separately
+        from /items.
+      operationId: get-thread
+      tags:
+        - Thread
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update a conversation
+      description: |-
+        Changes the title, model, reasoning effort, approval mode, or whether the conversation is
+        archived. Omitted fields stay as they are.
+
+        Model, reasoning and approval changes apply to the next model request; a request already in
+        flight keeps its settings. A model that cannot run an agent fails with 422 and code
+        MODEL_UNAVAILABLE. Switching to a model without reasoning clears `reasoningEffort`.
+
+        Archiving makes the conversation read-only and fails with 409 and code THREAD_RUNNING while a
+        turn is running.
+      operationId: update-thread
+      tags:
+        - Thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateThreadRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Delete a conversation
+      description: |-
+        Removes the conversation and its subagents from every list and makes them unreachable by id,
+        including for the assistant. Deleting cannot be undone; archive instead to keep it readable.
+
+        Fails with 409 and code THREAD_RUNNING while a turn is running. Deleting an already deleted
+        conversation succeeds.
+      operationId: delete-thread
+      tags:
+        - Thread
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/interrupt:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Stop the running turn
+      description: |-
+        Stops this conversation's running turn and discards its queued messages. Subagents keep
+        running; stop them through their own conversations.
+
+        Succeeds when nothing is running, because pressing stop races with the turn finishing on its
+        own. Available while the project is suspended or being cleaned up.
+      operationId: interrupt-thread
+      tags:
+        - Thread
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/resume:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Resume a stopped conversation
+      description: |-
+        Starts a new turn that continues from where the conversation stopped, for example after it
+        was interrupted or failed. An optional message is added first.
+
+        Fails with 409 and code THREAD_RUNNING while a turn is running.
+      operationId: resume-thread
+      tags:
+        - Thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResumeThreadRequestBody"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnStartedResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/compact:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Compact the conversation now
+      description: |-
+        Starts a compaction turn that summarizes the history before the latest user message, the same
+        way the service does automatically when the context window fills up. The result appears in the
+        transcript as a `compaction` item and the turn reports its own token usage.
+
+        Fails with 409 and code THREAD_RUNNING while a turn is running, and with 409 and code
+        NOTHING_TO_COMPACT when there is no history to summarize.
+      operationId: compact-thread
+      tags:
+        - Thread
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnStartedResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/revert:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Revert from a given point
+      description: |-
+        Reverts the item at `ordinal` and everything after it. Reverted items stay in the transcript
+        marked `reverted` and are left out of later model requests; ordinals are not renumbered.
+        Executed tools and external changes are not undone. Returns how many items were reverted.
+      operationId: revert-thread
+      tags:
+        - Thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevertRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevertedCountResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/read:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Mark a conversation as read
+      description: Clears `unread` until the assistant replies again.
+      operationId: mark-thread-read
+      tags:
+        - Thread
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ThreadResource:
+      description: |-
+        A conversation with an agent. The main conversation and its subagents have the same shape;
+        `role` tells them apart.
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          description: "`main` for a conversation with a person, `subagent` for one started by another agent."
+          type: string
+          enum:
+            - main
+            - subagent
+        parentId:
+          description: The conversation that started this subagent. Null for main conversations.
+          type:
+            - string
+            - "null"
+        agentName:
+          description: The subagent's name, unique among the subagents of its parent. Null for main conversations.
+          type:
+            - string
+            - "null"
+        title:
+          description: Null until the conversation has a name.
+          type:
+            - string
+            - "null"
+        folderId:
+          description: The folder that holds this conversation. Null for subagents, which are not filed.
+          type:
+            - string
+            - "null"
+        orderVersion:
+          description: The version of this conversation's place in its folder. Pass it as `expectedVersion` when moving it.
+          type: integer
+          format: int64
+          minimum: 0
+        modelId:
+          description: The Canopy model the next model request uses.
+          type: string
+        reasoningEffort:
+          description: Null when the model does not reason.
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        status:
+          $ref: ./openapi.yaml#/components/schemas/ThreadStatus
+        activity:
+          description: What the assistant is doing right now, for example "Reading nginx.conf". Null when idle.
+          type:
+            - string
+            - "null"
+        recentMessage:
+          description: The beginning of the assistant's latest message.
+          type:
+            - string
+            - "null"
+        todos:
+          description: The assistant's current plan, in order. Empty when it has none.
+          type: array
+          items:
+            $ref: "#/components/schemas/TodoResource"
+        pendingAction:
+          description: What this conversation is waiting for from a person. It may belong to one of its subagents.
+          anyOf:
+            - $ref: "#/components/schemas/PendingActionResource"
+            - type: "null"
+        subagents:
+          $ref: "#/components/schemas/SubagentCountResource"
+        lastTurn:
+          description: The most recent turn. Null before the first message.
+          anyOf:
+            - $ref: "#/components/schemas/LastTurnResource"
+            - type: "null"
+        context:
+          $ref: "#/components/schemas/ContextUsageResource"
+        usage:
+          description: Token usage over the whole conversation. For a main conversation this includes its subagents.
+          $ref: ./openapi.yaml#/components/schemas/Usage
+        unread:
+          description: The assistant replied after the conversation was last marked read.
+          type: boolean
+        archived:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          description: The last activity. Renaming or moving the conversation does not change it.
+          type: string
+          format: date-time
+      required:
+        - id
+        - role
+        - parentId
+        - agentName
+        - title
+        - folderId
+        - orderVersion
+        - modelId
+        - reasoningEffort
+        - approvalMode
+        - status
+        - activity
+        - recentMessage
+        - todos
+        - pendingAction
+        - subagents
+        - lastTurn
+        - context
+        - usage
+        - unread
+        - archived
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    TodoResource:
+      type: object
+      properties:
+        content:
+          description: The step as an instruction — "Install nginx".
+          type: string
+        activeForm:
+          description: The same step phrased as happening now — "Installing nginx". Show this one while the step is in progress.
+          type: string
+        status:
+          description: Where this step stands. At most one step is in_progress at any time.
+          type: string
+          enum:
+            - pending
+            - in_progress
+            - completed
+      required:
+        - content
+        - activeForm
+        - status
+      additionalProperties: false
+    PendingActionResource:
+      description: A tool call that cannot continue until a person approves it or answers it.
+      type: object
+      properties:
+        threadId:
+          description: The conversation the tool call belongs to; a subagent's id when the subagent is the one waiting.
+          type: string
+        itemIds:
+          description: The waiting tool calls. Approvals come in batches; a question is a single item.
+          type: array
+          minItems: 1
+          items:
+            type: string
+        type:
+          type: string
+          enum:
+            - approval
+            - question
+      required:
+        - threadId
+        - itemIds
+        - type
+      additionalProperties: false
+    SubagentCountResource:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        running:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - total
+        - running
+      additionalProperties: false
+    LastTurnResource:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          $ref: ./thread-turns.yaml#/components/schemas/TurnType
+        status:
+          $ref: ./openapi.yaml#/components/schemas/TurnStatus
+        failureCode:
+          description: Why the turn failed. Null unless status is failed.
+          type:
+            - string
+            - "null"
+        completedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - type
+        - status
+        - failureCode
+        - completedAt
+      additionalProperties: false
+    ContextUsageResource:
+      description: How much of the model's context window the conversation occupies.
+      type: object
+      properties:
+        usedTokens:
+          description: Prompt tokens of the latest model request. Null before the first request.
+          type:
+            - integer
+            - "null"
+          format: int64
+        windowTokens:
+          description: The context window of the conversation's model. Null when the model is not in the catalogue.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - usedTokens
+        - windowTokens
+      additionalProperties: false
+    CreateThreadRequestBody:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        folderId:
+          description: The folder to file it in. Omit for the inbox.
+          type: string
+          maxLength: 64
+        modelId:
+          description: Omit to use the caller's default model.
+          type: string
+          minLength: 1
+          maxLength: 128
+        reasoningEffort:
+          description: Omit to use the caller's default effort, or medium.
+          $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        message:
+          description: The first message. Sending it here starts the first turn immediately.
+          $ref: ./thread-items.yaml#/components/schemas/SendMessageRequestBody
+      additionalProperties: false
+    CreateThreadResponseBody:
+      type: object
+      properties:
+        thread:
+          $ref: "#/components/schemas/ThreadResource"
+        turnId:
+          description: The turn started by `message`. Null when no message was sent.
+          type:
+            - string
+            - "null"
+      required:
+        - thread
+        - turnId
+      additionalProperties: false
+    SearchThreadsRequestBody:
+      type: object
+      properties:
+        ids:
+          description: Read these conversations, including subagents and archived ones. Cannot be combined with cursor.
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: string
+        folderId:
+          description: Only conversations in this folder.
+          type: string
+          maxLength: 64
+        parentId:
+          description: Only the subagents of this conversation.
+          type: string
+          maxLength: 64
+        role:
+          description: Defaults to main unless parentId is given.
+          type: string
+          enum:
+            - main
+            - subagent
+        state:
+          description: |-
+            `needs_action` is waiting for a person or ended with a failure, `running` is working,
+            and `done` is everything else.
+          type: string
+          enum:
+            - needs_action
+            - running
+            - done
+        archived:
+          description: True for archived conversations only; otherwise unarchived only.
+          type: boolean
+          default: false
+        q:
+          description: Matches titles, case-insensitively.
+          type: string
+          maxLength: 100
+        sort:
+          description: |-
+            `attention` puts conversations that need action first, then running ones, then the most
+            recent. `recent` orders by last activity. `manual` is the order inside a folder and requires
+            folderId.
+          type: string
+          enum:
+            - attention
+            - recent
+            - manual
+          default: attention
+        cursor:
+          type: string
+          maxLength: 1024
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        include:
+          description: Optional parts of the response. `counts` adds `counts`.
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - counts
+      additionalProperties: false
+    ThreadListResponseBody:
+      type: object
+      properties:
+        threads:
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadResource"
+        nextCursor:
+          description: Null on the last page.
+          type:
+            - string
+            - "null"
+        counts:
+          description: Null unless `include` asked for it.
+          anyOf:
+            - $ref: "#/components/schemas/ThreadCountsResource"
+            - type: "null"
+      required:
+        - threads
+        - nextCursor
+        - counts
+      additionalProperties: false
+    ThreadCountsResource:
+      description: Counts over everything the criteria match, not only this page. `state`, `q` and the cursor are ignored.
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+        needsAction:
+          type: integer
+          format: int64
+          minimum: 0
+        running:
+          type: integer
+          format: int64
+          minimum: 0
+        unread:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - total
+        - needsAction
+        - running
+        - unread
+      additionalProperties: false
+    UpdateThreadRequestBody:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        archived:
+          type: boolean
+      additionalProperties: false
+    ResumeThreadRequestBody:
+      type: object
+      properties:
+        message:
+          description: Added to the conversation before the turn starts.
+          type: string
+          maxLength: 20000
+      additionalProperties: false
+    TurnStartedResponseBody:
+      type: object
+      properties:
+        turnId:
+          type: string
+      required:
+        - turnId
+      additionalProperties: false
+    RevertRequestBody:
+      type: object
+      properties:
+        ordinal:
+          description: The first item to revert; it and everything after it are reverted.
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - ordinal
+      additionalProperties: false
+    RevertedCountResponseBody:
+      type: object
+      properties:
+        reverted:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - reverted
+      additionalProperties: false

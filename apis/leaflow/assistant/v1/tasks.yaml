@@ -1,0 +1,519 @@
+paths:
+  /api/v1/tasks:
+    post:
+      summary: Create a task
+      description: |-
+        A task does something on a trigger and reports to a conversation. Its action either sends a
+        prompt to the conversation, which starts a turn there, or runs a command on an instance and
+        sends the result to the conversation when it ends.
+
+        `trigger.type` `now` runs once immediately; `at` runs once at `runAt`; `interval` repeats every
+        `intervalSeconds` from `anchorAt`; `cron` repeats on a cron expression in `timezone`. Each
+        execution is a run, listed under /runs.
+
+        Fails with 404 when the conversation does not exist and with 409 and code THREAD_ARCHIVED when
+        it is archived.
+      operationId: create-task
+      tags:
+        - Task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    query:
+      summary: Search tasks
+      description: The caller's tasks in this project, most recently created first.
+      operationId: search-tasks
+      tags:
+        - Task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTasksRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    get:
+      summary: Get a task
+      operationId: get-task
+      tags:
+        - Task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update a task
+      description: |-
+        Changes the name, trigger or action. Omitted fields stay as they are; `trigger` and `action`
+        are replaced as a whole. A run already in progress keeps the settings it started with.
+      operationId: update-task
+      tags:
+        - Task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Delete a task
+      description: Cancels a run in progress and removes the task. Its runs stay readable in the conversation's transcript.
+      operationId: delete-task
+      tags:
+        - Task
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/run:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    post:
+      summary: Run a task now
+      description: |-
+        Starts a run immediately, outside its trigger. Fails with 409 and code TASK_RUNNING when a run
+        is already in progress and the overlap policy is `skip`.
+      operationId: run-task
+      tags:
+        - Task
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRunResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/pause:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    post:
+      summary: Pause a task
+      description: Stops future runs from its trigger. A run in progress continues. Pausing a paused task succeeds.
+      operationId: pause-task
+      tags:
+        - Task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/resume:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    post:
+      summary: Resume a task
+      description: Lets its trigger start runs again. Missed runs within `catchupSeconds` are started. Resuming an active task succeeds.
+      operationId: resume-task
+      tags:
+        - Task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/cancel:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    post:
+      summary: Cancel the running run
+      description: Stops the run in progress. The conversation is told the run was cancelled. Succeeds when nothing is running.
+      operationId: cancel-task-run
+      tags:
+        - Task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/runs:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+    get:
+      summary: List a task's runs
+      description: Newest first, without output; read a run with get-task-run for it.
+      operationId: list-task-runs
+      tags:
+        - Task
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRunListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/tasks/{task}/runs/{run}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/TaskId
+      - name: run
+        in: path
+        required: true
+        description: A task run id.
+        schema:
+          type: string
+          maxLength: 128
+    get:
+      summary: Get a task run
+      description: One run with the end of its output.
+      operationId: get-task-run
+      tags:
+        - Task
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskRunResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    TaskResource:
+      type: object
+      properties:
+        id:
+          type: string
+        threadId:
+          description: The conversation the task reports to.
+          type: string
+        name:
+          type: string
+        status:
+          description: "`completed` is a one-time task whose run has ended."
+          type: string
+          enum:
+            - active
+            - paused
+            - completed
+            - cancelled
+        trigger:
+          $ref: "#/components/schemas/TaskTrigger"
+        action:
+          $ref: "#/components/schemas/TaskAction"
+        nextRunAt:
+          description: When the trigger starts the next run. Null when it will not.
+          type:
+            - string
+            - "null"
+          format: date-time
+        lastRun:
+          anyOf:
+            - $ref: "#/components/schemas/TaskRunResource"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - threadId
+        - name
+        - status
+        - trigger
+        - action
+        - nextRunAt
+        - lastRun
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    TaskTrigger:
+      description: When the task runs. `type` determines which fields apply.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - now
+            - at
+            - interval
+            - cron
+        runAt:
+          description: For `at`.
+          type:
+            - string
+            - "null"
+          format: date-time
+        intervalSeconds:
+          description: For `interval`.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 10
+        anchorAt:
+          description: For `interval`. Runs fall on anchorAt plus whole intervals. Defaults to the creation time.
+          type:
+            - string
+            - "null"
+          format: date-time
+        cron:
+          description: For `cron`. A cron expression evaluated in `timezone`, for example `0 9 * * 1-5`.
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        timezone:
+          description: An IANA time zone for `cron`.
+          type: string
+          default: UTC
+        overlapPolicy:
+          description: What happens when a run is due while the previous one is still going.
+          type: string
+          enum:
+            - skip
+            - buffer_one
+          default: buffer_one
+        catchupSeconds:
+          description: How late a missed run may still start, for example after a pause or an outage.
+          type: integer
+          format: int64
+          minimum: 10
+          default: 300
+      required:
+        - type
+      additionalProperties: false
+    TaskAction:
+      description: What a run does. `type` determines which fields apply.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - prompt
+            - command
+        prompt:
+          description: For `prompt`. Sent to the conversation as a message from the task.
+          type:
+            - string
+            - "null"
+          maxLength: 20000
+        instanceId:
+          description: For `command`. The instance that runs it.
+          type:
+            - string
+            - "null"
+        command:
+          description: For `command`. A shell command.
+          type:
+            - string
+            - "null"
+          maxLength: 20000
+        timeoutSeconds:
+          description: For `command`. The run fails with status timed_out after this long.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 3600
+          default: 3600
+      required:
+        - type
+      additionalProperties: false
+    TaskRunResource:
+      type: object
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+            - cancelled
+            - timed_out
+        startedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        finishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        exitCode:
+          description: For commands. Null until the command exits.
+          type:
+            - integer
+            - "null"
+          format: int64
+        output:
+          description: The last 16 KiB of a command's output. Empty for prompts; null in lists, read the run for it.
+          type:
+            - string
+            - "null"
+        errorCode:
+          description: Why the run failed. Null unless status is failed.
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - taskId
+        - status
+        - startedAt
+        - finishedAt
+        - exitCode
+        - output
+        - errorCode
+      additionalProperties: false
+    CreateTaskRequestBody:
+      type: object
+      properties:
+        threadId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        trigger:
+          $ref: "#/components/schemas/TaskTrigger"
+        action:
+          $ref: "#/components/schemas/TaskAction"
+      required:
+        - threadId
+        - name
+        - trigger
+        - action
+      additionalProperties: false
+    UpdateTaskRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        trigger:
+          $ref: "#/components/schemas/TaskTrigger"
+        action:
+          $ref: "#/components/schemas/TaskAction"
+      additionalProperties: false
+    SearchTasksRequestBody:
+      type: object
+      properties:
+        threadId:
+          description: Only the tasks that report to this conversation.
+          type: string
+          maxLength: 64
+        status:
+          type: string
+          enum:
+            - active
+            - paused
+            - completed
+            - cancelled
+        triggerType:
+          type: string
+          enum:
+            - now
+            - at
+            - interval
+            - cron
+        actionType:
+          type: string
+          enum:
+            - prompt
+            - command
+        cursor:
+          type: string
+          maxLength: 1024
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      additionalProperties: false
+    TaskListResponseBody:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskResource"
+        nextCursor:
+          type:
+            - string
+            - "null"
+      required:
+        - tasks
+        - nextCursor
+      additionalProperties: false
+    TaskRunListResponseBody:
+      type: object
+      properties:
+        runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskRunResource"
+        nextCursor:
+          type:
+            - string
+            - "null"
+      required:
+        - runs
+        - nextCursor
+      additionalProperties: false

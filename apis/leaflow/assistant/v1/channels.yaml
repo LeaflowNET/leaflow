@@ -1,0 +1,995 @@
+paths:
+  /api/v1/bindings:
+    get:
+      summary: List bindings
+      description: Filter by channelId to show, per channel, who is bound to it.
+      operationId: list-bindings
+      tags:
+        - Channel
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: platform
+          in: query
+          explode: false
+          schema:
+            type: string
+        - name: channelId
+          in: query
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: active
+          in: query
+          description: Return only bindings that are active
+          explode: false
+          schema:
+            description: Return only bindings that are active
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageBindingResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/bindings/{binding}:
+    get:
+      summary: Get a binding
+      operationId: get-binding
+      tags:
+        - Channel
+      parameters:
+        - name: binding
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Remove a binding
+      operationId: delete-binding
+      tags:
+        - Channel
+      parameters:
+        - name: binding
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels:
+    get:
+      summary: List channels
+      operationId: list-channels
+      tags:
+        - Channel
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: platform
+          in: query
+          explode: false
+          schema:
+            type: string
+        - name: active
+          in: query
+          description: Return only channels that are enabled
+          explode: false
+          schema:
+            description: Return only channels that are enabled
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageChannelResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create a channel
+      description:
+        Which side owns the webhook secret is decided by the platform; see secretSource on
+        list-platforms. For a `generated` platform, do not send webhookSecret — the one we generate is
+        returned exactly once in this response and cannot be retrieved again; miss it and the only way
+        forward is rotating to a new one. For a `supplied` platform you must pass the secret from that
+        platform's own console, and webhookSecret in the response is null.
+      operationId: create-channel
+      tags:
+        - Channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelWithSecretResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}:
+    get:
+      summary: Get a channel
+      operationId: get-channel
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update a channel
+      description:
+        Only the fields present are changed. senderPolicy and allowFrom go together, and senderPolicy
+        decides whether they are replaced. For platforms held open by a long-lived connection the change
+        applies once that connection is rebuilt; for webhook platforms it applies at once.
+      operationId: update-channel
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateChannelRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Delete a channel
+      description:
+        The channel stops accepting inbound messages and every binding on it stops working.
+        This operation remains available while the project is suspended or being cleaned up.
+      operationId: delete-channel
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}/binding-codes:
+    post:
+      summary: Issue a binding code
+      description:
+        Produces a single-use code to hand to the person being bound. They send that code to
+        the assistant from their own account on that platform, which completes the binding. A binding
+        can only be established this way, by the person themselves — a platform account cannot be named
+        directly. Codes expire and have to be reissued.
+      operationId: create-binding-code
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingCodeResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}/rejections:
+    get:
+      summary: List recently rejected inbound messages
+      description:
+        For diagnosing "I sent a message and the assistant never answered". Returns the inbound
+        messages this channel rejected most recently, newest first, each with its reason. The most common
+        reason is that the sender is not bound yet.
+      operationId: list-channel-rejections
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          explode: false
+          schema:
+            type: integer
+            format: int64
+            default: 50
+            minimum: 0
+            maximum: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RejectionListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}/secret:
+    post:
+      summary: Rotate the webhook secret
+      description:
+        Replaces the webhook secret. The old one stops working immediately and the channel
+        drops back to awaiting confirmation from the platform. Which side owns the secret is decided by
+        the platform; see secretSource on list-platforms. For a `generated` platform, send no body — the
+        new secret is returned in this response only and cannot be retrieved again. For a `supplied` platform
+        you must pass the new secret from that platform's own console.
+      operationId: rotate-channel-secret
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateSecretRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookSecretResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}/sender-check:
+    get:
+      summary: Test whether a sender would be let through
+      description:
+        "For checking a sender policy after changing it. Sends nothing and changes nothing:
+        it runs exactly the same decision a real inbound message goes through, and says which rule produced
+        the answer. The binding-code rule cannot be tested this way — whether something is a binding code
+        depends on what the sender actually wrote."
+      operationId: check-sender
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: peerId
+          in: query
+          required: true
+          description: That person's id on the platform, the same value that appears in bindings and rejections
+          explode: false
+          schema:
+            description: That person's id on the platform, the same value bindings and rejections carry
+            type: string
+        - name: username
+          in: query
+          description:
+            Only platforms with usernames, such as Telegram, can supply this. Without the @.
+            Leave it empty to mean there is no username
+          explode: false
+          schema:
+            description:
+              Only platforms with usernames, such as Telegram, can supply this. Without the @.
+              Empty means there is no username
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SenderCheckResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/channels/{channel}/weixin-logins:
+    post:
+      summary: Begin a WeChat QR login
+      description:
+        A personal WeChat channel can only send and receive once its owner has signed in by
+        scanning a QR code. This returns that code; poll `GET /v1/weixin-logins/{login}` for progress,
+        and when the status asks for a verification code, submit it with `POST /v1/weixin-logins/{login}/verify-code`.
+      operationId: begin-weixin-login
+      tags:
+        - Channel
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/platforms:
+    get:
+      summary: List platforms that can be connected
+      description:
+        "The instant messaging platforms that can currently be connected, along with the flow
+        and the credential fields each one needs. The create-channel form is driven entirely by this response:
+        setupMethod decides between a credential form and a QR flow, credentialFields is what to ask for,
+        and secretSource decides whether there is a webhook secret field at all."
+      operationId: list-platforms
+      tags:
+        - Channel
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/weixin-logins/{login}:
+    get:
+      summary: Get the state of a QR login
+      description:
+        Poll this until the status is success or failure. When the status asks for a verification
+        code, submit it with the verification-code operation.
+      operationId: get-weixin-login
+      tags:
+        - Channel
+      parameters:
+        - name: login
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/weixin-logins/{login}/verify-code:
+    post:
+      summary: Submit a login verification code
+      description:
+        For when WeChat asks for an SMS or device code after the scan. The person who started
+        the login gets that code on their own phone.
+      operationId: submit-weixin-verify-code
+      tags:
+        - Channel
+      parameters:
+        - name: login
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyCodeRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    BindingResource:
+      type: object
+      properties:
+        channelId:
+          type: string
+          format: uuid
+        connectionStatus:
+          type: string
+          enum:
+            - logged_out
+            - qr_pending
+            - online
+            - expired
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        peerName:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - active
+            - revoked
+        verifiedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - channelId
+        - platform
+        - peerName
+        - status
+        - connectionStatus
+        - verifiedAt
+        - createdAt
+      additionalProperties: false
+    LengthAwarePageBindingResource:
+      type: object
+      properties:
+        items:
+          description: The entries on this page
+          type: array
+          items:
+            $ref: "#/components/schemas/BindingResource"
+        limit:
+          description: The page size, echoing what was requested
+          type: integer
+          format: int64
+        offset:
+          description: How many were skipped, echoing what was requested
+          type: integer
+          format: int64
+        total:
+          description: How many match in total, not just on this page
+          type: integer
+          format: int64
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      additionalProperties: false
+    ChannelResource:
+      type: object
+      properties:
+        allowFrom:
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        connectionStatus:
+          description:
+            How far this channel is from working. Only `online` receives messages and can issue
+            binding codes
+          type: string
+          enum:
+            - logged_out
+            - qr_pending
+            - online
+            - expired
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        platform:
+          type: string
+        runtimeStatus:
+          description:
+            The state of the long-lived connection right now. Always `stopped` for webhook
+            platforms
+          type: string
+          enum:
+            - stopped
+            - running
+        senderPolicy:
+          type: string
+          enum:
+            - bound_only
+            - open
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - disabled
+        updatedAt:
+          type: string
+          format: date-time
+        webhookPath:
+          description: The webhook path, for gateway configuration and for diagnosis
+          type: string
+        webhookUrl:
+          description:
+            The webhook address to paste into that platform's console. Null when the deployment
+            declares no public entry point
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - platform
+        - name
+        - status
+        - connectionStatus
+        - runtimeStatus
+        - senderPolicy
+        - allowFrom
+        - webhookUrl
+        - webhookPath
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    LengthAwarePageChannelResource:
+      type: object
+      properties:
+        items:
+          description: The entries on this page
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelResource"
+        limit:
+          description: The page size, echoing what was requested
+          type: integer
+          format: int64
+        offset:
+          description: How many were skipped, echoing what was requested
+          type: integer
+          format: int64
+        total:
+          description: How many match in total, not just on this page
+          type: integer
+          format: int64
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      additionalProperties: false
+    CreateChannelRequestBody:
+      type: object
+      properties:
+        allowFrom:
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        credentials:
+          description: "Credentials for that platform. Write-only: they cannot be read back after creation"
+          type: object
+          additionalProperties:
+            type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        platform:
+          type: string
+          minLength: 1
+        senderPolicy:
+          type: string
+          enum:
+            - bound_only
+            - open
+        webhookSecret:
+          description:
+            Required for platforms that generate the secret themselves (secretSource=supplied).
+            Must be absent for `generated` ones, where the secret we make is returned once in webhookSecret
+            on this response
+          type: string
+      required:
+        - platform
+        - name
+      additionalProperties: false
+    ChannelWithSecretResponseBody:
+      type: object
+      properties:
+        allowFrom:
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        connectionStatus:
+          description:
+            How far this channel is from working. Only `online` receives messages and can issue
+            binding codes
+          type: string
+          enum:
+            - logged_out
+            - qr_pending
+            - online
+            - expired
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        platform:
+          type: string
+        runtimeStatus:
+          description:
+            The state of the long-lived connection right now. Always `stopped` for webhook
+            platforms
+          type: string
+          enum:
+            - stopped
+            - running
+        senderPolicy:
+          type: string
+          enum:
+            - bound_only
+            - open
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - disabled
+        updatedAt:
+          type: string
+          format: date-time
+        webhookPath:
+          description: The webhook path, for gateway configuration and for diagnosis
+          type: string
+        webhookSecret:
+          description:
+            The webhook secret we generated, to paste into that platform's console. **It cannot
+            be retrieved again** — the only way forward is rotating to a new one. Null when the platform
+            generates the secret (secretSource=supplied) or does not use webhooks at all
+          type:
+            - string
+            - "null"
+        webhookUrl:
+          description:
+            The webhook address to paste into that platform's console. Null when the deployment
+            declares no public entry point
+          type:
+            - string
+            - "null"
+      required:
+        - webhookSecret
+        - id
+        - platform
+        - name
+        - status
+        - connectionStatus
+        - runtimeStatus
+        - senderPolicy
+        - allowFrom
+        - webhookUrl
+        - webhookPath
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    UpdateChannelRequestBody:
+      type: object
+      properties:
+        allowFrom:
+          description: The allow list. Only applied when senderPolicy is sent as well
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        credentials:
+          description: Replaced wholesale rather than merged key by key. Absent means unchanged
+          type: object
+          additionalProperties:
+            type: string
+        enabled:
+          type: boolean
+        name:
+          type: string
+          maxLength: 128
+        senderPolicy:
+          description: Only when this is sent is allowFrom replaced along with it
+          type: string
+          enum:
+            - bound_only
+            - open
+      additionalProperties: false
+    BindingCodeResponseBody:
+      type: object
+      properties:
+        code:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - code
+        - expiresAt
+      additionalProperties: false
+    RejectionResource:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        peerId:
+          type: string
+        peerName:
+          type: string
+        peerUsername:
+          type: string
+        platform:
+          type: string
+        textLength:
+          type: integer
+          format: int64
+        verdict:
+          type: string
+      required:
+        - peerId
+        - peerName
+        - peerUsername
+        - platform
+        - verdict
+        - textLength
+        - at
+      additionalProperties: false
+    RejectionListResponseBody:
+      type: object
+      properties:
+        rejections:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/RejectionResource"
+      required:
+        - rejections
+      additionalProperties: false
+    RotateSecretRequestBody:
+      type: object
+      properties:
+        webhookSecret:
+          description:
+            Required for platforms that generate the secret themselves (secretSource=supplied).
+            Must be absent for `generated` ones
+          type: string
+      additionalProperties: false
+    WebhookSecretResponseBody:
+      type: object
+      properties:
+        webhookSecret:
+          type: string
+      required:
+        - webhookSecret
+      additionalProperties: false
+    SenderCheckResource:
+      type: object
+      properties:
+        allowFrom:
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        allowed:
+          type: boolean
+        bindingId:
+          type:
+            - string
+            - "null"
+        senderPolicy:
+          type: string
+        verdict:
+          type: string
+          enum:
+            - ALLOWED_BY_BINDING
+            - ALLOWED_BY_ALLOW_FROM
+            - ALLOWED_BY_POLICY
+            - REJECTED_NOT_ALLOWED
+      required:
+        - allowed
+        - verdict
+        - senderPolicy
+        - allowFrom
+        - bindingId
+      additionalProperties: false
+    LoginResource:
+      type: object
+      properties:
+        expiresAt:
+          description: When this login flow expires. Past that, stop polling and start a new one
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        qrcodeData:
+          description:
+            The text to encode and render as a QR code by the client — not an image address
+            and not a data URI. When a code expires this flow issues another and keeps waiting, so each
+            poll may return a new string
+          type: string
+        reason:
+          description: Why it failed. Present only when status is error or expired
+          type: string
+        status:
+          type: string
+          enum:
+            - wait
+            - scanned
+            - confirmed
+            - expired
+            - error
+            - need_verify_code
+      required:
+        - id
+        - status
+        - qrcodeData
+        - reason
+        - expiresAt
+      additionalProperties: false
+    CredentialFieldResource:
+      type: object
+      properties:
+        help:
+          type: string
+        key:
+          type: string
+        label:
+          type: string
+        required:
+          type: boolean
+        secret:
+          type: boolean
+      required:
+        - key
+        - label
+        - required
+        - secret
+        - help
+      additionalProperties: false
+    PlatformResource:
+      type: object
+      properties:
+        credentialFields:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/CredentialFieldResource"
+        name:
+          type: string
+        resident:
+          type: boolean
+        secretSource:
+          type: string
+          enum:
+            - generated
+            - supplied
+            - none
+        setupChallenge:
+          type: string
+          enum:
+            - none
+            - webhook
+            - scan
+        setupMethod:
+          type: string
+          enum:
+            - credentials
+            - scan
+        webhookPath:
+          description: The webhook path template; {channel} is replaced with the channel id
+          type: string
+        webhookUrlTemplate:
+          description:
+            The full webhook address template. Null when the deployment declares no public
+            entry point
+          type:
+            - string
+            - "null"
+      required:
+        - name
+        - resident
+        - setupMethod
+        - setupChallenge
+        - secretSource
+        - credentialFields
+        - webhookPath
+        - webhookUrlTemplate
+      additionalProperties: false
+    PlatformListResponseBody:
+      type: object
+      properties:
+        platforms:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/PlatformResource"
+      required:
+        - platforms
+      additionalProperties: false
+    VerifyCodeRequestBody:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+      required:
+        - code
+      additionalProperties: false

@@ -1,0 +1,106 @@
+paths:
+  /api/v1/settings:
+    get:
+      summary: Get settings
+      description: |-
+        The caller's assistant settings in this project. `defaultModel` is what a new conversation uses
+        when it names no model: the caller's choice, or the first model in the Canopy catalogue that can
+        run an agent.
+      operationId: get-settings
+      tags:
+        - Setting
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update settings
+      description: |-
+        Omitted fields stay as they are; null clears a choice so the catalogue default applies again.
+        Existing conversations keep their models.
+
+        Fails with 422 and code MODEL_UNAVAILABLE when the model cannot run an agent, and with 422 and
+        code REASONING_UNSUPPORTED when a reasoning effort is set for a model without reasoning.
+      operationId: update-settings
+      tags:
+        - Setting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    SettingsResource:
+      type: object
+      properties:
+        defaultModelId:
+          description: The caller's choice. Null when none is set.
+          type:
+            - string
+            - "null"
+        defaultReasoningEffort:
+          description: The caller's choice. Null when none is set.
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        defaultModel:
+          $ref: "#/components/schemas/DefaultModelResource"
+      required:
+        - defaultModelId
+        - defaultReasoningEffort
+        - defaultModel
+      additionalProperties: false
+    DefaultModelResource:
+      description: The model and effort a new conversation gets when it names none.
+      type: object
+      properties:
+        modelId:
+          description: Null when the catalogue has no model that can run an agent.
+          type:
+            - string
+            - "null"
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        source:
+          description: "`user` when it is the caller's choice, `catalog` when it comes from the Canopy catalogue."
+          type: string
+          enum:
+            - user
+            - catalog
+      required:
+        - modelId
+        - reasoningEffort
+        - source
+      additionalProperties: false
+    UpdateSettingsRequestBody:
+      type: object
+      properties:
+        defaultModelId:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 128
+        defaultReasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+      additionalProperties: false

@@ -1,0 +1,148 @@
+paths:
+  /api/v1/threads/{thread}/turns:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    get:
+      summary: List turns
+      description: |-
+        The conversation's turns, newest first, each with the model and reasoning effort it ran with,
+        how long it took and the tokens it used. Cache hit rate is `cachedInputTokens / inputTokens`.
+
+        Each turn names the ordinals it wrote and the message that started it, so a client can draw a
+        timeline from this list and open a turn with list-thread-items `around`.
+
+        `ids` reads the turns behind a page of transcript items in one request and cannot be combined
+        with a cursor.
+      operationId: list-thread-turns
+      tags:
+        - Turn
+      parameters:
+        - name: ids
+          in: query
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 200
+            uniqueItems: true
+            items:
+              type: string
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadTurnListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    TurnType:
+      description: "`message` answers messages; `compaction` summarizes the history to free the context window."
+      type: string
+      enum:
+        - message
+        - compaction
+    ThreadTurnResource:
+      description: One run of the agent, from the message that started it until it stopped.
+      type: object
+      properties:
+        id:
+          type: string
+        threadId:
+          type: string
+        type:
+          $ref: "#/components/schemas/TurnType"
+        status:
+          $ref: ./openapi.yaml#/components/schemas/TurnStatus
+        firstOrdinal:
+          description: The first item the turn wrote. Null before it has written one.
+          type:
+            - integer
+            - "null"
+          format: int64
+        lastOrdinal:
+          description: The last item the turn wrote so far.
+          type:
+            - integer
+            - "null"
+          format: int64
+        preview:
+          description: The beginning of the message that started the turn. Null for compaction turns and turns started by the assistant itself.
+          type:
+            - string
+            - "null"
+        modelId:
+          type: string
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        failureCode:
+          description: Why the turn failed. Null unless status is failed.
+          type:
+            - string
+            - "null"
+        toolCalls:
+          description: How many tools the turn called.
+          type: integer
+          format: int64
+          minimum: 0
+        usage:
+          description: Tokens used by every model request of this turn, including title generation, review and compaction.
+          $ref: ./openapi.yaml#/components/schemas/Usage
+        startedAt:
+          type: string
+          format: date-time
+        firstTokenAt:
+          description: When the first output token arrived. Null until then.
+          type:
+            - string
+            - "null"
+          format: date-time
+        completedAt:
+          description: Null while the turn is running.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - threadId
+        - type
+        - status
+        - firstOrdinal
+        - lastOrdinal
+        - preview
+        - modelId
+        - reasoningEffort
+        - approvalMode
+        - failureCode
+        - toolCalls
+        - usage
+        - startedAt
+        - firstTokenAt
+        - completedAt
+      additionalProperties: false
+    ThreadTurnListResponseBody:
+      type: object
+      properties:
+        turns:
+          description: Newest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadTurnResource"
+        nextCursor:
+          type:
+            - string
+            - "null"
+      required:
+        - turns
+        - nextCursor
+      additionalProperties: false

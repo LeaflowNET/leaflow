@@ -1,0 +1,805 @@
+paths:
+  /api/v1/threads/{thread}/items:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    get:
+      summary: List transcript items
+      description: |-
+        A window of the conversation's transcript, oldest first: messages, reasoning, tool calls and
+        compaction markers. A window holds whole turns, so a turn's messages and tool calls arrive
+        together; a single turn larger than the size limit is split across windows.
+
+        Without a position the window ends at the latest item. `before` reads the window above an
+        ordinal and `after` the window below it; pass `startOrdinal` and `endOrdinal` from the response.
+        `around` opens a window that contains an ordinal, for jumping to a turn from list-thread-turns or
+        to a search result.
+
+        Long reasoning and tool arguments are cut to a preview and marked `truncated`; read the item for
+        all of it. Messages are never cut.
+
+        When the window reaches the end, `queued` holds the messages waiting for the assistant and
+        `streamCursor` is set: subscribe to `thread:{id}` on /api/v1/realtime from it to follow what is
+        written next.
+      operationId: list-thread-items
+      tags:
+        - Item
+      parameters:
+        - name: before
+          in: query
+          description: Return the window ending just above this ordinal.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: after
+          in: query
+          description: Return the window starting just below this ordinal.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: around
+          in: query
+          description: Return a window containing this ordinal. Only one of before, after and around may be given.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: turns
+          in: query
+          description: How many turns a window holds at most.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadItemListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/items/{item}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+      - $ref: ./openapi.yaml#/components/parameters/ItemId
+    get:
+      summary: Get a transcript item
+      description: One item in full, including what list-thread-items cut from it.
+      operationId: get-thread-item
+      tags:
+        - Item
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadItemResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/messages:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Send a message
+      description: |-
+        Starts a turn and returns at once; a turn can run for tens of minutes and its progress arrives
+        on /api/v1/realtime. Sending while the assistant is working is allowed: the message is queued
+        and read at the next step of the running turn, and `queued` is true.
+
+        Fails with 409 and code THREAD_ARCHIVED for an archived conversation.
+      operationId: send-message
+      tags:
+        - Item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequestBody"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendMessageResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/approvals:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Approve or decline tool calls
+      description: |-
+        Decides the tool calls the conversation is waiting on, listed in `pendingAction.itemIds`. One
+        decision applies to the whole batch, so `itemIds` must name exactly the calls awaiting approval.
+
+        Repeating a decision that is already in effect succeeds. Fails with 409 and code
+        APPROVAL_MISMATCH when `itemIds` is not the current batch, for example because another tab
+        decided first and the assistant has moved on.
+      operationId: decide-tool-calls
+      tags:
+        - Item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideToolCallsRequestBody"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/items/{item}/answer:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+      - $ref: ./openapi.yaml#/components/parameters/ItemId
+    post:
+      summary: Answer the assistant's questions
+      description: |-
+        Answers an `ask` tool call. Its questions are in the item's `questions`. An item that is already
+        answered also succeeds: another tab may have answered first, or the auto-answer window may have
+        passed, and either way the turn has continued.
+      operationId: answer-question
+      tags:
+        - Item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnswerQuestionRequestBody"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/items/{item}/result:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+      - $ref: ./openapi.yaml#/components/parameters/ItemId
+    post:
+      summary: Report what a client tool produced
+      description: |-
+        The assistant asks the client to run one of the actions it declared by writing a tool call with
+        the namespace `client`; the client runs it when the item turns in_progress and reports here.
+
+        The first result counts. A later one fails with 409 and code RESULT_ALREADY_SUBMITTED.
+      operationId: submit-tool-result
+      tags:
+        - Item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToolResultRequestBody"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ThreadItemResource:
+      description: One entry of the transcript. `type` determines which fields it carries.
+      type: object
+      properties:
+        id:
+          type: string
+        ordinal:
+          description: The position in the transcript. Never renumbered. Null for a message waiting in the queue.
+          type:
+            - integer
+            - "null"
+          format: int64
+        turnId:
+          description: The turn that wrote this item. Null for messages waiting in the queue.
+          type:
+            - string
+            - "null"
+        type:
+          type: string
+          enum:
+            - user_message
+            - external_message
+            - agent_message
+            - reasoning
+            - tool_call
+            - compaction
+            - token_budget_reminder
+            - turn_failure
+        status:
+          description: "`queued` is a message sent while the assistant was busy that it has not read yet."
+          type: string
+          enum:
+            - queued
+            - pending
+            - in_progress
+            - completed
+            - failed
+            - declined
+            - cancelled
+        reverted:
+          description: Left out of model requests since a revert. Shown, but marked.
+          type: boolean
+        truncated:
+          description: Long reasoning or tool arguments were cut from this list; read the item for all of it.
+          type: boolean
+        source:
+          description: Who wrote an `external_message`. Null for other items.
+          anyOf:
+            - $ref: "#/components/schemas/ItemSourceResource"
+            - type: "null"
+        modelId:
+          description: The Canopy model that produced this item. Null for messages a person or another source sent.
+          type:
+            - string
+            - "null"
+        durationMs:
+          description: How long the reasoning or the tool call took. Null while it runs and for other items.
+          type:
+            - integer
+            - "null"
+          format: int64
+        parts:
+          description: |-
+            The content, in the order it was written. Text arrives as `append` frames on the realtime
+            stream. An attachment belongs where it was written, so render parts in order. Empty for
+            tool calls; their outcome is in `toolCall.detail` and `toolCall.presentation`.
+          type: array
+          items:
+            $ref: "#/components/schemas/PartResource"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentResource"
+        clientContext:
+          description: |-
+            The `data-*` blocks the client attached to a user message. They are not part of what the
+            person wrote; render the message from `parts` and leave these out of the bubble.
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientContextPart"
+        toolCall:
+          description: The call, for a `tool_call` item. Null for other items.
+          anyOf:
+            - $ref: "#/components/schemas/ToolCallResource"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - ordinal
+        - turnId
+        - type
+        - status
+        - reverted
+        - truncated
+        - source
+        - modelId
+        - durationMs
+        - parts
+        - attachments
+        - clientContext
+        - toolCall
+        - createdAt
+      additionalProperties: false
+    ItemSourceResource:
+      type: object
+      properties:
+        type:
+          description: |-
+            `subagent` for a subagent reporting to its parent, `thread` for another of the person's
+            conversations, `task` for a task, `channel` for a chat app.
+          type: string
+          enum:
+            - subagent
+            - thread
+            - task
+            - channel
+        id:
+          description: The conversation, task or channel the message came from.
+          type: string
+      required:
+        - type
+        - id
+      additionalProperties: false
+    ToolCallResource:
+      type: object
+      properties:
+        namespace:
+          description: The tool's group, for example `instance`, `leaflow`, `agent` or `client`. Empty for tools without one.
+          type: string
+        tool:
+          type: string
+        arguments:
+          description: The arguments as JSON text. Cut in lists when long; then it is no longer valid JSON.
+          type: string
+        target:
+          description: What the call acts on, for display, such as a file path or an instance name.
+          type:
+            - string
+            - "null"
+        detail:
+          description: A one-line description of what the call did.
+          type:
+            - string
+            - "null"
+        presentation:
+          anyOf:
+            - $ref: "#/components/schemas/PresentationResource"
+            - type: "null"
+        approvalStatus:
+          description: |-
+            Whether the call needed a decision before it ran. Null for calls that need none.
+            `auto_approved` was approved by the automatic reviewer.
+          type:
+            - string
+            - "null"
+          enum:
+            - pending
+            - reviewing
+            - approved
+            - auto_approved
+            - declined
+            - unreviewed
+        approvalReason:
+          type:
+            - string
+            - "null"
+        decidedAt:
+          description: When a person or the reviewer decided the call or answered its questions.
+          type:
+            - string
+            - "null"
+          format: date-time
+        questions:
+          description: The questions of an `ask` call. Null for other calls.
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/QuestionResource"
+        answers:
+          description: The answers given so far, by question id. Null for other calls.
+          type:
+            - object
+            - "null"
+          additionalProperties:
+            type: string
+        autoAnswerMs:
+          description: How long an `ask` call waits before it continues with its default answers. Null when it waits indefinitely.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - namespace
+        - tool
+        - arguments
+        - target
+        - detail
+        - presentation
+        - approvalStatus
+        - approvalReason
+        - decidedAt
+        - questions
+        - answers
+        - autoAnswerMs
+      additionalProperties: false
+    PartResource:
+      type: object
+      properties:
+        id:
+          description: |-
+            Addresses this part in the realtime stream: text arrives as `append` frames pointing at
+            `/items/{item}/parts/{id}/text`. Not an array index.
+          type: string
+        type:
+          type: string
+          enum:
+            - text
+            - file
+        text:
+          description: For `text` parts. Grows as the answer is written.
+          type:
+            - string
+            - "null"
+        attachmentId:
+          description: For `file` parts. Points at one of the item's `attachments`.
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - type
+        - text
+        - attachmentId
+      additionalProperties: false
+    AttachmentResource:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          description: A client renders an image in place and everything else as a file to download.
+          type: string
+          enum:
+            - image
+            - text
+            - binary
+        filename:
+          type: string
+        byteSize:
+          type: integer
+          format: int64
+        width:
+          description: Null unless type is image. Lets a client hold the space before the image loads.
+          type:
+            - integer
+            - "null"
+          format: int64
+        height:
+          description: Null unless type is image.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - id
+        - type
+        - filename
+        - byteSize
+        - width
+        - height
+      additionalProperties: false
+    PresentationResource:
+      description: Structured detail produced by a tool call, in addition to the one-line `detail`.
+      type: object
+      properties:
+        type:
+          description: Determines which of the remaining fields is populated.
+          type: string
+          enum:
+            - file_diff
+        fileDiff:
+          anyOf:
+            - $ref: "#/components/schemas/FileDiffResource"
+            - type: "null"
+      required:
+        - type
+        - fileDiff
+      additionalProperties: false
+    FileDiffResource:
+      description: |-
+        The change a tool call applied to a single file. Present once the call has completed; while it
+        awaits approval, derive a preview from its `old_string` and `new_string` arguments.
+      type: object
+      properties:
+        path:
+          description: Absolute path of the file on the instance.
+          type: string
+        status:
+          type: string
+          enum:
+            - added
+            - modified
+            - deleted
+        added:
+          description: Lines added. Complete even when `unified` is null.
+          type: integer
+          format: int64
+        removed:
+          description: Lines removed. Complete even when `unified` is null.
+          type: integer
+          format: int64
+        unified:
+          description: The change as a unified diff with three lines of context. Null when it exceeds the size limit.
+          type:
+            - string
+            - "null"
+      required:
+        - path
+        - status
+        - added
+        - removed
+        - unified
+      additionalProperties: false
+    QuestionResource:
+      type: object
+      properties:
+        id:
+          type: string
+        header:
+          description: A short label for the question.
+          type: string
+        question:
+          type: string
+        choices:
+          description: Suggested answers. A free-form answer is accepted as well.
+          type: array
+          items:
+            $ref: "#/components/schemas/ChoiceResource"
+      required:
+        - id
+        - header
+        - question
+        - choices
+      additionalProperties: false
+    ChoiceResource:
+      type: object
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+      required:
+        - label
+        - description
+      additionalProperties: false
+    ClientContextPart:
+      description: A `data-*` part as the client sent it.
+      type: object
+      properties:
+        type:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - type
+        - data
+      additionalProperties: false
+    ThreadItemListResponseBody:
+      type: object
+      properties:
+        items:
+          description: Oldest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadItemResource"
+        startOrdinal:
+          description: The first ordinal of the window; pass as `before` to read the window above. Null when the window is empty.
+          type:
+            - integer
+            - "null"
+          format: int64
+        endOrdinal:
+          description: The last ordinal of the window; pass as `after` to read the window below. Null when the window is empty.
+          type:
+            - integer
+            - "null"
+          format: int64
+        hasEarlier:
+          type: boolean
+        hasLater:
+          type: boolean
+        queued:
+          description: Messages waiting for the assistant, in the order they were sent. Empty unless the window reaches the end.
+          type: array
+          items:
+            $ref: "#/components/schemas/ThreadItemResource"
+        streamCursor:
+          description: |-
+            Subscribe to the conversation on /api/v1/realtime from this cursor to receive what is
+            written after this window. Null unless the window reaches the end.
+          type:
+            - string
+            - "null"
+      required:
+        - items
+        - startOrdinal
+        - endOrdinal
+        - hasEarlier
+        - hasLater
+        - queued
+        - streamCursor
+      additionalProperties: false
+    SendMessageRequestBody:
+      type: object
+      properties:
+        parts:
+          description: |-
+            The message, in the order it was written. A message with nothing but text is a single text
+            part.
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/MessagePart"
+        client:
+          $ref: "#/components/schemas/ClientContextRequest"
+      required:
+        - parts
+      additionalProperties: false
+    MessagePart:
+      description: |-
+        One piece of a message. `type` says which field carries it:
+
+        - `text` — the words, in `text`
+        - `file` — an attachment uploaded earlier, by id in `attachmentId`
+        - `data-<name>` — context from the client, in `data`. The name is shown to the assistant so it
+          can tell one block from another.
+      type: object
+      properties:
+        type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        text:
+          type:
+            - string
+            - "null"
+        attachmentId:
+          description: The attachment must have been uploaded and not yet sent with another message.
+          type:
+            - string
+            - "null"
+        data:
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+      required:
+        - type
+      additionalProperties: false
+    ClientContextRequest:
+      description: |-
+        Which client this is and which actions it offers, so the assistant can ask it to run them while
+        it answers. Send `actions` only when they changed since the last message; omitting them keeps
+        what was declared before.
+      type: object
+      properties:
+        clientId:
+          description: Identifies this client while it stays open; one per tab or process.
+          type: string
+          minLength: 1
+          maxLength: 128
+        label:
+          description: How the client names itself, for example "Leaflow console (web)".
+          type: string
+          maxLength: 64
+        actions:
+          description: The actions on offer now. `[]` withdraws all of them; null keeps the previous declaration.
+          type:
+            - array
+            - "null"
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/ClientActionRequest"
+      required:
+        - clientId
+      additionalProperties: false
+    ClientActionRequest:
+      description: A tool in the OpenAI Chat Completions format, plus `readOnly` and `timeoutMs`.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - function
+          default: function
+        function:
+          $ref: "#/components/schemas/ClientFunctionRequest"
+        readOnly:
+          description: True when the action changes nothing outside the client. Other actions go through approval before they run.
+          type: boolean
+        timeoutMs:
+          description: How long the assistant waits for this action. Longer values are capped.
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - function
+        - readOnly
+      additionalProperties: false
+    ClientFunctionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        description:
+          description: What the action does, written for the model. OpenAI's limit on tool descriptions is 1024 characters.
+          type: string
+          minLength: 1
+          maxLength: 1024
+        parameters:
+          description: JSON Schema for the arguments. Omit for an action without arguments.
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+        inputSchema:
+          description: The MCP and Anthropic name for `parameters`. Give one or the other.
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+      required:
+        - name
+        - description
+      additionalProperties: false
+    SendMessageResponseBody:
+      type: object
+      properties:
+        turnId:
+          description: The turn this message started. Null when it was queued behind a running turn.
+          type:
+            - string
+            - "null"
+        queued:
+          type: boolean
+        queuedAhead:
+          description: How many messages were waiting ahead of this one when it was queued.
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - turnId
+        - queued
+        - queuedAhead
+      additionalProperties: false
+    DecideToolCallsRequestBody:
+      type: object
+      properties:
+        itemIds:
+          description: The tool calls awaiting approval, from `pendingAction.itemIds`.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+        approved:
+          type: boolean
+        reason:
+          description: Passed to the assistant with a decline, so it can change course.
+          type: string
+          maxLength: 2000
+      required:
+        - itemIds
+        - approved
+      additionalProperties: false
+    AnswerQuestionRequestBody:
+      type: object
+      properties:
+        answers:
+          description: A map from question id to the answer.
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - answers
+      additionalProperties: false
+    ToolResultRequestBody:
+      type: object
+      properties:
+        clientId:
+          description: The client that declared the action. A result from another client is refused.
+          type: string
+          minLength: 1
+        ok:
+          type: boolean
+        output:
+          description: What the action produced. At most 64 KiB; use `nextCursor` for more.
+          type: string
+        error:
+          description: Why it failed, when `ok` is false. Written for the assistant, which cannot see the screen.
+          type: string
+          maxLength: 2000
+        nextCursor:
+          description: Pass when there is more to read; the assistant calls again with it.
+          type: string
+          maxLength: 500
+      required:
+        - clientId
+        - ok
+      additionalProperties: false

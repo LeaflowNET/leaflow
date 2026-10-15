@@ -1,0 +1,501 @@
+paths:
+  /api/v1/attachments:
+    post:
+      summary: Upload a file
+      description:
+        "The body is the file bytes themselves, not multipart, one file per request. The type
+        is determined from the content, not from Content-Type or from the name. Put the returned id in
+        attachmentIds when sending a message.
+
+
+        An upload that no message ever references is a draft, and drafts are collected — `draftExpiresAt`
+        in the response says when this one goes. Sending a message with the id makes it permanent.
+
+
+        The returned `type` says how the assistant will see it. An `image` is read directly, and only
+        by models that accept image input. A small `text` file is placed inline in the message. A large
+        `text` file, and anything `binary`, arrives as a reference the assistant reads on demand — for
+        a binary that usually means downloading it onto one of the project's cloud instances."
+      operationId: upload-attachment
+      tags:
+        - Attachment
+      parameters:
+        - name: filename
+          in: query
+          required: false
+          description:
+            The name to show and to give the assistant. Images do not need one; anything else
+            does, because the name is most of what says what the file is. Falls back to a generated name.
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/attachments/{attachment}:
+    get:
+      summary: Download a file
+      description:
+        "Returns the original bytes for an attachment id. The response carries long-lived cache
+        headers because the content never changes. Returns 404 when the attachment does not exist or does
+        not belong to the current user.
+
+
+        Only an attachment whose `type` is `image` comes back with its own image type and is usable as
+        the address of an `<img>`. Everything else is served as `application/octet-stream` with `Content-Disposition:
+        attachment`, deliberately: an uploaded file is arbitrary bytes under a name its uploader chose,
+        and serving it back inline would run it on this origin."
+      operationId: download-attachment
+      tags:
+        - Attachment
+      parameters:
+        - name: attachment
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              description:
+                "Private and long-lived: these bytes are addressed by an id that is never reused,
+                so they never change; and they belong to one person, so they must not enter any shared
+                cache."
+              schema:
+                type: string
+            Content-Disposition:
+              description:
+                Present on everything that is not an image, carrying the original filename.
+                Absent on images, which are meant to be rendered in place.
+              schema:
+                type: string
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/upload-configuration:
+    get:
+      operationId: get-upload-configuration
+      summary: Get upload configuration
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadConfigurationResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/uploads:
+    post:
+      operationId: create-upload
+      summary: Create upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUploadRequestBody"
+    get:
+      operationId: list-uploads
+      summary: List uploads
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/uploads/{upload}:
+    get:
+      operationId: get-upload
+      summary: Get upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: update-upload
+      summary: Update upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUploadRequestBody"
+    delete:
+      operationId: delete-upload
+      summary: Delete upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+  /api/v1/uploads/{upload}/cancel:
+    post:
+      operationId: cancel-upload
+      summary: Cancel upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+  /api/v1/uploads/{upload}/complete:
+    post:
+      operationId: complete-upload
+      summary: Complete upload
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteUploadRequestBody"
+  /api/v1/uploads/{upload}/parts/{part}:
+    put:
+      operationId: put-upload-part
+      summary: Put upload part
+      tags:
+        - Upload
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadPartResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+      parameters:
+        - name: upload
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: part
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 10000
+        - name: policyId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: X-Part-Size
+          in: header
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+components:
+  schemas:
+    UploadedResource:
+      type: object
+      properties:
+        byteSize:
+          description:
+            Size of what was stored. For an image that has been resized, this is the resized
+            size, not what was uploaded.
+          type: integer
+          format: int64
+        draftExpiresAt:
+          description:
+            "When this upload gets cleared if no message ever references it. Sending a message
+            with this id makes it permanent and this stops applying — a file that belongs to a conversation
+            is kept as long as the conversation is.
+
+
+            It is here so the editor can say so before it happens. An attachment chip that quietly stops
+            working a week later reads as a bug, and the person who hits it has no way to tell that what
+            they are seeing is a draft being collected."
+          type: string
+          format: date-time
+        filename:
+          type: string
+        height:
+          description: Null unless type is image.
+          type:
+            - integer
+            - "null"
+          format: int64
+        id:
+          type: string
+        type:
+          description: "How the assistant will see this file.
+
+
+            - `image` — read directly, and only by models that accept image input
+
+            - `text` — placed inline in the message when small enough, otherwise read on demand
+
+            - `binary` — never read directly; the assistant downloads it onto a cloud instance to work
+            with it"
+          type: string
+          enum:
+            - image
+            - text
+            - binary
+        width:
+          description: Null unless type is image.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - id
+        - type
+        - filename
+        - byteSize
+        - width
+        - height
+        - draftExpiresAt
+      additionalProperties: false
+    UploadConfigurationResource:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        policyId:
+          type: string
+        maxFileBytes:
+          type: integer
+          format: int64
+        maxImageBytes:
+          type: integer
+          format: int64
+        partSizeBytes:
+          type: integer
+          format: int64
+        expirySeconds:
+          type: integer
+          format: int64
+      required:
+        - enabled
+        - policyId
+        - maxFileBytes
+        - maxImageBytes
+        - partSizeBytes
+        - expirySeconds
+      additionalProperties: false
+    UploadPartResource:
+      type: object
+      properties:
+        number:
+          type: integer
+          format: int64
+        byteSize:
+          type: integer
+          format: int64
+        etag:
+          type: string
+      required:
+        - number
+        - byteSize
+        - etag
+      additionalProperties: false
+    UploadResource:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        byteSize:
+          type: integer
+          format: int64
+        partSizeBytes:
+          type: integer
+          format: int64
+        policyId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+        attachmentId:
+          type:
+            - string
+            - "null"
+        parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadPartResource"
+      required:
+        - id
+        - filename
+        - byteSize
+        - partSizeBytes
+        - policyId
+        - expiresAt
+        - status
+        - attachmentId
+        - parts
+      additionalProperties: false
+    UploadListResponseBody:
+      type: object
+      properties:
+        uploads:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadResource"
+      required:
+        - uploads
+      additionalProperties: false
+    CreateUploadRequestBody:
+      type: object
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        byteSize:
+          type: integer
+          format: int64
+        policyId:
+          type: string
+        maxFileBytes:
+          type: integer
+          format: int64
+        partSizeBytes:
+          type: integer
+          format: int64
+      required:
+        - requestId
+        - filename
+        - byteSize
+        - policyId
+        - maxFileBytes
+        - partSizeBytes
+      additionalProperties: false
+    UpdateUploadRequestBody:
+      type: object
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+        - filename
+      additionalProperties: false
+    CompleteUploadRequestBody:
+      type: object
+      properties:
+        policyId:
+          type: string
+      required:
+        - policyId
+      additionalProperties: false

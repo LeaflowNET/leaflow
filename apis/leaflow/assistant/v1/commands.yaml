@@ -1,0 +1,171 @@
+paths:
+  /api/v1/commands:
+    get:
+      summary: List commands
+      description: |-
+        The slash commands a person can type in a conversation, such as /status or /compact. The same
+        commands work in the console and in chat apps, so a client builds its command menu from this
+        list.
+      operationId: list-commands
+      tags:
+        - Command
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/threads/{thread}/commands:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ThreadId
+    post:
+      summary: Run a command
+      description: |-
+        Runs a slash command against the conversation. Commands act directly and never reach the model.
+        The result carries a plain-text `message`, which is what a chat app shows, and structured fields
+        for clients that render more, such as `status` for /status.
+
+        /new is carried out by the client, which opens an empty conversation, and fails here with 422
+        and code COMMAND_CLIENT_ONLY. Fails with 404 and code COMMAND_NOT_FOUND for an unknown command,
+        and with 422 and code COMMAND_ARGUMENTS_INVALID when the arguments do not fit.
+      operationId: run-command
+      tags:
+        - Command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunCommandRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandResultResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    CommandResource:
+      type: object
+      properties:
+        name:
+          description: The command without the slash, for example `status`.
+          type: string
+        aliases:
+          description: Other names that run the same command.
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        argumentHint:
+          description: How to write the arguments, for example `<model id>`. Empty when the command takes none.
+          type: string
+      required:
+        - name
+        - aliases
+        - description
+        - argumentHint
+      additionalProperties: false
+    CommandListResponseBody:
+      type: object
+      properties:
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandResource"
+      required:
+        - commands
+      additionalProperties: false
+    RunCommandRequestBody:
+      type: object
+      properties:
+        name:
+          description: The command or one of its aliases, without the slash.
+          type: string
+          minLength: 1
+          maxLength: 32
+        arguments:
+          description: Everything typed after the command name.
+          type: string
+          maxLength: 2000
+      required:
+        - name
+      additionalProperties: false
+    CommandResultResource:
+      type: object
+      properties:
+        name:
+          description: The command that ran, after resolving aliases.
+          type: string
+        message:
+          description: The result as plain text.
+          type: string
+        thread:
+          description: The conversation after the command.
+          anyOf:
+            - $ref: ./threads.yaml#/components/schemas/ThreadResource
+            - type: "null"
+        turnId:
+          description: The turn the command started, for example the compaction turn of /compact.
+          type:
+            - string
+            - "null"
+        status:
+          description: Set by /status.
+          anyOf:
+            - $ref: "#/components/schemas/StatusReportResource"
+            - type: "null"
+      required:
+        - name
+        - message
+        - thread
+        - turnId
+        - status
+      additionalProperties: false
+    StatusReportResource:
+      description: The conversation's configuration and resource use, as shown by /status.
+      type: object
+      properties:
+        threadId:
+          type: string
+        modelId:
+          type: string
+        modelName:
+          description: The model's display name in the Canopy catalogue. Falls back to modelId.
+          type: string
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        status:
+          $ref: ./openapi.yaml#/components/schemas/ThreadStatus
+        context:
+          $ref: ./threads.yaml#/components/schemas/ContextUsageResource
+        usage:
+          description: Token usage over the whole conversation.
+          $ref: ./openapi.yaml#/components/schemas/Usage
+        lastTurn:
+          description: The most recent turn with its own usage. Null before the first message.
+          anyOf:
+            - $ref: ./thread-turns.yaml#/components/schemas/ThreadTurnResource
+            - type: "null"
+      required:
+        - threadId
+        - modelId
+        - modelName
+        - reasoningEffort
+        - approvalMode
+        - status
+        - context
+        - usage
+        - lastTurn
+      additionalProperties: false

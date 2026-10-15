@@ -3,8 +3,8 @@ paths:
     post:
       operationId: create-chat-completion
       summary: Create a chat completion
-      description: Authenticated project inference. Billing ownership comes only from the verified project
-        token; no Canopy API key or project header is required.
+      description: Authenticated project inference in the OpenAI Chat Completions protocol, forwarded unchanged
+        to an upstream that speaks it. Billing ownership comes only from the verified project token.
       requestBody:
         required: true
         content:
@@ -53,6 +53,97 @@ paths:
         default: *id001_1
       tags:
       - Inference
+  /v1/messages:
+    post:
+      operationId: create-message
+      summary: Create a message
+      description: Authenticated project inference in the Anthropic Messages protocol, forwarded unchanged
+        to an upstream that speaks it. Accepts the `x-api-key` header as well as Authorization. Streams
+        Anthropic SSE events when `stream` is true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NativeRequest'
+      responses:
+        '200':
+          description: Model response in the Anthropic format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeResponse'
+            text/event-stream:
+              schema:
+                type: string
+                format: binary
+                description: Anthropic message stream events.
+        default: *id001_1
+      tags:
+      - Inference
+  /v1beta/models/{model}:generateContent:
+    post:
+      operationId: generate-content
+      summary: Generate content
+      description: Authenticated project inference in the Gemini protocol, forwarded unchanged to an upstream
+        that speaks it. Accepts the `x-goog-api-key` header as well as Authorization.
+      parameters:
+      - name: model
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NativeRequest'
+      responses:
+        '200':
+          description: Model response in the Gemini format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeResponse'
+        default: *id001_1
+      tags:
+      - Inference
+  /v1beta/models/{model}:streamGenerateContent:
+    post:
+      operationId: stream-generate-content
+      summary: Stream generated content
+      description: The streaming form of generate-content. Use `alt=sse` for server-sent events.
+      parameters:
+      - name: model
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: alt
+        in: query
+        schema:
+          type: string
+          enum:
+          - sse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NativeRequest'
+      responses:
+        '200':
+          description: Gemini response chunks
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                format: binary
+                description: Gemini GenerateContentResponse chunks.
+        default: *id001_1
+      tags:
+      - Inference
   /v1/models:
     get:
       operationId: list-inference-models
@@ -89,6 +180,15 @@ paths:
       - Inference
 components:
   schemas:
+    NativeRequest:
+      description: A request body in the endpoint's own protocol. Canopy reads only the model name and forwards
+        the rest unchanged.
+      type: object
+      additionalProperties: true
+    NativeResponse:
+      description: A response body in the endpoint's own protocol, as the upstream returned it.
+      type: object
+      additionalProperties: true
     ChatCompletionRequest:
       type: object
       properties:
