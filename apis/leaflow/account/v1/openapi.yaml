@@ -11,7 +11,7 @@ info:
 
     ## Entering a project
 
-    1. `GET /account/v1/projects` lists the projects the caller belongs to. The first call registers the account, taking the name and email address from the sign-in claims.
+    1. `QUERY /account/v1/projects` searches the projects the caller belongs to. The first call registers the account, taking the name and email address from the sign-in claims.
     2. `POST /account/v1/projects/{projectId}/scoped-tokens` returns a scoped token for the project chosen.
     3. Every other service is called with that scoped token.
 
@@ -386,8 +386,9 @@ paths:
   /account/v1/projects:
     get:
       summary: List the projects the caller belongs to
-      description: Deleted projects are excluded unless `status=DELETED` asks for them by name.
+      description: Superseded by `QUERY /account/v1/projects`, which filters by status and pages by page number. Projects whose deletion has finished are excluded unless `include_deleted` is true; projects being deleted are included.
       operationId: list-projects
+      deprecated: true
       tags:
         - Project
       parameters:
@@ -414,6 +415,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LengthAwarePageProjectAccessResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    query:
+      summary: Search the projects the caller belongs to
+      description: |-
+        Projects the caller belongs to, most recently created first. The conditions in the body are combined with AND. Without `statuses`, only active projects are returned; projects being deleted and deleted projects are returned only when asked for by status.
+      operationId: search-projects
+      tags:
+        - Project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchProjectsRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectAccessList"
         default:
           description: Error
           content:
@@ -1082,6 +1109,8 @@ components:
           type: string
           minLength: 1
           maxLength: 36
+        status:
+          $ref: "#/components/schemas/ProjectStatus"
         name:
           type: string
         updated_at:
@@ -1092,6 +1121,7 @@ components:
         - deletion_requested_at
         - id
         - slug
+        - status
         - name
         - description
         - deleted_at
@@ -1227,6 +1257,53 @@ components:
           maxLength: 32
       required:
         - name
+      additionalProperties: false
+    ProjectStatus:
+      description: "`active` until deletion is requested; `deleting` while the resources under the project are being removed, when `deletion_requested_at` is set; `deleted` once removal has finished, when `deleted_at` is set"
+      type: string
+      enum:
+        - active
+        - deleting
+        - deleted
+    SearchProjectsRequestBody:
+      type: object
+      properties:
+        keyword:
+          description: Matches against name, slug or description, and against the id when it is a complete project id
+          type: string
+          maxLength: 128
+        statuses:
+          description: The statuses to include. Omitted, only `active` projects are returned
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ProjectStatus"
+        page:
+          description: 1-based page number. Defaults to 1
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 2147483647
+        page_size:
+          description: Items per page. Defaults to 50; at most 200
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+      additionalProperties: false
+    ProjectAccessList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectAccessResource"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
       additionalProperties: false
     ProjectSlugAvailabilityResource:
       type: object
