@@ -47,8 +47,8 @@ components:
         Price renewing a licensed subscription. Give `price_id`, or `interval` with
         `interval_count`, to renew for another term at the price currently sold for it. Naming
         the current term, or giving neither, renews at the agreed amount. A term sold at several
-        prices that differ in termination policy is refused with 409
-        `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `termination_policy` or `price_id` is given.
+        prices that differ in cancellation policy is refused with 409
+        `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `cancellation_policy` or `price_id` is given.
       type: object
       properties:
         subscription_id:
@@ -66,10 +66,10 @@ components:
         interval_count:
           type: integer
           minimum: 1
-        termination_policy:
-          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination policy.
+        cancellation_policy:
+          description: With `interval` and `interval_count`, chooses among prices of that term that differ in cancellation policy.
           allOf:
-          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         periods:
           description: How many consecutive periods to renew for.
           type: integer
@@ -284,7 +284,7 @@ components:
             type: string
             format: uuid
         mode:
-          $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
       required:
       - subscription_ids
       - mode
@@ -294,8 +294,9 @@ components:
         What the cancellation would return, per subscription and in total, as of now. Give `proration_date` and
         `refundable_amount` when creating the cancellation.
 
-        - `unused_amount`: before tax, the amount paid for the current periods minus the value of the time used,
-          valued as refund policy `prorated` describes, whatever the refund terms say.
+        - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
+        - `short_rate_surcharge_amount`: before tax, the part of `forfeited_amount` due to the short rate of the
+          refund policy.
         - `refundable_amount`: what is returned the way it was paid, tax included; `refund_amount` plus
           `credit_amount`.
         - `refund_amount`: the part returned to the balance or the payment method.
@@ -307,7 +308,7 @@ components:
       type: object
       properties:
         mode:
-          $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         scheduled_at:
           description: For `period_end`, when release begins, the end of the paid terms.
           type: string
@@ -319,6 +320,8 @@ components:
         currency:
           type: string
         unused_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        short_rate_surcharge_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         refundable_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -338,6 +341,7 @@ components:
       - mode
       - currency
       - unused_amount
+      - short_rate_surcharge_amount
       - refundable_amount
       - refund_amount
       - credit_amount
@@ -370,6 +374,8 @@ components:
           type: boolean
         unused_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        short_rate_surcharge_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
         refundable_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         refund_amount:
@@ -388,6 +394,7 @@ components:
       - usage_type
       - auto_renew
       - unused_amount
+      - short_rate_surcharge_amount
       - refundable_amount
       - refund_amount
       - credit_amount
@@ -431,10 +438,10 @@ components:
         interval_count:
           type: integer
           minimum: 1
-        termination_policy:
+        cancellation_policy:
           description: Selects among licensed prices with otherwise identical billing terms. Ambiguous terms are refused instead of choosing a price arbitrarily.
           allOf:
-          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         quantity:
           type: string
           pattern: ^(?:(?:[1-9][0-9]{0,27}|0(?:[1-9][0-9]{0,26}|0(?:[1-9][0-9]{0,25}|0(?:[1-9][0-9]{0,24}|0(?:[1-9][0-9]{0,23}|0(?:[1-9][0-9]{0,22}|0(?:[1-9][0-9]{0,21}|0(?:[1-9][0-9]{0,20}|0(?:[1-9][0-9]{0,19}|0(?:[1-9][0-9]{0,18}|0(?:[1-9][0-9]{0,17}|0(?:[1-9][0-9]{0,16}|0(?:[1-9][0-9]{0,15}|0(?:[1-9][0-9]{0,14}|0(?:[1-9][0-9]{0,13}|0(?:[1-9][0-9]{0,12}|0(?:[1-9][0-9]{0,11}|0(?:[1-9][0-9]{0,10}|0(?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9])))))))))))))))))))))))))))([.][0-9]{1,10})?|0{1,28}[.](?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))$
@@ -477,7 +484,7 @@ components:
       - order_id
       additionalProperties: false
     OrderRefundQuote:
-      description: An estimated refund to the original payment sources. Before acceptance, cancellation returns the collected amount. For delivered service, only value paid by this order is included; renewals are evaluated with their own orders under the agreed termination terms. Nothing is refunded by the quote; the amount is fixed when cancellation or termination is confirmed.
+      description: An estimated refund to the original payment sources. Before acceptance, cancellation returns the collected amount. For delivered service, only value paid by this order is included; renewals are evaluated with their own orders under the agreed cancellation terms. Nothing is refunded by the quote; the amount is fixed when cancellation or termination is confirmed.
       type: object
       properties:
         order_id:

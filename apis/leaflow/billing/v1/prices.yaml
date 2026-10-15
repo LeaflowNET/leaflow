@@ -212,25 +212,47 @@ components:
       enum:
       - per_unit
       - tiered
-    TerminationPolicy:
-      description: Whether a delivered purchase may end immediately or only at the end of its paid term; refunds follow the refund policy. When absent, no termination terms were agreed.
+    CancellationPolicy:
+      description: Whether a cancellation of a delivered purchase may take effect immediately or only at the end of its paid term; refunds follow the refund policy. When absent, no cancellation terms were agreed.
       type: string
       enum:
       - immediate
       - period_end
     RefundPolicy:
-      description: '`none` refunds nothing. `prorated` refunds the amount paid for the current period minus the value of the time used, never below zero or above what remains unrefunded. Time used runs from the period start to the effective cancellation and is valued at prices frozen on the order item: each full calendar month at `refund_monthly_amount`, the rest at `refund_hourly_amount` or, without it, at the monthly price by the second. When the plan has no licensed period shorter than the one bought, time used is valued pro rata at the price paid. Discounts and setup fees are not refunded. Refunds return to the original payment sources, with tax refunded in proportion.'
+      description: |-
+        `none` refunds nothing.
+
+        `prorated` refunds the amount paid for the current period minus the value of the time used, never below zero
+        or above what remains unrefunded. Time used runs from the period start to the effective cancellation, by the
+        second. Each whole month from the period start is valued at the order item's `monthly_list_amount`, and the
+        remainder at that amount in proportion to the length of the month it falls in; without `monthly_list_amount`,
+        time used is valued at the amount paid in proportion to the length of the period. A renewal starts a new
+        period, and an immediate change starts one at the change. Discounts and setup fees are not refunded. Refunds
+        return to the original payment sources, with tax refunded in proportion.
+
+        `short_rate` refunds as `prorated`, except that when the cancellation takes effect less than
+        `short_rate_threshold_seconds` after the period start, the value of the time used is multiplied by
+        `short_rate_multiplier`, up to `monthly_list_amount` for each month begun or, without `monthly_list_amount`,
+        up to the amount paid.
       type: string
       enum:
       - none
       - prorated
+      - short_rate
     RenewalPrice:
       type: object
       properties:
-        termination_policy:
-          $ref: '#/components/schemas/TerminationPolicy'
+        cancellation_policy:
+          $ref: '#/components/schemas/CancellationPolicy'
         refund_policy:
           $ref: '#/components/schemas/RefundPolicy'
+        short_rate_multiplier:
+          description: Refund policy `short_rate` only.
+          type: string
+        short_rate_threshold_seconds:
+          description: Refund policy `short_rate` only.
+          type: integer
+          format: int64
         price_id:
           type: string
           format: uuid
@@ -339,10 +361,17 @@ components:
         active:
           description: False once archived. An archived price cannot be bought until it is active again.
           type: boolean
-        termination_policy:
-          $ref: '#/components/schemas/TerminationPolicy'
+        cancellation_policy:
+          $ref: '#/components/schemas/CancellationPolicy'
         refund_policy:
           $ref: '#/components/schemas/RefundPolicy'
+        short_rate_multiplier:
+          description: Refund policy `short_rate` only, the factor applied to the value of the time used when a cancellation takes effect less than `short_rate_threshold_seconds` after the period start.
+          type: string
+        short_rate_threshold_seconds:
+          description: Refund policy `short_rate` only, how long after the period start `short_rate_multiplier` applies.
+          type: integer
+          format: int64
         product_id:
           $ref: ./products.yaml#/components/schemas/ProductID
         id:

@@ -156,7 +156,7 @@ components:
       type: object
       properties:
         mode:
-          $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         proration_date:
           description: For immediate cancellation, the quoted whole-second refund basis. Now when omitted.
           type: string
@@ -287,10 +287,20 @@ components:
         recurring_amount:
           description: The whole licensed subscription's renewal amount, after continuing discounts and before tax. A pending subscription shows base terms until paying the order fixes any new discount. Absent for metered and one-time subscriptions.
           type: string
-        termination_policy:
-          $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+        cancellation_policy:
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         refund_policy:
           $ref: ./prices.yaml#/components/schemas/RefundPolicy
+        short_rate_multiplier:
+          description: Refund policy `short_rate` only, as on the price bought.
+          type: string
+        short_rate_threshold_seconds:
+          description: Refund policy `short_rate` only, as on the price bought.
+          type: integer
+          format: int64
+        monthly_list_amount:
+          description: Licensed recurring only, the `monthly_list_amount` that a renewal at the agreed amount keeps; see the order item.
+          type: string
         order_item_id:
           type: string
           format: uuid
@@ -439,8 +449,8 @@ components:
             Leaving both out renews at the price this item already bills at, which a later price
             change does not affect. Naming a term that differs from the current one is a fresh
             choice, so it is bought at today's price. Naming the current term changes nothing. A
-            term sold at several prices that differ in termination policy is refused with 409
-            `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `termination_policy` is given.
+            term sold at several prices that differ in cancellation policy is refused with 409
+            `BILLING_RENEWAL_OPTION_AMBIGUOUS` unless `cancellation_policy` is given.
 
             List the terms on offer with the renewal prices operation.
           type: integer
@@ -452,10 +462,10 @@ components:
           - day
           - month
           - year
-        termination_policy:
-          description: With `interval` and `interval_count`, chooses among prices of that term that differ in termination policy.
+        cancellation_policy:
+          description: With `interval` and `interval_count`, chooses among prices of that term that differ in cancellation policy.
           allOf:
-          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         payment_method_id:
           type: string
           format: uuid
@@ -496,10 +506,10 @@ components:
           - day
           - month
           - year
-        termination_policy:
+        cancellation_policy:
           description: As in renewing.
           allOf:
-          - $ref: ./prices.yaml#/components/schemas/TerminationPolicy
+          - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
       required:
       - order_id
       additionalProperties: false
