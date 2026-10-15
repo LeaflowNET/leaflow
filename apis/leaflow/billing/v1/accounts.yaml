@@ -97,6 +97,49 @@ paths:
                 $ref: '#/components/schemas/BillingAccount'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/billing-accounts/{accountId}/suspend:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/AccountId
+    post:
+      summary: Suspend billing account
+      description: |-
+        Suspends your active billing account without closing it, also while it is in arrears. While suspended, it
+        accepts no new purchases, renewals or project links, and the services it pays for start no new resources;
+        running services, their charges and the handling of arrears continue, and you can still top up and pay
+        invoices. Resume it yourself; one suspended by Leaflow can only be resumed by Leaflow. Does not create a
+        resource.
+      operationId: suspend-billing-account
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: The account after the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/billing-accounts/{accountId}/resume:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/AccountId
+    post:
+      summary: Resume billing account
+      description: |-
+        Resumes a billing account you suspended. Refused with `BILLING_ACCOUNT_SUSPENDED_BY_OPERATOR` when Leaflow
+        suspended it. Does not create a resource.
+      operationId: resume-billing-account
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: The account after the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingAccount'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts/{accountId}/balance:
     parameters:
     - $ref: ./openapi.yaml#/components/parameters/AccountId
@@ -224,6 +267,13 @@ components:
           - active
           - suspended
           - closed
+        suspended_by:
+          description: 'Who suspended the account: `owner` (you), `operator` (Leaflow), or `none` while it is not suspended. Only a suspension by `owner` can be resumed by you.'
+          type: string
+          enum:
+          - none
+          - owner
+          - operator
         grace_amount:
           description: How far past the suspension threshold the account may go before its resources are suspended; `0` means none.
           type: string
@@ -245,6 +295,7 @@ components:
       - id
       - currency
       - status
+      - suspended_by
       - created_at
     Currency:
       description: A currency a billing account can be opened in.
