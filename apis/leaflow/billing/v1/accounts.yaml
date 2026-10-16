@@ -158,6 +158,28 @@ paths:
                 $ref: '#/components/schemas/AccountBalance'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/account-deletion/readiness:
+    get:
+      summary: Check billing accounts before deleting your Leaflow account
+      description: |-
+        Lists every billing account you own that is not closed, with what stops each from closing. Deleting your Leaflow
+        account closes all of them and is refused while any lists an objection. Balance and credits left on them are
+        forfeited when they close; the accounts and their records are kept, closed.
+
+        A preview that holds nothing: the same check runs again when you request deletion and once more when the grace
+        period ends.
+      operationId: get-account-deletion-readiness
+      tags:
+      - accounts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionReadiness'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/assignments:
     get:
       summary: List project assignments
@@ -433,6 +455,54 @@ components:
       - estimated_credit_applied
       - unbilled_amount
       - pending_returns_amount
+    AccountDeletionReadiness:
+      type: object
+      properties:
+        accounts:
+          description: Every billing account you own that is not closed; empty when you own none.
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountDeletionReadinessItem'
+      required:
+      - accounts
+    AccountDeletionReadinessItem:
+      type: object
+      properties:
+        account:
+          $ref: '#/components/schemas/BillingAccount'
+        balance:
+          description: Topped-up funds, in the account's currency, forfeited when it closes. Negative means arrears.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credits:
+          description: Remaining credit, in the account's currency, forfeited when it closes.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        objections:
+          description: What stops this account from closing; empty when it can close.
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountDeletionObjection'
+      required:
+      - account
+      - balance
+      - credits
+      - objections
+    AccountDeletionObjection:
+      description: |-
+        `ARREARS`: the balance is negative. `PROJECTS_ASSIGNED`: the account still pays for a project, yours or anyone
+        else's. `ACTIVE_SUBSCRIPTION`: a subscription it bought has not ended. `OPEN_ORDER`: an order is not finished.
+        `UNPAID_INVOICE`: an issued invoice is not settled. `UNBILLED_USAGE`: usage has not been invoiced yet; it is
+        invoiced in the next billing run. `PENDING_TRANSACTION`: a top-up, refund or withdrawal is still pending.
+      type: string
+      enum:
+      - ARREARS
+      - PROJECTS_ASSIGNED
+      - ACTIVE_SUBSCRIPTION
+      - OPEN_ORDER
+      - UNPAID_INVOICE
+      - UNBILLED_USAGE
+      - PENDING_TRANSACTION
     ProjectAssignment:
       description: A project's assignment to a billing account from effective_from until effective_to; an open assignment has no end.
       type: object
