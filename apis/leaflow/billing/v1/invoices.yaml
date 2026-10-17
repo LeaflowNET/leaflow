@@ -129,7 +129,11 @@ components:
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         total:
-          description: Subtotal less discount plus tax. Balance and credit grants pay it; they do not reduce it.
+          description: Subtotal less discount plus tax. Balance and credit grants pay it plus rounding_amount; they do not reduce it.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        rounding_amount:
+          description: Added to total to round the amount payable to the currency's minor unit; negative when rounded down. The rounding of a usage invoice carries over to the next invoice of the same billing period.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_paid:
@@ -143,7 +147,7 @@ components:
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_due:
-          description: What is still collectible after unpaid credit notes and successful payments; never below zero. Zero for a draft, whose total is the base price, and for a paid or void invoice.
+          description: What is still collectible from total plus rounding_amount after unpaid credit notes and successful payments; never below zero. Zero for a draft, whose total is the base price, and for a paid or void invoice.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         period_start:
@@ -196,6 +200,7 @@ components:
       - currency
       - status
       - total
+      - rounding_amount
       - amount_due
       - pre_payment_credit_notes_amount
       - post_payment_credit_notes_amount
@@ -240,14 +245,6 @@ components:
         id:
           type: string
           format: uuid
-        type:
-          type: string
-          enum:
-          - usage
-          - subscription
-          - one_time
-          - setup
-          - adjustment
         project_id:
           type:
           - string
@@ -277,6 +274,14 @@ components:
           type: string
         amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        rounding_amount:
+          description: This line's share of the invoice's rounding_amount. The line's net amount is amount - discount_amount + tax_amount - tax_included_amount + rounding_amount.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        usage_charge_count:
+          description: Usage charges billed on this line; zero for other lines.
+          type: integer
+          format: int32
         currency:
           type: string
         period_start:
@@ -305,6 +310,8 @@ components:
       - id
       - description
       - amount
+      - rounding_amount
+      - usage_charge_count
       - currency
     InvoiceItemProration:
       description: The value of one paid period moved to the new configuration of a subscription.
