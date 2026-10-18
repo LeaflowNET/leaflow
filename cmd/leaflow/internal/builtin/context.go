@@ -21,7 +21,7 @@ var (
 func newContextCommand(ext *extension.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context",
-		Short: "manage contexts",
+		Short: "Manage contexts",
 		Long: `A context is one "which platform, as whom, in which project" triple.
 
 Working against production and a local stack at the same time is normal, and a
@@ -40,7 +40,7 @@ per-command flag is something you eventually forget to pass.`,
 func newContextListCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:           "list",
-		Short:         "list configured contexts",
+		Short:         "List configured contexts",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -79,7 +79,7 @@ func newContextListCommand(ext *extension.Context) *cobra.Command {
 func newContextUseCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:           "use <name>",
-		Short:         "switch to a context",
+		Short:         "Switch to a context",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -116,7 +116,7 @@ func newContextSetCommand(ext *extension.Context) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:           "set <name>",
-		Short:         "create or update a context",
+		Short:         "Create or update a context",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,

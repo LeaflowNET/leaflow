@@ -23,7 +23,7 @@ var (
 func newProjectCommand(ext *extension.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
-		Short: "list and select projects",
+		Short: "List and select projects",
 		Long: `A session belongs to one project: the token names it, so no request path
 carries a project id. Selecting one here is what every later command runs
 against.`,
@@ -37,7 +37,7 @@ against.`,
 func newProjectListCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:           "list",
-		Short:         "list the projects you belong to",
+		Short:         "List the projects you belong to",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -72,7 +72,7 @@ func listProjects(cmd *cobra.Command, ext *extension.Context) (any, error) {
 func newProjectUseCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:   "use <project>",
-		Short: "select the project for later commands",
+		Short: "Select the project for later commands",
 		Long: `Select a project by id or by name.
 
 The cached scoped token is dropped at the same time. Keeping it would not
@@ -161,7 +161,7 @@ func listProjectItems(listed any) []any {
 func newProjectCurrentCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:           "current",
-		Short:         "show the selected project",
+		Short:         "Show the selected project",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,

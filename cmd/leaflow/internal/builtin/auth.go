@@ -41,7 +41,7 @@ func Commands(ext *extension.Context, root *cobra.Command, version string) []*co
 func newLogoutCommand(ext *extension.Context) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "sign out and revoke the refresh token",
+		Short: "Sign out and revoke the refresh token",
 		Long: `Remove local credentials and ask the realm to revoke the refresh token.
 
 Access tokens already issued stay valid at each service until they expire;
@@ -64,12 +64,12 @@ that is bounded by their lifetime and is not something a client can shorten.`,
 func newAuthCommand(ext *extension.Context) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "inspect credentials",
+		Short: "Inspect credentials",
 	}
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "status",
-		Short: "show the current credential state",
+		Short: "Show the current credential state",
 		Long: `Show credential state.
 
 This reads only: it does not renew or exchange anything, because a command for

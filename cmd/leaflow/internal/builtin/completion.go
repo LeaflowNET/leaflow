@@ -22,7 +22,7 @@ func newCompletionInstallCommand(root *cobra.Command) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "install-completion",
-		Short: "install shell completion for the current shell",
+		Short: "Install shell completion for the current shell",
 		Long: `Write a completion script to the directory this shell loads from.
 
 The shell is detected from $SHELL unless --shell says otherwise. Print the

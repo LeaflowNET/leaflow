@@ -26,7 +26,7 @@ func newLoginCommand(ext *extension.Context) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "sign in to the platform",
+		Short: "Sign in to the platform",
 		Long: `Sign in through the browser using authorization code with PKCE.
 
 This CLI is a public client: it ships to every machine and holds no secret.

@@ -27,7 +27,7 @@ var ErrAddressNotLocal = errors.New("refusing to listen beyond this machine")
 func newMCPCommand(ext *extension.Context, version string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "serve the platform over the Model Context Protocol",
+		Short: "Serve the platform over the Model Context Protocol",
 		Long: `Serve this CLI's operations as MCP tools.
 
 An assistant that speaks MCP can then work the platform directly, through the
@@ -52,7 +52,7 @@ func newMCPServeCommand(ext *extension.Context, version string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "run the MCP server",
+		Short: "Run the MCP server",
 		Long: `Run an MCP server.
 
 On stdin and stdout by default, which is how a local client starts one:

@@ -41,7 +41,7 @@ func newUpdateCommand(ext *extension.Context, version string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "update to the latest release",
+		Short: "Update to the latest release",
 		Long: `Replace this binary with the latest release.
 
 The download is verified against the release's published checksums before
