@@ -117,21 +117,15 @@ func (a *App) Root() (*cobra.Command, error) {
 
 	root := &cobra.Command{
 		Use:   "leaflow",
-		Short: "Leaflow platform command line",
+		Short: "Leaflow platform CLI",
 		Long: strings.TrimSpace(`
-Leaflow platform command line.
+Leaflow platform command-line interface.
 
-Commands are grouped by service, generated from each service's OpenAPI
-contract:
-
-  leaflow compute disk create-disk
-
-Both name parts come from the contract: the tag and the operationId. The same
-identifier names the operation in the SDKs, so there is no second vocabulary to
-learn or to keep in sync.
-
-Contracts are embedded at build time, so a service or operation added upstream
-arrives with a new release rather than at the next run: leaflow update`),
+Commands and arguments are generated from the API contracts embedded in this
+release. Use leaflow <service> --help to discover the commands available in your
+installed version. Add --help to a command path to view its usage and arguments.
+The available commands may change when the API contracts are updated. Run
+leaflow update to install the latest release.`),
 		Version:       formatVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,

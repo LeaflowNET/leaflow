@@ -85,17 +85,11 @@ echo "$LEAFLOW_REFRESH_TOKEN" | leaflow login --with-token
 
 ## Commands
 
-Every command comes from a service's OpenAPI contract and is named after the
-contract's own operationId:
-
-```
-leaflow <service> <operationId>
-leaflow compute    create-disk
-```
-
-The same identifier names the operation in the SDKs, so there is no second
-vocabulary to learn. `leaflow <service> --help` groups them by the contract's
-tags.
+Commands and arguments are generated from the API contracts embedded in the
+installed release. Use `leaflow <service> --help` to discover the commands
+available for a service, and add `--help` to any command path to view its usage
+and arguments. The available commands may change when the API contracts are
+updated. Run `leaflow update` to install the latest release.
 
 ## Output
 
