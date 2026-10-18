@@ -117,15 +117,15 @@ func (a *App) Root() (*cobra.Command, error) {
 
 	root := &cobra.Command{
 		Use:   "leaflow",
-		Short: "Leaflow platform CLI",
+		Short: "Leaflow",
 		Long: strings.TrimSpace(`
-Leaflow platform command-line interface.
+Leaflow command-line interface.
 
-Commands and arguments are generated from the API contracts embedded in this
-release. Use leaflow <service> --help to discover the commands available in your
-installed version. Add --help to a command path to view its usage and arguments.
-The available commands may change when the API contracts are updated. Run
-leaflow update to install the latest release.`),
+Use leaflow --help to browse available services. Use leaflow <service> --help to
+see its commands. Add --help to a command path to view its usage and options.
+
+To update Leaflow, run:
+  leaflow update`),
 		Version:       formatVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,

@@ -1,6 +1,6 @@
 # leaflow
 
-Command line interface for the Leaflow platform.
+Command-line interface for Leaflow.
 
 ## Install
 
@@ -67,7 +67,13 @@ as well.
 ```sh
 leaflow login
 leaflow project use <project>
-leaflow compute list-instances
+```
+
+To browse available services and commands:
+
+```sh
+leaflow --help
+leaflow <service> --help
 ```
 
 Signing in opens a browser and uses authorization code with PKCE.
@@ -85,19 +91,20 @@ echo "$LEAFLOW_REFRESH_TOKEN" | leaflow login --with-token
 
 ## Commands
 
-Commands and arguments are generated from the API contracts embedded in the
-installed release. Use `leaflow <service> --help` to discover the commands
-available for a service, and add `--help` to any command path to view its usage
-and arguments. The available commands may change when the API contracts are
-updated. Run `leaflow update` to install the latest release.
+Use `leaflow --help` to browse available services. Use
+`leaflow <service> --help` to see a service's commands. Add `--help` to a
+command path to view its usage and options.
+
+To update Leaflow, run:
+
+```sh
+leaflow update
+```
 
 ## Output
 
-`-o table` (default), `-o json`, `-o yaml`, or pick your own columns:
-
-```sh
-leaflow compute list-instances -o custom-columns=NAME:.name,IP:.private_ip
-```
+Choose `-o table` (default), `-o json`, `-o yaml`, or `-o xml`. Use
+`-o custom-columns=NAME:.field` to select fields from a command's response.
 
 Use `json` in scripts; the table layout may change. `-o xml` is for feeding a
 reply to a model: a closing tag says which thing ended, where a closing brace
@@ -118,16 +125,15 @@ The same operations, served to an assistant:
 It acts as whoever ran `leaflow login`, in the project that context selects.
 It cannot sign in on its own.
 
-Two hundred operations ship with the binary, and a client is sent every tool
-definition on every turn — so by default four tools are exposed and the client
-walks the contracts through them: `services`, `operations`, `operation-schema`,
-`call-operation`. Arguments come back as JSON Schema carrying every constraint
-the contract states, and replies come back as XML.
+By default, the MCP server exposes a compact set of tools for discovering
+services and operations, inspecting their inputs, and making calls. To expose
+each operation as its own tool, use `--tools operations`; use `--service` to
+limit the available services.
 
 | | |
 | --- | --- |
 | `--tools operations` | one tool per operation instead; pair with `--service` |
-| `--service` | limit to these contracts |
+| `--service` | limit the available services |
 | `--read-only` | drop every write before a client sees it |
 | `--http` | serve over HTTP instead of stdin/stdout; binds loopback |
 
@@ -137,29 +143,28 @@ authenticates.
 
 ## As a library
 
-The contracts, the argument checking and the requests are a package. The
-command line is one caller of it and holds no privileged position:
+Leaflow is also available as a Go library:
 
 ```go
 import "github.com/LeaflowNET/leaflow/pkg/leaflow"
 
-client, err := leaflow.New(leaflow.Options{})    // parses the contracts once
+client, err := leaflow.New(leaflow.Options{})
+
+service := "<service>"     // choose from client.Services()
+operation := "<operation>" // choose from client.Operations()
+arguments := map[string]any{} // provide the values this operation requires
 
 result, err := client.Call(ctx, leaflow.Call{
     Token:     leaflow.Token{Access: userToken},  // per call, not per client
-    Service:   "compute",
-    Operation: "create-disk",
-    Arguments: map[string]any{
-        "body": map[string]any{"name": "data", "size_gb": 100},
-    },
+    Service:   service,
+    Operation: operation,
+    Arguments: arguments,
 })
 
-xml, err := result.XML("disk")                   // the shape to hand a model
+xml, err := result.XML("result")
 ```
 
-Reading the contracts costs about forty milliseconds and thirty megabytes. A
-`Client` holds them and is safe to share across goroutines, so a service pays
-that once per process rather than once per request.
+Create one `Client` per process and share it safely across goroutines.
 
 Credentials travel with the call because a service is handed a different token
 for every request it serves.
@@ -172,21 +177,21 @@ something that can mint a fresh one instead, and the retry works:
 ```go
 result, err := client.Call(ctx, leaflow.Call{
     Credentials: yourTokenSource,   // Token(ctx, kind) + Invalidate(kind)
-    Service:     "compute",
-    Operation:   "list-disks",
+    Service:     service,
+    Operation:   operation,
 })
 ```
 
 ## Pointing elsewhere
 
-Addresses come from the public contracts. Override them per service for another
-deployment, or rewrite the domain for a whole deployment:
+Set an endpoint override for a service in another deployment, or change the
+domain for the whole deployment:
 
 ```go
 leaflow.New(leaflow.Options{
     Endpoints: transport.Endpoints{
         Overrides: map[string]string{
-            "compute": "https://compute.example.com",
+            "service-name": "https://service.example.com",
         },
     },
 })
@@ -211,7 +216,7 @@ case errors.Is(err, leaflow.ErrInvalidArgument):  // leaflow.Problems(err)
 }
 
 leaflow.CanRetry(err)                // could the same call succeed later
-leaflow.Code(err)                    // the service's own code, which is contract
+leaflow.Code(err)                    // the service's error code
 leaflow.RenderError(err, "error")    // the same XML the MCP surface returns
 ```
 
@@ -220,34 +225,27 @@ leaflow.RenderError(err, "error")    // the same XML the MCP surface returns
 expired token satisfies both `ErrTokenExpired` and `ErrUnauthenticated`, so
 either question gets a true answer.
 
-Arguments are checked against the contract before anything is sent, and every
-problem is reported at once — `leaflow.Problems(err)` returns them individually,
-because each is a separate thing to fix.
+Arguments are validated before a request is sent. `leaflow.Problems(err)`
+returns each issue so it can be corrected.
 
-`Options.ReadOnly` drops every write before a caller can see one, and
-`Options.AccessTokenOnly` drops the account face — the operations that need a
-person's sign-in session, which a service acting on someone's behalf does not
-have. Both read the contract rather than a list of service names, so neither
-falls behind when the platform adds one.
+`Options.ReadOnly` removes operations that change data. `Options.AccessTokenOnly`
+removes operations that require an account token.
 
 Everything an operation accepts is available before calling it:
 
 ```go
-client.Count()                          // how many operations
-client.Services()                       // faces, and the groups inside them
-client.Operations()                     // all of them, in contract order
-op, _ := client.Operation("compute", "create-disk")
-op.Schema()                             // JSON Schema, every contract constraint
+client.Count()                          // number of available operations
+client.Services()                       // available services and groups
+client.Operations()                     // available operations
+op, _ := client.Operation(service, operation)
+op.Schema()                             // accepted inputs
 ```
-
-There is no search here. Choosing which operations belong in a prompt is
-retrieval, which a caller building prompts already does its own way.
 
 | | |
 | --- | --- |
-| `pkg/leaflow` | contracts, validation, calls |
+| `pkg/leaflow` | service discovery, validation, and calls |
 | `pkg/mcp` | the same, over the Model Context Protocol |
-| `pkg/spec` | the parsed OpenAPI documents |
+| `pkg/spec` | service and operation descriptions |
 | `pkg/transport` | requests, credentials and addresses as interfaces |
 | `pkg/output` | table, JSON, YAML and XML rendering |
 
@@ -262,12 +260,12 @@ retrieval, which a caller building prompts already does its own way.
 | `--output` / `-o` | output format |
 | `LEAFLOW_TOKEN` | access token, for CI |
 
-Service addresses come from the contracts. Point a context at another
-deployment by rewriting the domain, or override one service outright:
+Point a context at another deployment by changing its domain, or override one
+service endpoint:
 
 ```sh
 leaflow context set local --domain leaflow.test \
-  --endpoint compute=https://compute.leaflow.test:18100
+  --endpoint service-name=https://service.leaflow.test:18100
 leaflow context use local
 ```
 
