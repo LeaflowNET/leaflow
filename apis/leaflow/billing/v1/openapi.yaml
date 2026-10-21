@@ -2,7 +2,7 @@ openapi: 3.2.1
 info:
   title: Leaflow Billing API
   version: v1
-  description: Products, prices, orders, subscriptions and account billing. Financial operations require an account access token and billing-account authorization. Public catalogue operations declare no security requirement.
+  description: Products, prices, orders, subscriptions and account billing. Operations on a billing account require an account access token and ownership of the account. Members of a project, as each operation states, can also read the project's billing account, subscriptions and orders, complete and pay for its purchases, and, with project permissions granted in IAM, change its subscriptions (`billing:subscription.write`), change its billing account (`billing:project_assignment.write`) and read its costs (`billing:cost.read`). A member without the permission an operation needs is refused with 403 `PERMISSION_DENIED` and `meta.permission`; a caller who is not a member, with 403 `IAM_NOT_PROJECT_MEMBER`. Public catalogue operations declare no security requirement.
 servers:
 - url: https://billing.leaflow.cloud
   description: Billing API
@@ -486,7 +486,7 @@ components:
       name: billing_account_id
       in: query
       required: false
-      description: Only this account of yours; all when omitted.
+      description: Only this account; all of yours when omitted. An account you do not own needs `project_ids`, each project currently assigned to it.
       schema:
         type: integer
         format: int64
@@ -593,7 +593,7 @@ components:
       name: project_ids
       in: query
       required: false
-      description: Only records of these projects. Omit for all projects and account-level records. It does not grant access to other billing accounts.
+      description: Only records of these projects. Omit for all projects and account-level records of your billing accounts. Each project must be assigned to a billing account you own or have you as a member; a member sees the records of the project that the owner of its current billing account sees.
       style: form
       explode: false
       schema:

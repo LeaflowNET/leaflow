@@ -2,8 +2,8 @@ paths:
   /api/v1/checkout-sessions:
     get:
       summary: List Checkout Sessions
-      description: Checkout Sessions of your billing accounts, newest first. An open session is a purchase waiting for you to
-        complete checkout.
+      description: Checkout Sessions of your billing accounts, newest first; members of a project list its sessions with
+        `project_ids`. An open session is a purchase waiting for checkout to be completed.
       operationId: list-checkout-sessions
       tags:
       - checkout-sessions
@@ -29,13 +29,15 @@ paths:
     post:
       summary: Create a renewal Checkout Session
       description: |-
-        Opens a Checkout Session renewing one of your licensed subscriptions, with periods and price chosen as in
+        Opens a Checkout Session renewing a licensed subscription, with periods and price chosen as in
         renewing. Nothing is charged until you complete it, when a promotion code can be applied; it then renews from
         the subscription's current_term_end at that time. To renew at once from credit grants, balance or a payment
         method, renew the subscription instead. Purchases and changes of a service's resources are created through
         that service.
 
-        Keep `checkout_session_id` and read the session after an unknown outcome; creating it again conflicts.
+        Open to the owner of the subscription's current billing account and to members of its project with the
+        project permission `billing:subscription.write`. Keep `checkout_session_id` and read the session after an
+        unknown outcome; creating it again conflicts.
       operationId: create-checkout-session
       tags:
       - checkout-sessions
@@ -67,8 +69,9 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
     get:
       summary: Get a Checkout Session
-      description: A Checkout Session of your billing account. Poll it to follow checkout; once it is complete, read its
-        order for payment and delivery. An unknown session returns 404; another account's session returns 403.
+      description: A Checkout Session of your billing account or of a project you are a member of. Poll it to follow
+        checkout; once it is complete, read its order for payment and delivery. An unknown session returns 404; any
+        other session returns 403.
       operationId: get-checkout-session
       tags:
       - checkout-sessions
@@ -86,7 +89,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
     get:
       summary: List Checkout Session items
-      description: What the session buys, by position. Prices and amounts are in its quote.
+      description: What the session buys, by position. Prices and amounts are in its quote. Readable by whoever can read the session.
       operationId: list-checkout-session-items
       tags:
       - checkout-sessions
@@ -116,6 +119,8 @@ paths:
         immediate change, the returned `proration_date`. An expired session is refused with
         `BILLING_CHECKOUT_SESSION_EXPIRED`, and a complete one with `BILLING_CHECKOUT_SESSION_COMPLETE`; read its order
         instead.
+
+        Open to the owner of the session's billing account and to members of its project.
       operationId: get-checkout-session-quote
       tags:
       - checkout-sessions
@@ -151,6 +156,8 @@ paths:
         Confirming a complete session again with the same terms returns it with its order; different terms are refused
         with `BILLING_CHECKOUT_SESSION_COMPLETE`. An expired session is refused with `BILLING_CHECKOUT_SESSION_EXPIRED`.
         The order is delivered by the service that owns it once paid; confirmation alone does not mean delivery.
+
+        Open to the owner of the session's billing account and to members of its project.
       operationId: confirm-checkout-session
       tags:
       - checkout-sessions
@@ -181,7 +188,8 @@ paths:
     post:
       summary: Expire a Checkout Session
       description: Ends an open session without an order; the service that created it releases what it was holding for
-        the purchase. An expired session is returned unchanged.
+        the purchase. An expired session is returned unchanged. Open to the owner of the session's billing account and
+        to members of its project.
       operationId: expire-checkout-session
       tags:
       - checkout-sessions

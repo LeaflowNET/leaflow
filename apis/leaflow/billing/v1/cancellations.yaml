@@ -2,7 +2,7 @@ paths:
   /api/v1/cancellations:
     get:
       summary: List cancellations
-      description: Newest first. Filter by `subscription_id` and `status=open` to find a subscription's cancellation in progress.
+      description: Newest first; members of a project list its cancellations with `project_ids`. Filter by `subscription_id` and `status=open` to find a subscription's cancellation in progress.
       operationId: list-cancellations
       tags:
       - cancellations
@@ -45,7 +45,9 @@ paths:
       summary: Cancel subscriptions
       description: |-
         Ends subscriptions of one service together. Deleting a resource is an `immediate` cancellation of every
-        subscription released with it, such as a server with its disks or an address with its bandwidth.
+        subscription released with it, such as a server with its disks or an address with its bandwidth. Open to the
+        owner of the subscriptions' current billing account and to members of their project with the project
+        permission `billing:subscription.write`.
 
         The owning service releases the resources at once for `immediate`, or at `scheduled_at`, the end of the paid
         term, for `period_end`. When release is confirmed, the unused value is returned to the original payment
@@ -101,7 +103,7 @@ paths:
   /api/v1/cancellations/preview:
     query:
       summary: Preview a cancellation
-      description: What creating the cancellation now would return, per subscription and in total. Nothing is canceled, ended or refunded. Refused as creating it would be, except that nothing is recorded.
+      description: What creating the cancellation now would return, per subscription and in total. Nothing is canceled, ended or refunded. Open to the same callers and refused as creating it would be, except that nothing is recorded.
       operationId: preview-cancellation
       tags:
       - cancellations
@@ -125,7 +127,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/CancellationId
     get:
       summary: Get a cancellation
-      description: A cancellation of your billing account with its schedule, expected refundable amount and the outcome for each subscription, including partial success.
+      description: A cancellation paid by your billing account or of a project you are a member of, with its schedule, expected refundable amount and the outcome for each subscription, including partial success.
       operationId: get-cancellation
       tags:
       - cancellations
@@ -143,7 +145,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/CancellationId
     post:
       summary: Withdraw a cancellation
-      description: Withdraws the whole cancellation while no resource has begun to be released; afterwards it is refused with 409 `BILLING_CANCELLATION_CONFLICT`. The subscriptions continue, but automatic renewal, turned off when the cancellation was created, stays off until it is turned on again. Withdrawing a withdrawn cancellation returns it unchanged.
+      description: Withdraws the whole cancellation while no resource has begun to be released; afterwards it is refused with 409 `BILLING_CANCELLATION_CONFLICT`. The subscriptions continue, but automatic renewal, turned off when the cancellation was created, stays off until it is turned on again. Withdrawing a withdrawn cancellation returns it unchanged. Open to the owner of the subscriptions' current billing account and to members of their project with the project permission `billing:subscription.write`.
       operationId: withdraw-cancellation
       tags:
       - cancellations

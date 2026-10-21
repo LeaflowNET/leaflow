@@ -6,10 +6,12 @@ paths:
         Calculates what a proposed purchase, or the renewal of your subscriptions, would invoice now, and what each
         purchased line renews at. Nothing is saved, reserved or redeemed.
 
-        With `billing_account_id`, the quote is for a billing account you own: its currency, account discounts,
+        With `billing_account_id`, the quote is for that billing account: its currency, account discounts,
         tax and funds apply, renewals use the account currently paying for each subscription, and an access token
-        is required. Without it, proposed items are priced in `currency` for anyone, signed in or not: no account
-        discount or funds apply, and `tax_status` is `requires_location_inputs`.
+        is required. The account must be yours, or, with `project_id`, the current billing account of a project you
+        are a member of; renewals then must be of the project's subscriptions and need the project permission
+        `billing:subscription.write`. Without it, proposed items are priced in `currency` for anyone, signed in or
+        not: no account discount or funds apply, and `tax_status` is `requires_location_inputs`.
 
         A promotion code is evaluated without being applied. It is applied only when a Checkout Session is completed
         with it; conditions that depend on the account, such as a first purchase, are checked only with an account
@@ -420,10 +422,14 @@ components:
       type: object
       properties:
         billing_account_id:
-          description: The billing account to price for; it must be yours, and an access token is required. Renewals must currently be paid by it.
+          description: The billing account to price for; it must be yours or the current billing account of `project_id`, and an access token is required. Renewals must currently be paid by it.
           type: integer
           format: int64
           minimum: 1
+        project_id:
+          description: A project you are a member of, to price for its current billing account as a member. Needs `billing_account_id`.
+          type: string
+          format: uuid
         currency:
           description: The ISO 4217 currency to price in without an account.
           type: string

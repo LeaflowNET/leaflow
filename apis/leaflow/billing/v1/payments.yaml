@@ -4,11 +4,18 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: List payment options
-      description: The payment gateways and methods currently accepting the account's currency, preferred gateway first. Top-ups and invoice payments must use one listed here. An empty result means online payment is unavailable for the account.
+      description: The payment gateways and methods currently accepting the account's currency, preferred gateway first. Top-ups and invoice payments must use one listed here. An empty result means online payment is unavailable for the account. Open to the owner of the account and, with `project_id`, to members of a project the account is currently assigned to.
       operationId: list-payment-options
       tags:
       - payments
       parameters:
+      - name: project_id
+        in: query
+        required: false
+        description: A project currently assigned to the account, for listing as a member of the project.
+        schema:
+          type: string
+          format: uuid
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -220,6 +227,9 @@ paths:
         `BILLING_INVOICE_NOT_PAYABLE` with `meta.reason` `fractional_amount` when the amount left for the gateway is
         not a whole number of the currency's minor unit; such an invoice is collected from credit grants and balance
         automatically, including right after a top-up.
+
+        Open to the owner of the invoice's billing account and, for the invoice of an order of a project, to members
+        of the project. Only the owner can pay with a saved `payment_method_id`.
       operationId: pay-invoice
       tags:
       - payments
@@ -250,7 +260,7 @@ paths:
         Nothing is charged, reserved or created.
 
         Refused with the same errors as paying, except that insufficient funds are not an error here:
-        they show as a `gateway_amount` above zero.
+        they show as a `gateway_amount` above zero. Open to the same callers as paying.
       operationId: preview-invoice-payment
       tags:
       - payments
