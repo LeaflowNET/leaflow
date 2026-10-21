@@ -1,0 +1,451 @@
+paths:
+  /api/v1/checkout-sessions:
+    get:
+      summary: List Checkout Sessions
+      description: Checkout Sessions of your billing accounts, newest first. An open session is a purchase waiting for you to
+        complete checkout.
+      operationId: list-checkout-sessions
+      tags:
+      - checkout-sessions
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/CheckoutSessionStatus'
+      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create a renewal Checkout Session
+      description: |-
+        Opens a Checkout Session renewing one of your licensed subscriptions, with periods and price chosen as in
+        renewing. Nothing is charged until you complete it, when a promotion code can be applied; it then renews from
+        the subscription's current_term_end at that time. To renew at once from credit grants, balance or a payment
+        method, renew the subscription instead. Purchases and changes of a service's resources are created through
+        that service.
+
+        Keep `checkout_session_id` and read the session after an unknown outcome; creating it again conflicts.
+      operationId: create-checkout-session
+      tags:
+      - checkout-sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSession'
+        '409':
+          description: 'The session already exists, refused with `BILLING_CHECKOUT_SESSION_EXISTS`, or the subscription
+            has an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a
+            pending or paid change waiting to switch, an open cancellation or a committed reclaim.'
+          content:
+            application/json:
+              schema:
+                $ref: ./openapi.yaml#/components/schemas/Error
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions/{checkoutSessionId}:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
+    get:
+      summary: Get a Checkout Session
+      description: A Checkout Session of your billing account. Poll it to follow checkout; once it is complete, read its
+        order for payment and delivery. An unknown session returns 404; another account's session returns 403.
+      operationId: get-checkout-session
+      tags:
+      - checkout-sessions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSession'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions/{checkoutSessionId}/items:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
+    get:
+      summary: List Checkout Session items
+      description: What the session buys, by position. Prices and amounts are in its quote.
+      operationId: list-checkout-session-items
+      tags:
+      - checkout-sessions
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionItemList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions/{checkoutSessionId}/quote:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
+    get:
+      summary: Quote a Checkout Session
+      description: |-
+        What completing this open session now would invoice, with `promotion_code` or otherwise the best applicable
+        account discount, and the account funds available for it. Nothing is applied, reserved or redeemed. An invalid
+        or inapplicable code fails the request without changing the session.
+
+        Complete the session with the returned `total` as `expected_amount`, the same `promotion_code` and, for an
+        immediate change, the returned `proration_date`. An expired session is refused with
+        `BILLING_CHECKOUT_SESSION_EXPIRED`, and a complete one with `BILLING_CHECKOUT_SESSION_COMPLETE`; read its order
+        instead.
+      operationId: get-checkout-session-quote
+      tags:
+      - checkout-sessions
+      parameters:
+      - name: promotion_code
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./quotes.yaml#/components/schemas/Quote
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions/{checkoutSessionId}/confirm:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
+    post:
+      summary: Confirm a Checkout Session
+      description: |-
+        Completes an open session: applies `promotion_code`, or otherwise the best applicable account discount, checks
+        the total against `expected_amount` and creates the order with its invoice issued. A zero-total invoice is paid
+        at once; otherwise pay the invoice next. A failed payment leaves the order and its terms as they are, and the
+        invoice can be paid again until the order expires. Nothing is created when the code is invalid or
+        inapplicable or the total differs, which fails with `BILLING_AMOUNT_CHANGED`.
+
+        Confirming a complete session again with the same terms returns it with its order; different terms are refused
+        with `BILLING_CHECKOUT_SESSION_COMPLETE`. An expired session is refused with `BILLING_CHECKOUT_SESSION_EXPIRED`.
+        The order is delivered by the service that owns it once paid; confirmation alone does not mean delivery.
+      operationId: confirm-checkout-session
+      tags:
+      - checkout-sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionConfirm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResult'
+        '409':
+          description: The total changed, or the session is already complete with other terms or has expired.
+          content:
+            application/json:
+              schema:
+                $ref: ./openapi.yaml#/components/schemas/Error
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions/{checkoutSessionId}/expire:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
+    post:
+      summary: Expire a Checkout Session
+      description: Ends an open session without an order; the service that created it releases what it was holding for
+        the purchase. An expired session is returned unchanged.
+      operationId: expire-checkout-session
+      tags:
+      - checkout-sessions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSession'
+        '409':
+          description: A complete session is refused with `BILLING_CHECKOUT_SESSION_COMPLETE`; cancel its order instead.
+          content:
+            application/json:
+              schema:
+                $ref: ./openapi.yaml#/components/schemas/Error
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    CheckoutSessionStatus:
+      description: '`open`: waiting for you to complete checkout; nothing is ordered, invoiced or reserved. `complete`:
+        the order and its issued invoice exist; read the order for payment and delivery. `expired`: ended without an
+        order.'
+      type: string
+      enum:
+      - open
+      - complete
+      - expired
+    CheckoutSession:
+      description: A purchase waiting for you to complete checkout. Completing it applies the discount and creates the
+        order with its invoice issued; the order carries the session's ID.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+          description: The service the purchase is for.
+        billing_account_id:
+          type: integer
+          format: int64
+        account:
+          $ref: ./accounts.yaml#/components/schemas/AccountIdentity
+        project_id:
+          description: The project the purchase is for. Null for an account-level purchase, such as a membership.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        project:
+          description: The project and its current name. Null for an account-level purchase or when the project cannot
+            be read; `project_id` still identifies it.
+          oneOf:
+          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+          - type: 'null'
+        type:
+          description: '`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription''s
+            configuration or billing terms.'
+          type: string
+          enum:
+          - new
+          - renew
+          - modify
+        change_effective:
+          description: When a change takes effect, as on the order it creates; `none` for anything that is not a change.
+          type: string
+          enum:
+          - none
+          - immediate
+          - period_end
+        status:
+          $ref: '#/components/schemas/CheckoutSessionStatus'
+        currency:
+          type: string
+        checkout:
+          description: The checkout choices as the purchase gave them. Billing does not check `return_url`; validate it
+            before navigating.
+          allOf:
+          - $ref: ../type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+        expires_at:
+          description: When an open session expires. The order a complete session created has its own payment deadline.
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        expired_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        order_id:
+          description: The order created when the session completed. Null otherwise.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - id
+      - product_id
+      - billing_account_id
+      - account
+      - project_id
+      - project
+      - type
+      - change_effective
+      - status
+      - currency
+      - checkout
+      - expires_at
+      - created_at
+      - completed_at
+      - expired_at
+      - order_id
+      additionalProperties: false
+    CheckoutSessionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckoutSession'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CheckoutSessionItem:
+      description: One item of the session. It becomes the order item at the same position; its price is chosen when
+        checkout completes.
+      type: object
+      properties:
+        position:
+          type: integer
+          minimum: 0
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        price_id:
+          description: The price the item named. Null when Billing selects it by billing terms or from the subscription
+            being changed or renewed.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        quantity:
+          type: string
+        dimensions:
+          description: The dimension values of what is bought, such as region and instance type.
+          type: object
+          additionalProperties:
+            type: string
+        subscription_id:
+          description: The subscription changed or renewed. Null for a new purchase.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        periods:
+          description: Renewals only; null otherwise. How many consecutive periods are renewed.
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+      required:
+      - position
+      - plan_id
+      - plan_name
+      - price_id
+      - quantity
+      - dimensions
+      - subscription_id
+      - periods
+      additionalProperties: false
+    CheckoutSessionItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckoutSessionItem'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CheckoutSessionCreate:
+      description: The subscription to renew, and its periods and price chosen as in renewing.
+      type: object
+      properties:
+        checkout_session_id:
+          description: Chosen by the caller. Creating it again conflicts; read the session after an unknown outcome.
+          type: string
+          format: uuid
+        subscription_id:
+          type: string
+          format: uuid
+        periods:
+          description: As in renewing.
+          type: integer
+          default: 1
+          minimum: 1
+        interval_count:
+          description: As in renewing.
+          type: integer
+          minimum: 1
+        interval:
+          description: As in renewing.
+          type: string
+          enum:
+          - day
+          - month
+          - year
+        cancellation_policy:
+          description: As in renewing.
+          allOf:
+          - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
+      required:
+      - checkout_session_id
+      - subscription_id
+      additionalProperties: false
+    CheckoutSessionConfirm:
+      type: object
+      properties:
+        promotion_code:
+          description: As quoted. Omit to apply the best applicable account discount.
+          type: string
+          minLength: 1
+          maxLength: 64
+        expected_amount:
+          description: The quote's `total`, after discounts and tax and before credit grants or balance.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - type: string
+            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        proration_date:
+          description: Immediate changes only. The quote's `proration_date`; it must be a whole second, not in the future
+            and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`. Defaults to the
+            time of the request.
+          type: string
+          format: date-time
+      required:
+      - expected_amount
+      additionalProperties: false
+    CheckoutSessionResult:
+      description: The complete session and the order it created.
+      type: object
+      properties:
+        checkout_session:
+          $ref: '#/components/schemas/CheckoutSession'
+        order:
+          $ref: ./orders.yaml#/components/schemas/Order
+      required:
+      - checkout_session
+      - order
+      additionalProperties: false

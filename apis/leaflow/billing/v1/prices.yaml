@@ -1,4 +1,31 @@
 paths:
+  /api/v1/usage-estimates:
+    query:
+      summary: Estimate usage
+      description: |-
+        Estimates what future usage of metered prices would cost in `currency` at current rates, for anyone, signed in
+        or not. Nothing is saved. Graduated and volume tiers apply to the estimated quantity alone, while actual charges
+        follow each month's whole usage, and the amounts are before discounts and tax. Estimates are not collected at
+        checkout. An item that cannot be priced fails the whole request.
+      operationId: estimate-usage
+      tags:
+      - prices
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsageEstimateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageEstimate'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/subscriptions/{subscriptionId}/renewal-prices:
     parameters:
     - name: subscriptionId
@@ -551,3 +578,123 @@ components:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
       - unit_amount
+    UsageEstimateRequest:
+      type: object
+      properties:
+        currency:
+          description: The ISO 4217 currency to price in.
+          type: string
+          minLength: 3
+          maxLength: 3
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/UsageEstimateInput'
+      required:
+      - currency
+      - items
+      additionalProperties: false
+    UsageEstimateInput:
+      description: Future usage of one metered price. Give the price, or the plan to use its metered price in the currency, and the meter that measures the usage; give each resource's ID or lookup key, never both, and product_id with lookup keys.
+      type: object
+      properties:
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+        plan_id:
+          type: string
+          format: uuid
+        plan_lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        price_id:
+          type: string
+          format: uuid
+        price_lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        meter_id:
+          type: string
+          format: uuid
+        meter_lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        dimensions:
+          description: The dimension values of the usage, such as region or token kind. Every key the meter declares must be given; a combination no rate covers is refused rather than priced at zero.
+          type: object
+          additionalProperties:
+            type: string
+        quantity:
+          description: Decimal string. Positive.
+          type: string
+          pattern: ^[0-9]{1,28}([.][0-9]{1,10})?$
+        duration_seconds:
+          description: For a duration meter, how long the quantity is held; the priced quantity is `quantity` times this duration.
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - quantity
+      additionalProperties: false
+    UsageEstimate:
+      type: object
+      properties:
+        currency:
+          type: string
+        amount:
+          description: The sum of the items' amounts.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        items:
+          description: One per request item, in request order.
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageEstimateItem'
+      required:
+      - currency
+      - amount
+      - items
+      additionalProperties: false
+    UsageEstimateItem:
+      type: object
+      properties:
+        index:
+          description: The zero-based request item this answers.
+          type: integer
+          minimum: 0
+        price_id:
+          type: string
+          format: uuid
+        meter_id:
+          type: string
+          format: uuid
+        quantity:
+          description: The quantity priced.
+          type: string
+        unit_amount:
+          description: Null when the matched rates do not have a single unit price, for example a tiered rate.
+          oneOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - type: 'null'
+        unit_quantity:
+          description: The quantity unit_amount is for; null with unit_amount.
+          type:
+          - string
+          - 'null'
+        amount:
+          description: Before discounts and tax, unrounded.
+          allOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+      - index
+      - price_id
+      - meter_id
+      - quantity
+      - unit_amount
+      - unit_quantity
+      - amount
+      additionalProperties: false

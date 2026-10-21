@@ -3,14 +3,21 @@ paths:
     query:
       summary: Get a quote
       description: |-
-        Calculates exactly one target for a billing account you own: proposed items, an existing order, renewals, a
-        cancellation or an order refund. Nothing is saved, reserved or redeemed.
+        Calculates what a proposed purchase, or the renewal of your subscriptions, would invoice now, and what each
+        purchased line renews at. Nothing is saved, reserved or redeemed.
 
-        Existing orders use their recorded account and terms; renewals and cancellations use the account currently
-        paying for each subscription. Every target must belong to the requested account; a project token does not
-        authorize a quote. An existing order's total is the expected_amount for paying its invoice. Usage estimates
-        are not checkout amounts.
+        With `billing_account_id`, the quote is for a billing account you own: its currency, account discounts,
+        tax and funds apply, renewals use the account currently paying for each subscription, and an access token
+        is required. Without it, proposed items are priced in `currency` for anyone, signed in or not: no account
+        discount or funds apply, and `tax_status` is `requires_location_inputs`.
+
+        A promotion code is evaluated without being applied. It is applied only when a Checkout Session is completed
+        with it; conditions that depend on the account, such as a first purchase, are checked only with an account
+        and otherwise reported as `unverified`. Future usage of metered prices is estimated with `estimate-usage`.
       operationId: get-quote
+      security:
+      - {}
+      - accessTokenAuth: []
       tags:
       - quotes
       requestBody:
@@ -20,17 +27,22 @@ paths:
             schema:
               $ref: '#/components/schemas/QuoteRequest'
             examples:
-              order_checkout:
-                summary: Preview a promotion code without applying it.
+              promotion_code:
+                summary: Check whether a promotion code applies to a proposed purchase, without applying it.
                 value:
                   billing_account_id: 1
-                  order_id: 019c0000-0000-7000-8000-000000000001
+                  items:
+                  - price_id: 019c0000-0000-7000-8000-000000000002
+                    quantity: '1'
                   promotion_code: WELCOME
-              account_discount:
-                summary: Preview the account discount selected for this order.
+              without_account:
+                summary: Price a proposed purchase for a visitor who is not signed in.
                 value:
-                  billing_account_id: 1
-                  order_id: 019c0000-0000-7000-8000-000000000001
+                  currency: USD
+                  items:
+                  - price_id: 019c0000-0000-7000-8000-000000000002
+                    quantity: '1'
+                  promotion_code: WELCOME
       responses:
         '200':
           description: OK
@@ -139,8 +151,7 @@ components:
       - total
     QuoteItem:
       description: |-
-        One fully calculated purchase, estimated metered usage or recorded order item. Amounts use the
-        billing-account currency. An item with no immediate charge has zero checkout amounts.
+        One fully calculated purchase line. An item with no immediate charge, such as a metered purchase, has zero checkout amounts.
       type: object
       properties:
         tax_amount:
@@ -150,11 +161,12 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: The part of tax_amount already contained in amount minus discount_amount.
         index:
-          description: The zero-based request line index, or the recorded order item's position for an order quote.
+          description: The zero-based request line index, or the item's position for a Checkout Session quote.
           type: integer
           minimum: 0
-        order_item_id:
-          description: Present for an existing order quote; identifies the recorded item being priced.
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+        plan_id:
           type: string
           format: uuid
         price_id:
@@ -163,16 +175,51 @@ components:
           format: uuid
         plan_name:
           type: string
+        type:
+          $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_type:
+          $ref: ./prices.yaml#/components/schemas/UsageType
+        interval:
+          description: The billing period of a recurring licensed line; `none` otherwise.
+          type: string
+          enum:
+          - none
+          - day
+          - month
+          - year
+        interval_count:
+          description: Periods per billing cycle of a recurring licensed line; null otherwise.
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        dimensions:
+          description: The dimension values the line is priced at.
+          type: object
+          additionalProperties:
+            type: string
+        setup_amount:
+          description: The setup charge already included in `amount`; null when none applies.
+          oneOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - type: 'null'
+        recurring_amount:
+          description: Recurring licensed lines only; null otherwise. What each later period renews at, before discounts
+            and tax, which differs from `amount` when the first period is priced differently. `discount` says whether
+            its discount continues on renewals.
+          oneOf:
+          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          - type: 'null'
         unit_amount:
           description: Unit price before discounts. Null when no single unit price applies, such as tiered or multiple-rate pricing.
           oneOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
           - type: 'null'
         quantity:
-          description: The quantity priced; with duration_seconds, quantity times the duration.
+          description: The quantity priced.
           type: string
         amount:
-          description: Amount before discounts and including any setup charge. For requested future usage this is an estimate, not a collectible checkout amount.
+          description: Amount before discounts and including any setup charge.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         discount_amount:
@@ -185,8 +232,17 @@ components:
           type: string
       required:
       - index
+      - product_id
+      - plan_id
       - price_id
       - plan_name
+      - type
+      - usage_type
+      - interval
+      - interval_count
+      - dimensions
+      - setup_amount
+      - recurring_amount
       - quantity
       - amount
       - currency
@@ -196,24 +252,25 @@ components:
       - total
       - unit_amount
     Quote:
-      description: A complete calculation in the billing account's currency; nothing is saved or reserved. The request fails if any item cannot be priced. Usage estimates are included in totals but are not collected at checkout; only an existing-order quote gives that order's checkout amount.
+      description: A complete calculation in `currency`; nothing is saved or reserved. The request fails if any item cannot be priced. A Checkout Session quote gives what completing the session would invoice.
       type: object
       properties:
         funds:
-          description: Account funds for an existing-order checkout quote. Absent for usage estimates, refunds and cancellations.
-          allOf:
+          description: Account funds for the quoted purchase. Null without an account.
+          oneOf:
           - $ref: ../type/v1/funds.yaml#/components/schemas/Funds
+          - type: 'null'
         subtotal:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Sum before discounts, excluding tax already included in the item amounts. Zero for a cancellation-only quote.
+          description: Sum before discounts, excluding tax already included in the item amounts.
         discount_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Total item discounts. Zero for a cancellation-only quote.
+          description: Total item discounts.
         tax_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Total tax on the discounted amounts. Zero for a cancellation-only quote.
+          description: Total tax on the discounted amounts.
         discount:
-          description: The discount a purchase or order would get, not yet applied. Null when there is none, and for renewals and cancellations. A confirmed order reports its recorded discount.
+          description: The discount a purchase would get, not yet applied. Null when there is none, and for renewals.
           oneOf:
           - $ref: '#/components/schemas/QuotedDiscount'
           - type: 'null'
@@ -225,20 +282,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuoteRenewalResult'
-        cancellation:
-          description: What the cancellation requested would return. Present only when one was requested.
-          allOf:
-          - $ref: '#/components/schemas/CancellationRefundPreview'
         total:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: subtotal minus discount_amount plus tax_amount, before credit grants and balance. For an existing order, pass it as expected_amount when paying its invoice. Renewal entries are separate orders; use each entry's total. Usage estimates are not checkout amounts. Cancellation and refund targets have a zero total and report the returned value separately.
+          description: subtotal minus discount_amount plus tax_amount, before credit grants and balance. For a Checkout Session quote, pass it as expected_amount when confirming the session. Renewal entries are separate orders; use each entry's total.
         currency:
           type: string
-        refund:
-          description: Present when an order refund was requested.
-          allOf:
-          - $ref: '#/components/schemas/OrderRefundQuote'
+        proration_date:
+          description: Immediate changes only; null otherwise. The instant the change is priced from; pass it when
+            confirming the Checkout Session so it is priced from the same instant.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        tax_status:
+          description: '`complete`: tax is calculated for the billing account''s invoice contact. `requires_location_inputs`:
+            a quote without an account, which leaves out tax that would be added; tax already contained in a price is
+            included.'
+          type: string
+          enum:
+          - complete
+          - requires_location_inputs
       required:
+      - funds
+      - tax_status
       - subtotal
       - discount_amount
       - tax_amount
@@ -247,6 +313,7 @@ components:
       - currency
       - items
       - renewals
+      - proration_date
     QuotedDiscount:
       description: The discount selected for this calculation, not applied and not reserved. Amounts are on the quote and its lines.
       type: object
@@ -265,143 +332,38 @@ components:
           - 'null'
           minLength: 1
           maxLength: 64
+        frequency:
+          description: 'Whether the discount continues on renewals of what is bought: `once` applies only to this
+            purchase, `recurring` for `frequency_duration` periods including the first, `forever` on every renewal.'
+          type: string
+          enum:
+          - once
+          - recurring
+          - forever
+        frequency_duration:
+          description: For `recurring`, the periods the discount lasts; null otherwise.
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        eligibility:
+          description: '`confirmed`: every condition of the discount holds for the billing account. `unverified`: a quote
+            without an account, where conditions that depend on the account, such as a first purchase or a per-account
+            limit, are checked only when a Checkout Session is completed.'
+          type: string
+          enum:
+          - confirmed
+          - unverified
       required:
       - type
       - name
       - promotion_code
+      - frequency
+      - frequency_duration
+      - eligibility
       additionalProperties: false
-    QuoteCancellation:
-      description: 'A cancellation to quote: what ending these subscriptions together would return, for one mode; quote `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`), is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`).'
-      type: object
-      properties:
-        subscription_ids:
-          description: The subscriptions to end together, all of one service, including every subscription released with a resource.
-          type: array
-          minItems: 1
-          maxItems: 50
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
-        mode:
-          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
-      required:
-      - subscription_ids
-      - mode
-      additionalProperties: false
-    CancellationRefundPreview:
-      description: |-
-        What the cancellation would return, per subscription and in total, as of now. Give `proration_date` and
-        `refundable_amount` when creating the cancellation.
-
-        - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
-        - `short_rate_surcharge_amount`: before tax, the part of `forfeited_amount` due to the short rate of the
-          refund policy.
-        - `refundable_amount`: what is returned the way it was paid, tax included; `refund_amount` plus
-          `credit_amount`.
-        - `refund_amount`: the part returned to the balance or the payment method.
-        - `credit_amount`: the part restored to the credit grants that paid.
-        - `tax_amount`: the tax included in `refundable_amount`.
-        - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
-
-        Metered and one-time subscriptions show zero; their usage until release is charged as usual.
-      type: object
-      properties:
-        mode:
-          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
-        scheduled_at:
-          description: For `period_end`, when release begins, the end of the paid terms.
-          type: string
-          format: date-time
-        proration_date:
-          description: For `immediate`, the second the refund is computed as of. Give it when creating the cancellation.
-          type: string
-          format: date-time
-        currency:
-          type: string
-        unused_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        short_rate_surcharge_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refundable_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refund_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        credit_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        tax_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        forfeited_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CancellationRefundPreviewItem'
-      required:
-      - mode
-      - currency
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
-      - items
-    CancellationRefundPreviewItem:
-      description: One subscription of the quoted cancellation.
-      type: object
-      properties:
-        subscription_id:
-          type: string
-          format: uuid
-        plan_id:
-          type: string
-          format: uuid
-        plan_name:
-          type: string
-        project:
-          description: The project and its current name. Absent for an account-level purchase or when the project cannot be read.
-          oneOf:
-          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-          - type: 'null'
-        type:
-          $ref: ./prices.yaml#/components/schemas/PriceType
-        usage_type:
-          $ref: ./prices.yaml#/components/schemas/UsageType
-        auto_renew:
-          description: Whether automatic renewal is on now. Creating the cancellation turns it off; withdrawing it turns it back on for a metered subscription but not for a licensed one.
-          type: boolean
-        unused_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        short_rate_surcharge_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refundable_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refund_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        credit_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        tax_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        forfeited_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-      required:
-      - subscription_id
-      - plan_id
-      - plan_name
-      - type
-      - usage_type
-      - auto_renew
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
     QuoteItemInput:
-      description: Identify a price, or select one for a plan; give each resource's ID or lookup key, never both, and product_id with lookup keys. For a metered price, a meter or duration_seconds requests a usage estimate, which cannot be combined with a promotion code and is not a checkout amount. Without one, a metered item includes only any setup charge.
+      description: Identify a price, or select one for a plan; give each resource's ID or lookup key, never both, and product_id with lookup keys. A metered item includes only any setup charge; its usage is estimated with `estimate-usage`.
       type: object
       properties:
         price_lookup_key:
@@ -445,104 +407,44 @@ components:
         quantity:
           type: string
           pattern: ^(?:(?:[1-9][0-9]{0,27}|0(?:[1-9][0-9]{0,26}|0(?:[1-9][0-9]{0,25}|0(?:[1-9][0-9]{0,24}|0(?:[1-9][0-9]{0,23}|0(?:[1-9][0-9]{0,22}|0(?:[1-9][0-9]{0,21}|0(?:[1-9][0-9]{0,20}|0(?:[1-9][0-9]{0,19}|0(?:[1-9][0-9]{0,18}|0(?:[1-9][0-9]{0,17}|0(?:[1-9][0-9]{0,16}|0(?:[1-9][0-9]{0,15}|0(?:[1-9][0-9]{0,14}|0(?:[1-9][0-9]{0,13}|0(?:[1-9][0-9]{0,12}|0(?:[1-9][0-9]{0,11}|0(?:[1-9][0-9]{0,10}|0(?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9])))))))))))))))))))))))))))([.][0-9]{1,10})?|0{1,28}[.](?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))$
-        meter_id:
-          type: string
-          format: uuid
-        meter_lookup_key:
-          type: string
-          minLength: 1
-          maxLength: 128
         dimensions:
-          description: 'The dimension values the rate depends on, such as region, instance type or token kind: those of the usage for a metered estimate, and those of what is bought for a licensed price on a rate card. Required whenever the price uses a rate card; prices with their own amounts ignore them. Every key the meter declares must be given. A combination no rate covers is refused rather than priced at zero.'
+          description: The dimension values of what is bought, such as region and instance type. Required whenever the price uses a rate card; prices with their own amounts ignore them. Every key the meter declares must be given. A combination no rate covers is refused rather than priced at zero.
           type: object
           additionalProperties:
             type: string
-        duration_seconds:
-          description: For a metered estimate, how long to price for, in seconds; the priced quantity is `quantity` times this duration.
-          type: integer
-          format: int64
       required:
       - quantity
       additionalProperties: false
-    OrderRefundQuoteInput:
-      description: An estimate of the refundable value of an order or selected items; nothing is canceled or refunded.
-      type: object
-      properties:
-        order_id:
-          type: string
-          format: uuid
-        order_item_ids:
-          description: Estimate only these items. Omit to estimate the whole order. Every item must belong to the order.
-          type: array
-          minItems: 1
-          maxItems: 100
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
-      required:
-      - order_id
-      additionalProperties: false
-    OrderRefundQuote:
-      description: An estimated refund to the original payment sources. Before acceptance, cancellation returns the collected amount. For delivered service, only value paid by this order is included; renewals are evaluated with their own orders under the agreed cancellation terms. Nothing is refunded by the quote; the amount is fixed when cancellation or termination is confirmed.
-      type: object
-      properties:
-        order_id:
-          type: string
-          format: uuid
-        refundable_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: refund_amount plus credit_amount.
-        refund_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Amount returned to the balance or original payment method.
-        credit_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Amount restored to the credit grants that paid.
-        currency:
-          type: string
-      required:
-      - order_id
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - currency
-      additionalProperties: false
     QuoteRequest:
-      description: 'Quote exactly one target for the billing account: proposed items, an existing order, renewals, a cancellation or an order refund. Promotion codes apply only to proposed items or an existing order. An invalid combination fails with `BILLING_PURCHASE_INVALID` and the field.'
+      description: 'Quote proposed items or renewals, not both. Give exactly one of `billing_account_id` and `currency`; renewals need the account. Promotion codes apply only to proposed items. An invalid combination fails with `BILLING_PURCHASE_INVALID` and the field.'
       type: object
       properties:
         billing_account_id:
-          description: The billing account to price for; it must be yours. Existing orders must have been placed with it, and renewals and cancellations must currently be paid by it.
+          description: The billing account to price for; it must be yours, and an access token is required. Renewals must currently be paid by it.
           type: integer
           format: int64
           minimum: 1
+        currency:
+          description: The ISO 4217 currency to price in without an account.
+          type: string
+          minLength: 3
+          maxLength: 3
         items:
-          description: A proposed purchase priced in the account's currency. Metered items may include usage estimates, which are not checkout amounts.
+          description: A proposed purchase.
           type: array
           minItems: 1
           maxItems: 100
           items:
             $ref: '#/components/schemas/QuoteItemInput'
-        order_id:
-          description: Preview paying this order. Its recorded terms supply every line, and an order whose terms are fixed returns its recorded amounts. The order does not change.
-          type: string
-          format: uuid
         renewals:
-          description: Preview renewing these subscriptions, each at most once; each entry is a separate renewal order. To preview a promotion code, create a renewal order and quote it by order_id.
+          description: Preview renewing these subscriptions, each at most once; each entry is a separate renewal order. To apply a promotion code, create a renewal Checkout Session and quote it.
           type: array
           minItems: 1
           maxItems: 100
           items:
             $ref: '#/components/schemas/QuoteRenewal'
-        cancellation:
-          $ref: '#/components/schemas/QuoteCancellation'
         promotion_code:
           type: string
           minLength: 1
           maxLength: 64
-        refund:
-          $ref: '#/components/schemas/OrderRefundQuoteInput'
-      required:
-      - billing_account_id
       additionalProperties: false

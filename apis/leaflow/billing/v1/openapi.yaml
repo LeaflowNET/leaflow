@@ -14,6 +14,7 @@ tags:
 - name: active-resources
 - name: allowances
 - name: cancellations
+- name: checkout-sessions
 - name: credit-grants
 - name: credit-notes
 - name: discounts
@@ -116,8 +117,12 @@ paths:
     $ref: ./subscriptions.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}~1cancel
   /api/v1/quotes:
     $ref: ./quotes.yaml#/paths/~1api~1v1~1quotes
+  /api/v1/usage-estimates:
+    $ref: ./prices.yaml#/paths/~1api~1v1~1usage-estimates
   /api/v1/cancellations:
     $ref: ./cancellations.yaml#/paths/~1api~1v1~1cancellations
+  /api/v1/cancellations/preview:
+    $ref: ./cancellations.yaml#/paths/~1api~1v1~1cancellations~1preview
   /api/v1/cancellations/{cancellationId}:
     $ref: ./cancellations.yaml#/paths/~1api~1v1~1cancellations~1{cancellationId}
   /api/v1/cancellations/{cancellationId}/withdraw:
@@ -126,16 +131,28 @@ paths:
     $ref: ./prices.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}~1renewal-prices
   /api/v1/subscriptions/{subscriptionId}/renew:
     $ref: ./subscriptions.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}~1renew
-  /api/v1/subscriptions/{subscriptionId}/renewal-orders:
-    $ref: ./orders.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}~1renewal-orders
   /api/v1/subscriptions/{subscriptionId}/auto-renew:
     $ref: ./subscriptions.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}~1auto-renew
   /api/v1/allowances:
     $ref: ./allowances.yaml#/paths/~1api~1v1~1allowances
+  /api/v1/checkout-sessions:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions
+  /api/v1/checkout-sessions/{checkoutSessionId}:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}
+  /api/v1/checkout-sessions/{checkoutSessionId}/items:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1items
+  /api/v1/checkout-sessions/{checkoutSessionId}/quote:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1quote
+  /api/v1/checkout-sessions/{checkoutSessionId}/confirm:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1confirm
+  /api/v1/checkout-sessions/{checkoutSessionId}/expire:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1expire
   /api/v1/orders:
     $ref: ./orders.yaml#/paths/~1api~1v1~1orders
   /api/v1/orders/{orderId}:
     $ref: ./orders.yaml#/paths/~1api~1v1~1orders~1{orderId}
+  /api/v1/orders/{orderId}/refund-preview:
+    $ref: ./orders.yaml#/paths/~1api~1v1~1orders~1{orderId}~1refund-preview
   /api/v1/orders/{orderId}/cancel:
     $ref: ./orders.yaml#/paths/~1api~1v1~1orders~1{orderId}~1cancel
   /api/v1/orders/{orderId}/items:
@@ -193,12 +210,12 @@ components:
       $ref: ./quotes.yaml#/components/schemas/Quote
     QuotedDiscount:
       $ref: ./quotes.yaml#/components/schemas/QuotedDiscount
-    QuoteCancellation:
-      $ref: ./quotes.yaml#/components/schemas/QuoteCancellation
+    CancellationPreviewRequest:
+      $ref: ./cancellations.yaml#/components/schemas/CancellationPreviewRequest
     CancellationRefundPreview:
-      $ref: ./quotes.yaml#/components/schemas/CancellationRefundPreview
+      $ref: ./cancellations.yaml#/components/schemas/CancellationRefundPreview
     CancellationRefundPreviewItem:
-      $ref: ./quotes.yaml#/components/schemas/CancellationRefundPreviewItem
+      $ref: ./cancellations.yaml#/components/schemas/CancellationRefundPreviewItem
     CancellationCreate:
       $ref: ./cancellations.yaml#/components/schemas/CancellationCreate
     Cancellation:
@@ -331,10 +348,24 @@ components:
       $ref: ./prices.yaml#/components/schemas/RenewalPriceList
     RenewRequest:
       $ref: ./subscriptions.yaml#/components/schemas/RenewRequest
-    RenewalOrderRequest:
-      $ref: ./subscriptions.yaml#/components/schemas/RenewalOrderRequest
     AutoRenewSet:
       $ref: ./subscriptions.yaml#/components/schemas/AutoRenewSet
+    CheckoutSessionStatus:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionStatus
+    CheckoutSession:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSession
+    CheckoutSessionList:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionList
+    CheckoutSessionItem:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItem
+    CheckoutSessionItemList:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItemList
+    CheckoutSessionCreate:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionCreate
+    CheckoutSessionConfirm:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionConfirm
+    CheckoutSessionResult:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionResult
     OrderStatus:
       $ref: ./orders.yaml#/components/schemas/OrderStatus
     OrderItemStatus:
@@ -423,10 +454,16 @@ components:
       $ref: ./active-resources.yaml#/components/schemas/ActiveResource
     ActiveResourceList:
       $ref: ./active-resources.yaml#/components/schemas/ActiveResourceList
-    OrderRefundQuoteInput:
-      $ref: ./quotes.yaml#/components/schemas/OrderRefundQuoteInput
-    OrderRefundQuote:
-      $ref: ./quotes.yaml#/components/schemas/OrderRefundQuote
+    OrderRefundPreview:
+      $ref: ./orders.yaml#/components/schemas/OrderRefundPreview
+    UsageEstimateRequest:
+      $ref: ./prices.yaml#/components/schemas/UsageEstimateRequest
+    UsageEstimateInput:
+      $ref: ./prices.yaml#/components/schemas/UsageEstimateInput
+    UsageEstimate:
+      $ref: ./prices.yaml#/components/schemas/UsageEstimate
+    UsageEstimateItem:
+      $ref: ./prices.yaml#/components/schemas/UsageEstimateItem
     QuoteRequest:
       $ref: ./quotes.yaml#/components/schemas/QuoteRequest
   parameters:
@@ -483,6 +520,13 @@ components:
         format: uuid
     OrderId:
       name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CheckoutSessionId:
+      name: checkoutSessionId
       in: path
       required: true
       schema:

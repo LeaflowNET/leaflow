@@ -82,7 +82,7 @@ paths:
           $ref: "#/components/responses/Error"
     post:
       summary: Buy a membership
-      description: Places a purchase order and returns the membership and invoice. Activation follows successful benefit issuance and delivery confirmation. Returns 409 MEMBERSHIP_EXISTS or 422 MEMBERSHIP_PLAN_UNAVAILABLE. Returns 403 MEMBERSHIP_ACCOUNT_DELETING while the caller's account deletion is pending, or 403 MEMBERSHIP_ACCOUNT_UNUSABLE when the account is deleted, suspended or banned.
+      description: Creates a Billing Checkout Session for the purchase and returns the membership with it. With deferred checkout, the customer completes checkout in Billing. Activation follows payment, successful benefit issuance and delivery confirmation. Returns 409 MEMBERSHIP_EXISTS or 422 MEMBERSHIP_PLAN_UNAVAILABLE. Returns 403 MEMBERSHIP_ACCOUNT_DELETING while the caller's account deletion is pending, or 403 MEMBERSHIP_ACCOUNT_UNUSABLE when the account is deleted, suspended or banned.
       operationId: create-membership
       tags:
         - Membership
@@ -141,7 +141,7 @@ paths:
   /api/v1/memberships/{membershipId}/upgrade:
     post:
       summary: Upgrade a membership
-      description: Places an order for the full-period price difference. The upgrade takes effect after benefit issuance and delivery confirmation; renewal uses the target tier. Returns 409 MEMBERSHIP_NOT_ACTIVE or MEMBERSHIP_CHANGE_PENDING, or 422 MEMBERSHIP_UPGRADE_UNAVAILABLE. Returns 403 MEMBERSHIP_ACCOUNT_DELETING while the caller's account deletion is pending, or 403 MEMBERSHIP_ACCOUNT_UNUSABLE when the account is deleted, suspended or banned.
+      description: Creates a Billing Checkout Session for the full-period price difference. The upgrade takes effect after payment, benefit issuance and delivery confirmation; renewal uses the target tier. Returns 409 MEMBERSHIP_NOT_ACTIVE or MEMBERSHIP_CHANGE_PENDING, or 422 MEMBERSHIP_UPGRADE_UNAVAILABLE. Returns 403 MEMBERSHIP_ACCOUNT_DELETING while the caller's account deletion is pending, or 403 MEMBERSHIP_ACCOUNT_UNUSABLE when the account is deleted, suspended or banned.
       operationId: upgrade-membership
       tags:
         - Membership
@@ -672,16 +672,25 @@ components:
         - pagination
       additionalProperties: false
     MembershipPurchase:
-      description: The membership and its Billing purchase order.
+      description: The membership and its Billing Checkout Session.
       type: object
       properties:
         membership:
           $ref: "#/components/schemas/Membership"
-        order:
-          $ref: ../../billing/type/v1/order.yaml#/components/schemas/PlacedOrder
+        checkout_session_id:
+          description: The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+            - string
+            - "null"
+          format: uuid
       required:
         - membership
-        - order
+        - checkout_session_id
+        - order_id
       additionalProperties: false
     MembershipCreate:
       type: object

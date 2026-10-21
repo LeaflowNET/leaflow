@@ -202,15 +202,9 @@ paths:
       summary: Pay an invoice
       description: |-
         Pays the invoice from eligible credit grants and balance as requested, and collects the remainder through the
-        selected gateway and method. Without a gateway, insufficient funds fail and no online payment starts.
-
-        The draft invoice of a deferred order is priced on its first payment: promotion_code, or otherwise the best
-        applicable account discount, is applied, the total is compared with expected_amount, and the invoice is issued
-        before collection. An invalid or inapplicable code fails, and a total other than expected_amount fails with
-        `BILLING_AMOUNT_CHANGED`; neither changes anything. Once fixed, the terms stay fixed even if collection does
-        not complete, and a different promotion_code is refused with `BILLING_ORDER_CHECKOUT_CONFLICT`. A deferred
-        period-end change can be paid only once its first period is due to be invoiced; earlier attempts fail with
-        `BILLING_CHANGE_NOT_INVOICED`.
+        selected gateway and method. Without a gateway, insufficient funds fail and no online payment starts. The
+        invoice's amounts and discount were fixed when it was issued and are not changed by paying; promotion codes
+        are applied when completing a Checkout Session.
 
         Returns a payment action when the customer must act; requires_action and processing are not paid. An
         unresolved online payment with the same gateway, method and saved payment method is reused, and retries never
@@ -255,22 +249,12 @@ paths:
         straight afterwards takes exactly these amounts unless the account's funds change in between.
         Nothing is charged, reserved or created.
 
-        A draft order invoice is priced as paying it with the same promotion_code would price it.
-
         Refused with the same errors as paying, except that insufficient funds are not an error here:
         they show as a `gateway_amount` above zero.
       operationId: preview-invoice-payment
       tags:
       - payments
       parameters:
-      - name: promotion_code
-        in: query
-        required: false
-        description: As in paying; used only while the order's terms are not fixed.
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 64
       - name: use_balance
         in: query
         required: false
@@ -299,15 +283,13 @@ paths:
       summary: Pay together
       description: |-
         Pays outstanding invoices, including those of the listed orders, from eligible credit grants and then balance,
-        without a payment gateway. The draft invoice of a deferred order takes the best applicable account discount
-        and is issued first, staying issued if payment fails; pay it alone to use a promotion code.
+        without a payment gateway.
 
         All invoices are paid or none: insufficient funds fail with `BILLING_INSUFFICIENT_FUNDS`, and a total other
         than expected_amount fails with `BILLING_AMOUNT_CHANGED`, charging nothing. Paid invoices are not charged
         again. An earlier online payment for one of the invoices is canceled first; one the gateway is still
         processing is refused with `BILLING_PAYMENT_PENDING` and `meta.transaction_id`. Also refused with
-        `BILLING_INVOICE_NOT_PAYABLE` for a void invoice; `BILLING_CHANGE_NOT_INVOICED` for a period-end change not
-        yet due; `BILLING_ORDER_FAILED`, `BILLING_ORDER_CANCELED` or `BILLING_ORDER_EXPIRED` for an order in that
+        `BILLING_INVOICE_NOT_PAYABLE` for a void invoice; `BILLING_ORDER_FAILED`, `BILLING_ORDER_CANCELED` or `BILLING_ORDER_EXPIRED` for an order in that
         state; and `BILLING_INVOICE_NOT_PAYABLE` with `meta.reason` `subscription_canceling`,
         `subscription_reclaiming` or `subscription_ended` for a renewal invoice of a subscription being canceled,
         being reclaimed or ended.
@@ -635,17 +617,6 @@ components:
           default: true
         return_url:
           type: string
-        promotion_code:
-          description: The code to apply while the order's terms are not fixed. Omit to apply the best applicable account discount, or to keep the discount already recorded.
-          type: string
-          minLength: 1
-          maxLength: 64
-        expected_amount:
-          description: The invoice total to expect, after discounts and tax and before credit grants or balance, as the payment preview or an order quote gave it. A different total fails with `BILLING_AMOUNT_CHANGED` and nothing is charged. Omit to skip the check; zero is checked.
-          allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       additionalProperties: false
       dependentRequired:
         payment_gateway:

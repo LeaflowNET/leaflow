@@ -1,42 +1,4 @@
 paths:
-  /api/v1/subscriptions/{subscriptionId}/renewal-orders:
-    parameters:
-    - $ref: ./openapi.yaml#/components/parameters/SubscriptionId
-    post:
-      summary: Create renewal order
-      description: |-
-        Places a renewal order with a draft invoice, without applying a new discount or charging anything. Pay its
-        invoice to renew; a promotion code can be applied when paying. Existing subscription discounts are kept.
-        Periods and price are chosen as for renewing. The order can be paid until the current paid period ends, and
-        never after the end of the first period it renews; unpaid by then, it is canceled. While auto-renew is on, the
-        renewal due at the end of the period pays this order instead of placing another, applying an applicable
-        account discount first if its terms are not fixed yet.
-
-        Keep `order_id` and read the order after an unknown outcome; creating it again conflicts.
-      operationId: create-renewal-order
-      tags:
-      - orders
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ./subscriptions.yaml#/components/schemas/RenewalOrderRequest
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Order'
-        '409':
-          description: 'The order already exists, or the subscription has an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a pending or paid change waiting to switch, an open cancellation or a committed reclaim.'
-          content:
-            application/json:
-              schema:
-                $ref: ./openapi.yaml#/components/schemas/Error
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders:
     get:
       summary: List orders
@@ -94,14 +56,13 @@ paths:
         refunded; failed items keep their outcome. The order stays pending while any item is pending, and its final
         status follows its items.
 
-        Once the order's terms are fixed, the canceled items keep their agreed amounts and discounts: credit notes
-        reduce the issued invoice, and collected amounts return to their original payment sources, possibly
-        asynchronously. While a deferred order's terms are not fixed, the remaining items are priced again. An online
+        The canceled items keep their agreed amounts and discounts: credit notes reduce the issued invoice, and
+        collected amounts return to their original payment sources, possibly asynchronously. An online
         payment waiting for the payer is canceled with the order; one the gateway is processing is refused with
         `BILLING_PAYMENT_PENDING` and `meta.transaction_id`. Repeating the cancellation does not refund twice.
 
         An accepted order is canceled by its owning service, and delivered items through subscription cancellation.
-        Refunds are quoted with the quote operation's `refund` target.
+        Refunds are previewed with `preview-order-refund`.
       operationId: cancel-order
       tags:
       - orders
@@ -124,6 +85,39 @@ paths:
             application/json:
               schema:
                 $ref: ./openapi.yaml#/components/schemas/Error
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/orders/{orderId}/refund-preview:
+    parameters:
+    - $ref: ./openapi.yaml#/components/parameters/OrderId
+    get:
+      summary: Preview an order refund
+      description: What canceling the listed items, or the whole order, would refund to the original payment sources. Nothing is canceled or refunded.
+      operationId: preview-order-refund
+      tags:
+      - orders
+      parameters:
+      - name: order_item_ids
+        in: query
+        required: false
+        description: Only these items of the order. Omit for the whole order.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderRefundPreview'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}/items:
@@ -168,7 +162,7 @@ components:
       - failed
       - canceled
     Order:
-      description: 'A recorded purchase with its invoice from placement; a zero-total invoice, such as for a metered purchase, is issued and paid at placement in either checkout mode. Until checkout_confirmed_at is set, the invoice is a draft at base prices: paying it fixes the discount and amount, issues it and collects it, and the order cannot be accepted before then. Coupon fields describe the discount fixed then and are absent before. Payment and acceptance do not mean the resources were delivered.'
+      description: A recorded purchase, created with its invoice issued when its Checkout Session completes or when Billing renews a subscription. A zero-total invoice, such as for a metered purchase, is paid at once. Coupon fields describe the discount applied then. Payment and acceptance do not mean the resources were delivered.
       type: object
       properties:
         coupon_id:
@@ -212,7 +206,7 @@ components:
           - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
           - type: 'null'
         billing_account_id:
-          description: The billing account the order was placed with, unchanged when the project is later linked to another account. While it is suspended or closed, the order cannot be accepted, and a period-end change's invoice is not issued and the change is called off when the current period ends; such requests fail with `BILLING_ACCOUNT_UNAVAILABLE`.
+          description: The billing account the order was placed with, unchanged when the project is later linked to another account. While it is suspended or closed, the order cannot be accepted, and a period-end change is called off when the current period ends; such requests fail with `BILLING_ACCOUNT_UNAVAILABLE`.
           type: integer
           format: int64
         currency:
@@ -227,7 +221,7 @@ components:
         status:
           $ref: '#/components/schemas/OrderStatus'
         change_effective:
-          description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced shortly before the current paid period ends and starts when it ends; if the invoice is unpaid by then, the order is canceled and the subscription renews or ends as usual. A renewal in the meantime moves the change to the end of the renewed period.
+          description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced when the order is created and starts when the current paid period ends; if the invoice is unpaid by then, the order is canceled and the subscription renews or ends as usual.
           type: string
           enum:
           - none
@@ -239,12 +233,12 @@ components:
           - string
           - 'null'
           format: date-time
-        checkout_confirmed_at:
-          description: 'When the discount and amount were fixed: at placement for automatic checkout or a zero total, otherwise when the invoice was first paid. Null while a deferred order awaits payment.'
+        checkout_session_id:
+          description: The Checkout Session that created the order. Null for orders Billing creates itself, such as automatic renewals.
           type:
           - string
           - 'null'
-          format: date-time
+          format: uuid
         created_at:
           type: string
           format: date-time
@@ -473,4 +467,29 @@ components:
           items:
             type: string
             format: uuid
+      additionalProperties: false
+    OrderRefundPreview:
+      description: An estimated refund to the original payment sources. Before acceptance, cancellation returns the collected amount. For delivered service, only value paid by this order is included; renewals are evaluated with their own orders under the agreed cancellation terms. Nothing is refunded by the quote; the amount is fixed when cancellation or termination is confirmed.
+      type: object
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        refundable_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: refund_amount plus credit_amount.
+        refund_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Amount returned to the balance or original payment method.
+        credit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+          description: Amount restored to the credit grants that paid.
+        currency:
+          type: string
+      required:
+      - order_id
+      - refundable_amount
+      - refund_amount
+      - credit_amount
+      - currency
       additionalProperties: false

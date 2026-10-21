@@ -2,7 +2,7 @@ paths:
   /api/v1/invoices:
     get:
       summary: List invoices
-      description: Issued invoices of your billing accounts. Drafts are not listed; an order's draft invoice is reached through its order. Top-ups have no invoices.
+      description: Issued invoices of your billing accounts. Top-ups have no invoices.
       operationId: list-invoices
       tags:
       - invoices
@@ -38,7 +38,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     get:
       summary: Get invoice
-      description: An invoice of your billing account, issued or an order's draft, with its amounts, tax lines and payment state. A missing invoice or another draft returns 404; an invoice of another user's account returns 403.
+      description: An issued invoice of your billing account, with its amounts, tax lines and payment state. A missing or unissued invoice returns 404; an invoice of another user's account returns 403.
       operationId: get-invoice
       tags:
       - invoices
@@ -56,7 +56,7 @@ paths:
     - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     get:
       summary: List invoice items
-      description: Lines of an invoice of your billing account, issued or an order's draft, with their service periods and projects. A missing invoice or another draft returns 404; an invoice of another user's account returns 403.
+      description: Lines of an issued invoice of your billing account, with their service periods and projects. A missing or unissued invoice returns 404; an invoice of another user's account returns 403.
       operationId: list-invoice-items
       tags:
       - invoices
@@ -75,10 +75,9 @@ paths:
 components:
   schemas:
     InvoiceStatus:
-      description: '`draft`: not yet issued; an order''s draft invoice shows base prices until it is paid, when the discount is applied and it is issued. Other drafts are visible only to operators. `open`: issued and not yet settled; a zero-total invoice is paid at once. `paid` stays paid after a refund, with the refunded part in amount_refunded. `void`: collection has stopped and any funds received have been returned. Usage not yet invoiced is not on any invoice.'
+      description: '`open`: issued and not yet settled; a zero-total invoice is paid at once. `paid` stays paid after a refund, with the refunded part in amount_refunded. `void`: collection has stopped and any funds received have been returned. Usage not yet invoiced is not on any invoice.'
       type: string
       enum:
-      - draft
       - open
       - paid
       - void
@@ -147,7 +146,7 @@ components:
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_due:
-          description: What is still collectible from total plus rounding_amount after unpaid credit notes and successful payments; never below zero. Zero for a draft, whose total is the base price, and for a paid or void invoice.
+          description: What is still collectible from total plus rounding_amount after unpaid credit notes and successful payments; never below zero. Zero for a paid or void invoice.
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         period_start:
@@ -359,7 +358,7 @@ components:
       - items
       - pagination
     InvoiceSummary:
-      description: An order's invoice amounts, without contact details or payment methods. A draft shows base prices until it is paid, when the discount is applied and it is issued; a zero-total invoice is issued and paid at placement.
+      description: An order's invoice amounts, without contact details or payment methods, issued when the order is created; a zero-total invoice is paid at once.
       type: object
       properties:
         id:

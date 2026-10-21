@@ -98,6 +98,28 @@ paths:
                 $ref: '#/components/schemas/Cancellation'
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/cancellations/preview:
+    query:
+      summary: Preview a cancellation
+      description: What creating the cancellation now would return, per subscription and in total. Nothing is canceled, ended or refunded. Refused as creating it would be, except that nothing is recorded.
+      operationId: preview-cancellation
+      tags:
+      - cancellations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancellationPreviewRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationRefundPreview'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/cancellations/{cancellationId}:
     parameters:
     - $ref: ./openapi.yaml#/components/parameters/CancellationId
@@ -381,3 +403,139 @@ components:
       - mode
       - requested_at
       - forfeit_remaining_value
+    CancellationPreviewRequest:
+      description: 'What ending these subscriptions together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`), is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`).'
+      type: object
+      properties:
+        billing_account_id:
+          description: A billing account you own that currently pays for every subscription.
+          type: integer
+          format: int64
+          minimum: 1
+        subscription_ids:
+          description: The subscriptions to end together, all of one service, including every subscription released with a resource.
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        mode:
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
+      required:
+      - billing_account_id
+      - subscription_ids
+      - mode
+      additionalProperties: false
+    CancellationRefundPreview:
+      description: |-
+        What the cancellation would return, per subscription and in total, as of now. Give `proration_date` and
+        `refundable_amount` when creating the cancellation.
+
+        - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
+        - `short_rate_surcharge_amount`: before tax, the part of `forfeited_amount` due to the short rate of the
+          refund policy.
+        - `refundable_amount`: what is returned the way it was paid, tax included; `refund_amount` plus
+          `credit_amount`.
+        - `refund_amount`: the part returned to the balance or the payment method.
+        - `credit_amount`: the part restored to the credit grants that paid.
+        - `tax_amount`: the tax included in `refundable_amount`.
+        - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
+
+        Metered and one-time subscriptions show zero; their usage until release is charged as usual.
+      type: object
+      properties:
+        mode:
+          $ref: ./prices.yaml#/components/schemas/CancellationPolicy
+        scheduled_at:
+          description: For `period_end`, when release begins, the end of the paid terms.
+          type: string
+          format: date-time
+        proration_date:
+          description: For `immediate`, the second the refund is computed as of. Give it when creating the cancellation.
+          type: string
+          format: date-time
+        currency:
+          type: string
+        unused_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        short_rate_surcharge_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refundable_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refund_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        forfeited_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CancellationRefundPreviewItem'
+      required:
+      - mode
+      - currency
+      - unused_amount
+      - short_rate_surcharge_amount
+      - refundable_amount
+      - refund_amount
+      - credit_amount
+      - tax_amount
+      - forfeited_amount
+      - items
+    CancellationRefundPreviewItem:
+      description: One subscription of the previewed cancellation.
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        project:
+          description: The project and its current name. Absent for an account-level purchase or when the project cannot be read.
+          oneOf:
+          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+          - type: 'null'
+        type:
+          $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_type:
+          $ref: ./prices.yaml#/components/schemas/UsageType
+        auto_renew:
+          description: Whether automatic renewal is on now. Creating the cancellation turns it off; withdrawing it turns it back on for a metered subscription but not for a licensed one.
+          type: boolean
+        unused_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        short_rate_surcharge_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refundable_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refund_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        credit_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        tax_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        forfeited_amount:
+          $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+      - subscription_id
+      - plan_id
+      - plan_name
+      - type
+      - usage_type
+      - auto_renew
+      - unused_amount
+      - short_rate_surcharge_amount
+      - refundable_amount
+      - refund_amount
+      - credit_amount
+      - tax_amount
+      - forfeited_amount
