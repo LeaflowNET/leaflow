@@ -110,8 +110,8 @@ paths:
       description: |-
         Lists the active prices in `currency` that meet every condition in the body, as `list-prices` lists them, for
         anyone, signed in or not. Use it for conditions a query string cannot hold, such as the plans of a whole
-        catalog page. A price that delegates to a rate card has no amount of its own; read its rates with
-        `search-rates`.
+        catalog page. A price that delegates to a rate card has no amount of its own and carries its `rates`, which
+        `dimensions` narrows to the dimension values of the items on the page.
       operationId: search-prices
       tags:
       - prices
@@ -199,76 +199,6 @@ paths:
           $ref: ./openapi.yaml#/components/responses/NotModified
         default:
           $ref: ./openapi.yaml#/components/responses/Error
-  /api/v1/rate-cards/{rateCardId}/rules:
-    parameters:
-    - $ref: ./openapi.yaml#/components/parameters/RateCardId
-    get:
-      summary: List catalog rates
-      description: Rules of a public rate card; contract cards are not readable here.
-      operationId: list-rates
-      tags:
-      - prices
-      security: []
-      parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/IfNoneMatch
-      - name: meter_id
-        in: query
-        required: false
-        description: Filter by the meter UUID.
-        schema:
-          type: string
-          format: uuid
-      - name: at
-        in: query
-        required: false
-        description: Rates in effect at this moment; defaults to now.
-        schema:
-          type: string
-          format: date-time
-      responses:
-        '200':
-          description: OK
-          headers:
-            ETag:
-              description: Changes whenever the catalogue changes. Send it as `If-None-Match` to receive `304` for an unchanged response.
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RateList'
-        '304':
-          $ref: ./openapi.yaml#/components/responses/NotModified
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
-    query:
-      summary: Search catalog rates
-      description: |-
-        Rules of a public rate card that meet every condition in the body, as `list-rates` lists them, for anyone,
-        signed in or not; contract cards are not readable here. Use it to read the rates at the dimension values of the
-        items on a page, such as each region and machine type offered, and match each rate to its price by meter,
-        usage type, interval and dimensions.
-      operationId: search-rates
-      tags:
-      - prices
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RateSearch'
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RateList'
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
     PriceSearch:
@@ -308,36 +238,9 @@ components:
           description: Narrows to one usage type.
           allOf:
           - $ref: '#/components/schemas/UsageType'
-        page:
-          description: 1-based page number. Defaults to 1.
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 2147483647
-        page_size:
-          description: Items per page. Defaults to 50; at most 200.
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 200
-      required:
-      - currency
-      additionalProperties: false
-    RateSearch:
-      description: Conditions combined with AND.
-      type: object
-      properties:
-        meter_id:
-          description: Only rates on this meter.
-          type: string
-          format: uuid
-        at:
-          description: Rates in effect at this moment; defaults to now.
-          type: string
-          format: date-time
         dimensions:
-          description: Only rates whose dimension values are exactly one of these sets, given as on order lines and
-            usage. A set no rate has matches nothing.
+          description: Narrows each price's `rates` to these dimension value sets, given as on order lines and usage; prices
+            are not filtered by it. A set no rate has adds nothing.
           type: array
           minItems: 1
           maxItems: 200
@@ -359,6 +262,8 @@ components:
           format: int64
           minimum: 1
           maximum: 200
+      required:
+      - currency
       additionalProperties: false
     PriceType:
       description: '`one_time` charges once when bought. `recurring` charges again for every period, or for usage as it is settled.'
@@ -510,8 +415,16 @@ components:
     Price:
       type: object
       properties:
-        rate_card:
-          $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        rates:
+          description: For a price that delegates to a rate card, the rates in effect now that it charges at, one for each
+            meter, dimension values and period; metered rates for a metered price, and rates on its own meter and
+            period for a licensed one. `search-prices` narrows them with `dimensions`. Null for a price with its own
+            amounts.
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/Rate'
         lookup_key:
           type: string
         product:
@@ -574,10 +487,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Tier'
-        rate_card_id:
-          description: Present when the price delegates to a rate card, the price list its rates are read from.
-          type: string
-          format: uuid
         min_quantity:
           description: The smallest quantity that can be bought. Absent means no lower bound.
           type: string
@@ -691,18 +600,6 @@ components:
       - tiers_mode
       - currency
       - effective_from
-    RateList:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Rate'
-        pagination:
-          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
-      required:
-      - items
-      - pagination
     Tier:
       type: object
       properties:
