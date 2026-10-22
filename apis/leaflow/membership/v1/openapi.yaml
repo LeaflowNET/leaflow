@@ -138,6 +138,26 @@ paths:
                 $ref: "#/components/schemas/PeriodList"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/memberships/{membershipId}/upgrade-options:
+    get:
+      summary: List upgrade options
+      description: Lists the higher tiers on sale that the membership's tier has an upgrade path to, lowest rank first, with the Billing price `upgrade-membership` would order for each. Price an upgrade before making it with Billing's quote, giving that price with a quantity of 1; a promotion code can be checked there as well. Returns 409 MEMBERSHIP_NOT_ACTIVE or MEMBERSHIP_CHANGE_PENDING when the membership cannot be changed.
+      operationId: list-membership-upgrade-options
+      tags:
+        - Membership
+      parameters:
+        - $ref: "#/components/parameters/MembershipId"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpgradeOptionList"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/memberships/{membershipId}/upgrade:
     post:
       summary: Upgrade a membership
@@ -712,6 +732,35 @@ components:
         - billing_account_id
         - plan_id
         - price_id
+      additionalProperties: false
+    UpgradeOption:
+      description: A tier the membership can be upgraded to.
+      type: object
+      properties:
+        plan:
+          $ref: "#/components/schemas/PlanSummary"
+        price_id:
+          description: The Billing price the upgrade is ordered at, in the membership's currency. Null when the tier cannot be upgraded to now, because it has no price for the membership's currency and billing interval; `upgrade-membership` then returns 422 MEMBERSHIP_UPGRADE_UNAVAILABLE.
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - plan
+        - price_id
+      additionalProperties: false
+    UpgradeOptionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpgradeOption"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
       additionalProperties: false
     MembershipUpgrade:
       type: object

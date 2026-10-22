@@ -105,6 +105,32 @@ paths:
           description: Not Modified
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+    query:
+      summary: Search what is on sale, with prices
+      description: |-
+        Lists the active prices in `currency` that meet every condition in the body, as `list-prices` lists them, for
+        anyone, signed in or not. Use it for conditions a query string cannot hold, such as the plans of a whole
+        catalog page. A price that delegates to a rate card has no amount of its own; read its rates with
+        `search-rates`.
+      operationId: search-prices
+      tags:
+      - prices
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PriceSearch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/prices/{priceId}:
     parameters:
     - name: priceId
@@ -217,8 +243,114 @@ paths:
           $ref: ./openapi.yaml#/components/responses/NotModified
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+    query:
+      summary: Search catalog rates
+      description: |-
+        Rules of a public rate card that meet every condition in the body, as `list-rates` lists them, for anyone,
+        signed in or not; contract cards are not readable here. Use it to read the rates at the dimension values of the
+        items on a page, such as each region and machine type offered, and match each rate to its price by meter,
+        usage type, interval and dimensions.
+      operationId: search-rates
+      tags:
+      - prices
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateSearch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateList'
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    PriceSearch:
+      description: Conditions combined with AND.
+      type: object
+      properties:
+        currency:
+          description: ISO 4217, three uppercase letters.
+          type: string
+          minLength: 3
+          maxLength: 3
+        plan_ids:
+          description: Only prices of these plans.
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductID
+        type:
+          description: Narrows to one price type.
+          allOf:
+          - $ref: '#/components/schemas/PriceType'
+        usage_type:
+          description: Narrows to one usage type.
+          allOf:
+          - $ref: '#/components/schemas/UsageType'
+        page:
+          description: 1-based page number. Defaults to 1.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 2147483647
+        page_size:
+          description: Items per page. Defaults to 50; at most 200.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+      required:
+      - currency
+      additionalProperties: false
+    RateSearch:
+      description: Conditions combined with AND.
+      type: object
+      properties:
+        meter_id:
+          description: Only rates on this meter.
+          type: string
+          format: uuid
+        at:
+          description: Rates in effect at this moment; defaults to now.
+          type: string
+          format: date-time
+        dimensions:
+          description: Only rates whose dimension values are exactly one of these sets, given as on order lines and
+            usage. A set no rate has matches nothing.
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            minProperties: 1
+            additionalProperties:
+              type: string
+              minLength: 1
+        page:
+          description: 1-based page number. Defaults to 1.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 2147483647
+        page_size:
+          description: Items per page. Defaults to 50; at most 200.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+      additionalProperties: false
     PriceType:
       description: '`one_time` charges once when bought. `recurring` charges again for every period, or for usage as it is settled.'
       type: string
