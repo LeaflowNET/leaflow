@@ -12,7 +12,7 @@ info:
     ## Conventions
 
     - **Purchases.** A purchase that creates resources returns them together with the `checkout_session_id` of its Billing Checkout Session and, once checkout completes, its `order_id`. They are readable at once and start as `pending`: checkout may not be complete, the order has not been accepted, nothing exists in the cloud, no inventory such as an address is held, and fields known only after allocation, such as addresses, are null. Once Billing accepts the order, a resource becomes `provisioning` and then reaches its usual status, such as `active` or `available`. When the Checkout Session expires, the order is declined, canceled or expires, or creation fails, the resource ends `failed` and `failure_reason` states why; the charge for a resource that failed after acceptance is refunded. Read the Checkout Session and the order in Billing for checkout and payment progress.
-    - **Pricing.** Catalog items, such as instance types, disk types and public IP pools, carry `pricing`: the licensed and metered options Billing offers for them, in the currency of the project's current billing account, or null when the project has no billing account. They are list amounts before promotion codes, not a checkout guarantee. A purchase chooses one option with `billing`, which applies to all of its components. Every purchase and change has a quote operation beside it, at the same path followed by `/quote`, which returns what checkout would collect without ordering anything.
+    - **Commercial terms.** Compute returns no amounts. Catalog items, such as instance types, disk types and public IP pools, and the region's own products carry `billing`: the Billing plan an order line for them is sold under, the dimensions the line carries, how its quantity is counted for each usage type, and the meters its metered price reads. Read their prices from Billing with `search-prices` and `search-rates`, quote a purchase or a change with Billing's `get-quote` using the same lines, and estimate metered usage with Billing's `estimate-usage`. A purchase chooses its terms with `billing`, which applies to all of its components.
     - **Checkout.** `checkout` is passed to Billing unchanged. Omit it for automatic checkout, which completes checkout within the request and pays from eligible credit grants and balance; insufficient funds refuse the request with HTTP 422 `BILLING_INSUFFICIENT_FUNDS`, and nothing is created. With `checkout.mode` set to `deferred`, the resources are returned `pending` with an open Checkout Session and no order, even for a zero total; nothing is created until the customer completes checkout in Billing, where a promotion code can be applied, and the order is paid.
     - **Operations.** Requests such as starting, stopping, attaching or deleting return HTTP 202 with the resource as it is when the request is accepted. While an operation runs, the resource's `operation` field names it; the field is null once the operation has finished, and the resource then shows the result. A resource with an operation in progress refuses another operation with HTTP 409 `COMPUTE_RESOURCE_BUSY`; an operation involving two resources, such as attaching a disk, is refused when either has one. A purchased change, such as a resize, is an operation from the moment its Checkout Session is created until the change is applied, the session expires or its order is canceled. Renaming and replacing labels or notes are not operations and are accepted at any time.
     - **Billing relationships.** A purchased resource records its `checkout_session_id` and, once checkout completes, its `order_id`, `order_item_id` and `subscription_id`. The subscription is `pending` until the order is accepted, `provisioning` while the resource is created, and `active` once it is delivered. Bandwidth is a property of its floating IP, not a separate resource. Snapshots use a purchased per-region count quota, and backups are metered on the region's backup service; neither has an order or subscription of its own.
@@ -213,41 +213,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/backups/{backupId}/restore/quote:
-    parameters:
-      - name: backupId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote restoring from a backup
-      description: Prices what `restore-backup` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-backup-restore-quote
-      tags:
-        - Backup
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RestoreBackupQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /api/v1/disk-types:
     get:
       summary: List disk types on sale
@@ -371,7 +336,7 @@ paths:
 
         The instance can be started, stopped and used normally during the capture, but cannot be released.
 
-        The image is billed for the storage it occupies, as the region's `private_image_pricing` shows. Obtain a quote with `create-image-quote` first.
+        The image is billed for the storage it occupies, under the region's `private_image_billing`. Quote it with Billing first.
       operationId: create-image
       tags:
         - Image
@@ -388,34 +353,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateImageResponseBody"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/images/quote:
-    post:
-      summary: Quote capturing an instance as a private image
-      description: Prices the capture `create-image` would order for the same instance, without ordering anything; nothing is reserved or recorded. The quantity priced is the size of the system disk, which is the most the image can occupy, with the option chosen in `billing`. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. Prices may change, so quote again before final confirmation.
-      operationId: create-image-quote
-      tags:
-        - Image
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateImageQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -492,7 +429,7 @@ paths:
 
         An image whose capture has not finished can be deleted; the capture is aborted. This is the one operation accepted while the `create` operation is in progress.
 
-        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the image, including a pay-as-you-go subscription. `meta.resource_id` names the image. It is released by canceling the subscriptions listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.
+        When subscriptions pay for the image, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the image is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
       operationId: delete-image
       tags:
         - Image
@@ -507,11 +444,11 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "202":
-          description: Deletion was accepted. The image shows the `delete` operation until it is deleted.
+          description: Deletion was accepted. The image shows the `delete` operation while it is deleted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ImageResource"
+                $ref: "#/components/schemas/DeleteImageResponseBody"
         default:
           description: Error
           content:
@@ -666,34 +603,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/disks/quote:
-    post:
-      summary: Quote creating a disk
-      description: Prices what `create-disk` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-disk-quote
-      tags:
-        - Disk
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateDiskQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /api/v1/disks/{diskId}:
     get:
       summary: Retrieve a disk
@@ -758,7 +667,7 @@ paths:
       description: |-
         Deletion is rejected while the disk is attached, or while snapshots created from it still exist.
 
-        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the disk, including a pay-as-you-go subscription. `meta.resource_id` names the disk. It is released by canceling the subscriptions listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.
+        When subscriptions pay for the disk, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the disk is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
       operationId: delete-disk
       tags:
         - Disk
@@ -773,11 +682,11 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "202":
-          description: Deletion was accepted. The disk shows the `delete` operation until it is deleted.
+          description: Deletion was accepted. The disk shows the `delete` operation while it is deleted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DiskResource"
+                $ref: "#/components/schemas/DeleteDiskResponseBody"
         default:
           description: Error
           content:
@@ -818,41 +727,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResizeDiskResponseBody"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/disks/{diskId}/resize/quote:
-    parameters:
-      - name: diskId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote resizing a disk
-      description: Prices the change `resize-disk` would order, as of now, without ordering or changing anything. A change that raises the price has the charge for the rest of the paid period as `total`; one that lowers it has a zero `total` and the refund as `refundable_amount`. Give the returned `proration_date` with the change, and for automatic checkout `total` as `checkout.expected_amount`. A request the change would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-disk-resize-quote
-      tags:
-        - Disk
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ResizeDiskQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -957,34 +831,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/floating-ips/quote:
-    post:
-      summary: Quote allocating a floating IP
-      description: Prices what `allocate-floating-ip` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-floating-ip-quote
-      tags:
-        - FloatingIP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AllocateFloatingIPQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /api/v1/floating-ips/{floatingIpId}:
     get:
       summary: Retrieve a floating IP
@@ -1016,7 +862,7 @@ paths:
       description: |-
         Releases the floating IP after unbinding it. The floating IP shows the `delete` operation until it is released.
 
-        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the address, including a pay-as-you-go subscription. `meta.resource_id` names the floating IP. It is released by canceling the subscriptions listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.
+        When subscriptions pay for the address, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the floating IP is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
       operationId: release-floating-ip
       tags:
         - FloatingIP
@@ -1041,7 +887,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FloatingIPResource"
+                $ref: "#/components/schemas/ReleaseFloatingIPResponseBody"
   /api/v1/floating-ips/{floatingIpId}/bandwidth:
     put:
       summary: Set the bandwidth limit
@@ -1072,41 +918,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SetFloatingIPBandwidthResponseBody"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/floating-ips/{floatingIpId}/bandwidth/quote:
-    parameters:
-      - name: floatingIpId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote changing the bandwidth limit
-      description: Prices the change `set-floating-ip-bandwidth` would order, as of now, without ordering or changing anything. A change that raises the price has the charge for the rest of the paid period as `total`; one that lowers it has a zero `total` and the refund as `refundable_amount`. Give the returned `proration_date` with the change, and for automatic checkout `total` as `checkout.expected_amount`. A request the change would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-floating-ip-bandwidth-quote
-      tags:
-        - FloatingIP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetFloatingIPBandwidthQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -1245,34 +1056,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/instances/quote:
-    post:
-      summary: Quote creating instances
-      description: Prices what `launch-instance` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-instance-quote
-      tags:
-        - Instance
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LaunchInstanceQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /api/v1/instances/{instanceId}:
     get:
       summary: Retrieve an instance
@@ -1339,7 +1122,7 @@ paths:
 
         An instance being captured as a private image cannot be released. Wait for the capture to finish, or delete that image first.
 
-        Refused with `COMPUTE_RESOURCE_SUBSCRIBED` while a subscription pays for the instance, or for a disk that is deleted with it, including a pay-as-you-go subscription. `meta.resource_id` names that resource. The instance is released by canceling the subscriptions listed in `meta.subscription_ids` through Billing, the same set as its `release_subscription_ids`.
+        When subscriptions pay for the instance, or for a disk deleted with it, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the instance is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
       operationId: delete-instance
       tags:
         - Instance
@@ -1354,11 +1137,11 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "202":
-          description: Release was accepted. The instance shows the `delete` operation until it is released.
+          description: Release was accepted. The instance shows the `delete` operation while it is released.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/InstanceResource"
+                $ref: "#/components/schemas/DeleteInstanceResponseBody"
         default:
           description: Error
           content:
@@ -1716,41 +1499,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResizeInstanceResponseBody"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/instances/{instanceId}/resize/quote:
-    parameters:
-      - name: instanceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote resizing an instance
-      description: Prices the change `resize-instance` would order, as of now, without ordering or changing anything. A change that raises the price has the charge for the rest of the paid period as `total`; one that lowers it has a zero `total` and the refund as `refundable_amount`. Give the returned `proration_date` with the change, and for automatic checkout `total` as `checkout.expected_amount`. A request the change would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-instance-resize-quote
-      tags:
-        - Instance
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ResizeInstanceQuoteRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quote"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -2901,9 +2649,9 @@ paths:
         max(limit - used, 0) while active, and zero when creation is not permitted; additional
         creation is refused while the quota is inactive, suspended or exhausted.
 
-        Canceling the quota's subscription through Billing is refused while any snapshot exists in
-        the region: the cancellation fails with SNAPSHOT_QUOTA_IN_USE. Reclaiming the quota for
-        non-payment deletes its snapshots, as for other reclaimed resources.
+        Deleting the quota, which cancels its subscription, is refused while any snapshot exists in the
+        region with SNAPSHOT_QUOTA_IN_USE. Reclaiming the quota for non-payment deletes its snapshots, as
+        for other reclaimed resources.
       operationId: get-snapshot-quota
       tags:
         - Snapshot
@@ -2925,8 +2673,9 @@ paths:
       description: |-
         Purchases or changes the maximum number of snapshots this project may hold in this region.
         limit is the target total, not an additional number of slots or a consumable create allowance.
-        billing chooses one of the quota's pricing options; a change of an existing purchase keeps its
-        usage type and period, and billing must name that option. The purchased quantity is this count.
+        billing chooses how the quota is bought, among the prices Billing offers for the region's
+        `snapshot_quota_billing`; a change of an existing purchase keeps its usage type and period, and billing
+        must name them. The purchased quantity is this count.
 
         Returns the quota with the Checkout Session. pending_limit records the target while the current limit stays
         in force; the new limit applies once the order is accepted and the quota is activated. Snapshots
@@ -2971,33 +2720,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/regions/{regionId}/snapshot-quota/quote:
-    parameters:
-      - name: regionId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote setting the regional snapshot quota
-      description: Prices what `set-snapshot-quota` would order, including a change of an existing purchase as of now, for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-snapshot-quota-quote
+    delete:
+      summary: Delete regional snapshot quota
+      description: |-
+        Cancels the quota's subscription in Billing and returns the cancellation. Refused with 409 `SNAPSHOT_QUOTA_IN_USE` while any snapshot exists in the region; delete the snapshots first. Refused with 409 `SNAPSHOT_QUOTA_NOT_ACTIVE` when no subscription pays for a quota in the region.
+
+        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and the quota stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+      operationId: delete-snapshot-quota
       tags:
         - Snapshot
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetSnapshotQuotaQuoteRequestBody"
       responses:
-        "200":
-          description: OK
+        "202":
+          description: The cancellation was created, or is already open.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Quote"
+                $ref: "#/components/schemas/ResourceCancellation"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -3019,7 +2757,7 @@ paths:
       description: |-
         The backup service of the authenticated project in this region. Backups can be created only while it is `active`. Each hour, Compute covers retained backup capacity up to the total `capacity_gib` of the capacity packs active in the region and meters only the excess on this service's subscription, per GiB-hour.
 
-        Canceling the service's subscription through Billing is refused while any backup is retained in the region: the cancellation fails with `BACKUP_SERVICE_IN_USE`. Delete the backups first. Capacity packs are canceled separately, under their own refund terms. Reclaiming the service for non-payment deletes its backups.
+        Deleting the service, which cancels its subscription, is refused while any backup is retained in the region with `BACKUP_SERVICE_IN_USE`. Delete the backups first. Capacity packs are deleted separately, under their own refund terms. Reclaiming the service for non-payment deletes its backups.
       operationId: get-backup-service
       tags:
         - Backup
@@ -3066,27 +2804,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/regions/{regionId}/backup-service/quote:
-    parameters:
-      - name: regionId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      summary: Quote activating the backup service
-      description: Prices what `create-backup-service` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-backup-service-quote
+    delete:
+      summary: Delete the backup service of a region
+      description: |-
+        Cancels the service's subscription in Billing and returns the cancellation. Refused with 409 `BACKUP_SERVICE_IN_USE` while any backup is retained in the region; delete the backups first. Capacity packs are deleted separately. Refused with 409 `BACKUP_SERVICE_NOT_ACTIVE` when no subscription pays for a service in the region.
+
+        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and the service stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+      operationId: delete-backup-service
       tags:
         - Backup
       responses:
-        "200":
-          description: OK
+        "202":
+          description: The cancellation was created, or is already open.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Quote"
+                $ref: "#/components/schemas/ResourceCancellation"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -3128,7 +2861,7 @@ paths:
     post:
       summary: Buy a backup capacity pack
       description: |-
-        Purchases a capacity pack, backup capacity for this project and region bought in advance by month or year: `billing` must be licensed with a period, as offered in the backup service's `capacity_pack_pricing`. Compute applies the coverage: each hour, retained backup capacity up to the total `capacity_gib` of the packs active in the region is covered, and Compute meters only the excess on the backup service's subscription. A pack is not a Billing allowance or credit; Billing takes its order and payment and handles its renewal and cancellation through the pack's subscription.
+        Purchases a capacity pack, backup capacity for this project and region bought in advance by month or year: `billing` must be licensed with a period, as Billing offers for the region's `capacity_pack_billing`. Compute applies the coverage: each hour, retained backup capacity up to the total `capacity_gib` of the packs active in the region is covered, and Compute meters only the excess on the backup service's subscription. A pack is not a Billing allowance or credit; Billing takes its order and payment and handles its renewal and cancellation through the pack's subscription.
 
         Returns the pack as `pending` with its Checkout Session; it applies once the order is accepted. Refused with 409 `BACKUP_SERVICE_NOT_ACTIVE` and `meta.region_id` when the region's backup service is not active.
       operationId: create-backup-capacity-pack
@@ -3155,7 +2888,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/regions/{regionId}/backup-capacity-packs/quote:
+  /api/v1/regions/{regionId}/backup-capacity-packs/{packId}:
     parameters:
       - name: regionId
         in: path
@@ -3163,25 +2896,28 @@ paths:
         schema:
           type: string
           format: uuid
-    post:
-      summary: Quote buying a backup capacity pack
-      description: Prices what `create-backup-capacity-pack` would order for the same request, without ordering or creating anything; nothing is reserved or recorded. Billing evaluates applicable account discounts and tax as for automatic checkout. `total` is what automatic checkout would collect before credit grants and balance; give it as `checkout.expected_amount` to be refused rather than charged a different amount. `estimated_usage_amount` projects metered usage over one month of 730 hours and is not collected at checkout. A request the purchase would refuse is refused the same way. Prices may change, so quote again before final confirmation.
-      operationId: create-backup-capacity-pack-quote
+      - name: packId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: Delete a backup capacity pack
+      description: |-
+        Cancels the pack's subscription in Billing and returns the cancellation. Refused with 404 `BACKUP_CAPACITY_PACK_NOT_FOUND` when the project has no pack of this ID in the region, and with 409 `BACKUP_CAPACITY_PACK_ENDED` when the pack has ended.
+
+        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and its coverage stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+      operationId: delete-backup-capacity-pack
       tags:
         - Backup
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateBackupCapacityPackQuoteRequestBody"
       responses:
-        "200":
-          description: OK
+        "202":
+          description: The cancellation was created, or is already open.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Quote"
+                $ref: "#/components/schemas/ResourceCancellation"
         "409":
           $ref: "#/components/responses/Conflict"
         default:
@@ -3586,6 +3322,163 @@ components:
         - accepter_project_id
         - accepter_network_id
       additionalProperties: false
+    BillingComponent:
+      description: How one order line of an item is sold in Billing. Give `plan_id` to Billing's `search-prices` for its prices, and `dimensions` to `search-rates` for the rates of a price that delegates to a rate card. Quote a purchase or a change with Billing's `get-quote` using these values, the quantity this describes and the chosen terms, and estimate metered usage with `estimate-usage` and `meters`.
+      type: object
+      properties:
+        plan_id:
+          description: The Billing plan the line is ordered under.
+          type: string
+          format: uuid
+        dimensions:
+          description: The dimension values the order line carries.
+          type: object
+          additionalProperties:
+            type: string
+        quantity:
+          description: What the order line's quantity counts, for each usage type the item is sold under. A usage type that is absent is not sold for this item.
+          type: object
+          properties:
+            licensed:
+              $ref: "#/components/schemas/BillingQuantity"
+            metered:
+              $ref: "#/components/schemas/BillingQuantity"
+          additionalProperties: false
+        meters:
+          description: What the line's metered price reads. Empty when the line is never metered or its usage is not estimated in advance.
+          type: array
+          items:
+            $ref: "#/components/schemas/BillingMeter"
+      required:
+        - plan_id
+        - dimensions
+        - quantity
+        - meters
+      additionalProperties: false
+    BillingQuantity:
+      description: "`one`: one per item. `size_gib`: the size or capacity bought, in GiB. `bandwidth_mbps`: the bandwidth bought, in Mbps. `snapshots`: the number of snapshots the quota allows."
+      type: string
+      enum:
+        - one
+        - size_gib
+        - bandwidth_mbps
+        - snapshots
+    BillingMeter:
+      type: object
+      properties:
+        meter_lookup_key:
+          type: string
+        quantity:
+          description: "What the meter's quantity measures while the item exists: `one` is one item, `size_gib` its size in GiB, `bandwidth_mbps` its bandwidth in Mbps, `stored_gib` the GiB it stores."
+          type: string
+          enum:
+            - one
+            - size_gib
+            - bandwidth_mbps
+            - stored_gib
+        dimensions:
+          description: The dimension values the meter's usage carries, when they differ from the line's.
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - meter_lookup_key
+        - quantity
+      additionalProperties: false
+    ResourceCancellation:
+      description: The Billing cancellation of the subscriptions that pay for a resource. Read it in Billing with `get-cancellation` for its refund and progress.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        mode:
+          description: "`immediate` releases the resource now and refunds under the subscriptions' terms; `period_end` keeps it until `scheduled_at`."
+          type: string
+          enum:
+            - immediate
+            - period_end
+        status:
+          description: "`requested` and `scheduled` have not begun release; `releasing` is releasing the resource."
+          type: string
+          enum:
+            - requested
+            - scheduled
+            - releasing
+        scheduled_at:
+          description: For `period_end`, when release begins; null otherwise.
+          type:
+            - string
+            - "null"
+          format: date-time
+        subscription_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - id
+        - mode
+        - status
+        - scheduled_at
+        - subscription_ids
+      additionalProperties: false
+    DeleteInstanceResponseBody:
+      type: object
+      properties:
+        instance:
+          $ref: "#/components/schemas/InstanceResource"
+        cancellation:
+          description: The cancellation this request created or found open, when subscriptions pay for the resource; null when the resource was released directly.
+          anyOf:
+            - $ref: "#/components/schemas/ResourceCancellation"
+            - type: "null"
+      required:
+        - instance
+        - cancellation
+      additionalProperties: false
+    DeleteDiskResponseBody:
+      type: object
+      properties:
+        disk:
+          $ref: "#/components/schemas/DiskResource"
+        cancellation:
+          description: The cancellation this request created or found open, when subscriptions pay for the resource; null when the resource was released directly.
+          anyOf:
+            - $ref: "#/components/schemas/ResourceCancellation"
+            - type: "null"
+      required:
+        - disk
+        - cancellation
+      additionalProperties: false
+    ReleaseFloatingIPResponseBody:
+      type: object
+      properties:
+        floating_ip:
+          $ref: "#/components/schemas/FloatingIPResource"
+        cancellation:
+          description: The cancellation this request created or found open, when subscriptions pay for the resource; null when the resource was released directly.
+          anyOf:
+            - $ref: "#/components/schemas/ResourceCancellation"
+            - type: "null"
+      required:
+        - floating_ip
+        - cancellation
+      additionalProperties: false
+    DeleteImageResponseBody:
+      type: object
+      properties:
+        image:
+          $ref: "#/components/schemas/ImageResource"
+        cancellation:
+          description: The cancellation this request created or found open, when subscriptions pay for the resource; null when the resource was released directly.
+          anyOf:
+            - $ref: "#/components/schemas/ResourceCancellation"
+            - type: "null"
+      required:
+        - image
+        - cancellation
+      additionalProperties: false
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
       required: []
@@ -3948,12 +3841,8 @@ components:
             - integer
             - "null"
           format: int64
-        pricing:
-          description: How a disk of this type can be bought, per GiB. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
+        billing:
+          $ref: "#/components/schemas/BillingComponent"
       required:
         - id
         - name
@@ -3968,7 +3857,7 @@ components:
         - iops_at_max_size
         - throughput_at_min_size
         - throughput_at_max_size
-        - pricing
+        - billing
       additionalProperties: false
     DiskTypeListResponseBody:
       type: object
@@ -4223,12 +4112,8 @@ components:
         vcpus:
           type: integer
           format: int64
-        pricing:
-          description: How an instance of this type can be bought, per instance. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
+        billing:
+          $ref: "#/components/schemas/BillingComponent"
       required:
         - id
         - name
@@ -4241,7 +4126,7 @@ components:
         - max_bandwidth_mbps
         - network_egress_kbps
         - network_ingress_kbps
-        - pricing
+        - billing
       additionalProperties: false
     InstanceTypeListResponseBody:
       type: object
@@ -4271,18 +4156,33 @@ components:
         id:
           type: string
           format: uuid
-        private_image_pricing:
-          description: How private image storage in this region is billed, per GiB. Null when the project has no billing account.
+        private_image_billing:
+          description: Private images stored in this region.
+          allOf:
+            - $ref: "#/components/schemas/BillingComponent"
+        backup_service_billing:
+          description: The region's backup service. Retained backup capacity beyond the active capacity packs is reported on it by the hour.
+          allOf:
+            - $ref: "#/components/schemas/BillingComponent"
+        capacity_pack_billing:
+          description: Backup capacity packs in this region; null where none are sold.
           anyOf:
-            - $ref: "#/components/schemas/Pricing"
+            - $ref: "#/components/schemas/BillingComponent"
             - type: "null"
-          readOnly: true
+        snapshot_quota_billing:
+          description: The snapshot quota in this region; null where it is not sold.
+          anyOf:
+            - $ref: "#/components/schemas/BillingComponent"
+            - type: "null"
       required:
         - code
         - name
         - country_code
         - id
-        - private_image_pricing
+        - private_image_billing
+        - backup_service_billing
+        - capacity_pack_billing
+        - snapshot_quota_billing
       additionalProperties: false
     RegionListResponseBody:
       type: object
@@ -4397,7 +4297,7 @@ components:
         checkout:
           $ref: "#/components/schemas/CheckoutOptions"
         proration_date:
-          description: The `proration_date` of this change's quote, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          description: The `proration_date` of Billing's quote for this change, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
       required:
@@ -4578,8 +4478,8 @@ components:
             charged nothing for the traffic, while the address itself bills normally — so the invoice
             looks correct and nothing anywhere reports it.
 
-            It is part of this floating IP purchase and is billed as the pool's `bandwidth_pricing` shows,
-            with the purchase's billing choice. Changing it later updates the
+            It is part of this floating IP purchase and is billed under the pool's `billing`, with the
+            purchase's billing choice. Changing it later updates the
             same floating IP through its bandwidth endpoint, not an independent bandwidth resource.
           type: integer
           format: int64
@@ -4615,7 +4515,7 @@ components:
         checkout:
           $ref: "#/components/schemas/CheckoutOptions"
         proration_date:
-          description: The `proration_date` of this change's quote, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          description: The `proration_date` of Billing's quote for this change, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
       required:
@@ -5080,7 +4980,7 @@ components:
         checkout:
           $ref: "#/components/schemas/CheckoutOptions"
         proration_date:
-          description: The `proration_date` of this change's quote, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          description: The `proration_date` of Billing's quote for this change, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
       required:
@@ -5313,20 +5213,6 @@ components:
       required:
         - instance_id
         - name
-        - billing
-      additionalProperties: false
-    CreateImageQuoteRequestBody:
-      description: The fields of `CreateImageRequestBody` that decide the price
-      type: object
-      properties:
-        instance_id:
-          description: The instance whose system disk would be captured
-          type: string
-          format: uuid
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - instance_id
         - billing
       additionalProperties: false
     RenameImageRequestBody:
@@ -5828,12 +5714,6 @@ components:
             - order_expired
             - provisioning_failed
             - null
-        pricing:
-          description: How snapshot quota in this region can be bought, per snapshot slot. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
       required:
         - region_id
         - status
@@ -5848,7 +5728,6 @@ components:
         - pending_checkout_session_id
         - pending_order_id
         - failure_reason
-        - pricing
       additionalProperties: false
     SetSnapshotQuotaRequestBody:
       type: object
@@ -5863,7 +5742,7 @@ components:
         checkout:
           $ref: "#/components/schemas/CheckoutOptions"
         proration_date:
-          description: The `proration_date` of this change's quote, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          description: The `proration_date` of Billing's quote for this change, so that the order is priced from the same instant. Only for automatic checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
       required:
@@ -6006,92 +5885,6 @@ components:
           maxLength: 128
       required:
         - name
-      additionalProperties: false
-    Pricing:
-      description: How a catalog item can be bought, calculated by Billing in the currency of the project's current billing account. These are list amounts before promotion codes, not a checkout guarantee; quote a purchase for its exact total.
-      type: object
-      properties:
-        currency:
-          type: string
-        options:
-          description: One entry per way the item can be bought. Empty when it cannot be bought in this currency.
-          type: array
-          items:
-            $ref: "#/components/schemas/PricingOption"
-      required:
-        - currency
-        - options
-      additionalProperties: false
-    PricingOption:
-      description: One way to buy an item. Choose it by giving its usage_type, period and termination_policy as billing.
-      type: object
-      properties:
-        usage_type:
-          description: "`licensed` pays for a period in advance; `metered` bills usage until canceled."
-          type: string
-          enum:
-            - licensed
-            - metered
-        period:
-          description: The term of a licensed option; null for metered.
-          anyOf:
-            - $ref: "#/components/schemas/BillingPeriod"
-            - type: "null"
-        quantity_unit:
-          description: "What the amounts are for: one `item`, such as an instance or an address; one `gib` of size or capacity; one `mbps` of bandwidth; or one `snapshot` slot."
-          type: string
-          enum:
-            - item
-            - gib
-            - mbps
-            - snapshot
-        amount:
-          description: Licensed only; null for metered. The amount for one period, per quantity unit.
-          type:
-            - string
-            - "null"
-        monthly_amount:
-          description: Licensed only; null for metered. `amount` spread over the months of the period.
-          type:
-            - string
-            - "null"
-        saving_percent:
-          description: Licensed only. How much lower `monthly_amount` is than that of the shortest licensed period of the same item, as a decimal percentage. Null for that shortest period and for metered.
-          type:
-            - string
-            - "null"
-        unit_amount:
-          description: Metered only; null for licensed. The amount for one `unit` of time, per quantity unit.
-          type:
-            - string
-            - "null"
-        unit:
-          description: Metered only; null for licensed. The time unit of `unit_amount`.
-          type:
-            - string
-            - "null"
-          enum:
-            - hour
-            - null
-        termination_policy:
-          description: "What canceling does under this option: `immediate` ends the service at once, with any refund following the option's terms; `period_end` ends it at the end of the paid period. Null means no explicit policy was recorded; it must not be interpreted as immediate."
-          type:
-            - string
-            - "null"
-          enum:
-            - immediate
-            - period_end
-            - null
-      required:
-        - usage_type
-        - period
-        - quantity_unit
-        - amount
-        - monthly_amount
-        - saving_percent
-        - unit_amount
-        - unit
-        - termination_policy
       additionalProperties: false
     BillingPeriod:
       type: object
@@ -6242,18 +6035,6 @@ components:
           type: integer
           format: int64
           minimum: 0
-        pricing:
-          description: The metered usage price of backups in this region. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
-        capacity_pack_pricing:
-          description: The licensed options of capacity packs in this region, per GiB. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
       required:
         - region_id
         - status
@@ -6264,8 +6045,6 @@ components:
         - release_subscription_ids
         - retained_capacity_gib
         - pack_capacity_gib
-        - pricing
-        - capacity_pack_pricing
       additionalProperties: false
     CreateBackupServiceRequestBody:
       type: object
@@ -6415,231 +6194,8 @@ components:
         - checkout_session_id
         - order_id
       additionalProperties: false
-    LaunchInstanceQuoteRequestBody:
-      description: The request of `launch-instance`, without `checkout`.
-      type: object
-      properties:
-        floating_ip_id:
-          description: |-
-            Bind a floating IP you already hold, instead of allocating a new one. It must be idle and in
-            the same region.
-
-            Mutually exclusive with `bandwidth_mbps`: an address you already hold has its own bandwidth
-            ceiling, set when it was allocated, and changing it is a separate operation.
-
-            Like `bandwidth_mbps`, this happens **inside the creation**: if binding fails, no instance is
-            created. Binding afterwards is still possible from the instance page, but then it is two
-            operations and a failure in between leaves an instance you cannot reach.
-
-            Only one instance can be created when it is used — one address binds to one interface.
-          type: string
-          format: uuid
-        count:
-          description: Number of instances to create; 1 when omitted. Names are numbered automatically for several
-          type: integer
-          format: int64
-          default: 1
-          minimum: 1
-          maximum: 20
-        generate_password:
-          description: Have the platform generate a random password, returned only in this response
-          type: boolean
-        compute:
-          $ref: "#/components/schemas/NewCompute"
-        name:
-          type: string
-          minLength: 1
-          maxLength: 128
-        password:
-          description: The password to set, on the login account and on root. Only the SSH public keys of the project are used when omitted
-          type: string
-          maxLength: 128
-        port_id:
-          description: Use an existing network interface, which may already have a floating IP bound. Exactly one of this and `subnet_id`; only one instance can be created when it is used
-          type: string
-          format: uuid
-        security_group_ids:
-          description: Required when a primary network interface is created, at least one; the default security group is not applied automatically. Ignored together with `port_id`, as the security groups of that interface were fixed when it was created
-          type:
-            - array
-            - "null"
-          minItems: 1
-          items:
-            type: string
-            format: uuid
-        subnet_id:
-          description: Create the primary network interface in this subnet. Exactly one of this and `port_id`
-          type: string
-          format: uuid
-        boot_disk:
-          $ref: "#/components/schemas/BootDisk"
-        floating_ip:
-          $ref: "#/components/schemas/NewFloatingIP"
-      required:
-        - name
-        - compute
-        - boot_disk
-      additionalProperties: false
-    CreateDiskQuoteRequestBody:
-      description: The request of `create-disk`, without `checkout`.
-      type: object
-      properties:
-        disk_type_id:
-          description: A data disk type currently on sale, one whose `purpose` is `data`. A withdrawn one is rejected even though its identifier still resolves
-          type: string
-          format: uuid
-          maxLength: 64
-        name:
-          type: string
-          minLength: 1
-          maxLength: 128
-        size_gb:
-          type: integer
-          format: int64
-          minimum: 1
-        snapshot_id:
-          description: Restore from this snapshot. When given, the capacity need only be no smaller than the snapshot
-          type: string
-          format: uuid
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - disk_type_id
-        - name
-        - size_gb
-        - billing
-      additionalProperties: false
-    RestoreBackupQuoteRequestBody:
-      description: The request of `restore-backup`, without `checkout`.
-      type: object
-      properties:
-        disk_type_id:
-          description: May differ from the availability zone of the source disk, but must be in the same region. It has to be a data disk type on sale — restoring creates a new data disk, so a withdrawn type or a system disk type is rejected here as well
-          type: string
-          format: uuid
-          maxLength: 64
-        name:
-          type: string
-          minLength: 1
-          maxLength: 128
-        size_gb:
-          description: Matches the size of the backup when omitted. When given, it must not be smaller than the backup
-          type: integer
-          format: int64
-          minimum: 0
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - disk_type_id
-        - name
-        - billing
-      additionalProperties: false
-    AllocateFloatingIPQuoteRequestBody:
-      description: The request of `allocate-floating-ip`, without `checkout`.
-      type: object
-      properties:
-        address:
-          description: The address to allocate. Allocated by the platform when omitted
-          type: string
-          maxLength: 64
-        bandwidth_mbps:
-          description: |-
-            The bandwidth ceiling of this address, in Mbit/s, applied to both directions.
-
-            Required, and there is no "unlimited": an address with no ceiling runs at line rate and is
-            charged nothing for the traffic, while the address itself bills normally — so the invoice
-            looks correct and nothing anywhere reports it.
-
-            It is part of this floating IP purchase and is billed as the pool's `bandwidth_pricing` shows,
-            with the purchase's billing choice. Changing it later updates the
-            same floating IP through its bandwidth endpoint, not an independent bandwidth resource.
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 1000
-        private_network_id:
-          type: string
-          format: uuid
-        ipv4_pool_id:
-          type: string
-          format: uuid
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - private_network_id
-        - bandwidth_mbps
-        - ipv4_pool_id
-        - billing
-      additionalProperties: false
-    SetSnapshotQuotaQuoteRequestBody:
-      description: The request of `set-snapshot-quota`, without `checkout` and `proration_date`.
-      type: object
-      properties:
-        limit:
-          description: Desired total concurrent snapshot count for this project and region, not additional slots.
-          type: integer
-          format: int64
-          minimum: 1
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - limit
-        - billing
-      additionalProperties: false
-    CreateBackupCapacityPackQuoteRequestBody:
-      description: The request of `create-backup-capacity-pack`, without `checkout`.
-      type: object
-      properties:
-        capacity_gib:
-          type: integer
-          format: int64
-          minimum: 1
-        billing:
-          $ref: "#/components/schemas/BillingChoice"
-      required:
-        - capacity_gib
-        - billing
-      additionalProperties: false
-    ResizeInstanceQuoteRequestBody:
-      description: The request of `resize-instance`, without `checkout` and `proration_date`.
-      type: object
-      properties:
-        instance_type_id:
-          description: Must be in the same region and availability zone as the current instance type
-          type: string
-          format: uuid
-          maxLength: 64
-      required:
-        - instance_type_id
-      additionalProperties: false
-    ResizeDiskQuoteRequestBody:
-      description: The request of `resize-disk`, without `checkout` and `proration_date`.
-      type: object
-      properties:
-        size_gb:
-          description: Must be larger than the current capacity
-          type: integer
-          format: int64
-          minimum: 1
-      required:
-        - size_gb
-      additionalProperties: false
-    SetFloatingIPBandwidthQuoteRequestBody:
-      description: The request of `set-floating-ip-bandwidth`, without `checkout` and `proration_date`.
-      type: object
-      properties:
-        bandwidth_mbps:
-          description: Applied to both directions
-          type: integer
-          format: int64
-          minimum: 1
-      required:
-        - bandwidth_mbps
-      additionalProperties: false
     CheckoutOptions:
       $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
-    Quote:
-      $ref: ../../billing/type/v1/quote.yaml#/components/schemas/Quote
     CreateDiskResponseBody:
       description: |-
         The new disk, `pending` until its order is accepted, and its Checkout Session. Also returned for a disk restored
@@ -7084,24 +6640,15 @@ components:
           format: uuid
         name:
           type: string
-        pricing:
-          description: How an address from this pool can be bought, per address. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
-        bandwidth_pricing:
-          description: How the bandwidth of an address from this pool is billed, per Mbit/s. It is bought in the same purchase as the address, with the same billing choice. Null when the project has no billing account.
-          anyOf:
-            - $ref: "#/components/schemas/Pricing"
-            - type: "null"
-          readOnly: true
+        billing:
+          description: A floating IP from this pool is one order line, its quantity the bandwidth in Mbps. Metered, it reads the address and, under the region alone, the bandwidth.
+          allOf:
+            - $ref: "#/components/schemas/BillingComponent"
       required:
         - id
         - region_id
         - name
-        - pricing
-        - bandwidth_pricing
+        - billing
       additionalProperties: false
     IPv4PoolListResponseBody:
       type: object

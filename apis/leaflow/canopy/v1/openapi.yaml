@@ -17,7 +17,7 @@ info:
     the model name and the credentials. Reasoning settings such as `reasoning_effort` are passed
     through as written; a model's `capabilities` lists the values its upstream accepts.
 
-    Management operations use `/api/v1`. The management model catalogue includes pricing;
+    Management operations use `/api/v1`. The management model catalogue names how each model is billed in Billing;
     `/v1/models` returns the OpenAI model format with Canopy capabilities and parameter limits.
 
     ## Authentication
@@ -36,7 +36,7 @@ info:
     - **A usage query must carry a time range**, spanning no more than 31 days, or 400 days for the usage timeline. `from` and `to` carry a timezone offset, which the server does not infer.
     - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the `upstream_request_id` from the response when reporting a problem.
     - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
-    - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates stated in each model's `pricing`.
+    - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates Billing holds for each model's `billing`.
 servers:
   - url: https://canopy.leaflow.cloud
     description: Canopy management and project inference
@@ -279,7 +279,7 @@ paths:
 
         `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
 
-        `pricing` states what requests to each model cost in the currency of the project's current billing account.
+        Canopy returns no amounts: each model's `billing` names the Billing plan and the rate dimensions its token usage is priced at. Read the rates from Billing with `search-prices` and `search-rates`.
       operationId: list-models
       tags:
         - Model
@@ -438,7 +438,7 @@ paths:
     get:
       summary: Get the model platform service
       description: |-
-        The model platform service of the authenticated project. The forwarding endpoints accept its requests only while `status` is `active`; each request is then billed under `subscription_id`, per token, at the rates stated in each model's `pricing`.
+        The model platform service of the authenticated project. The forwarding endpoints accept its requests only while `status` is `active`; each request is then billed under `subscription_id`, per token, at the rates Billing holds for each model's `billing`.
 
         When the project is deleted, its API keys are revoked and the subscription is canceled; the service then reads `inactive` with `ended_at` set.
       operationId: get-service
@@ -1058,11 +1058,8 @@ components:
           description: The maximum output length. Advisory only
           type: integer
           format: int64
-        pricing:
-          description: What requests to this model cost. Null when the project has no billing account.
-          anyOf:
-          - $ref: '#/components/schemas/ModelPricing'
-          - type: 'null'
+        billing:
+          $ref: "#/components/schemas/ModelBilling"
         status:
           type: string
           enum:
@@ -1104,7 +1101,7 @@ components:
       - status
       - context_length
       - max_output_tokens
-      - pricing
+      - billing
       - developer
       - description
       - input_modalities
@@ -1112,25 +1109,29 @@ components:
       - capabilities
       - supported_endpoints
       additionalProperties: false
-    ModelPricing:
+    ModelBilling:
       description: |-
-        What requests to a model cost, as Billing prices them in the currency of the project's current billing account. These are list amounts before promotion codes, not a checkout guarantee; usage is billed afterwards under the service's subscription.
+        How requests to a model are billed: under the service's subscription, on the Billing plan `plan_id`, one rate for each token kind. Read the rates from Billing with `search-prices` for the plan and then `search-rates` with each meter's `dimensions`.
 
         Each token kind is priced on its own. `input` excludes cached input, which is `cache_read`, and `output` excludes reasoning the provider reports separately, which is `reasoning`; a request is billed for each kind it used.
       type: object
       properties:
-        currency:
-          type: string
-        token_kinds:
+        plan_id:
+          description: The Billing plan of the service; null where the service is not sold.
+          type:
+            - string
+            - "null"
+          format: uuid
+        meters:
           description: One entry for each of the five token kinds, in the order input, output, cache_read, cache_write, reasoning.
           type: array
           items:
-            $ref: "#/components/schemas/TokenPrice"
+            $ref: "#/components/schemas/ModelMeter"
       required:
-        - currency
-        - token_kinds
+        - plan_id
+        - meters
       additionalProperties: false
-    TokenPrice:
+    ModelMeter:
       type: object
       properties:
         token_kind:
@@ -1141,20 +1142,17 @@ components:
             - cache_read
             - cache_write
             - reasoning
-        unit_amount:
-          description: The charge for `unit_quantity` tokens of this kind. Null when the kind has no rate in the currency, in which case the model cannot be billed for it.
-          anyOf:
-            - $ref: "#/components/schemas/Money"
-            - type: "null"
-        unit_quantity:
-          description: How many tokens `unit_amount` is for, such as `1000000`. Null when `unit_amount` is null.
-          type:
-            - string
-            - "null"
+        meter_lookup_key:
+          type: string
+        dimensions:
+          description: The dimension values the usage of this token kind carries, and the rate is matched at.
+          type: object
+          additionalProperties:
+            type: string
       required:
         - token_kind
-        - unit_amount
-        - unit_quantity
+        - meter_lookup_key
+        - dimensions
       additionalProperties: false
     ModelListResponseBody:
       type: object
@@ -1491,7 +1489,7 @@ components:
             - "null"
           format: uuid
         plan_id:
-          description: The Billing plan the service is sold under; null where the service is not sold. Price enabling it with Billing's quote, giving this plan with the `recurring` price type, the `metered` usage type and a quantity of 1; token usage is priced per model, as each model's `pricing` states.
+          description: The Billing plan the service is sold under; null where the service is not sold. Price enabling it with Billing's quote, giving this plan with the `recurring` price type, the `metered` usage type and a quantity of 1; token usage is priced per model, at the rates Billing holds for each model's `billing`.
           type:
             - string
             - "null"
@@ -1553,8 +1551,6 @@ components:
       additionalProperties: false
     CheckoutOptions:
       $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
-    Money:
-      $ref: ../../type/v1/money.yaml#/components/schemas/Money
   responses:
     Conflict:
       description: The request conflicts with the current state of the service. The codes are described where they apply.
