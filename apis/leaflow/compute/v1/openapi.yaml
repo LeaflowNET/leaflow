@@ -429,7 +429,7 @@ paths:
 
         An image whose capture has not finished can be deleted; the capture is aborted. This is the one operation accepted while the `create` operation is in progress.
 
-        When subscriptions pay for the image, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the image is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
+        When subscriptions pay for the image, its `release_subscription_ids`, this request cancels them in Billing as `cancellation_mode` says, and the response carries that cancellation. Canceled now, they are refunded under their terms and release begins when Billing begins the cancellation; canceled at the end of their paid period, the image is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
       operationId: delete-image
       tags:
         - Image
@@ -440,6 +440,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "409":
           $ref: "#/components/responses/Conflict"
@@ -667,7 +668,7 @@ paths:
       description: |-
         Deletion is rejected while the disk is attached, or while snapshots created from it still exist.
 
-        When subscriptions pay for the disk, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the disk is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
+        When subscriptions pay for the disk, its `release_subscription_ids`, this request cancels them in Billing as `cancellation_mode` says, and the response carries that cancellation. Canceled now, they are refunded under their terms and release begins when Billing begins the cancellation; canceled at the end of their paid period, the disk is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, deletion begins at once and `cancellation` is null.
       operationId: delete-disk
       tags:
         - Disk
@@ -678,6 +679,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "409":
           $ref: "#/components/responses/Conflict"
@@ -862,7 +864,7 @@ paths:
       description: |-
         Releases the floating IP after unbinding it. The floating IP shows the `delete` operation until it is released.
 
-        When subscriptions pay for the address, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the floating IP is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
+        When subscriptions pay for the address, its `release_subscription_ids`, this request cancels them in Billing as `cancellation_mode` says, and the response carries that cancellation. Canceled now, they are refunded under their terms and release begins when Billing begins the cancellation; canceled at the end of their paid period, the floating IP is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
       operationId: release-floating-ip
       tags:
         - FloatingIP
@@ -873,6 +875,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "409":
           $ref: "#/components/responses/Conflict"
@@ -1122,7 +1125,7 @@ paths:
 
         An instance being captured as a private image cannot be released. Wait for the capture to finish, or delete that image first.
 
-        When subscriptions pay for the instance, or for a disk deleted with it, its `release_subscription_ids`, this request cancels them in Billing, and the response carries that cancellation. Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms, and release begins when Billing begins the cancellation. When any of them can only be canceled at the end of its paid period, all of them are canceled then, and the instance is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
+        When subscriptions pay for the instance, or for a disk deleted with it, its `release_subscription_ids`, this request cancels them in Billing as `cancellation_mode` says, and the response carries that cancellation. Canceled now, they are refunded under their terms and release begins when Billing begins the cancellation; canceled at the end of their paid period, the instance is kept until `scheduled_at`. Deleting again while the cancellation is open returns it. Without subscriptions, release begins at once and `cancellation` is null.
       operationId: delete-instance
       tags:
         - Instance
@@ -1133,6 +1136,7 @@ paths:
           schema:
             type: string
             format: uuid
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "409":
           $ref: "#/components/responses/Conflict"
@@ -2723,12 +2727,14 @@ paths:
     delete:
       summary: Delete regional snapshot quota
       description: |-
-        Cancels the quota's subscription in Billing and returns the cancellation. Refused with 409 `SNAPSHOT_QUOTA_IN_USE` while any snapshot exists in the region; delete the snapshots first. Refused with 409 `SNAPSHOT_QUOTA_NOT_ACTIVE` when no subscription pays for a quota in the region.
+        Cancels the quota's subscription in Billing as `cancellation_mode` says and returns the cancellation. Refused with 409 `SNAPSHOT_QUOTA_IN_USE` while any snapshot exists in the region; delete the snapshots first. Refused with 409 `SNAPSHOT_QUOTA_NOT_ACTIVE` when no subscription pays for a quota in the region.
 
-        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and the quota stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+        Canceled now, it is refunded under its terms; canceled at the end of its paid period, the quota stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
       operationId: delete-snapshot-quota
       tags:
         - Snapshot
+      parameters:
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "202":
           description: The cancellation was created, or is already open.
@@ -2807,12 +2813,14 @@ paths:
     delete:
       summary: Delete the backup service of a region
       description: |-
-        Cancels the service's subscription in Billing and returns the cancellation. Refused with 409 `BACKUP_SERVICE_IN_USE` while any backup is retained in the region; delete the backups first. Capacity packs are deleted separately. Refused with 409 `BACKUP_SERVICE_NOT_ACTIVE` when no subscription pays for a service in the region.
+        Cancels the service's subscription in Billing as `cancellation_mode` says and returns the cancellation. Refused with 409 `BACKUP_SERVICE_IN_USE` while any backup is retained in the region; delete the backups first. Capacity packs are deleted separately. Refused with 409 `BACKUP_SERVICE_NOT_ACTIVE` when no subscription pays for a service in the region.
 
-        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and the service stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+        Canceled now, it is refunded under its terms; canceled at the end of its paid period, the service stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
       operationId: delete-backup-service
       tags:
         - Backup
+      parameters:
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "202":
           description: The cancellation was created, or is already open.
@@ -2905,12 +2913,14 @@ paths:
     delete:
       summary: Delete a backup capacity pack
       description: |-
-        Cancels the pack's subscription in Billing and returns the cancellation. Refused with 404 `BACKUP_CAPACITY_PACK_NOT_FOUND` when the project has no pack of this ID in the region, and with 409 `BACKUP_CAPACITY_PACK_ENDED` when the pack has ended.
+        Cancels the pack's subscription in Billing as `cancellation_mode` says and returns the cancellation. Refused with 404 `BACKUP_CAPACITY_PACK_NOT_FOUND` when the project has no pack of this ID in the region, and with 409 `BACKUP_CAPACITY_PACK_ENDED` when the pack has ended.
 
-        Pay-as-you-go subscriptions, and prepaid ones whose terms allow it, are canceled at once and refunded under those terms. When the subscription can only be canceled at the end of its paid period, it is canceled then, and its coverage stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
+        Canceled now, it is refunded under its terms; canceled at the end of its paid period, its coverage stays in force until `scheduled_at`. Deleting again while the cancellation is open returns it.
       operationId: delete-backup-capacity-pack
       tags:
         - Backup
+      parameters:
+        - $ref: "#/components/parameters/CancellationMode"
       responses:
         "202":
           description: The cancellation was created, or is already open.
@@ -3247,6 +3257,16 @@ components:
   securitySchemes:
     scopedTokenAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  parameters:
+    CancellationMode:
+      name: cancellation_mode
+      in: query
+      description: |-
+        How the subscriptions that pay for what is deleted are canceled. `immediate` cancels them now and refunds them under their terms; `period_end` cancels them at the end of their paid period and keeps what is deleted until then. Omitted, they are canceled now where the terms of every one of them allow it, and otherwise all at the end of the paid period.
+
+        Refused with 422 `BILLING_CANCELLATION_MODE_FIXED` when a subscription's terms do not allow the mode: a pay-as-you-go subscription is canceled only now, and a prepaid one whose terms allow only the end of its period only then. Refused with 409 `BILLING_CANCELLATION_SCHEDULES_DIFFER` for `period_end` when the paid periods end at different times. Ignored when nothing is subscribed, and when a cancellation is already open: deleting again returns it as it is.
+      schema:
+        $ref: "../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode"
   schemas:
     PeeringResource:
       type: object
@@ -3393,11 +3413,9 @@ components:
           type: string
           format: uuid
         mode:
-          description: "`immediate` releases the resource now and refunds under the subscriptions' terms; `period_end` keeps it until `scheduled_at`."
-          type: string
-          enum:
-            - immediate
-            - period_end
+          description: "`immediate` releases the resource now; `period_end` keeps it until `scheduled_at`."
+          allOf:
+            - $ref: "../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode"
         status:
           description: "`requested` and `scheduled` have not begun release; `releasing` is releasing the resource."
           type: string
