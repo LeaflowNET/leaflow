@@ -1,0 +1,1605 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
+info:
+  title: Leaflow SWAS Legacy API candidate
+  version: 0.1.0-candidate
+  description: 'Manage existing SWAS instances assigned to the current project. The scoped token supplies the user and project;
+    caller identity headers do not. This contract does not create, renew, bill or release instances. Mutation acceptance is
+    not completion: inspect the resource operation until a durable terminal state is available. This candidate is not published
+    or deployed.'
+security:
+- ScopedToken: []
+paths:
+  /api/v1/instances:
+    get:
+      operationId: list-instances
+      summary: List instances
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceList'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}:
+    get:
+      operationId: get-instance
+      summary: Get instance
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/start:
+    post:
+      operationId: start-instance
+      summary: Start instance
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/stop:
+    post:
+      operationId: stop-instance
+      summary: Stop instance
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/reboot:
+    post:
+      operationId: reboot-instance
+      summary: Reboot instance
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/reinstall-images:
+    get:
+      operationId: list-instance-reinstall-images
+      summary: List instance reinstall images
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageList'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/reinstall:
+    post:
+      operationId: reinstall-instance
+      summary: Reinstall instance
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReinstallRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/password:
+    post:
+      operationId: set-instance-password
+      summary: Set instance password
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/console:
+    post:
+      operationId: create-instance-console
+      summary: Create instance console
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Console'
+          description: Successful response
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/metrics:
+    get:
+      operationId: list-instance-metrics
+      summary: List instance metrics
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/Period'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/traffic:
+    get:
+      operationId: get-instance-traffic
+      summary: Get instance traffic
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Traffic'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+  /api/v1/instances/{instanceId}/firewall-rules:
+    get:
+      operationId: list-instance-firewall-rules
+      summary: List instance firewall rules
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirewallRuleList'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - FirewallRule
+    post:
+      operationId: create-instance-firewall-rule
+      summary: Create instance firewall rule
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirewallWriteRequest'
+      tags:
+      - FirewallRule
+  /api/v1/instances/{instanceId}/firewall-rules/{ruleId}:
+    patch:
+      operationId: update-instance-firewall-rule
+      summary: Update instance firewall rule
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/RuleID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirewallWriteRequest'
+      tags:
+      - FirewallRule
+    delete:
+      operationId: delete-instance-firewall-rule
+      summary: Delete instance firewall rule
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/RuleID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Operation'
+          description: Operation accepted; not completion
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+      tags:
+      - FirewallRule
+  /api/v1/instances/{instanceId}/operation-logs:
+    get:
+      operationId: list-instance-operations
+      summary: List instance operations
+      parameters:
+      - $ref: '#/components/parameters/InstanceID'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogList'
+          description: Successful response
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid or missing scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting operation or generation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Dependency or write gate unavailable
+      tags:
+      - Instance
+components:
+  securitySchemes:
+    ScopedToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An IAM-issued project-scoped token. The verified token supplies the current user and project. Neither the
+        path nor caller identity headers select a project.
+  parameters:
+    InstanceID:
+      name: instanceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        not:
+          const: 00000000-0000-0000-0000-000000000000
+    RuleID:
+      name: ruleId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+        pattern: ^[A-Za-z0-9_.-]+$
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[A-Za-z0-9_.-]+$
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000000
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Period:
+      name: period
+      in: query
+      schema:
+        type: string
+        enum:
+        - 1h
+        - 6h
+        - 24h
+        - 7d
+        default: 1h
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+          - TOKEN_INVALID
+          - PERMISSION_DENIED
+          - INVALID_INPUT
+          - NOT_FOUND
+          - CONFLICT
+          - DEPENDENCY_UNAVAILABLE
+        message:
+          type: string
+      required:
+      - code
+      - message
+      additionalProperties: false
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      required:
+      - page
+      - page_size
+      - total
+      additionalProperties: false
+      description: Numbered-page metadata. total counts this response's documented collection; this product retains the implemented
+        total field rather than claiming the platform total_count shape.
+    Operation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        type:
+          type: string
+          enum:
+          - start
+          - stop
+          - reboot
+          - reinstall
+          - reset_password
+          - console
+          - firewall_create
+          - firewall_update
+          - firewall_delete
+        state:
+          type: string
+          enum:
+          - running
+          - needs_attention
+          - succeeded
+          - failed
+        started_at:
+          type: string
+          format: date-time
+        failure_code:
+          anyOf:
+          - type: string
+            maxLength: 128
+            pattern: ^[A-Z0-9_]*$
+          - type: 'null'
+      required:
+      - id
+      - type
+      - state
+      - started_at
+      - failure_code
+      additionalProperties: false
+      description: Accepted management operation. running and needs_attention are not terminal success. An ambiguous result
+        stays pending until trustworthy evidence resolves it.
+    LastOperation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        type:
+          type: string
+          enum:
+          - start
+          - stop
+          - reboot
+          - reinstall
+          - reset_password
+          - console
+          - firewall_create
+          - firewall_update
+          - firewall_delete
+        result:
+          type: string
+          enum:
+          - succeeded
+          - failed
+        completed_at:
+          type: string
+          format: date-time
+        failure_code:
+          anyOf:
+          - type: string
+            maxLength: 128
+            pattern: ^[A-Z0-9_]*$
+          - type: 'null'
+      required:
+      - id
+      - type
+      - result
+      - completed_at
+      - failure_code
+      additionalProperties: false
+    Capabilities:
+      type: object
+      properties:
+        purchase:
+          type: boolean
+          const: false
+        renewal:
+          type: boolean
+          const: false
+        upgrade_order:
+          type: boolean
+          const: false
+        refund:
+          type: boolean
+          const: false
+      required:
+      - purchase
+      - renewal
+      - upgrade_order
+      - refund
+      additionalProperties: false
+    GenerationRequest:
+      type: object
+      properties:
+        expected_generation:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - expected_generation
+      additionalProperties: false
+    ReinstallRequest:
+      type: object
+      properties:
+        expected_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        image_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: ^[A-Za-z0-9_.-]+$
+        confirm_data_loss:
+          type: boolean
+          const: true
+      required:
+      - expected_generation
+      - image_id
+      - confirm_data_loss
+      additionalProperties: false
+    PasswordRequest:
+      type: object
+      properties:
+        expected_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+          pattern: "^[^\0\r\n]*$"
+          writeOnly: true
+        confirm_restart:
+          type: boolean
+          const: true
+      required:
+      - expected_generation
+      - password
+      - confirm_restart
+      additionalProperties: false
+    FirewallWriteRequest:
+      type: object
+      properties:
+        expected_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        protocol:
+          type: string
+          enum:
+          - tcp
+          - udp
+          - tcp_udp
+          - icmp
+        port_range:
+          type: string
+          minLength: 1
+          maxLength: 11
+          pattern: ^(-1|[1-9][0-9]{0,4}(/[1-9][0-9]{0,4})?)$
+        source_cidr:
+          type: string
+          minLength: 3
+          maxLength: 64
+        remark:
+          type: string
+          maxLength: 256
+          pattern: "^[^\0\r\n]*$"
+      required:
+      - expected_generation
+      - protocol
+      - port_range
+      - source_cidr
+      additionalProperties: false
+    Console:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 8192
+          pattern: ^(https|wss)://
+        expires_at:
+          type: 'null'
+      required:
+      - url
+      - expires_at
+      additionalProperties: false
+      description: The capability URL is returned once and is not replayed or persisted by the API. expires_at is null because
+        its expiry has not been confirmed. Do not log, cache or share the URL.
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        region_id:
+          type: string
+        name:
+          type: string
+          maxLength: 256
+        platform:
+          type: string
+          minLength: 1
+          maxLength: 128
+        compatible:
+          type: boolean
+          const: true
+      required:
+      - id
+      - region_id
+      - name
+      - platform
+      - compatible
+      additionalProperties: false
+    FirewallRule:
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        protocol:
+          type: string
+          enum:
+          - tcp
+          - udp
+          - tcp_udp
+          - icmp
+        port_range:
+          type: string
+        source_cidr:
+          type: string
+        remark:
+          type: string
+          maxLength: 256
+      required:
+      - id
+      - protocol
+      - port_range
+      - source_cidr
+      - remark
+      additionalProperties: false
+    Decimal:
+      type: string
+      pattern: ^(0|[1-9][0-9]{0,27})(\.[0-9]{1,10})?$
+    MetricPoint:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        value:
+          anyOf:
+          - $ref: '#/components/schemas/Decimal'
+          - type: 'null'
+      required:
+      - at
+      - value
+      additionalProperties: false
+    MetricSeries:
+      type: object
+      properties:
+        metric:
+          type: string
+          enum:
+          - cpu
+          - memory_used
+          - network_in
+          - network_out
+          - disk_read_iops
+          - disk_write_iops
+        unit:
+          type: 'null'
+        availability:
+          type: string
+          enum:
+          - unavailable
+          - partial
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricPoint'
+          maxItems: 1440
+      required:
+      - metric
+      - unit
+      - availability
+      - points
+      additionalProperties: false
+    Metrics:
+      type: object
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        period:
+          type: string
+          enum:
+          - 1h
+          - 6h
+          - 24h
+          - 7d
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricSeries'
+          minItems: 6
+          maxItems: 6
+      required:
+      - instance_id
+      - period
+      - series
+      additionalProperties: false
+      description: Missing measurements are unavailable, not zero. Metric units remain null until confirmed.
+    Traffic:
+      type: object
+      properties:
+        instance_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        period_start:
+          type: 'null'
+        period_end:
+          type: 'null'
+        used_bytes:
+          anyOf:
+          - $ref: '#/components/schemas/Decimal'
+          - type: 'null'
+        included_bytes:
+          anyOf:
+          - $ref: '#/components/schemas/Decimal'
+          - type: 'null'
+        availability:
+          type: string
+          enum:
+          - unavailable
+          - partial
+      required:
+      - instance_id
+      - period_start
+      - period_end
+      - used_bytes
+      - included_bytes
+      - availability
+      additionalProperties: false
+      description: Reference traffic observations. Unknown periods and missing values remain null; these values are not a
+        billing measurement.
+    Instance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          not:
+            const: 00000000-0000-0000-0000-000000000000
+        service_id:
+          type: string
+          const: swas-legacy
+        region_id:
+          type: string
+        name:
+          type: string
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - binding_pending
+          - managed
+        power_state:
+          anyOf:
+          - type: string
+            enum:
+            - running
+            - stopped
+            - starting
+            - stopping
+            - restarting
+            - unknown
+          - type: 'null'
+        addresses:
+          anyOf:
+          - type: array
+            items:
+              type: string
+          - type: 'null'
+        observed_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        operation:
+          anyOf:
+          - $ref: '#/components/schemas/Operation'
+          - type: 'null'
+        last_operation:
+          anyOf:
+          - $ref: '#/components/schemas/LastOperation'
+          - type: 'null'
+        capabilities:
+          $ref: '#/components/schemas/Capabilities'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - service_id
+      - region_id
+      - name
+      - generation
+      - status
+      - power_state
+      - addresses
+      - observed_expires_at
+      - operation
+      - last_operation
+      - capabilities
+      - created_at
+      - updated_at
+      additionalProperties: false
+      description: id is this API's resource UUID, not a supplier instance number. A collection entry is a registry view;
+        retrieving it observes supplier state. observed_expires_at is informational and never triggers charging or deletion.
+    InstanceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Instance'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    ImageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    FirewallRuleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FirewallRule'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    OperationLogList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Operation'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+      description: Operations in chronological order inside the latest one-thousand-entry window. pagination.total counts
+        that window, not all historical operations.
+x-publishable: false
+x-review-status: unpublished-candidate
