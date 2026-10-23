@@ -4,8 +4,7 @@ paths:
       summary: Get a quote
       description: |-
         Calculates what a proposed purchase, a change of your subscriptions or their renewal would invoice now, and
-        what each purchased or changed line renews at, or what ending subscriptions would return. Nothing is saved,
-        reserved, redeemed or canceled.
+        what each purchased or changed line renews at. Nothing is saved, reserved or redeemed.
 
         With `billing_account_id`, the quote is for that billing account: its currency, account discounts,
         tax and funds apply, changes and renewals use the account currently paying for each subscription, and an
@@ -66,15 +65,6 @@ paths:
                     plan_id: 019c0000-0000-7000-8000-000000000004
                     quantity: '1'
                   change_effective: immediate
-              cancellation:
-                summary: Preview what canceling a server with its disks at once would return.
-                value:
-                  billing_account_id: 1
-                  cancellation:
-                    subscription_ids:
-                    - 019c0000-0000-7000-8000-000000000003
-                    - 019c0000-0000-7000-8000-000000000005
-                    mode: immediate
       responses:
         '200':
           description: OK
@@ -334,7 +324,7 @@ components:
       type: object
       properties:
         funds:
-          description: Account funds for the quoted purchase. Null without an account, and for a cancellation.
+          description: Account funds for the quoted purchase. Null without an account.
           oneOf:
           - $ref: ../type/v1/funds.yaml#/components/schemas/Funds
           - type: 'null'
@@ -348,7 +338,7 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Total tax on the discounted amounts.
         discount:
-          description: The discount a purchase would get, not yet applied. Null when there is none, and for renewals and a cancellation.
+          description: The discount a purchase would get, not yet applied. Null when there is none, and for renewals.
           oneOf:
           - $ref: '#/components/schemas/QuotedDiscount'
           - type: 'null'
@@ -360,20 +350,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuoteRenewalResult'
-        cancellation:
-          description: What the cancellation would return. Null unless the request quotes a cancellation.
-          oneOf:
-          - $ref: '#/components/schemas/QuoteCancellationResult'
-          - type: 'null'
         total:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: subtotal minus discount_amount plus tax_amount, before credit grants and balance. For a Checkout Session quote, pass it as expected_amount when confirming the session. Renewal entries are separate orders; use each entry's total. Zero for a cancellation, which invoices nothing.
+          description: subtotal minus discount_amount plus tax_amount, before credit grants and balance. For a Checkout Session quote, pass it as expected_amount when confirming the session. Renewal entries are separate orders; use each entry's total.
         currency:
           type: string
         proration_date:
-          description: Immediate changes and immediate cancellations only; null otherwise. The instant the change or the
-            refund is priced from; pass it when confirming the Checkout Session or creating the cancellation so it is
-            priced from the same instant.
+          description: Immediate changes only; null otherwise. The instant the change is priced from; pass it when
+            confirming the Checkout Session so it is priced from the same instant.
           type:
           - string
           - 'null'
@@ -397,136 +381,7 @@ components:
       - currency
       - items
       - renewals
-      - cancellation
       - proration_date
-    QuoteCancellation:
-      description: |-
-        Preview ending these subscriptions together in one mode; quote `immediate` and `period_end` separately to
-        compare. Each must currently be paid by `billing_account_id` and be yours to read, as the owner of that account
-        or a member of the subscriptions' project. Refused as creating the cancellation would be, including 409
-        `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`),
-        is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`).
-      type: object
-      properties:
-        subscription_ids:
-          description: The subscriptions to end together, all of one service, including every subscription released with a resource.
-          type: array
-          minItems: 1
-          maxItems: 50
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
-        mode:
-          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
-      required:
-      - subscription_ids
-      - mode
-      additionalProperties: false
-    QuoteCancellationResult:
-      description: |-
-        What the cancellation would return, per subscription and in total, as of the quote's `proration_date` for
-        `immediate`. Give that `proration_date` and `refundable_amount` when creating the cancellation.
-
-        - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
-        - `short_rate_surcharge_amount`: before tax, the part of `forfeited_amount` due to the short rate of the
-          refund policy.
-        - `refundable_amount`: what is returned the way it was paid, tax included; `refund_amount` plus
-          `credit_amount`.
-        - `refund_amount`: the part returned to the balance or the payment method.
-        - `credit_amount`: the part restored to the credit grants that paid.
-        - `tax_amount`: the tax included in `refundable_amount`.
-        - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
-
-        Metered and one-time subscriptions show zero; their usage until release is charged as usual.
-      type: object
-      properties:
-        mode:
-          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
-        scheduled_at:
-          description: For `period_end`, when release begins, the end of the paid terms.
-          type: string
-          format: date-time
-        unused_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        short_rate_surcharge_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refundable_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refund_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        credit_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        tax_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        forfeited_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/QuoteCancellationItem'
-      required:
-      - mode
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
-      - items
-    QuoteCancellationItem:
-      description: One subscription of the quoted cancellation.
-      type: object
-      properties:
-        subscription_id:
-          type: string
-          format: uuid
-        plan_id:
-          type: string
-          format: uuid
-        plan_name:
-          type: string
-        project:
-          description: The project and its current name. Absent for an account-level purchase or when the project cannot be read.
-          oneOf:
-          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-          - type: 'null'
-        type:
-          $ref: ./prices.yaml#/components/schemas/PriceType
-        usage_type:
-          $ref: ./prices.yaml#/components/schemas/UsageType
-        auto_renew:
-          description: Whether automatic renewal is on now. Creating the cancellation turns it off; withdrawing it turns it back on for a metered subscription but not for a licensed one.
-          type: boolean
-        unused_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        short_rate_surcharge_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refundable_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        refund_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        credit_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        tax_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        forfeited_amount:
-          $ref: ../../type/v1/money.yaml#/components/schemas/Money
-      required:
-      - subscription_id
-      - plan_id
-      - plan_name
-      - type
-      - usage_type
-      - auto_renew
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
     QuotedDiscount:
       description: The discount selected for this calculation, not applied and not reserved. Amounts are on the quote and its lines.
       type: object
@@ -629,13 +484,13 @@ components:
       - quantity
       additionalProperties: false
     QuoteRequest:
-      description: 'Quote proposed items, changes, renewals or a cancellation: exactly one of them. Give exactly one of
-        `billing_account_id` and `currency`; changes, renewals and a cancellation need the account. Promotion codes apply to proposed items and changes. An
+      description: 'Quote proposed items, changes or renewals: exactly one of them. Give exactly one of `billing_account_id`
+        and `currency`; changes and renewals need the account. Promotion codes apply to proposed items and changes. An
         invalid combination fails with `BILLING_PURCHASE_INVALID` and the field.'
       type: object
       properties:
         billing_account_id:
-          description: The billing account to price for; it must be yours or currently pay for a project you are a member of, and an access token is required. Renewals and a cancellation must currently be paid by it.
+          description: The billing account to price for; it must be yours or currently pay for a project you are a member of, and an access token is required. Renewals must currently be paid by it.
           type: integer
           format: int64
           minimum: 1
@@ -667,8 +522,6 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/QuoteChangeInput'
-        cancellation:
-          $ref: '#/components/schemas/QuoteCancellation'
         change_effective:
           description: When the changes take effect; defaults to `immediate`. `immediate` prices the rest of the paid
             period from `proration_date`, charging an upgrade the difference and showing what a downgrade refunds.
