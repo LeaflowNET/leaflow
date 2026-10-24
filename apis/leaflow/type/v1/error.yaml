@@ -10,21 +10,78 @@ components:
   schemas:
     Error:
       type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-        meta:
-          description: |-
-            What a given `code` carries alongside the message. The keys depend on the code,
-            and a client that does not recognise one ignores it.
-          type: object
-          additionalProperties: {}
-        status:
-          type: integer
-          format: int64
+      description: |-
+        A failed request. The envelope follows the Google REST error format: `code` is the HTTP
+        status, `status` is its canonical name, and `reason` is the stable machine-readable code
+        that identifies the failure.
       required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorStatus'
+      additionalProperties: false
+    ErrorStatus:
+      type: object
+      required:
+        - code
         - status
         - message
+      properties:
+        code:
+          description: The HTTP status code of the response.
+          type: integer
+          format: int64
+        status:
+          description: |-
+            The canonical name of the status, such as `INVALID_ARGUMENT` or `UNAVAILABLE`.
+          type: string
+        message:
+          description: |-
+            A description of the failure for developers. It is always English and is not meant
+            to be shown to end users as is.
+          type: string
+        reason:
+          description: |-
+            A stable machine-readable code identifying the failure. Clients branch on this value
+            and render their own text; it does not change once published.
+          type: string
+        metadata:
+          description: |-
+            Values that belong to `reason`, one set per reason. Clients use them to fill in
+            localized text and never parse `message` to obtain them. Keys are documented per
+            reason; a key that has appeared once keeps appearing.
+          type: object
+          additionalProperties:
+            type: string
+        field_violations:
+          description: |-
+            Request fields rejected by the request's constraints. Present on validation
+            failures; one request may violate several fields.
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldViolation'
+        retry_delay:
+          description: |-
+            How long the client should wait before retrying, as a duration string such as
+            `30s`. Present only when waiting can succeed.
+          type: string
+        request_id:
+          description: |-
+            The identifier of the request in the service's logs. Quote it when reporting a
+            failure.
+          type: string
+      additionalProperties: false
+    FieldViolation:
+      type: object
+      required:
+        - field
+      properties:
+        field:
+          description: |-
+            The path to the rejected field in the request body, such as `items[2].price_id`.
+          type: string
+        reason:
+          description: |-
+            Why the field was rejected, such as `REQUIRED` or `OUT_OF_RANGE`.
+          type: string
       additionalProperties: false
