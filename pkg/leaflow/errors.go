@@ -135,8 +135,8 @@ func RenderError(err error, root string) string {
 			payload["code"] = refused.Code
 		}
 
-		if len(refused.Meta) > 0 {
-			payload["meta"] = refused.Meta
+		if len(refused.Metadata) > 0 {
+			payload["metadata"] = refused.Metadata
 		}
 	}
 

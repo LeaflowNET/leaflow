@@ -100,10 +100,10 @@ type Streamed struct{}
 // APIError is a refusal from a service. Callers branch on Code rather than
 // matching prose: the wording changes, the code is contract.
 type APIError struct {
-	Status  int
-	Code    string
-	Message string
-	Meta    map[string]any
+	Status   int
+	Code     string
+	Message  string
+	Metadata map[string]any
 }
 
 func (e *APIError) Error() string {
@@ -277,20 +277,33 @@ func parseError(status int, raw []byte) error {
 		Title   string         `json:"title"`
 		Meta    map[string]any `json:"meta"`
 		Error   *struct {
-			Code    string         `json:"code"`
-			Message string         `json:"message"`
-			Meta    map[string]any `json:"meta"`
+			Code            int               `json:"code"`
+			Status          string            `json:"status"`
+			Message         string            `json:"message"`
+			Reason          string            `json:"reason"`
+			Metadata        map[string]string `json:"metadata"`
+			FieldViolations []struct {
+				Field  string `json:"field"`
+				Reason string `json:"reason"`
+			} `json:"field_violations"`
+			RetryDelay string `json:"retry_delay"`
+			RequestID  string `json:"request_id"`
 		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(raw, &parsed); err == nil {
 		if parsed.Error != nil {
-			parsed.Code = parsed.Error.Code
+			parsed.Code = parsed.Error.Reason
 			parsed.Message = parsed.Error.Message
-			parsed.Meta = parsed.Error.Meta
+			if len(parsed.Error.Metadata) > 0 {
+				parsed.Meta = make(map[string]any, len(parsed.Error.Metadata))
+				for key, value := range parsed.Error.Metadata {
+					parsed.Meta[key] = value
+				}
+			}
 		}
 		failure.Code = parsed.Code
-		failure.Meta = parsed.Meta
+		failure.Metadata = parsed.Meta
 
 		switch {
 		case parsed.Message != "":
