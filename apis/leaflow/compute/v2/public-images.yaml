@@ -1,0 +1,146 @@
+paths:
+  /api/v2/public-images:
+    get:
+      summary: List public images
+      description: |-
+        Lists the platform's public images that are on sale. A public image is offered to every project. One the platform withdraws disappears from here and can no longer install new instances, while the instances already running it keep running and can still be rebuilt onto it; retrieve it by id to see it.
+
+        An image can only be used in the region that holds it. An image whose `min_memory_mib` exceeds the memory of the selected instance type cannot boot; filter the options accordingly.
+
+        Images this project captured from its own instances are in `/private-images`.
+      operationId: list-public-images
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - public-images
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        description: Return only the images of this region
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicImageListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/public-images/{publicImageId}:
+    get:
+      summary: Retrieve a public image
+      description: Returns a public image, on sale or withdrawn. A withdrawn image (`sale_status` is `off_sale`) is still
+        returned because instances may keep running it; it cannot be chosen for a new instance and can
+        only be rebuilt onto by an instance that already runs it. A private image id is reported as not found
+        here; use `/private-images`.
+      operationId: get-public-image
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - public-images
+      parameters:
+      - name: publicImageId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicImageResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    PublicImageResource:
+      description: A platform image offered to every project to install an instance. It carries no ownership and
+        no billing; its storage is the platform's.
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        architecture:
+          type: string
+        login_username:
+          description: The account this image lets you log in as. The password set at creation belongs to this
+            account
+          type: string
+          maxLength: 32
+        min_volume_size_gib:
+          description: The boot volume of an instance created from this image cannot be smaller than this
+          type: integer
+          format: int64
+        min_memory_mib:
+          description: The instance type of an instance created from this image must have at least this much
+            memory
+          type: integer
+          format: int64
+        supports_password_reset:
+          description: False means a new password can only be set by rebuilding an instance created from this
+            image
+          type: boolean
+        sale_status:
+          description: '`on_sale` images can install new instances. `off_sale` means the platform withdrew the
+            image: it stops new purchases only, and instances already running it keep running and can still be
+            rebuilt onto it.'
+          type: string
+          enum:
+          - on_sale
+          - off_sale
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - region_id
+      - name
+      - os_family
+      - os_version
+      - architecture
+      - login_username
+      - min_volume_size_gib
+      - min_memory_mib
+      - supports_password_reset
+      - sale_status
+      - created_at
+      additionalProperties: false
+    PublicImageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicImageResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false

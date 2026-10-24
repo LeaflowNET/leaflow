@@ -1,0 +1,129 @@
+paths:
+  /api/v2/instance-families:
+    get:
+      summary: List instance families
+      description: An instance family is one hardware line of a region, such as `g7`, and its instance types are its
+        sizes in each availability zone. A family shows here while it has an instance type on sale or sold out.
+      operationId: list-instance-families
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - instance-families
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceFamilyListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/instance-families/{instanceFamilyId}:
+    get:
+      summary: Get an instance family
+      description: Returns an instance family under the same rule as listing; a family with no instance type on sale
+        or sold out returns 404.
+      operationId: get-instance-family
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - instance-families
+      parameters:
+      - name: instanceFamilyId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceFamilyID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceFamily'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    InstanceFamily:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceFamilyID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          description: The family's name, such as `g7`.
+          type: string
+        category:
+          $ref: '#/components/schemas/InstanceFamilyCategory'
+        generation:
+          description: The hardware generation of the family; a higher one is newer hardware.
+          type: integer
+          format: int64
+        cpu_vendor:
+          description: Who makes the CPU the family runs on.
+          type: string
+          enum:
+          - intel
+          - amd
+        cpu_model:
+          description: The CPU model, such as `EPYC 9654`; empty when none is stated.
+          type: string
+        cpu_tier:
+          description: '`dedicated` gives each vCPU a host thread of its own; `shared` lets the vCPUs of several
+            instances share host threads.'
+          type: string
+          enum:
+          - dedicated
+          - shared
+      required:
+      - id
+      - region_id
+      - name
+      - category
+      - generation
+      - cpu_vendor
+      - cpu_model
+      - cpu_tier
+      additionalProperties: false
+    InstanceFamilyCategory:
+      description: What the family is sized for. `general_purpose` balances vCPU and memory, `compute_optimized`
+        gives less memory per vCPU, and `memory_optimized` more.
+      type: string
+      enum:
+      - general_purpose
+      - compute_optimized
+      - memory_optimized
+    InstanceFamilyListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InstanceFamily'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false

@@ -1,0 +1,101 @@
+paths:
+  /api/v2/availability-zones:
+    get:
+      summary: List availability zones
+      description: A volume and an instance must reside in the same availability zone to be attached. Confirm
+        the zone before creating either. Without `region_id`, the zones of every region are listed.
+      operationId: list-availability-zones
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - availability-zones
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        description: Return only the zones of this region
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityZoneListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/availability-zones/{availabilityZoneId}:
+    get:
+      summary: Retrieve an availability zone
+      description: A volume and an instance must reside in the same availability zone to be attached.
+      operationId: get-availability-zone
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - availability-zones
+      parameters:
+      - name: availabilityZoneId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityZoneResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    AvailabilityZoneResource:
+      type: object
+      properties:
+        name:
+          description: Display name for this zone, shown to tenants (Hong Kong A). The stable handle is code.
+          type: string
+        code:
+          description: The zone's code within its region (hk-1-a). Stable and human-written; addressing is by id.
+          type: string
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+        region_id:
+          description: The region this zone belongs to; the value `region_id` filters the listing by.
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      required:
+      - code
+      - name
+      - id
+      - region_id
+      additionalProperties: false
+    AvailabilityZoneListResponseBody:
+      type: object
+      properties:
+        items:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/AvailabilityZoneResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false

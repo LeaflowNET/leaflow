@@ -1,0 +1,180 @@
+paths:
+  /api/v2/volume-types:
+    get:
+      summary: List volume types on sale
+      description: Volume types on sale are listed, and sold-out ones with `sale_status` `sold_out`. Any of them boots an
+        instance of its zone, holds data or takes a restore. A withdrawn one disappears from here and can no longer be bought, while the volumes already on it keep
+        working and can still be resized.
+      operationId: list-volume-types
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - volume-types
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - name: availability_zone_id
+        in: query
+        required: false
+        description: Return only the types of this availability zone, sold out or not.
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeTypeListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/volume-types/{volumeTypeId}:
+    get:
+      summary: Get a volume type
+      description: Retrieve capacity and performance constraints for an existing volume, including types withdrawn from
+        sale.
+      operationId: get-volume-type
+      security:
+      - {}
+      - scopedTokenAuth: []
+      tags:
+      - volume-types
+      parameters:
+      - name: volumeTypeId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeTypeResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    VolumeTypeResource:
+      type: object
+      properties:
+        availability_zone_id:
+          description: The availability zone the type belongs to, where a volume of it is created; only an instance
+             of the same zone can attach it.
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+        sale_status:
+          description: '`sold_out` takes no new orders for now while the type stays listed; the volumes already of it keep
+            working.'
+          type: string
+          enum:
+          - on_sale
+          - sold_out
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+        max_size_gib:
+          type: integer
+          format: int64
+        medium:
+          type: string
+          enum:
+          - ssd
+          - hdd
+          - nvme
+        min_size_gib:
+          type: integer
+          format: int64
+        name:
+          type: string
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        size_step_gib:
+          type: integer
+          format: int64
+        performance:
+          $ref: '#/components/schemas/VolumeTypePerformance'
+        billing:
+          description: The line a volume of this type is, whether bought on its own or as the boot volume or a data volume
+            of an instance. A volume bought on its own is licensed only.
+          allOf:
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+      required:
+      - id
+      - name
+      - medium
+      - region_id
+      - availability_zone_id
+      - sale_status
+      - min_size_gib
+      - max_size_gib
+      - size_step_gib
+      - performance
+      - billing
+      additionalProperties: false
+    PerformanceFormula:
+      description: One performance metric of a volume type for a volume of `size_gib`, `max(min, min(max, base + size_gib ×
+        per_gib))`. A `per_gib` of zero is a fixed performance, and a `min` of zero is no floor.
+      type: object
+      properties:
+        min:
+          type: integer
+          format: int64
+        base:
+          type: integer
+          format: int64
+        per_gib:
+          type: integer
+          format: int64
+        max:
+          type: integer
+          format: int64
+      required:
+      - min
+      - base
+      - per_gib
+      - max
+      additionalProperties: false
+    VolumeTypePerformance:
+      description: |-
+        How fast a volume of this type runs for its size. Alibaba Cloud's ESSD volumes have this shape: PL1 is IOPS `min(50000, 1800 + 50 × size_gib)`, and AutoPL's baseline adds a floor, `max(3000, min(50000, 1800 + 50 × size_gib))`.
+
+        A volume's own performance, computed from these for its size, is on the volume. Growing a volume raises it, and the new performance applies from the volume's next attachment or the next start of its stopped instance.
+      type: object
+      properties:
+        iops:
+          $ref: '#/components/schemas/PerformanceFormula'
+        throughput_bytes_per_second:
+          $ref: '#/components/schemas/PerformanceFormula'
+      required:
+      - iops
+      - throughput_bytes_per_second
+      additionalProperties: false
+    VolumeTypeListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VolumeTypeResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false

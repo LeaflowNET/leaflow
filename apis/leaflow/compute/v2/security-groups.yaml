@@ -1,0 +1,201 @@
+paths:
+  /api/v2/security-groups:
+    get:
+      summary: List security groups
+      operationId: list-security-groups
+      tags:
+      - security-groups
+      parameters:
+      - name: region_id
+        in: query
+        description: Only security groups in this region.
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - name: virtual_private_cloud_id
+        in: query
+        description: Only security groups of this virtual private cloud.
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a security group
+      description: A new security group admits all outbound traffic and denies inbound traffic, except ICMP
+        fragmentation-needed (IPv4) and Packet Too Big (IPv6). Without those two, path MTU discovery fails, which
+        shows as connections that establish and then stall on large packets. All of these are ordinary rules and can
+        be deleted.
+      operationId: create-security-group
+      tags:
+      - security-groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityGroupRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroup'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/security-groups/{securityGroupId}:
+    parameters:
+    - name: securityGroupId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+    get:
+      summary: Get a security group
+      operationId: get-security-group
+      tags:
+      - security-groups
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroup'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a security group
+      description: Changes the name or description. Rules are resources of their own, created and deleted under
+        `/security-group-rules`.
+      operationId: update-security-group
+      tags:
+      - security-groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSecurityGroupRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroup'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a security group
+      description: Refused while a network interface uses the group. The default security group cannot be deleted;
+        it goes with its virtual private cloud.
+      operationId: delete-security-group
+      tags:
+      - security-groups
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    SecurityGroup:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        name:
+          type: string
+        description:
+          type: string
+        is_default:
+          description: The default security group goes with its virtual private cloud and cannot be deleted on its
+            own.
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - virtual_private_cloud_id
+      - name
+      - description
+      - is_default
+      - created_at
+      - updated_at
+      additionalProperties: false
+    SecurityGroupListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityGroup'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateSecurityGroupRequestBody:
+      type: object
+      properties:
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 500
+      required:
+      - virtual_private_cloud_id
+      - name
+      additionalProperties: false
+    UpdateSecurityGroupRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 500
+      minProperties: 1
+      additionalProperties: false

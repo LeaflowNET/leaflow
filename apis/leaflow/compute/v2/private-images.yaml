@@ -1,0 +1,424 @@
+paths:
+  /api/v2/private-images:
+    get:
+      summary: List private images
+      description: |-
+        Lists the private images of this project, newest first, in every status: including while a capture is in progress and after it failed. Private images of other projects are never listed.
+
+        A private image is usable only by the project that captured it from one of its instances. Its storage is metered by the hour on a subscription of the project.
+
+        An image can only be used in the region that holds it. An image whose `min_memory_mib` exceeds the memory of the selected instance type cannot boot; filter the options accordingly. Public images are in `/public-images`.
+      operationId: list-private-images
+      tags:
+      - private-images
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        description: Return only the images of this region
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Capture an instance as a private image
+      description: "Creates a project image from the instance boot volume, excluding data volumes. Stop the instance
+         first for file-system consistency. The instance cannot be released while its source volume is being
+        captured. Compute project quotas are enforced independently of billing.\n\nIt is metered on a subscription of its own and takes no billing choice. Each second the image is stored is
+        reported under its region and its `billing_position`: its place among the project's stored private images in
+        the region, counted from the oldest, which moves up whenever an older one is deleted. Billing prices each
+        position, and a position it prices at zero costs nothing; that is how a number of images in each region are
+        free. The image's size does not change what it costs. It is bought through a
+        Billing Checkout Session: automatic checkout completes at once for metered pricing and the image is captured as soon
+        as the order is accepted; with deferred checkout it stays `pending` until the customer completes checkout in
+        Billing. The source and project quotas are checked before the Checkout Session is created, and a refused
+        request creates nothing.\n\nThe image shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. While its purchase awaits checkout or payment its deletion is refused with `COMPUTE_PURCHASE_PENDING`; once the capture runs, deletion is the one operation it accepts."
+      operationId: create-private-image
+      tags:
+      - private-images
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrivateImageRequestBody'
+      responses:
+        '202':
+          description: The private image and its Checkout Session were created; the capture has not started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePrivateImageResponseBody'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/private-images/{privateImageId}:
+    get:
+      summary: Retrieve a private image
+      description: Returns a private image of this project; any other image, public images included, is reported as not
+        found. Use this endpoint to poll capture progress. When `status` is `failed`, `failure` describes the 
+        outcome.
+      operationId: get-private-image
+      tags:
+      - private-images
+      parameters:
+      - name: privateImageId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a private image
+      description: Renames a private image of this project. Any other image, public images included, is reported as not found.
+      operationId: update-private-image
+      tags:
+      - private-images
+      parameters:
+      - name: privateImageId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePrivateImageRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateImageResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a private image
+      description: "Deletes a private image of this project; any other image, public images included, is reported as not found.\n\n\
+        Deletion is rejected while instances created from the image still exist, as they need it in order to be
+        rebuilt.\n\nAn image whose capture has not finished can be deleted; the capture is aborted. This is the one operation
+        accepted while the `create` operation is in progress.\n\nQuota capacity and storage metering are released only
+        after cleanup is confirmed.\n\n\
+        A resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource is
+        released through its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown
+        cleanup is not proof of release.\n\nWhile subscriptions pay for the private image (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the private image working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
+      operationId: delete-private-image
+      tags:
+      - private-images
+      parameters:
+      - name: privateImageId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+      - $ref: ./openapi.yaml#/components/parameters/CancellationMode
+      responses:
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        '202':
+          description: Deletion was accepted. Without a subscription the image shows the `delete` operation until it is deleted, and `cancellation` is null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletePrivateImageResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    DeletePrivateImageResponseBody:
+      description: The private image as it is when the deletion is accepted, and the Billing cancellation that releases it when
+        subscriptions pay for it.
+      type: object
+      properties:
+        private_image:
+          $ref: '#/components/schemas/PrivateImageResource'
+        cancellation:
+          description: The cancellation Compute created for the private image's subscriptions; null when none pays for it.
+          oneOf:
+          - type: 'null'
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
+      required:
+      - private_image
+      - cancellation
+      additionalProperties: false
+    PrivateImageResource:
+      description: "An image this project captured from one of its instances, used to install instances of
+        this project. Its storage is billed only to this project. Reclaimed for non-payment while instances installed
+        from it remain, it is kept, unusable and no longer charged, and deleted once the last of them is released."
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+        os_family:
+          type: string
+        os_version:
+          type: string
+        architecture:
+          type: string
+        login_username:
+          description: The account this image lets you log in as. The password set at creation belongs to this 
+            account
+          type: string
+          maxLength: 32
+        min_volume_size_gib:
+          description: The boot volume of an instance created from this image cannot be smaller than this
+          type: integer
+          format: int64
+        min_memory_mib:
+          description: The instance type of an instance created from this image must have at least this much 
+            memory
+          type: integer
+          format: int64
+        supports_password_reset:
+          description: False means a new password can only be set by rebuilding an instance created from this
+            image
+          type: boolean
+        status:
+          description: Only available images can install instances. A capture is pending until it finishes and
+            shows the `create` operation while it runs, then becomes available. Failed means no usable image was
+            produced; failure describes the outcome. Error means the image service broke the image or no longer holds
+            it, and nothing can be installed from it.
+          type: string
+          enum:
+          - pending
+          - available
+          - deleted
+          - failed
+          - error
+        failure:
+          description: Details of why the capture failed; non-empty only when `status` is `failed`
+          type:
+          - string
+          - 'null'
+        size_bytes:
+          description: "Storage occupied by the project image, in bytes. Zero until the capture reports its size. It
+            does not change what the image costs."
+          type: integer
+          format: int64
+        billing_position:
+          description: The `position` the image's storage is reported under now, the price Billing gives that position
+            in the region's `private_image_billing` being what it costs. A number from `1`, its place among this
+            project's stored private images in the region counted from the oldest, which moves up whenever an older
+            one is deleted; `legacy` for an image carried over from the previous version, which takes no position and
+            whose storage is never charged. Null while the image is not stored, before its capture finishes and once
+            it is deleted or failed.
+          type:
+          - string
+          - 'null'
+        source_instance_id:
+          description: The instance this image was captured from. The image remains usable after that
+            instance is released
+          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+        created_at:
+          type: string
+          format: date-time
+        operation:
+          description: The operation in progress on this image, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/PrivateImageOperation'
+          - type: 'null'
+          readOnly: true
+        failure_reason:
+          description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
+            not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
+            order was accepted, and the charge for this image is refunded.
+          type:
+          - string
+          - 'null'
+          enum:
+          - order_declined
+          - order_canceled
+          - order_expired
+          - checkout_expired
+          - provisioning_failed
+          - null
+        checkout_session_id:
+          description: The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
+            until its checkout completes. Null when the resource was not bought through one.
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+        order_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The Billing order that bought this resource; null until checkout completes.
+        order_item_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The Billing order item for this resource.
+        subscription_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The subscription for this resource; its presence alone does not imply delivery.
+        release_set:
+          description: The subscription that pays for this private image, with the resource it pays for, so that a
+            cancellation through Billing can name what it releases. Empty when no subscription pays for it, and
+            once it is released.
+          type: array
+          items:
+            $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
+      required:
+      - billing_position
+      - id
+      - region_id
+      - name
+      - os_family
+      - os_version
+      - architecture
+      - login_username
+      - min_volume_size_gib
+      - min_memory_mib
+      - supports_password_reset
+      - status
+      - failure
+      - size_bytes
+      - source_instance_id
+      - created_at
+      - operation
+      - failure_reason
+      - checkout_session_id
+      - order_id
+      - order_item_id
+      - subscription_id
+      - release_set
+      additionalProperties: false
+    PrivateImageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrivateImageResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreatePrivateImageRequestBody:
+      type: object
+      properties:
+        instance_id:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          description: Captured from the boot volume of this instance; data volumes are not included
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        checkout:
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      required:
+      - instance_id
+      - name
+      additionalProperties: false
+      description: "Creation configuration for this resource. Compute project quotas and Billing authorization are checked
+        independently."
+    UpdatePrivateImageRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - name
+      additionalProperties: false
+    CreatePrivateImageResponseBody:
+      type: object
+      description: The new private image, `pending` until its order is accepted, and its Checkout Session.
+      properties:
+        private_image:
+          $ref: '#/components/schemas/PrivateImageResource'
+        checkout_session_id:
+          description: The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it
+            in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - private_image
+      - checkout_session_id
+      - order_id
+      additionalProperties: false
+    PrivateImageOperation:
+      description: An operation still running on this image. It is not a separate resource; once it finishes, the 
+        image's `operation` is null again and the image shows the result.
+      type: object
+      properties:
+        type:
+          description: '`create` is the capture of a private image.'
+          type: string
+          enum:
+          - create
+          - suspend
+          - resume
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false

@@ -1,0 +1,215 @@
+paths:
+  /api/v2/security-groups/{securityGroupId}/rules:
+    get:
+      summary: List security group rules
+      description: The rules of the security group, or with `-` those of every security group of the project.
+      operationId: list-security-group-rules
+      tags:
+      - security-group-rules
+      parameters:
+      - name: securityGroupId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/SecurityGroupIDOrWildcard
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupRuleListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a security group rule
+      description: Refused when the group already has a rule meaning the same thing; `0.0.0.0/0`, `::/0` and an
+        omitted remote prefix all mean every address. Rules cannot be changed; replace one by creating the new rule
+        and deleting the old one.
+      operationId: create-security-group-rule
+      tags:
+      - security-group-rules
+      parameters:
+      - name: securityGroupId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSecurityGroupRuleRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupRule'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/security-groups/{securityGroupId}/rules/{securityGroupRuleId}:
+    parameters:
+    - name: securityGroupId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+    - name: securityGroupRuleId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/SecurityGroupRuleID
+    get:
+      summary: Get a security group rule
+      operationId: get-security-group-rule
+      tags:
+      - security-group-rules
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityGroupRule'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a security group rule
+      operationId: delete-security-group-rule
+      tags:
+      - security-group-rules
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    SecurityGroupRuleDirection:
+      type: string
+      enum:
+      - ingress
+      - egress
+    SecurityGroupRule:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/SecurityGroupRuleID
+        security_group_id:
+          $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+        direction:
+          $ref: '#/components/schemas/SecurityGroupRuleDirection'
+        ip_version:
+          type: integer
+          format: int64
+          enum:
+          - 4
+          - 6
+        protocol:
+          description: Null for every protocol.
+          type:
+          - string
+          - 'null'
+        port_range_min:
+          description: The first port, or the ICMP type when the protocol is ICMP. Null for every port.
+          type:
+          - integer
+          - 'null'
+          format: int64
+        port_range_max:
+          description: The last port, or the ICMP code when the protocol is ICMP. Null for every port.
+          type:
+          - integer
+          - 'null'
+          format: int64
+        remote_cidr:
+          description: Null for every address.
+          type:
+          - string
+          - 'null'
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - security_group_id
+      - direction
+      - ip_version
+      - protocol
+      - port_range_min
+      - port_range_max
+      - remote_cidr
+      - description
+      - created_at
+      additionalProperties: false
+    SecurityGroupRuleListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecurityGroupRule'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateSecurityGroupRuleRequestBody:
+      type: object
+      properties:
+        direction:
+          $ref: '#/components/schemas/SecurityGroupRuleDirection'
+        ip_version:
+          type: integer
+          format: int64
+          enum:
+          - 4
+          - 6
+        protocol:
+          description: For example `tcp`, `udp`, `icmp` or `ipv6-icmp`. Every protocol when omitted.
+          type: string
+          maxLength: 16
+        port_range_min:
+          description: The first port, or the ICMP type (0–255) when the protocol is ICMP. Ports need a protocol, and
+            a port range needs both ends; give the same port twice for one port.
+          type: integer
+          format: int64
+        port_range_max:
+          description: The last port, or the ICMP code (0–255) when the protocol is ICMP.
+          type: integer
+          format: int64
+        remote_cidr:
+          description: A CIDR of the rule's IP version. Every address when omitted.
+          type: string
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 255
+      required:
+      - direction
+      - ip_version
+      additionalProperties: false

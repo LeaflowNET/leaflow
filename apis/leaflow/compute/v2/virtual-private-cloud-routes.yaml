@@ -1,0 +1,192 @@
+paths:
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/routes:
+    get:
+      summary: List routes
+      description: Static routes of the virtual private cloud, or with `-` those of every virtual private cloud of the
+        project, including the routes peerings write, which show `type` peering.
+      operationId: list-virtual-private-cloud-routes
+      tags:
+      - virtual-private-cloud-routes
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIDOrWildcard
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudRouteListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a static route
+      description: 'Three forms that would sever connectivity are refused: a destination of `0.0.0.0/0`, which
+        overrides the default route and takes every elastic IP offline immediately; a destination equal to the CIDR
+        of a subnet, which overrides its directly connected route; and a next hop equal to the gateway of a subnet,
+        which points back at the router itself. A destination overlapping a peering''s route is refused with
+        `VIRTUAL_PRIVATE_CLOUD_ROUTE_OVERLAPS_PEERING`.'
+      operationId: create-virtual-private-cloud-route
+      tags:
+      - virtual-private-cloud-routes
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualPrivateCloudRouteRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudRouteResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/routes/{virtualPrivateCloudRouteId}:
+    parameters:
+    - name: virtualPrivateCloudId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+    - name: virtualPrivateCloudRouteId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudRouteID
+    get:
+      summary: Get a route
+      operationId: get-virtual-private-cloud-route
+      tags:
+      - virtual-private-cloud-routes
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudRouteResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a static route
+      description: A route has no update; replace it by creating the new route and deleting the old one. A peering's
+        route is refused with `VIRTUAL_PRIVATE_CLOUD_ROUTE_HELD_BY_PEERING` and goes away with its peering.
+      operationId: delete-virtual-private-cloud-route
+      tags:
+      - virtual-private-cloud-routes
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    VirtualPrivateCloudRouteType:
+      description: Who put the route there. A `tenant` route is created and deleted by the project; a `peering`
+        route is installed by an active peering and removed with it.
+      type: string
+      enum:
+      - tenant
+      - peering
+    # Not named Route: the generated server declares its own Route type in the same package.
+    VirtualPrivateCloudRouteResource:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudRouteID
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        type:
+          $ref: '#/components/schemas/VirtualPrivateCloudRouteType'
+        destination_cidr:
+          type: string
+        next_hop_address:
+          description: The private address traffic is sent to. Null for a peering route, whose next hop is the
+            platform's side of the peering link.
+          type:
+          - string
+          - 'null'
+        virtual_private_cloud_peering_id:
+          description: The peering that wrote the route, null for a tenant route.
+          anyOf:
+          - $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+          - type: 'null'
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - virtual_private_cloud_id
+      - type
+      - destination_cidr
+      - next_hop_address
+      - virtual_private_cloud_peering_id
+      - description
+      - created_at
+      additionalProperties: false
+    VirtualPrivateCloudRouteListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VirtualPrivateCloudRouteResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateVirtualPrivateCloudRouteRequestBody:
+      type: object
+      properties:
+        destination_cidr:
+          description: Destination CIDR. It cannot be `0.0.0.0/0`, nor the CIDR of a subnet of the virtual private
+            cloud.
+          type: string
+          minLength: 1
+          maxLength: 32
+        next_hop_address:
+          description: Private address of an instance, inside a subnet of the virtual private cloud.
+          type: string
+          minLength: 1
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 255
+      required:
+      - destination_cidr
+      - next_hop_address
+      additionalProperties: false

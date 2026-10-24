@@ -1,0 +1,655 @@
+openapi: 3.2.1
+info:
+  title: Leaflow Compute API
+  version: 2.0.0
+  description: |-
+    Leaflow Compute user API for managing instances, volumes, snapshots, volume backups, public and private images, virtual private clouds, subnets, routes, security groups, network interfaces and elastic IPs.
+
+    ## Authentication
+
+    Every request carries a scoped token; see the `scopedTokenAuth` security scheme. The catalog reads, which list and retrieve regions, availability zones, instance types, volume types, public images and elastic IP lines, also answer without a token, so a visitor can configure a purchase and price it with Billing before signing in. A token given to them is still verified, and an invalid one is refused.
+
+    ## Conventions
+
+    - **Purchases.** A purchase that creates resources returns them together with the `checkout_session_id` of its Billing Checkout Session and, once checkout completes, its `order_id`. They are readable at once and start as `pending`: checkout may not be complete, the order has not been accepted, nothing exists in the cloud, no inventory such as an address is held, and fields known only after allocation, such as addresses, are null. Once Billing accepts the order, the resource is created: it stays `pending` and shows the `create` operation, then reaches its usual status, such as `running` or `available`. When the Checkout Session expires, the order is declined, canceled or expires, or creation fails, the resource ends `failed` and `failure_reason` states why; the charge for a resource that failed after acceptance is refunded. A purchased change, such as a resize requested with `instance_type_id`, `size_gib` or `bandwidth_mbps` on the resource, returns the resource unchanged with the Checkout Session for the change, and applies once its order is accepted.
+    - **Commercial terms.** Compute catalogs describe technical specifications and, for each order line a purchase makes, how it is sold in Billing (a `BillingComponent`: its Plan, dimensions, what its quantity counts and what its meters read); prices, amounts and currency belong to Billing. A purchase chooses its terms with `billing`, and Billing selects the matching price. Read prices and their rates with Billing's `search-prices` from those components, quote a proposed purchase with `get-quote`, and a change of a resource by its `subscription_id`; Compute has no quote or price proxy endpoint and returns no amounts.
+    - **Checkout.** `checkout` is passed to Billing unchanged. Omit it for automatic checkout, which completes checkout within the request and pays from eligible credit grants and balance; insufficient funds refuse the request with HTTP 422 `BILLING_INSUFFICIENT_FUNDS`, and nothing is created. With `checkout.mode` set to `deferred`, the resources are returned `pending` with an open Checkout Session and no order, even for a zero total; nothing is created until the customer completes checkout in Billing, where a promotion code can be applied, and the order is paid. Do not submit the purchase again after paying; after an uncertain response, look the Checkout Session up in Billing first.
+    - **Quotas.** A creation, purchase or resize that adds to what a project holds in a region is checked against the project's quota there before anything is ordered or created, and is refused with HTTP 409 `COMPUTE_PROJECT_QUOTA_EXCEEDED`, whose `meta` names the `resource`, its `limit`, the amount `used` and the amount `requested`. An instance purchase counts the volumes, the new primary network interface and the new elastic IP bought with each instance. Read the limits with `list-quotas`; a limit no operator set is the platform default.
+    - **Projects.** Resource ownership and project identifiers refer to IAM platform projects, not OpenStack tenants. Instances, images and networks share one infrastructure OpenStack project; the platform project remains the authorization and ownership boundary.
+    - **Custom methods.** An action that is not one of the standard methods (list, get, create, update, delete) is a custom method, `POST` on the resource's path followed by `:` and the verb, as in `POST /api/v2/instances/{id}:reboot` (AIP-136). A state is changed by its custom method, never by writing the state: `:start` and `:stop`, `:rescue` and `:unrescue`, `:associate` and `:disassociate`.
+    - **Operations.** Requests such as `:start`, attaching or deleting return HTTP 202 with the resource as it is when the request is accepted. While an operation runs, the resource's `operation` field names it; the field is null once the operation has finished, and the resource then shows the result. A resource with an operation in progress refuses another operation with HTTP 409 `COMPUTE_RESOURCE_BUSY`; an operation involving two resources, such as attaching a volume, is refused when either has one. A purchased change, such as a resize, is an operation from the moment its Checkout Session is created until the change is applied, the session expires or its order is canceled. Renaming and replacing labels or notes are not operations and are accepted at any time. **Updating.** A `PATCH` carries only mutable fields, all optional and at least one given, and answers 200 when only descriptive fields changed and 202 when an operation started. An operational field (`instance_type_id`, `size_gib`, `bandwidth_mbps`) cannot be combined with any other field in the same request: it is refused with 422 `UPDATE_FIELDS_COMBINED`, because a rename that committed beside a change that was then refused would leave the request half applied.
+    - **Billing relationships.** A purchased resource records its `checkout_session_id` and, once checkout completes, its `order_id`, `order_item_id` and `subscription_id`. Its `access_state` is `pending` until the order is accepted and delivery settles it, then `enabled`; a subscription that lapses suspends or reclaims the resource it pays for. Deleting a resource that subscriptions pay for cancels the subscriptions of its `release_set` in Billing, and the deletion answers with that cancellation.
+    - **Availability zones.** A volume and an instance must reside in the same availability zone to be attached. An instance type and a volume type each belong to one availability zone, as on GCP, so a purchase names the type and the type names the zone; the volumes bought with an instance have to be of types of the instance type's zone.
+    - **IPv6 is routed, not translated.** A virtual private cloud with IPv6 holds a /56 and each of its subnets a /64 of it, as on Alibaba Cloud, Tencent Cloud and Azure; IPv6 and its security groups require no EIP or NAT gateway. EIP and NATGateway are IPv4 products; IPv6 EIP, NAT66 and IPv6 port forwarding are not supported.
+    - **Elastic IP release.** A released address returns to available inventory as soon as its cleanup is confirmed, with no cooldown period. Removing or replacing an elastic IP's association keeps the address held by the project and does not release it.
+    - **Passwords are returned once.** A password generated by the platform during creation or rebuild appears only in that response. Store it immediately.
+
+    ## Resource identifiers
+
+    Compute resource IDs use the fixed TypeID prefix declared in their schema. UUID text is not accepted for these resource IDs. Project, order, subscription and Billing Plan identifiers remain UUIDs. Historical operation-log subject IDs are audit facts and are not rewritten.
+
+    ## Error meta
+
+    Resource identifiers in an error's `meta` (`resource_id`, `volume_id`, `network_interface_id` and the like) are TypeIDs, in the same form as the identifiers in resources. `meta.resource_type` is the resource's name as written in paths, with underscores: `instance`, `volume`, `elastic_ip`, `network_interface`, `virtual_private_cloud`, `private_image`, `volume_backup`, and so on.
+
+servers:
+- url: https://compute.leaflow.cloud
+security:
+- scopedTokenAuth: []
+tags:
+- name: availability-zones
+  description: Availability zones, the placement unit of volumes and instances.
+- name: elastic-ip-lines
+  description: Public network products; prices and checkout belong to Billing.
+- name: elastic-ips
+  description: Elastic IP resources, bandwidth and associations.
+- name: instance-families
+  description: Instance families.
+- name: instance-types
+  description: Instance specifications and their Billing Plan references.
+- name: instances
+  description: Instances, their power state, size and attachments.
+- name: launch-templates
+  description: Launch templates, reusable descriptions of how to create instances.
+- name: network-interfaces
+  description: Network interfaces, addresses and attachments.
+- name: operation-logs
+  description: Historical records of Compute operations.
+- name: private-images
+  description: Images this project captured from its own instances, and their billed storage.
+- name: public-images
+  description: Platform images offered to every project.
+- name: quotas
+  description: Effective per-project resource and capacity limits.
+- name: regions
+  description: Compute regions.
+- name: security-group-rules
+  description: Security group rules.
+- name: security-groups
+  description: Security groups resources and operations.
+- name: virtual-private-cloud-peerings
+  description: Peerings resources and operations.
+- name: virtual-private-cloud-routes
+  description: Routes resources and operations.
+- name: virtual-private-cloud-subnets
+  description: Subnets resources and operations.
+- name: virtual-private-clouds
+  description: Virtual private clouds and regional connectivity.
+- name: volume-backups
+  description: Independent copies of volumes that outlive their source volume and restore into another availability zone.
+- name: volume-snapshots
+  description: Snapshots resources and operations.
+- name: volume-types
+  description: Volume types resources and operations.
+- name: volumes
+  description: Volumes resources and operations.
+paths:
+  /api/v2/availability-zones:
+    $ref: ./availability-zones.yaml#/paths/~1api~1v2~1availability-zones
+  /api/v2/availability-zones/{availabilityZoneId}:
+    $ref: ./availability-zones.yaml#/paths/~1api~1v2~1availability-zones~1{availabilityZoneId}
+  /api/v2/elastic-ip-lines:
+    $ref: ./elastic-ip-lines.yaml#/paths/~1api~1v2~1elastic-ip-lines
+  /api/v2/elastic-ip-lines/{elasticIpLineId}:
+    $ref: ./elastic-ip-lines.yaml#/paths/~1api~1v2~1elastic-ip-lines~1{elasticIpLineId}
+  /api/v2/elastic-ips:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips
+  /api/v2/elastic-ips/{elasticIpId}:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}
+  /api/v2/elastic-ips/{elasticIpId}/traffic-usage:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}~1traffic-usage
+  /api/v2/elastic-ips/{elasticIpId}/association:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}~1association
+  /api/v2/elastic-ips/{elasticIpId}:associate:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}:associate
+  /api/v2/elastic-ips/{elasticIpId}:disassociate:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}:disassociate
+  /api/v2/instance-families:
+    $ref: ./instance-families.yaml#/paths/~1api~1v2~1instance-families
+  /api/v2/instance-families/{instanceFamilyId}:
+    $ref: ./instance-families.yaml#/paths/~1api~1v2~1instance-families~1{instanceFamilyId}
+  /api/v2/instance-types:
+    $ref: ./instance-types.yaml#/paths/~1api~1v2~1instance-types
+  /api/v2/instance-types/{instanceTypeId}:
+    $ref: ./instance-types.yaml#/paths/~1api~1v2~1instance-types~1{instanceTypeId}
+  /api/v2/instances:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances
+  /api/v2/instances/{instanceId}:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}
+  /api/v2/instances/{instanceId}:start:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:start
+  /api/v2/instances/{instanceId}:stop:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:stop
+  /api/v2/instances/{instanceId}:runCommand:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:runCommand
+  /api/v2/instances/{instanceId}/console:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}~1console
+  /api/v2/instances/{instanceId}:resetPassword:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:resetPassword
+  /api/v2/instances/{instanceId}:reboot:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:reboot
+  /api/v2/instances/{instanceId}:rebuild:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:rebuild
+  /api/v2/instances/{instanceId}/volumes:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}~1volumes
+  /api/v2/instances/{instanceId}/volumes/{volumeId}:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}~1volumes~1{volumeId}
+  /api/v2/instances/{instanceId}/network-interfaces:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}~1network-interfaces
+  /api/v2/instances/{instanceId}/network-interfaces/{networkInterfaceId}:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}~1network-interfaces~1{networkInterfaceId}
+  /api/v2/instances/{instanceId}:rescue:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:rescue
+  /api/v2/instances/{instanceId}:unrescue:
+    $ref: ./instances.yaml#/paths/~1api~1v2~1instances~1{instanceId}:unrescue
+  /api/v2/launch-templates:
+    $ref: ./launch-templates.yaml#/paths/~1api~1v2~1launch-templates
+  /api/v2/launch-templates/{launchTemplateId}:
+    $ref: ./launch-templates.yaml#/paths/~1api~1v2~1launch-templates~1{launchTemplateId}
+  /api/v2/launch-templates/{launchTemplateId}/versions:
+    $ref: ./launch-templates.yaml#/paths/~1api~1v2~1launch-templates~1{launchTemplateId}~1versions
+  /api/v2/launch-templates/{launchTemplateId}/versions/{versionNumber}:
+    $ref: ./launch-templates.yaml#/paths/~1api~1v2~1launch-templates~1{launchTemplateId}~1versions~1{versionNumber}
+  /api/v2/network-interfaces:
+    $ref: ./network-interfaces.yaml#/paths/~1api~1v2~1network-interfaces
+  /api/v2/network-interfaces/{networkInterfaceId}:
+    $ref: ./network-interfaces.yaml#/paths/~1api~1v2~1network-interfaces~1{networkInterfaceId}
+  /api/v2/network-interfaces/{networkInterfaceId}/addresses:
+    $ref: ./network-interfaces.yaml#/paths/~1api~1v2~1network-interfaces~1{networkInterfaceId}~1addresses
+  /api/v2/network-interfaces/{networkInterfaceId}/addresses/{addressId}:
+    $ref: ./network-interfaces.yaml#/paths/~1api~1v2~1network-interfaces~1{networkInterfaceId}~1addresses~1{addressId}
+  /api/v2/operation-logs:
+    $ref: ./operation-logs.yaml#/paths/~1api~1v2~1operation-logs
+  /api/v2/operation-logs/{operationLogId}:
+    $ref: ./operation-logs.yaml#/paths/~1api~1v2~1operation-logs~1{operationLogId}
+  /api/v2/private-images:
+    $ref: ./private-images.yaml#/paths/~1api~1v2~1private-images
+  /api/v2/private-images/{privateImageId}:
+    $ref: ./private-images.yaml#/paths/~1api~1v2~1private-images~1{privateImageId}
+  /api/v2/public-images:
+    $ref: ./public-images.yaml#/paths/~1api~1v2~1public-images
+  /api/v2/public-images/{publicImageId}:
+    $ref: ./public-images.yaml#/paths/~1api~1v2~1public-images~1{publicImageId}
+  /api/v2/regions/{regionId}/quotas:
+    $ref: ./quotas.yaml#/paths/~1api~1v2~1regions~1{regionId}~1quotas
+  /api/v2/regions/{regionId}/quotas/{resource}:
+    $ref: ./quotas.yaml#/paths/~1api~1v2~1regions~1{regionId}~1quotas~1{resource}
+  /api/v2/regions:
+    $ref: ./regions.yaml#/paths/~1api~1v2~1regions
+  /api/v2/regions/{regionId}:
+    $ref: ./regions.yaml#/paths/~1api~1v2~1regions~1{regionId}
+  /api/v2/security-groups/{securityGroupId}/rules:
+    $ref: ./security-group-rules.yaml#/paths/~1api~1v2~1security-groups~1{securityGroupId}~1rules
+  /api/v2/security-groups/{securityGroupId}/rules/{securityGroupRuleId}:
+    $ref: ./security-group-rules.yaml#/paths/~1api~1v2~1security-groups~1{securityGroupId}~1rules~1{securityGroupRuleId}
+  /api/v2/security-groups:
+    $ref: ./security-groups.yaml#/paths/~1api~1v2~1security-groups
+  /api/v2/security-groups/{securityGroupId}:
+    $ref: ./security-groups.yaml#/paths/~1api~1v2~1security-groups~1{securityGroupId}
+  /api/v2/virtual-private-cloud-peerings:
+    $ref: ./virtual-private-cloud-peerings.yaml#/paths/~1api~1v2~1virtual-private-cloud-peerings
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:
+    $ref: ./virtual-private-cloud-peerings.yaml#/paths/~1api~1v2~1virtual-private-cloud-peerings~1{virtualPrivateCloudPeeringId}
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:accept:
+    $ref: ./virtual-private-cloud-peerings.yaml#/paths/~1api~1v2~1virtual-private-cloud-peerings~1{virtualPrivateCloudPeeringId}:accept
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:reject:
+    $ref: ./virtual-private-cloud-peerings.yaml#/paths/~1api~1v2~1virtual-private-cloud-peerings~1{virtualPrivateCloudPeeringId}:reject
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/routes:
+    $ref: ./virtual-private-cloud-routes.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1routes
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/routes/{virtualPrivateCloudRouteId}:
+    $ref: ./virtual-private-cloud-routes.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1routes~1{virtualPrivateCloudRouteId}
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/subnets:
+    $ref: ./virtual-private-cloud-subnets.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1subnets
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/subnets/{subnetId}:
+    $ref: ./virtual-private-cloud-subnets.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1subnets~1{subnetId}
+  /api/v2/virtual-private-clouds:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:enableIpv6:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:enableIpv6
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disableIpv6:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:disableIpv6
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/free-subnet-cidr:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1free-subnet-cidr
+  /api/v2/volume-backups:
+    $ref: ./volume-backups.yaml#/paths/~1api~1v2~1volume-backups
+  /api/v2/volume-backups/{volumeBackupId}:
+    $ref: ./volume-backups.yaml#/paths/~1api~1v2~1volume-backups~1{volumeBackupId}
+  /api/v2/volume-snapshots:
+    $ref: ./volume-snapshots.yaml#/paths/~1api~1v2~1volume-snapshots
+  /api/v2/volume-snapshots/{volumeSnapshotId}:
+    $ref: ./volume-snapshots.yaml#/paths/~1api~1v2~1volume-snapshots~1{volumeSnapshotId}
+  /api/v2/volume-types:
+    $ref: ./volume-types.yaml#/paths/~1api~1v2~1volume-types
+  /api/v2/volume-types/{volumeTypeId}:
+    $ref: ./volume-types.yaml#/paths/~1api~1v2~1volume-types~1{volumeTypeId}
+  /api/v2/volumes:
+    $ref: ./volumes.yaml#/paths/~1api~1v2~1volumes
+  /api/v2/volumes/{volumeId}:
+    $ref: ./volumes.yaml#/paths/~1api~1v2~1volumes~1{volumeId}
+  /api/v2/volumes/{volumeId}:revert:
+    $ref: ./volumes.yaml#/paths/~1api~1v2~1volumes~1{volumeId}:revert
+components:
+  securitySchemes:
+    scopedTokenAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  parameters:
+    CancellationMode:
+      name: cancellation_mode
+      in: query
+      description: |-
+        When the subscriptions that pay for what is deleted end. `immediate` cancels them now and refunds a licensed one under its terms; `period_end` cancels them at the end of their paid period and keeps what is deleted working until then. Omitted, they are canceled now where the terms of every one of them allow it, and otherwise all at the end of the paid period, since one cancellation releases the whole set at one instant.
+
+        Billing alone judges the mode against the terms each subscription was bought with. It refuses with 422 `BILLING_CANCELLATION_MODE_FIXED` a mode those terms do not allow: a pay-as-you-go subscription ends only now, and a prepaid one whose terms allow only the end of its period only then. It refuses `period_end` with 409 `BILLING_CANCELLATION_SCHEDULES_DIFFER` when the paid periods end at different times. Ignored when nothing is subscribed, and when a cancellation is already open: deleting again answers with that one as it is.
+      schema:
+        $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
+  schemas:
+    AvailabilityZoneResource:
+      $ref: ./availability-zones.yaml#/components/schemas/AvailabilityZoneResource
+    AvailabilityZoneListResponseBody:
+      $ref: ./availability-zones.yaml#/components/schemas/AvailabilityZoneListResponseBody
+    BillingPeriod:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingPeriod
+    BillingChoice:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
+    TerminationPolicy:
+      $ref: ./billing-terms.yaml#/components/schemas/TerminationPolicy
+    CheckoutOptions:
+      $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+    BillingComponent:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+    BillingQuantity:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingQuantity
+    BillingLineQuantity:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingLineQuantity
+    BillingMeter:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingMeter
+    BillingCancellation:
+      $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
+    ElasticIPLine:
+      $ref: ./elastic-ip-lines.yaml#/components/schemas/ElasticIPLine
+    ElasticIPLineListResponseBody:
+      $ref: ./elastic-ip-lines.yaml#/components/schemas/ElasticIPLineListResponseBody
+    DeleteElasticIPResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/DeleteElasticIPResponseBody
+    InternetChargeType:
+      $ref: ./elastic-ips.yaml#/components/schemas/InternetChargeType
+    IPv4HostAddress:
+      $ref: ./elastic-ips.yaml#/components/schemas/IPv4HostAddress
+    ElasticIP:
+      $ref: ./elastic-ips.yaml#/components/schemas/ElasticIP
+    TrafficUsage:
+      $ref: ./elastic-ips.yaml#/components/schemas/TrafficUsage
+    TrafficUsageListResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/TrafficUsageListResponseBody
+    ElasticIPListResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/ElasticIPListResponseBody
+    CreateElasticIPRequestBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/CreateElasticIPRequestBody
+    UpdateElasticIPRequestBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/UpdateElasticIPRequestBody
+    AssociateElasticIPRequestBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/AssociateElasticIPRequestBody
+    InstanceAssociationTarget:
+      $ref: ./elastic-ips.yaml#/components/schemas/InstanceAssociationTarget
+    NetworkInterfaceAddressAssociationTarget:
+      $ref: ./elastic-ips.yaml#/components/schemas/NetworkInterfaceAddressAssociationTarget
+    CreateElasticIPResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/CreateElasticIPResponseBody
+    UpdateElasticIPResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/UpdateElasticIPResponseBody
+    ElasticIPAssociation:
+      $ref: ./elastic-ips.yaml#/components/schemas/ElasticIPAssociation
+    ElasticIPOperation:
+      $ref: ./elastic-ips.yaml#/components/schemas/ElasticIPOperation
+    InstanceID:
+      $ref: ./identifiers.yaml#/components/schemas/InstanceID
+    NetworkInterfaceID:
+      $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+    LaunchTemplateID:
+      $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+    VirtualPrivateCloudID:
+      $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+    VirtualPrivateCloudIDOrWildcard:
+      $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIDOrWildcard
+    ElasticIPID:
+      $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+    ElasticIPLineID:
+      $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+    RegionID:
+      $ref: ./identifiers.yaml#/components/schemas/RegionID
+    InstanceTypeID:
+      $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+    InstanceFamilyID:
+      $ref: ./identifiers.yaml#/components/schemas/InstanceFamilyID
+    AvailabilityZoneID:
+      $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+    VolumeID:
+      $ref: ./identifiers.yaml#/components/schemas/VolumeID
+    VolumeBackupID:
+      $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+    VolumeTypeID:
+      $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+    VolumeSnapshotID:
+      $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+    InstanceVolumeID:
+      $ref: ./identifiers.yaml#/components/schemas/InstanceVolumeID
+    NetworkInterfaceAddressID:
+      $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+    ElasticIPAssociationID:
+      $ref: ./identifiers.yaml#/components/schemas/ElasticIPAssociationID
+    ImageID:
+      $ref: ./identifiers.yaml#/components/schemas/ImageID
+    SecurityGroupID:
+      $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+    SecurityGroupIDOrWildcard:
+      $ref: ./identifiers.yaml#/components/schemas/SecurityGroupIDOrWildcard
+    SubnetID:
+      $ref: ./identifiers.yaml#/components/schemas/SubnetID
+    InstanceNetworkInterfaceID:
+      $ref: ./identifiers.yaml#/components/schemas/InstanceNetworkInterfaceID
+    OperationLogID:
+      $ref: ./identifiers.yaml#/components/schemas/OperationLogID
+    VirtualPrivateCloudPeeringID:
+      $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+    VirtualPrivateCloudRouteID:
+      $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudRouteID
+    SecurityGroupRuleID:
+      $ref: ./identifiers.yaml#/components/schemas/SecurityGroupRuleID
+    InstanceFamily:
+      $ref: ./instance-families.yaml#/components/schemas/InstanceFamily
+    InstanceFamilyCategory:
+      $ref: ./instance-families.yaml#/components/schemas/InstanceFamilyCategory
+    InstanceFamilyListResponseBody:
+      $ref: ./instance-families.yaml#/components/schemas/InstanceFamilyListResponseBody
+    InstanceType:
+      $ref: ./instance-types.yaml#/components/schemas/InstanceType
+    InstanceTypeListResponseBody:
+      $ref: ./instance-types.yaml#/components/schemas/InstanceTypeListResponseBody
+    DeleteInstanceResponseBody:
+      $ref: ./instances.yaml#/components/schemas/DeleteInstanceResponseBody
+    Instance:
+      $ref: ./instances.yaml#/components/schemas/Instance
+    InstanceListResponseBody:
+      $ref: ./instances.yaml#/components/schemas/InstanceListResponseBody
+    CreateInstanceRequestBody:
+      $ref: ./instances.yaml#/components/schemas/CreateInstanceRequestBody
+    UpdateInstanceRequestBody:
+      $ref: ./instances.yaml#/components/schemas/UpdateInstanceRequestBody
+    RebootInstanceRequestBody:
+      $ref: ./instances.yaml#/components/schemas/RebootInstanceRequestBody
+    RunInstanceCommandRequestBody:
+      $ref: ./instances.yaml#/components/schemas/RunInstanceCommandRequestBody
+    RunInstanceCommandResponseBody:
+      $ref: ./instances.yaml#/components/schemas/RunInstanceCommandResponseBody
+    ConsoleResponseBody:
+      $ref: ./instances.yaml#/components/schemas/ConsoleResponseBody
+    ResetInstancePasswordResponseBody:
+      $ref: ./instances.yaml#/components/schemas/ResetInstancePasswordResponseBody
+    RebuildInstanceRequestBody:
+      $ref: ./instances.yaml#/components/schemas/RebuildInstanceRequestBody
+    RebuildInstanceResponseBody:
+      $ref: ./instances.yaml#/components/schemas/RebuildInstanceResponseBody
+    PasswordChoice:
+      $ref: ./instances.yaml#/components/schemas/PasswordChoice
+    GeneratedPassword:
+      $ref: ./instances.yaml#/components/schemas/GeneratedPassword
+    SuppliedPassword:
+      $ref: ./instances.yaml#/components/schemas/SuppliedPassword
+    NewCompute:
+      $ref: ./instances.yaml#/components/schemas/NewCompute
+    LaunchTemplateReference:
+      $ref: ./instances.yaml#/components/schemas/LaunchTemplateReference
+    BootVolume:
+      $ref: ./instances.yaml#/components/schemas/BootVolume
+    ExistingBootVolume:
+      $ref: ./instances.yaml#/components/schemas/ExistingBootVolume
+    UpdateInstanceResponseBody:
+      $ref: ./instances.yaml#/components/schemas/UpdateInstanceResponseBody
+    NewBootVolume:
+      $ref: ./instances.yaml#/components/schemas/NewBootVolume
+    NewDataVolume:
+      $ref: ./instances.yaml#/components/schemas/NewDataVolume
+    PrimaryNetworkInterface:
+      $ref: ./instances.yaml#/components/schemas/PrimaryNetworkInterface
+    NewPrimaryNetworkInterface:
+      $ref: ./instances.yaml#/components/schemas/NewPrimaryNetworkInterface
+    ExistingPrimaryNetworkInterface:
+      $ref: ./instances.yaml#/components/schemas/ExistingPrimaryNetworkInterface
+    InstanceElasticIP:
+      $ref: ./instances.yaml#/components/schemas/InstanceElasticIP
+    NewElasticIP:
+      $ref: ./instances.yaml#/components/schemas/NewElasticIP
+    ExistingElasticIP:
+      $ref: ./instances.yaml#/components/schemas/ExistingElasticIP
+    InstanceRestriction:
+      $ref: ./instances.yaml#/components/schemas/InstanceRestriction
+    CreateInstanceResponseBody:
+      $ref: ./instances.yaml#/components/schemas/CreateInstanceResponseBody
+    InstanceOperation:
+      $ref: ./instances.yaml#/components/schemas/InstanceOperation
+    RescueInstanceRequestBody:
+      $ref: ./instances.yaml#/components/schemas/RescueInstanceRequestBody
+    RescueInstanceResponseBody:
+      $ref: ./instances.yaml#/components/schemas/RescueInstanceResponseBody
+    LaunchTemplate:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplate
+    LaunchTemplateListResponseBody:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateListResponseBody
+    CreateLaunchTemplateRequestBody:
+      $ref: ./launch-templates.yaml#/components/schemas/CreateLaunchTemplateRequestBody
+    CreateLaunchTemplateResponseBody:
+      $ref: ./launch-templates.yaml#/components/schemas/CreateLaunchTemplateResponseBody
+    UpdateLaunchTemplateRequestBody:
+      $ref: ./launch-templates.yaml#/components/schemas/UpdateLaunchTemplateRequestBody
+    NewLaunchTemplateVersion:
+      $ref: ./launch-templates.yaml#/components/schemas/NewLaunchTemplateVersion
+    LaunchTemplateVersion:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateVersion
+    LaunchTemplateVersionListResponseBody:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateVersionListResponseBody
+    LaunchTemplateBootVolume:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateBootVolume
+    LaunchTemplateDataVolume:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateDataVolume
+    LaunchTemplateNetworkInterface:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateNetworkInterface
+    LaunchTemplateElasticIP:
+      $ref: ./launch-templates.yaml#/components/schemas/LaunchTemplateElasticIP
+    NetworkInterface:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterface
+    NetworkInterfaceListResponseBody:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterfaceListResponseBody
+    AttachNetworkInterfaceRequestBody:
+      $ref: ./network-interfaces.yaml#/components/schemas/AttachNetworkInterfaceRequestBody
+    CreateNetworkInterfaceRequestBody:
+      $ref: ./network-interfaces.yaml#/components/schemas/CreateNetworkInterfaceRequestBody
+    UpdateNetworkInterfaceRequestBody:
+      $ref: ./network-interfaces.yaml#/components/schemas/UpdateNetworkInterfaceRequestBody
+    CreateNetworkInterfaceAddressRequestBody:
+      $ref: ./network-interfaces.yaml#/components/schemas/CreateNetworkInterfaceAddressRequestBody
+    NetworkInterfaceAddress:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterfaceAddress
+    NetworkInterfaceAttachment:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterfaceAttachment
+    NetworkInterfaceAttachmentList:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterfaceAttachmentList
+    NetworkInterfaceOperation:
+      $ref: ./network-interfaces.yaml#/components/schemas/NetworkInterfaceOperation
+    OperationLogResource:
+      $ref: ./operation-logs.yaml#/components/schemas/OperationLogResource
+    OperationLogListResponseBody:
+      $ref: ./operation-logs.yaml#/components/schemas/OperationLogListResponseBody
+    DeletePrivateImageResponseBody:
+      $ref: ./private-images.yaml#/components/schemas/DeletePrivateImageResponseBody
+    PrivateImageResource:
+      $ref: ./private-images.yaml#/components/schemas/PrivateImageResource
+    PrivateImageListResponseBody:
+      $ref: ./private-images.yaml#/components/schemas/PrivateImageListResponseBody
+    CreatePrivateImageRequestBody:
+      $ref: ./private-images.yaml#/components/schemas/CreatePrivateImageRequestBody
+    UpdatePrivateImageRequestBody:
+      $ref: ./private-images.yaml#/components/schemas/UpdatePrivateImageRequestBody
+    CreatePrivateImageResponseBody:
+      $ref: ./private-images.yaml#/components/schemas/CreatePrivateImageResponseBody
+    PrivateImageOperation:
+      $ref: ./private-images.yaml#/components/schemas/PrivateImageOperation
+    PublicImageResource:
+      $ref: ./public-images.yaml#/components/schemas/PublicImageResource
+    PublicImageListResponseBody:
+      $ref: ./public-images.yaml#/components/schemas/PublicImageListResponseBody
+    QuotaResourceType:
+      $ref: ./quotas.yaml#/components/schemas/QuotaResourceType
+    QuotaSource:
+      $ref: ./quotas.yaml#/components/schemas/QuotaSource
+    ProjectQuota:
+      $ref: ./quotas.yaml#/components/schemas/ProjectQuota
+    ProjectQuotaListResponseBody:
+      $ref: ./quotas.yaml#/components/schemas/ProjectQuotaListResponseBody
+    RegionResource:
+      $ref: ./regions.yaml#/components/schemas/RegionResource
+    RegionListResponseBody:
+      $ref: ./regions.yaml#/components/schemas/RegionListResponseBody
+    ReleaseSetItem:
+      $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
+    ReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/ReleaseResource
+    InstanceReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/InstanceReleaseResource
+    VolumeReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/VolumeReleaseResource
+    ElasticIPReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/ElasticIPReleaseResource
+    VolumeSnapshotReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/VolumeSnapshotReleaseResource
+    VolumeBackupReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/VolumeBackupReleaseResource
+    PrivateImageReleaseResource:
+      $ref: ./release-sets.yaml#/components/schemas/PrivateImageReleaseResource
+    SecurityGroupRuleDirection:
+      $ref: ./security-group-rules.yaml#/components/schemas/SecurityGroupRuleDirection
+    SecurityGroupRule:
+      $ref: ./security-group-rules.yaml#/components/schemas/SecurityGroupRule
+    SecurityGroupRuleListResponseBody:
+      $ref: ./security-group-rules.yaml#/components/schemas/SecurityGroupRuleListResponseBody
+    CreateSecurityGroupRuleRequestBody:
+      $ref: ./security-group-rules.yaml#/components/schemas/CreateSecurityGroupRuleRequestBody
+    SecurityGroup:
+      $ref: ./security-groups.yaml#/components/schemas/SecurityGroup
+    SecurityGroupListResponseBody:
+      $ref: ./security-groups.yaml#/components/schemas/SecurityGroupListResponseBody
+    CreateSecurityGroupRequestBody:
+      $ref: ./security-groups.yaml#/components/schemas/CreateSecurityGroupRequestBody
+    UpdateSecurityGroupRequestBody:
+      $ref: ./security-groups.yaml#/components/schemas/UpdateSecurityGroupRequestBody
+    VirtualPrivateCloudPeeringResource:
+      $ref: ./virtual-private-cloud-peerings.yaml#/components/schemas/VirtualPrivateCloudPeeringResource
+    VirtualPrivateCloudPeeringListResponseBody:
+      $ref: ./virtual-private-cloud-peerings.yaml#/components/schemas/VirtualPrivateCloudPeeringListResponseBody
+    CreateVirtualPrivateCloudPeeringRequestBody:
+      $ref: ./virtual-private-cloud-peerings.yaml#/components/schemas/CreateVirtualPrivateCloudPeeringRequestBody
+    VirtualPrivateCloudPeeringOperation:
+      $ref: ./virtual-private-cloud-peerings.yaml#/components/schemas/VirtualPrivateCloudPeeringOperation
+    VirtualPrivateCloudRouteType:
+      $ref: ./virtual-private-cloud-routes.yaml#/components/schemas/VirtualPrivateCloudRouteType
+    VirtualPrivateCloudRouteResource:
+      $ref: ./virtual-private-cloud-routes.yaml#/components/schemas/VirtualPrivateCloudRouteResource
+    VirtualPrivateCloudRouteListResponseBody:
+      $ref: ./virtual-private-cloud-routes.yaml#/components/schemas/VirtualPrivateCloudRouteListResponseBody
+    CreateVirtualPrivateCloudRouteRequestBody:
+      $ref: ./virtual-private-cloud-routes.yaml#/components/schemas/CreateVirtualPrivateCloudRouteRequestBody
+    VirtualPrivateCloudSubnet:
+      $ref: ./virtual-private-cloud-subnets.yaml#/components/schemas/VirtualPrivateCloudSubnet
+    VirtualPrivateCloudSubnetListResponseBody:
+      $ref: ./virtual-private-cloud-subnets.yaml#/components/schemas/VirtualPrivateCloudSubnetListResponseBody
+    CreateVirtualPrivateCloudSubnetRequestBody:
+      $ref: ./virtual-private-cloud-subnets.yaml#/components/schemas/CreateVirtualPrivateCloudSubnetRequestBody
+    UpdateVirtualPrivateCloudSubnetRequestBody:
+      $ref: ./virtual-private-cloud-subnets.yaml#/components/schemas/UpdateVirtualPrivateCloudSubnetRequestBody
+    VirtualPrivateCloud:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloud
+    VirtualPrivateCloudOperation:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloudOperation
+    VirtualPrivateCloudListResponseBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloudListResponseBody
+    CreateVirtualPrivateCloudRequestBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/CreateVirtualPrivateCloudRequestBody
+    UpdateVirtualPrivateCloudRequestBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/UpdateVirtualPrivateCloudRequestBody
+    FreeSubnetCidr:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/FreeSubnetCidr
+    DeleteVolumeBackupResponseBody:
+      $ref: ./volume-backups.yaml#/components/schemas/DeleteVolumeBackupResponseBody
+    VolumeBackupResource:
+      $ref: ./volume-backups.yaml#/components/schemas/VolumeBackupResource
+    VolumeBackupListResponseBody:
+      $ref: ./volume-backups.yaml#/components/schemas/VolumeBackupListResponseBody
+    CreateVolumeBackupRequestBody:
+      $ref: ./volume-backups.yaml#/components/schemas/CreateVolumeBackupRequestBody
+    UpdateVolumeBackupRequestBody:
+      $ref: ./volume-backups.yaml#/components/schemas/UpdateVolumeBackupRequestBody
+    VolumeBackupOperation:
+      $ref: ./volume-backups.yaml#/components/schemas/VolumeBackupOperation
+    CreateVolumeBackupResponseBody:
+      $ref: ./volume-backups.yaml#/components/schemas/CreateVolumeBackupResponseBody
+    DeleteVolumeSnapshotResponseBody:
+      $ref: ./volume-snapshots.yaml#/components/schemas/DeleteVolumeSnapshotResponseBody
+    VolumeSnapshotResource:
+      $ref: ./volume-snapshots.yaml#/components/schemas/VolumeSnapshotResource
+    VolumeSnapshotListResponseBody:
+      $ref: ./volume-snapshots.yaml#/components/schemas/VolumeSnapshotListResponseBody
+    CreateVolumeSnapshotRequestBody:
+      $ref: ./volume-snapshots.yaml#/components/schemas/CreateVolumeSnapshotRequestBody
+    UpdateVolumeSnapshotRequestBody:
+      $ref: ./volume-snapshots.yaml#/components/schemas/UpdateVolumeSnapshotRequestBody
+    VolumeSnapshotOperation:
+      $ref: ./volume-snapshots.yaml#/components/schemas/VolumeSnapshotOperation
+    CreateVolumeSnapshotResponseBody:
+      $ref: ./volume-snapshots.yaml#/components/schemas/CreateVolumeSnapshotResponseBody
+    VolumeTypeResource:
+      $ref: ./volume-types.yaml#/components/schemas/VolumeTypeResource
+    PerformanceFormula:
+      $ref: ./volume-types.yaml#/components/schemas/PerformanceFormula
+    VolumeTypePerformance:
+      $ref: ./volume-types.yaml#/components/schemas/VolumeTypePerformance
+    VolumeTypeListResponseBody:
+      $ref: ./volume-types.yaml#/components/schemas/VolumeTypeListResponseBody
+    DeleteVolumeResponseBody:
+      $ref: ./volumes.yaml#/components/schemas/DeleteVolumeResponseBody
+    VolumeResource:
+      $ref: ./volumes.yaml#/components/schemas/VolumeResource
+    VolumeListResponseBody:
+      $ref: ./volumes.yaml#/components/schemas/VolumeListResponseBody
+    CreateVolumeRequestBody:
+      $ref: ./volumes.yaml#/components/schemas/CreateVolumeRequestBody
+    UpdateVolumeRequestBody:
+      $ref: ./volumes.yaml#/components/schemas/UpdateVolumeRequestBody
+    RevertVolumeRequestBody:
+      $ref: ./volumes.yaml#/components/schemas/RevertVolumeRequestBody
+    AttachVolumeRequestBody:
+      $ref: ./volumes.yaml#/components/schemas/AttachVolumeRequestBody
+    CreateVolumeResponseBody:
+      $ref: ./volumes.yaml#/components/schemas/CreateVolumeResponseBody
+    UpdateVolumeResponseBody:
+      $ref: ./volumes.yaml#/components/schemas/UpdateVolumeResponseBody
+    VolumeAttachment:
+      $ref: ./volumes.yaml#/components/schemas/VolumeAttachment
+    VolumePerformance:
+      $ref: ./volumes.yaml#/components/schemas/VolumePerformance
+    VolumeAttachmentList:
+      $ref: ./volumes.yaml#/components/schemas/VolumeAttachmentList
+    VolumeOperation:
+      $ref: ./volumes.yaml#/components/schemas/VolumeOperation
+  responses:
+    Conflict:
+      description: |-
+        The request conflicts with the current state of a resource or offering it involves. `COMPUTE_RESOURCE_BUSY`
+        means a resource has an operation in progress: `meta.resource_type`, such as `instance` or `elastic_ip`, and
+        `meta.resource_id` name it, and `meta.operation` is the type of that operation, as in its `operation` field.
+        Retry once it has finished. Other codes, such as `BILLING_OPTION_UNAVAILABLE`, are described where they
+        apply.
+      content:
+        application/json:
+          schema:
+            $ref: ../../type/v1/error.yaml#/components/schemas/Error

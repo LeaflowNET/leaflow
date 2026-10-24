@@ -1,0 +1,151 @@
+components:
+  schemas:
+    BillingPeriod:
+      type: object
+      properties:
+        unit:
+          type: string
+          enum:
+          - month
+          - year
+        count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 2147483647
+      required:
+      - unit
+      - count
+      additionalProperties: false
+    BillingChoice:
+      description: The commercial terms for one newly purchased component. Licensed requires period and
+        termination_policy; metered refuses both. Components in one instance purchase must use the same usage
+        type and period, while their termination policies may differ.
+      type: object
+      properties:
+        usage_type:
+          description: '`licensed` pays for a period in advance; `metered` bills usage until canceled.'
+          type: string
+          enum:
+          - licensed
+          - metered
+        period:
+          $ref: '#/components/schemas/BillingPeriod'
+        termination_policy:
+          $ref: '#/components/schemas/TerminationPolicy'
+      required:
+      - usage_type
+      additionalProperties: false
+    TerminationPolicy:
+      description: Immediate ends service when cancellation takes effect, with refunds governed by the purchased
+        terms. Period-end keeps service until the paid period ends.
+      type: string
+      enum:
+      - immediate
+      - period_end
+    CheckoutOptions:
+      $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+    BillingComponent:
+      description: How one order line of a catalog item is sold in Billing. Read its prices with Billing's
+        `search-prices` by `plan_id`, giving `dimensions` to narrow each price's `rates` to this line. Quote a purchase
+        with Billing's `get-quote`, giving the line `plan_id`, `dimensions` unchanged, and the quantity `quantity`
+        names for the usage type chosen; estimate a metered line with `estimate-usage`, giving each of `meters` the
+        same dimensions and the quantity it names. Prices and amounts are Billing's alone.
+      type: object
+      properties:
+        plan_id:
+          description: The Billing Plan the line is sold under.
+          type: string
+          format: uuid
+        dimensions:
+          description: The line's dimensions, the coordinates Billing prices it at; every meter of the line reads
+            under the same ones, and under its own `resource_dimensions` as well. Pass them to Billing unchanged; they
+            name nothing a client needs to read.
+          type: object
+          additionalProperties:
+            type: string
+        quantity:
+          $ref: '#/components/schemas/BillingQuantity'
+        meters:
+          description: What a metered price of the line reads; empty when the line is never metered.
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingMeter'
+      required:
+      - plan_id
+      - dimensions
+      - quantity
+      - meters
+      additionalProperties: false
+    BillingQuantity:
+      description: What the line's quantity counts under each usage type it is sold on; a usage type it is not sold on
+        is absent.
+      type: object
+      properties:
+        licensed:
+          $ref: '#/components/schemas/BillingLineQuantity'
+        metered:
+          $ref: '#/components/schemas/BillingLineQuantity'
+      additionalProperties: false
+    BillingLineQuantity:
+      description: '`one` is 1 for each item bought; `size_gib` is the volume''s size in GiB; `bandwidth_mbps` is the
+        elastic IP''s bandwidth in Mbps.'
+      type: string
+      enum:
+      - one
+      - size_gib
+      - bandwidth_mbps
+    BillingMeter:
+      description: One meter a metered line reads.
+      type: object
+      properties:
+        meter_lookup_key:
+          type: string
+        quantity:
+          description: What the meter measures. `one` counts each second the item is metered; `size_gib` the volume's
+            size in GiB each second; `stored_gib` the GiB stored each second; `bandwidth_mbps` the bandwidth in Mbps
+            each second; `egress_bytes` the bytes sent.
+          type: string
+          enum:
+          - one
+          - size_gib
+          - stored_gib
+          - bandwidth_mbps
+          - egress_bytes
+        resource_dimensions:
+          description: Dimensions each reading carries beside the line's own, whose values the resource itself states
+            and which can change while it is held. A private image's meter carries `position`, its `billing_position`;
+            for a capture not made yet, the position it will take is one more than the number of the project's private
+            images in the region whose `billing_position` is set and not `legacy`. Give them together with the line's
+            dimensions when estimating usage. Empty for every other meter.
+          type: array
+          items:
+            type: string
+      required:
+      - meter_lookup_key
+      - quantity
+      - resource_dimensions
+      additionalProperties: false
+    BillingCancellation:
+      description: A Billing cancellation that Compute created to release a resource and the subscriptions in its
+        release set. Billing owns it; read its progress and any refund there by `id`.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        mode:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
+          description: '`immediate` releases the resources once Billing has canceled the subscriptions, refunding a
+            licensed one under its terms; `period_end` keeps them working until the paid period ends.'
+        scheduled_at:
+          description: When the subscriptions end and the resources are released; null while Billing has not fixed it.
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - mode
+      - scheduled_at
+      additionalProperties: false

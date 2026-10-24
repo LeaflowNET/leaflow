@@ -1,0 +1,511 @@
+paths:
+  /api/v2/launch-templates:
+    get:
+      summary: List launch templates
+      operationId: list-launch-templates
+      tags:
+      - launch-templates
+      parameters:
+      - name: region_id
+        in: query
+        description: Only launch templates of this region.
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplateListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a launch template
+      description: |-
+        Creates a launch template with its first version, which becomes its default. A launch template describes how to create instances in one region, and creating an instance can name it (`launch_template`) instead of repeating every part. It costs nothing.
+
+        A template holds no billing terms, checkout options or password: those belong to each purchase. **What a version names is checked when an instance is created from it**, against the catalog as it is then, so a version naming an image retired since is refused at that creation as any creation would be.
+
+        A project holds at most 100 launch templates in a region (`LAUNCH_TEMPLATE_LIMIT`), and names are unique among them (`LAUNCH_TEMPLATE_EXISTS`).
+      operationId: create-launch-template
+      tags:
+      - launch-templates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLaunchTemplateRequestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLaunchTemplateResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/launch-templates/{launchTemplateId}:
+    parameters:
+    - name: launchTemplateId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+    get:
+      summary: Get a launch template
+      operationId: get-launch-template
+      tags:
+      - launch-templates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplate'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a launch template
+      description: Changes the name or description, or makes another live version the default, the one a creation
+        naming no version uses. Versions themselves never change; describe something else by creating a version.
+      operationId: update-launch-template
+      tags:
+      - launch-templates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLaunchTemplateRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplate'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a launch template
+      description: Deletes the template with every version. Instances created from it are not affected and
+        keep naming the version they were created from.
+      operationId: delete-launch-template
+      tags:
+      - launch-templates
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/launch-templates/{launchTemplateId}/versions:
+    parameters:
+    - name: launchTemplateId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+    get:
+      summary: List the versions of a launch template
+      description: Newest first.
+      operationId: list-launch-template-versions
+      tags:
+      - launch-templates
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplateVersionListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a launch template version
+      description: Adds a version, numbered after every version the template ever had, so a deleted version's number
+        is never reused. It does not become the default by itself; set `default_version_number` on the template for that. A
+        template holds at most 100 live versions (`LAUNCH_TEMPLATE_VERSION_LIMIT`).
+      operationId: create-launch-template-version
+      tags:
+      - launch-templates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLaunchTemplateVersion'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplateVersion'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/launch-templates/{launchTemplateId}/versions/{versionNumber}:
+    parameters:
+    - name: launchTemplateId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+    - name: versionNumber
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    get:
+      summary: Get a launch template version
+      operationId: get-launch-template-version
+      tags:
+      - launch-templates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaunchTemplateVersion'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a launch template version
+      description: The default version cannot be deleted (`LAUNCH_TEMPLATE_VERSION_DEFAULT`); make another version the
+        default first.
+      operationId: delete-launch-template-version
+      tags:
+      - launch-templates
+      responses:
+        '204':
+          description: No Content
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    LaunchTemplate:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+        description:
+          type: string
+        default_version_number:
+          description: The version a creation naming no version uses.
+          type: integer
+          format: int64
+        latest_version_number:
+          description: The highest version number the template ever had.
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - region_id
+      - name
+      - description
+      - default_version_number
+      - latest_version_number
+      - created_at
+      - updated_at
+      additionalProperties: false
+    LaunchTemplateListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchTemplate'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateLaunchTemplateRequestBody:
+      type: object
+      properties:
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1024
+        version:
+          $ref: '#/components/schemas/NewLaunchTemplateVersion'
+      required:
+      - region_id
+      - name
+      - version
+      additionalProperties: false
+    CreateLaunchTemplateResponseBody:
+      type: object
+      properties:
+        launch_template:
+          $ref: '#/components/schemas/LaunchTemplate'
+        version:
+          $ref: '#/components/schemas/LaunchTemplateVersion'
+      required:
+      - launch_template
+      - version
+      additionalProperties: false
+    UpdateLaunchTemplateRequestBody:
+      description: The fields to change, at least one.
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1024
+        default_version_number:
+          description: A live version of this template.
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    NewLaunchTemplateVersion:
+      description: What a version describes. Every part is optional; an instance created from the version supplies
+        what is left out and may override what is given.
+      type: object
+      properties:
+        version_description:
+          type: string
+          maxLength: 1024
+        instance_type_id:
+          description: The instance type, which also names the availability zone an instance of the version is
+            created in.
+          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+        boot_volume:
+          $ref: '#/components/schemas/LaunchTemplateBootVolume'
+        data_volumes:
+          type: array
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/LaunchTemplateDataVolume'
+        network_interface:
+          $ref: '#/components/schemas/LaunchTemplateNetworkInterface'
+        elastic_ip:
+          $ref: '#/components/schemas/LaunchTemplateElasticIP'
+        labels:
+          description: A key may not contain a colon, whitespace or control characters.
+          type: object
+          maxProperties: 20
+          additionalProperties:
+            type: string
+            maxLength: 63
+        description:
+          type: string
+          maxLength: 4096
+      additionalProperties: false
+    LaunchTemplateVersion:
+      type: object
+      properties:
+        launch_template_id:
+          $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+        version_number:
+          type: integer
+          format: int64
+        version_description:
+          type: string
+        instance_type_id:
+          anyOf:
+          - $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+          - type: 'null'
+        boot_volume:
+          anyOf:
+          - $ref: '#/components/schemas/LaunchTemplateBootVolume'
+          - type: 'null'
+        data_volumes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchTemplateDataVolume'
+        network_interface:
+          anyOf:
+          - $ref: '#/components/schemas/LaunchTemplateNetworkInterface'
+          - type: 'null'
+        elastic_ip:
+          anyOf:
+          - $ref: '#/components/schemas/LaunchTemplateElasticIP'
+          - type: 'null'
+        labels:
+          description: Null when the version describes no labels.
+          type:
+          - object
+          - 'null'
+          additionalProperties:
+            type: string
+        description:
+          description: Null when the version describes no note.
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - launch_template_id
+      - version_number
+      - version_description
+      - instance_type_id
+      - boot_volume
+      - data_volumes
+      - network_interface
+      - elastic_ip
+      - labels
+      - description
+      - created_at
+      additionalProperties: false
+    LaunchTemplateVersionListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchTemplateVersion'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    LaunchTemplateBootVolume:
+      description: A boot volume created from an image for each instance.
+      type: object
+      properties:
+        image_id:
+          $ref: ./identifiers.yaml#/components/schemas/ImageID
+        volume_type_id:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+        size_gib:
+          type: integer
+          format: int64
+          minimum: 1
+        on_instance_release:
+          type: string
+          enum:
+          - delete
+          - detach
+          default: delete
+      required:
+      - image_id
+      - volume_type_id
+      - size_gib
+      additionalProperties: false
+    LaunchTemplateDataVolume:
+      description: An empty data volume created with each instance.
+      type: object
+      properties:
+        volume_type_id:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+        size_gib:
+          type: integer
+          format: int64
+          minimum: 1
+        on_instance_release:
+          type: string
+          enum:
+          - delete
+          - detach
+          default: delete
+      required:
+      - volume_type_id
+      - size_gib
+      additionalProperties: false
+    LaunchTemplateNetworkInterface:
+      description: A new primary network interface for each instance. An interface you already hold serves one
+        instance, so a template cannot name one.
+      type: object
+      properties:
+        subnet_id:
+          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+        security_group_ids:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+      required:
+      - subnet_id
+      - security_group_ids
+      additionalProperties: false
+    LaunchTemplateElasticIP:
+      description: A new elastic IP bought with each instance. An address you already hold serves one instance,
+        so a template cannot name one.
+      type: object
+      properties:
+        line_id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+        bandwidth_mbps:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        internet_charge_type:
+          $ref: ./elastic-ips.yaml#/components/schemas/InternetChargeType
+          default: bandwidth
+      required:
+      - line_id
+      - bandwidth_mbps
+      additionalProperties: false

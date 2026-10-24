@@ -1,0 +1,276 @@
+paths:
+  /api/v2/virtual-private-cloud-peerings:
+    get:
+      summary: List peerings
+      operationId: list-virtual-private-cloud-peerings
+      tags:
+      - virtual-private-cloud-peerings
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create peering
+      description: Request IPv4 peering between non-overlapping VPCs in the same Region. The target project must
+        accept before any connectivity is created. Does not change security groups or provide transitive routing.
+      operationId: create-virtual-private-cloud-peering
+      tags:
+      - virtual-private-cloud-peerings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualPrivateCloudPeeringRequestBody'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:
+    get:
+      summary: Get peering
+      operationId: get-virtual-private-cloud-peering
+      tags:
+      - virtual-private-cloud-peerings
+      parameters:
+      - name: virtualPrivateCloudPeeringId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete peering
+      operationId: delete-virtual-private-cloud-peering
+      tags:
+      - virtual-private-cloud-peerings
+      parameters:
+      - name: virtualPrivateCloudPeeringId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+      responses:
+        '202':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:accept:
+    parameters:
+    - name: virtualPrivateCloudPeeringId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+    post:
+      summary: Accept a peering
+      description: |-
+        Starts the provisioning of the connectivity; the peering shows the `provision` operation until it is `active`. It does not change security groups or provide transitive routing. Only the accepter project may decide; the requester project is refused, because a peering would otherwise be accepted by the party who asked for it. The decision is made once: a peering whose `acceptance` is no longer `pending` refuses both methods.
+      operationId: accept-virtual-private-cloud-peering
+      tags:
+      - virtual-private-cloud-peerings
+      responses:
+        '202':
+          description: The peering was accepted and its connectivity is being provisioned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-cloud-peerings/{virtualPrivateCloudPeeringId}:reject:
+    parameters:
+    - name: virtualPrivateCloudPeeringId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+    post:
+      summary: Reject a peering
+      description: |-
+        Ends the peering with its `acceptance` `rejected` and its `status` `deleted`; no connectivity is ever created. Only the accepter project may decide; the requester project is refused, because a peering would otherwise be accepted by the party who asked for it. The decision is made once: a peering whose `acceptance` is no longer `pending` refuses both methods.
+      operationId: reject-virtual-private-cloud-peering
+      tags:
+      - virtual-private-cloud-peerings
+      responses:
+        '200':
+          description: The peering was rejected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    VirtualPrivateCloudPeeringResource:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringID
+        name:
+          type: string
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        requester_project_id:
+          type: string
+          format: uuid
+        accepter_project_id:
+          type: string
+          format: uuid
+        requester_virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        accepter_virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        acceptance:
+          description: The accepter project's decision. `pending` until it decides; `accept-virtual-private-cloud-peering`
+            and `reject-virtual-private-cloud-peering` make it `accepted` or `rejected`. A rejected peering is `deleted`.
+          type: string
+          enum:
+          - pending
+          - accepted
+          - rejected
+        status:
+          description: '`pending` until the connectivity exists: while acceptance is pending, and after it is accepted
+            while the `provision` operation builds the link. Then `active`. `failed` means the link could not be built;
+            `failure_reason` states why. `deleted` once deleted or rejected.'
+          type: string
+          enum:
+          - pending
+          - active
+          - deleted
+          - failed
+        created_at:
+          type: string
+          format: date-time
+        failure_reason:
+          description: Why provisioning failed; null unless `status` is `failed`.
+          type:
+          - string
+          - 'null'
+        operation:
+          description: The operation in progress on this peering, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/VirtualPrivateCloudPeeringOperation'
+          - type: 'null'
+          readOnly: true
+      required:
+      - id
+      - name
+      - region_id
+      - requester_project_id
+      - accepter_project_id
+      - requester_virtual_private_cloud_id
+      - accepter_virtual_private_cloud_id
+      - acceptance
+      - status
+      - created_at
+      - failure_reason
+      - operation
+      additionalProperties: false
+    VirtualPrivateCloudPeeringListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VirtualPrivateCloudPeeringResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateVirtualPrivateCloudPeeringRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        requester_virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        accepter_project_id:
+          type: string
+          format: uuid
+        accepter_virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      required:
+      - name
+      - requester_virtual_private_cloud_id
+      - accepter_project_id
+      - accepter_virtual_private_cloud_id
+      additionalProperties: false
+    VirtualPrivateCloudPeeringOperation:
+      description: An operation still running on this peering. It is not a separate resource; once it finishes,
+        the peering's `operation` is null again and the peering shows the result.
+      type: object
+      properties:
+        type:
+          description: '`provision` runs after the peering is accepted, until it is `active`.'
+          type: string
+          enum:
+          - provision
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false

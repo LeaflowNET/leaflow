@@ -1,0 +1,160 @@
+paths:
+  /api/v2/elastic-ip-lines:
+    get:
+      operationId: list-elastic-ip-lines
+      security:
+      - {}
+      - scopedTokenAuth: []
+      summary: List and search elastic IP lines
+      tags:
+      - elastic-ip-lines
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIPLineListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+      description: Lists the lines on sale. A line is the network an elastic IP is bought on, with the bandwidth that
+        can be chosen and the two Billing Plans its elastic IPs are paid under. Region is optional. Prices, commercial
+        terms and checkout are read directly from Billing. `q` searches the names and descriptions of the lines on
+        sale; filters combine with AND, and pagination is independent of them.
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - name: q
+        in: query
+        required: false
+        description: Search text matched against line names and descriptions; combined with the other filters using
+          AND.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 255
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+  /api/v2/elastic-ip-lines/{elasticIpLineId}:
+    get:
+      operationId: get-elastic-ip-line
+      security:
+      - {}
+      - scopedTokenAuth: []
+      summary: Get an elastic IP line
+      tags:
+      - elastic-ip-lines
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIPLine'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+      description: Includes lines off sale that existing elastic IPs are on. No inventory or gateway facts are
+        returned.
+      parameters:
+      - name: elasticIpLineId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+components:
+  schemas:
+    ElasticIPLine:
+      description: |-
+        The network an elastic IP is bought on: the bandwidth that can be chosen, and the two Billing Plans every elastic IP of the line is paid under in one order. The address subscription is always used and meters the address while it is held idle, associated with nothing; the network subscription pays the bandwidth, prepaid or used while associated, or the traffic sent. Contains no supply ranges, gateways or backend execution state.
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          minLength: 0
+          maxLength: 255
+        address_billing:
+          description: The address line every elastic IP of this line has. It is always metered, and meters the
+            address while no network interface holds it.
+          allOf:
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+        internet_billing:
+          description: The network line every elastic IP of this line has, which pays its bandwidth, prepaid or used
+            while associated, or its traffic. Metered, the line's quantity is 1 and the bandwidth or the traffic is
+            what its meters read, by the elastic IP's `internet_charge_type`.
+          allOf:
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+        min_bandwidth_mbps:
+          description: The least bandwidth an elastic IP of this line can be bought with, in Mbps.
+          type: integer
+          format: int64
+        max_bandwidth_mbps:
+          description: The most bandwidth an elastic IP of this line can be bought with, in Mbps, at most 1000. An elastic
+            IP associated with an instance is also held to the instance type's `max_bandwidth_mbps`.
+          type: integer
+          format: int64
+        sale_status:
+          description: '`on_sale` is offered for new elastic IPs; `off_sale` takes none, while the elastic IPs already
+            on it keep working.'
+          type: string
+          enum:
+          - on_sale
+          - off_sale
+        traffic_sale_status:
+          description: Whether an elastic IP of this line can be bought with `internet_charge_type` `traffic`, billed by
+            the bytes it sends. `off_sale` refuses that with `ELASTIC_IP_TRAFFIC_UNAVAILABLE`.
+          type: string
+          enum:
+          - on_sale
+          - off_sale
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - region_id
+      - name
+      - description
+      - address_billing
+      - internet_billing
+      - min_bandwidth_mbps
+      - max_bandwidth_mbps
+      - sale_status
+      - traffic_sale_status
+      - created_at
+      - updated_at
+      additionalProperties: false
+    ElasticIPLineListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ElasticIPLine'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false

@@ -1,0 +1,153 @@
+paths:
+  /api/v2/operation-logs:
+    get:
+      summary: List the operation log of the project
+      description: |-
+        Records every write operation in the project: who performed it, when, on what, and its outcome. Read operations are not recorded.
+
+        **Operations performed by the platform are included, but the individual operator is not disclosed** and `actor_type` is `platform`. Suspension for non-payment and bans for abuse are examples: the time at which an instance was stopped by the platform is needed, whereas the operator is internal information.
+
+        Fields such as passwords are replaced with a placeholder as the record is written and never appear in `payload`.
+      operationId: list-operation-logs
+      tags:
+      - operation-logs
+      parameters:
+      - name: action
+        in: query
+        description: Return a single kind of operation; the value matches the operation id of the endpoint
+        explode: false
+        schema:
+          description: Return a single kind of operation; the value matches the operation id of the endpoint
+          type: string
+          maxLength: 64
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/operation-logs/{operationLogId}:
+    get:
+      summary: Retrieve an operation log entry
+      description: Returns one entry of the project's operation log. Like the listing, it never discloses the
+        individual operator of an operation performed by the platform.
+      operationId: get-operation-log
+      tags:
+      - operation-logs
+      parameters:
+      - name: operationLogId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/OperationLogID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationLogResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    OperationLogResource:
+      type: object
+      properties:
+        action:
+          description: Name of the operation; matches the operation id of the endpoint
+          type: string
+        user_id:
+          description: The user who initiated the operation. Null when `actor_type` is `platform`
+          type:
+          - string
+          - 'null'
+          format: uuid
+        user_name:
+          description: |-
+            The name this user went by at the time of the operation, recorded alongside the operation itself. It is not refreshed afterwards: the record states who acted then, and a name read today is a statement about a different moment.
+
+            Null on entries recorded before this field existed, and when `actor_type` is `platform`. An empty string means the account had no name recorded.
+          type:
+          - string
+          - 'null'
+        actor_type:
+          description: '`user` when a user of the project initiated the operation, `platform` when the platform
+            performed it.'
+          type: string
+          enum:
+          - user
+          - platform
+        created_at:
+          type: string
+          format: date-time
+        failure:
+          description: Brief reason for the failure; null when `outcome` is `succeeded`
+          type:
+          - string
+          - 'null'
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/OperationLogID
+        payload:
+          description: Path and query parameters of the request. Fields such as passwords are redacted
+          type: object
+          additionalProperties: {}
+        region_id:
+          anyOf:
+          - $ref: ./identifiers.yaml#/components/schemas/RegionID
+          - type: 'null'
+        subject_id:
+          description: 'Empty for create operations: the id of the new resource is in the response, not in the request
+            path'
+          type: string
+        subject_type:
+          type: string
+        outcome:
+          description: '`succeeded` means the operation took effect. `rejected` means it was refused with a 4xx
+            the caller can act on, such as a validation failure, a conflict or an exhausted quota. `failed` means
+            the platform failed to carry it out (5xx).'
+          type: string
+          enum:
+          - succeeded
+          - rejected
+          - failed
+      required:
+      - id
+      - action
+      - actor_type
+      - user_id
+      - user_name
+      - subject_type
+      - subject_id
+      - region_id
+      - payload
+      - outcome
+      - failure
+      - created_at
+      additionalProperties: false
+    OperationLogListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationLogResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
