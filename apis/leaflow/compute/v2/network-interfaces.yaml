@@ -1,0 +1,483 @@
+paths:
+  /api/v2/network-interfaces:
+    get:
+      summary: List network interfaces
+      operationId: list-network-interfaces
+      tags:
+      - network-interfaces
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterfaceListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a network interface
+      description: The new network interface is not attached to any instance. Primary network interfaces
+        are not created here; they are created with the instance.
+      operationId: create-network-interface
+      tags:
+      - network-interfaces
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNetworkInterfaceRequestBody'
+      responses:
+        '202':
+          description: The network interface was accepted and is being created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/network-interfaces/{networkInterfaceId}:
+    get:
+      summary: Retrieve a network interface
+      description: Returns the stored state of the network interface; it does not query the cloud.
+      operationId: get-network-interface
+      tags:
+      - network-interfaces
+      parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a network interface
+      description: |-
+        Changes the name, or replaces the security groups. The two are never combined (422 `UPDATE_FIELDS_COMBINED`).
+
+        - `name` is not an operation, is accepted at any time and answers 200.
+        - `security_group_ids` is the complete new set, one to five groups of the network interface's virtual private cloud; groups left out are removed. It applies to traffic of the running instance as soon as it is in place, and answers 202 with the network interface showing the `update_security_groups` operation until then.
+
+        Secondary IPv4 addresses are added and removed under `/network-interfaces/{networkInterfaceId}/addresses`.
+      operationId: update-network-interface
+      tags:
+      - network-interfaces
+      parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNetworkInterfaceRequestBody'
+      responses:
+        '200':
+          description: The name was changed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        '202':
+          description: The replacement of the security groups was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a network interface
+      description: The primary network interface cannot be deleted on its own, as it is released with the instance.
+        A network interface still attached to an instance cannot be deleted either.
+      operationId: delete-network-interface
+      tags:
+      - network-interfaces
+      parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      responses:
+        '202':
+          description: Deletion was accepted. The network interface shows the `delete` operation until it is deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/network-interfaces/{networkInterfaceId}/addresses:
+    post:
+      summary: Add a secondary IPv4 address
+      description: |-
+        Adds an IPv4 address in the network interface's subnet, given or chosen by the network, and answers 202 with the network interface showing the `add_address` operation until the address is in place; it then appears among `addresses` with `role` `secondary`. An elastic IP can be associated with it like the primary address.
+
+        **The operating system has to be configured to use it**: DHCP hands out only the primary address. Changing the addresses of a network interface in use may briefly interrupt its traffic.
+
+        A network interface holds at most its instance's instance type's `max_ipv4_per_network_interface` IPv4 addresses while attached, and 50 otherwise (409 `NETWORK_INTERFACE_ADDRESS_CEILING`). An address already in use in the subnet is refused with 409 `NETWORK_INTERFACE_ADDRESS_ALREADY_TAKEN`, a full subnet with 409 `NETWORK_INTERFACE_SUBNET_EXHAUSTED`.
+      operationId: create-network-interface-address
+      tags:
+      - network-interfaces
+      parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNetworkInterfaceAddressRequestBody'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/network-interfaces/{networkInterfaceId}/addresses/{addressId}:
+    delete:
+      summary: Remove a secondary IPv4 address
+      description: Removes a secondary IPv4 address and answers 202 with the network interface showing the `remove_address`
+        operation until it is gone. The primary address goes only with the network interface (409
+        `NETWORK_INTERFACE_ADDRESS_PRIMARY`), and an address an elastic IP is associated with is refused until it is
+        disassociated (409 `NETWORK_INTERFACE_ADDRESS_ASSOCIATED`).
+      operationId: delete-network-interface-address
+      tags:
+      - network-interfaces
+      parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      - name: addressId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkInterface'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    NetworkInterface:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+        mac_address:
+          type:
+          - string
+          - 'null'
+        name:
+          type: string
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        elastic_ip_addresses:
+          description: Elastic IPv4 addresses associated with this network interface; an empty array when none are associated
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        security_group_ids:
+          description: The security groups the network interface holds.
+          type: array
+          items:
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+        addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/NetworkInterfaceAddress'
+        attachment:
+          anyOf:
+          - $ref: '#/components/schemas/NetworkInterfaceAttachment'
+          - type: 'null'
+        status:
+          description: '`pending` until the interface is created, then `available`. `error` means its creation failed
+            or the cloud reports it broken; delete it and create another.'
+          type: string
+          enum:
+          - pending
+          - available
+          - error
+        operation:
+          description: The operation in progress on this network interface, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/NetworkInterfaceOperation'
+          - type: 'null'
+          readOnly: true
+      required:
+      - id
+      - virtual_private_cloud_id
+      - name
+      - mac_address
+      - elastic_ip_addresses
+      - security_group_ids
+      - attachment
+      - status
+      - operation
+      additionalProperties: false
+    NetworkInterfaceListResponseBody:
+      type: object
+      properties:
+        items:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/NetworkInterface'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    AttachNetworkInterfaceRequestBody:
+      type: object
+      properties:
+        network_interface_id:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+      required:
+      - network_interface_id
+      additionalProperties: false
+    CreateNetworkInterfaceRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        security_group_ids:
+          description: At least one, and all must belong to the same virtual private cloud
+          type:
+          - array
+          - 'null'
+          minItems: 1
+          items:
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+        subnet_id:
+          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+        address:
+          description: The private address to assign. Allocated automatically when omitted
+          type: string
+          maxLength: 64
+      required:
+      - subnet_id
+      - security_group_ids
+      additionalProperties: false
+    UpdateNetworkInterfaceRequestBody:
+      description: The mutable fields of a network interface, all optional, at least one required.
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 128
+        security_group_ids:
+          description: The complete new set of security groups, of the network interface's virtual private cloud.
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+      minProperties: 1
+      additionalProperties: false
+    CreateNetworkInterfaceAddressRequestBody:
+      type: object
+      properties:
+        address:
+          description: The IPv4 address to add, in the network interface's subnet. Chosen by the network when omitted.
+          type: string
+          maxLength: 15
+      additionalProperties: false
+    NetworkInterfaceAddress:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+        subnet_id:
+          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+        address:
+          type: string
+          minLength: 1
+          maxLength: 64
+        role:
+          description: '`primary` is the interface''s primary private address, which is the instance''s network location; every other address of the interface is `secondary`.'
+          type: string
+          enum:
+          - primary
+          - secondary
+        state:
+          type: string
+          enum:
+          - reserved
+          - assigned
+          - released
+        assigned_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        released_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - subnet_id
+      - address
+      - role
+      - state
+      - assigned_at
+      - released_at
+      additionalProperties: false
+    NetworkInterfaceAttachment:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceNetworkInterfaceID
+        instance_id:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+        network_interface_id:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+        role:
+          type: string
+          enum:
+          - primary
+          - secondary
+        on_instance_release:
+          description: What releasing the instance does to this interface. `delete` deletes it together with
+            the instance; `detach` detaches it and leaves it to you. The primary interface created with the
+            instance is `delete`; an interface you created yourself is `detach`.
+          type: string
+          enum:
+          - delete
+          - detach
+        state:
+          type: string
+          enum:
+          - reserved
+          - attached
+          - released
+        attached_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        detached_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        released_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - instance_id
+      - network_interface_id
+      - role
+      - on_instance_release
+      - state
+      - attached_at
+      - detached_at
+      - released_at
+      additionalProperties: false
+    NetworkInterfaceAttachmentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NetworkInterfaceAttachment'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    NetworkInterfaceOperation:
+      description: An operation still running on this network interface. It is not a separate resource; once it
+        finishes, the network interface's `operation` is null again and the network interface shows the result.
+      type: object
+      properties:
+        type:
+          description: '`associate_elastic_ip` holds the network interface while an elastic IP is associated with it
+            directly rather than through an instance. `update_security_groups` replaces its security groups,
+            `add_address` and `remove_address` change its secondary IPv4 addresses.'
+          type: string
+          enum:
+          - create
+          - attach
+          - detach
+          - associate_elastic_ip
+          - update_security_groups
+          - add_address
+          - remove_address
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false

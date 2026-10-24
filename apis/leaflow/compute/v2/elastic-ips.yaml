@@ -1,0 +1,780 @@
+paths:
+  /api/v2/elastic-ips:
+    get:
+      summary: List elastic IPs
+      operationId: list-elastic-ips
+      tags:
+      - elastic-ips
+      parameters:
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIPListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Allocate an elastic IP
+      description: |-
+        Select an elastic IP line. The elastic IP is bought through a Billing Checkout Session, and no address is allocated before its order is accepted.
+
+        The line has to have an address left, counted before anything is ordered: refused with 409 `ELASTIC_IP_LINE_EXHAUSTED` when every address it sells is held or already promised to a purchase waiting for its order. Two purchases checked at the same moment can both pass on the last address; the later one ends `failed` with `provisioning_failed` and its charge is refunded.
+
+        Returns the elastic IP as `pending` with its Checkout Session; `address` is null until the address is allocated after the order is accepted. A requested `address` is not held while pending; if it is no longer available then, the elastic IP ends `failed` with `provisioning_failed` and its charge is refunded.
+
+        IPv6 is not requested through this endpoint. IPv6 addresses are assigned to instances by the virtual private cloud; enable IPv6 on that network instead.
+
+        Allocation does not select or create a virtual private cloud. A later association selects an assigned network-interface address; Compute then establishes the required network connectivity.
+
+        The elastic IP shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
+      operationId: create-elastic-ip
+      tags:
+      - elastic-ips
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateElasticIPRequestBody'
+      responses:
+        '202':
+          description: The elastic IP and its Checkout Session were created; no address is allocated yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateElasticIPResponseBody'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/elastic-ips/{elasticIpId}:
+    get:
+      summary: Retrieve an elastic IP
+      operationId: get-elastic-ip
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIP'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update an elastic IP
+      description: |-
+        Changes the bandwidth of this elastic IP, or what its pay-as-you-go network subscription charges for. `bandwidth_mbps` and `internet_charge_type` are operational fields: each starts a change and cannot be combined with any other field in the same request. Such a request is refused with 422 `UPDATE_FIELDS_COMBINED`, because a change that committed beside another that was then refused would leave the request half applied. An elastic IP has no descriptive field today, so 200 is reserved for the fields that may be added to it and every accepted update answers 202. `checkout` and `proration_date` belong to the purchase of the `bandwidth_mbps` change and are accepted only together with it.
+
+        No separate bandwidth resource is created, and the limit applies to inbound and outbound traffic alike. The new value may be any whole number of Mbps within the line's bandwidth range, otherwise the request is refused with `ELASTIC_IP_BANDWIDTH_RANGE`. How the change is paid follows the elastic IP's network subscription:
+
+        - **Prepaid**: the change goes through a Checkout Session that changes the network subscription, priced for the rest of its period. It starts once Billing accepts the order; if checkout is not completed, the order is not accepted or the change fails, `bandwidth_mbps` keeps its value and Billing shows the outcome.
+        - **Pay-as-you-go**: there is no checkout. The change starts at once, `checkout_session_id` and `order_id` are null, and the new limit is metered from the instant it is applied; if it fails, the old limit stays in effect and metered. `checkout` and `proration_date` are refused with `ELASTIC_IP_CHECKOUT_UNUSED`.
+
+        A change of `internet_charge_type` needs no checkout and shows the `update_internet_charge_type` operation until it is applied; see the field.
+
+        The elastic IP shows the `update_bandwidth` operation until the change is applied or ends, so other operations and a second change are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The current limit stays in effect until the change is applied.
+
+        While the address is associated with an instance, the limit must not exceed the `max_bandwidth_mbps` of that instance's type; a higher limit is refused with `INSTANCE_BANDWIDTH_CEILING`. The limit of an address that is not associated is checked when the address is associated with an instance.
+      operationId: update-elastic-ip
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateElasticIPRequestBody'
+      responses:
+        '200':
+          description: Only descriptive fields changed; no operation started. `checkout_session_id` and `order_id` are null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateElasticIPResponseBody'
+        '202':
+          description: The elastic IP, and the Checkout Session for the change of a prepaid network subscription; the
+            new limit is not yet in effect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateElasticIPResponseBody'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Release an elastic IP
+      description: |-
+        Releases the elastic IP after dissociating it. The elastic IP shows the `delete` operation until cleanup is confirmed; the address then immediately returns to available inventory, with no cooldown period. Deleting the association or replacing it alone does not release the address.
+
+        Refused with `COMPUTE_PURCHASE_PENDING` while the purchase that created it still awaits checkout or payment; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead.
+
+        While subscriptions pay for the elastic IP (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the elastic IP working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
+      operationId: delete-elastic-ip
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      - $ref: ./openapi.yaml#/components/parameters/CancellationMode
+      responses:
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+        '202':
+          description: The release was accepted. Every elastic IP has a subscription for its address, so `cancellation` names the cancellation that releases it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteElasticIPResponseBody'
+  /api/v2/elastic-ips/{elasticIpId}/traffic-usage:
+    get:
+      summary: List the traffic an elastic IP sent
+      description: |-
+        The bytes and packets the elastic IP's address sent upstream while the elastic IP held it, summed by hour or by day in UTC over `[start_time, end_time)`. Only intervals with traffic are listed. Inbound traffic is not measured.
+
+        Traffic is reported by the region's collectors and appears some minutes after it is sent. Every elastic IP's traffic is shown, whatever it is billed by; only one billed by traffic is charged for it. A span longer than 31 days by hour, or 366 days by day, is refused with `TRAFFIC_USAGE_QUERY_INVALID`.
+      operationId: list-elastic-ip-traffic-usage
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      - name: interval
+        in: query
+        schema:
+          type: string
+          enum:
+          - hour
+          - day
+          default: hour
+      - name: start_time
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      - name: end_time
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficUsageListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/elastic-ips/{elasticIpId}/association:
+    get:
+      summary: Retrieve the association of an elastic IP
+      description: |-
+        The private address of a network interface this elastic IP currently points at. Returns the stored state; it does not query the cloud.
+
+        An elastic IP that points at nothing has no association: the request is refused with 404 `ELASTIC_IP_NOT_ASSOCIATED`.
+      operationId: get-elastic-ip-association
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIPAssociation'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/elastic-ips/{elasticIpId}:associate:
+    post:
+      summary: Associate an elastic IP with a target
+      description: |-
+        Points the elastic IP at a target: an instance, which means the primary private IPv4 address of its primary network interface, or a network interface address (`network_interface_address_id`) given directly. Exactly one of `instance_id` and `network_interface_address_id`. A network interface address must be an assigned, unreleased IPv4 address on a network interface in this project and region; IPv6 addresses are rejected.
+
+        The target becomes what the elastic IP points at. Repeating the request for the target it already points at changes nothing; an elastic IP associated with another target is refused with `ELASTIC_IP_ALREADY_ASSOCIATED` (409), and is moved by disassociating it first, so that the moment traffic stops reaching the old target is one the caller chose. The elastic IP shows the `associate` operation until the association is confirmed, and with an instance as the target that instance shows the `associate_elastic_ip` operation as well, so the instance must not have another operation in progress.
+
+        The elastic IP must be in the same region as the target. With an instance as the target, the elastic IP's `bandwidth_mbps` must not exceed the `max_bandwidth_mbps` of that instance's type; a higher limit is refused with `INSTANCE_BANDWIDTH_CEILING`.
+      operationId: associate-elastic-ip
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssociateElasticIPRequestBody'
+      responses:
+        '202':
+          description: The association was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIP'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/elastic-ips/{elasticIpId}:disassociate:
+    post:
+      summary: Remove the association of an elastic IP
+      description: The address remains held by the project and simply no longer points at any network interface.
+        The elastic IP shows the `disassociate` operation until the change is confirmed, and an instance whose primary
+        interface it pointed at shows the `disassociate_elastic_ip` operation. Removing an association that does not exist is
+        refused with 404 `ELASTIC_IP_NOT_ASSOCIATED`.
+      operationId: disassociate-elastic-ip
+      tags:
+      - elastic-ips
+      parameters:
+      - name: elasticIpId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+      responses:
+        '202':
+          description: The removal was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ElasticIP'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    DeleteElasticIPResponseBody:
+      description: The elastic IP as it is when the deletion is accepted, and the Billing cancellation that releases it when
+        subscriptions pay for it.
+      type: object
+      properties:
+        elastic_ip:
+          $ref: '#/components/schemas/ElasticIP'
+        cancellation:
+          description: The cancellation Compute created for the elastic IP's subscriptions; null when none pays for it.
+          oneOf:
+          - type: 'null'
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
+      required:
+      - elastic_ip
+      - cancellation
+      additionalProperties: false
+    InternetChargeType:
+      type: string
+      description: What the network subscription of an elastic IP charges for. `bandwidth` charges for the bandwidth
+        ceiling, prepaid for a period or by the Mbit/s-second while the address is associated. `traffic` charges for the
+        bytes the address sends upstream, pay-as-you-go only, while the bandwidth is only a ceiling; it is refused with
+        `ELASTIC_IP_TRAFFIC_UNAVAILABLE` on a line whose `traffic_sale_status` is `off_sale`. Inbound traffic is never
+        charged. Prices are set per currency, so a pay-as-you-go purchase whose account currency has no rate on the line
+        for the chosen type is refused before any order with HTTP 403 `ELASTIC_IP_CHARGE_TYPE_NOT_OFFERED`, whether the
+        elastic IP is bought alone or with an instance. A pay-as-you-go elastic IP can move between the two with
+        `update-elastic-ip`.
+      enum:
+      - bandwidth
+      - traffic
+    IPv4HostAddress:
+      type: string
+      minLength: 7
+      maxLength: 15
+      pattern: '^(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$'
+    ElasticIP:
+      description: |-
+        One public IP resource, including its bandwidth configuration. Bandwidth has no separate Compute resource ID.
+        Two subscriptions of one order pay for it: the address subscription, always pay-as-you-go, charges for the
+        address while it is not associated with anything, and the network subscription, on the terms chosen at
+        purchase, charges for the bandwidth or the traffic. Changing bandwidth updates this same resource, not another
+        allocation.
+      type: object
+      properties:
+        internet_charge_type:
+          $ref: '#/components/schemas/InternetChargeType'
+        address:
+          description: The held IPv4 address; null before actual claim. Holding identity is not exposed.
+          anyOf:
+          - $ref: '#/components/schemas/IPv4HostAddress'
+          - type: 'null'
+        allocated_at:
+          description: The actual address holding start time; null before actual claim.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        released_at:
+          description: The confirmed holding release time; null while held or before actual claim.
+          type:
+          - string
+          - 'null'
+          format: date-time
+        bandwidth_mbps:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+        line_id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        status:
+          description: '`pending` until the address is created, with no address allocated before the order is
+            accepted and the `create` operation shown while it is created; then `available`. `failed` means no address
+            was allocated; `failure_reason` states why.'
+          type: string
+          enum:
+          - pending
+          - available
+          - deleted
+          - failed
+          - error
+        checkout_session_id:
+          description: The Billing Checkout Session that bought this resource; `order_id` and the order items stay null
+            until its checkout completes. Null when the resource was not bought through one.
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+        order_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        address_order_item_id:
+          description: The Billing order item of the address, always pay-as-you-go.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        address_subscription_id:
+          description: The Billing subscription of the address. It may still be pending; its presence does not imply
+            delivery or metering.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        internet_order_item_id:
+          description: The Billing order item of the bandwidth or traffic.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        internet_subscription_id:
+          description: The Billing subscription of the bandwidth or traffic. It may still be pending; its presence does
+            not imply delivery or metering.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        release_set:
+          description: The subscriptions a cancellation through Billing has to cover to release this elastic IP, both
+            the address's and the network's, each with the resource it pays for, so that each line of a cancellation
+            can name what it releases. A subscription that has ended is not listed, and the set is empty when no
+            subscription pays for the elastic IP.
+          type: array
+          items:
+            $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
+        access_state:
+          type:
+          - string
+          - 'null'
+          enum:
+          - pending
+          - enabled
+          - suspended
+          - reclaimed
+          - null
+        failure_reason:
+          description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
+            not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
+            order was accepted, and the charge for this elastic IP is refunded.
+          type:
+          - string
+          - 'null'
+          enum:
+          - order_declined
+          - order_canceled
+          - order_expired
+          - checkout_expired
+          - provisioning_failed
+          - null
+        operation:
+          description: The operation in progress on this elastic IP, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/ElasticIPOperation'
+          - type: 'null'
+          readOnly: true
+        association:
+          anyOf:
+          - $ref: '#/components/schemas/ElasticIPAssociation'
+          - type: 'null'
+      required:
+      - internet_charge_type
+      - id
+      - line_id
+      - region_id
+      - address
+      - allocated_at
+      - released_at
+      - status
+      - bandwidth_mbps
+      - created_at
+      - checkout_session_id
+      - order_id
+      - address_order_item_id
+      - address_subscription_id
+      - internet_order_item_id
+      - internet_subscription_id
+      - release_set
+      - access_state
+      - failure_reason
+      - operation
+      - association
+      additionalProperties: false
+    TrafficUsage:
+      description: The traffic an elastic IP sent in one interval.
+      type: object
+      properties:
+        start_time:
+          description: The start of the interval, in UTC.
+          type: string
+          format: date-time
+        egress_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        egress_packets:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+      - start_time
+      - egress_bytes
+      - egress_packets
+      additionalProperties: false
+    TrafficUsageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrafficUsage'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    ElasticIPListResponseBody:
+      type: object
+      properties:
+        items:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/ElasticIP'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateElasticIPRequestBody:
+      type: object
+      properties:
+        internet_charge_type:
+          $ref: '#/components/schemas/InternetChargeType'
+          default: bandwidth
+        address:
+          description: The IPv4 address to allocate. Selected by the platform when omitted.
+          $ref: '#/components/schemas/IPv4HostAddress'
+        bandwidth_mbps:
+          description: |-
+            The bandwidth ceiling of this address, in Mbit/s, applied to both directions.
+
+            Required, and there is no "unlimited": an address with no ceiling runs at line rate and is
+            charged nothing for the traffic, while the address itself bills normally — so the invoice
+            looks correct and nothing anywhere reports it.
+
+            Any whole number of Mbps within the line's `min_bandwidth_mbps` and `max_bandwidth_mbps`, otherwise the
+            request is refused with `ELASTIC_IP_BANDWIDTH_RANGE`. Changing it
+            later updates the same elastic IP through `update-elastic-ip`, not an independent bandwidth resource.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        line_id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+        billing:
+          description: The terms of the network subscription, which pays for the bandwidth or the traffic. The address
+            subscription is always pay-as-you-go and takes no terms. Traffic is only sold pay-as-you-go.
+          $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
+        checkout:
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      required:
+      - bandwidth_mbps
+      - line_id
+      - billing
+      additionalProperties: false
+    UpdateElasticIPRequestBody:
+      description: |-
+        The mutable fields of the elastic IP identified by the path, all optional, at least one required. `bandwidth_mbps`
+        and `internet_charge_type` are operational fields and cannot be combined with any other field; such a request is
+        refused with 422 `UPDATE_FIELDS_COMBINED`. This is a configuration change of that resource, not an independent
+        bandwidth resource. Checkout is handled by Billing.
+      type: object
+      properties:
+        internet_charge_type:
+          description: |-
+            Moves a pay-as-you-go elastic IP between charging for its bandwidth and charging for its traffic, within the same network subscription and without checkout. A prepaid network subscription has paid for its bandwidth and is refused with `ELASTIC_IP_CHARGE_TYPE_PREPAID`; `traffic` on a line whose `traffic_sale_status` is `off_sale` is refused with `ELASTIC_IP_TRAFFIC_UNAVAILABLE`, the type already in effect with `ELASTIC_IP_CHARGE_TYPE_UNCHANGED`, and a type the currency of the network subscription does not offer on the line with HTTP 403 `ELASTIC_IP_CHARGE_TYPE_NOT_OFFERED`: prices are set per currency, and a currency without one there does not sell that type.
+
+            The change takes effect at the instant it is applied: bandwidth stops being metered then and traffic starts being, or the other way round. Traffic is counted in windows, and a window is charged the way the elastic IP was charged for most of it, so a report that arrives late is still charged as it was at the time and a window the change falls in is never charged both ways. `bandwidth_mbps` stays the ceiling either way.
+          allOf:
+          - $ref: '#/components/schemas/InternetChargeType'
+        bandwidth_mbps:
+          description: Applied to both directions
+          type: integer
+          format: int64
+          minimum: 1
+        proration_date:
+          description: The `proration_date` of the Billing quote for this change, so that the order is priced from
+            the same instant. Only with `bandwidth_mbps` on a prepaid network subscription, and only for automatic
+            checkout; deferred checkout is priced when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the
+            future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          type: string
+          format: date-time
+        checkout:
+          description: How the purchase of the `bandwidth_mbps` change is checked out. Only with `bandwidth_mbps` on a
+            prepaid network subscription; a pay-as-you-go one has nothing to check out and refuses it with
+            `ELASTIC_IP_CHECKOUT_UNUSED`.
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      minProperties: 1
+      additionalProperties: false
+    AssociateElasticIPRequestBody:
+      description: The target an elastic IP points at. Exactly one of the two forms.
+      oneOf:
+      - $ref: '#/components/schemas/InstanceAssociationTarget'
+      - $ref: '#/components/schemas/NetworkInterfaceAddressAssociationTarget'
+    InstanceAssociationTarget:
+      description: An instance; the elastic IP points at the primary private IPv4 address of its primary network
+        interface.
+      type: object
+      properties:
+        instance_id:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+      required:
+      - instance_id
+      additionalProperties: false
+    NetworkInterfaceAddressAssociationTarget:
+      description: One private address of a network interface. One interface may hold several private addresses, each
+        with its own elastic IP.
+      type: object
+      properties:
+        network_interface_address_id:
+          description: An assigned, unreleased IPv4 address on a network interface in this project and region. IPv6
+            addresses are rejected.
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+      required:
+      - network_interface_address_id
+      additionalProperties: false
+    CreateElasticIPResponseBody:
+      description: |-
+        The new elastic IP, `pending` until its order is accepted, and its Checkout Session. `address` is null until
+        the address is allocated.
+      type: object
+      properties:
+        elastic_ip:
+          $ref: '#/components/schemas/ElasticIP'
+        checkout_session_id:
+          description: The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it
+            in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - elastic_ip
+      - checkout_session_id
+      - order_id
+      additionalProperties: false
+    UpdateElasticIPResponseBody:
+      description: The elastic IP and, when the update placed a Billing order, the Checkout Session for it. After a
+        bandwidth change the elastic IP is still at its current bandwidth until the change is applied. Returned with
+        200 when only descriptive fields changed and with 202 when an operation started.
+      type: object
+      properties:
+        elastic_ip:
+          $ref: '#/components/schemas/ElasticIP'
+        checkout_session_id:
+          description: The Billing Checkout Session of the purchase; null when the update placed no order. With deferred
+            checkout, the customer completes it in Billing.
+          type:
+          - string
+          - 'null'
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then and
+            when the update placed no order.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - elastic_ip
+      - checkout_session_id
+      - order_id
+      additionalProperties: false
+    ElasticIPAssociation:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPAssociationID
+        elastic_ip_id:
+          description: The commercial ElasticIP identity. This is not an internal holding ID.
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+        network_interface_address_id:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+        public_address:
+          $ref: '#/components/schemas/IPv4HostAddress'
+        private_address:
+          $ref: '#/components/schemas/IPv4HostAddress'
+        state:
+          type: string
+          enum:
+          - associated
+          - released
+        associated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        disassociated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        released_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      required:
+      - id
+      - elastic_ip_id
+      - network_interface_address_id
+      - public_address
+      - private_address
+      - state
+      - associated_at
+      - disassociated_at
+      - released_at
+      additionalProperties: false
+    ElasticIPOperation:
+      description: An operation still running on this elastic IP. It is not a separate resource; once it finishes,
+        the elastic IP's `operation` is null again and the elastic IP shows the result.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - create
+          - associate
+          - disassociate
+          - update_bandwidth
+          - update_internet_charge_type
+          - suspend
+          - resume
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false

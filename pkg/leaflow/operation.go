@@ -3,6 +3,7 @@ package leaflow
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -101,7 +102,7 @@ func (o *Operation) Schema() map[string]any {
 	}
 
 	for _, parameter := range o.inputs.Query {
-		properties[parameter.Name] = renderParameter(parameter, "query")
+		properties[parameter.Name] = renderParameter(parameter, parameter.In)
 
 		if parameter.Required {
 			required = append(required, parameter.Name)
@@ -206,6 +207,7 @@ func (o *Operation) Request(arguments map[string]any) (*transport.Request, error
 	}
 
 	query := url.Values{}
+	headers := http.Header{}
 
 	for _, parameter := range o.inputs.Query {
 		value, ok := arguments[parameter.Name]
@@ -234,7 +236,11 @@ func (o *Operation) Request(arguments map[string]any) (*transport.Request, error
 			continue
 		}
 
-		query[parameter.Name] = values
+		if parameter.In == openapi3.ParameterInHeader {
+			headers[http.CanonicalHeaderKey(parameter.Name)] = values
+		} else {
+			query[parameter.Name] = values
+		}
 	}
 
 	body, given := arguments[o.bodyKey]
@@ -266,6 +272,7 @@ func (o *Operation) Request(arguments map[string]any) (*transport.Request, error
 		Operation: o.spec,
 		Path:      path,
 		Query:     query,
+		Header:    headers,
 		Body:      body,
 	}, nil
 }

@@ -1,0 +1,366 @@
+paths:
+  /api/v2/volume-backups:
+    get:
+      summary: List volume backups
+      operationId: list-volume-backups
+      tags:
+      - volume-backups
+      parameters:
+      - name: volume_id
+        in: query
+        description: Return only the backups of this volume
+        explode: false
+        schema:
+          description: Return only the backups of this volume
+          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeBackupListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a volume backup
+      description: "Creates a backup of the volume. It remains restorable after the source volume is deleted and may be restored
+        to another availability zone in the same region, by creating a volume with `volume_backup_id` (`create-volume`). A running instance may produce a file-system-inconsistent
+        backup. Pending backups count toward Compute project quotas until cleanup is confirmed.\n\nIt is metered by the hour on a subscription of its own and takes no billing choice. It is bought through a
+        Billing Checkout Session: automatic checkout completes at once for metered pricing and the backup is taken as soon
+        as the order is accepted; with deferred checkout it stays `pending` until the customer completes checkout in
+        Billing. The source and project quotas are checked before the Checkout Session is created, and a refused
+        request creates nothing.\n\nThe backup shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment."
+      operationId: create-volume-backup
+      tags:
+      - volume-backups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVolumeBackupRequestBody'
+      responses:
+        '202':
+          description: The backup and its Checkout Session were created; the backup is not taken yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateVolumeBackupResponseBody'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/volume-backups/{volumeBackupId}:
+    get:
+      summary: Retrieve a volume backup
+      description: Returns the stored state of the backup; it does not query the cloud. Use it to poll creation 
+        progress.
+      operationId: get-volume-backup
+      tags:
+      - volume-backups
+      parameters:
+      - name: volumeBackupId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeBackupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a volume backup
+      description: Changes the name only. A backup's source volume and capacity cannot be changed.
+      operationId: update-volume-backup
+      tags:
+      - volume-backups
+      parameters:
+      - name: volumeBackupId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVolumeBackupRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeBackupResource'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Delete a volume backup
+      description: "Independent of the source volume: deletion succeeds whether or not that volume still exists. Metering
+        of the backup ends once it is deleted.\n\nQuota capacity and storage metering are released only after cleanup
+        is confirmed.\n\nA resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource is released through
+        its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown cleanup is not proof
+        of release.\n\nWhile subscriptions pay for the volume backup (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the volume backup working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
+      operationId: delete-volume-backup
+      tags:
+      - volume-backups
+      parameters:
+      - name: volumeBackupId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+      - $ref: ./openapi.yaml#/components/parameters/CancellationMode
+      responses:
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        '202':
+          description: Deletion was accepted. Without a subscription the backup shows the `delete` operation until it is deleted, and `cancellation` is null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteVolumeBackupResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    DeleteVolumeBackupResponseBody:
+      description: The volume backup as it is when the deletion is accepted, and the Billing cancellation that releases it when
+        subscriptions pay for it.
+      type: object
+      properties:
+        volume_backup:
+          $ref: '#/components/schemas/VolumeBackupResource'
+        cancellation:
+          description: The cancellation Compute created for the volume backup's subscriptions; null when none pays for it.
+          oneOf:
+          - type: 'null'
+          - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
+      required:
+      - volume_backup
+      - cancellation
+      additionalProperties: false
+    VolumeBackupResource:
+      description: "A retained copy of a volume, restorable after its source volume is deleted. Compute project quotas constrain
+        its count; retained storage is metered independently."
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+        name:
+          type: string
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        size_gib:
+          description: Capacity of the source volume when the backup was created. A restored volume cannot be smaller 
+            than this
+          type: integer
+          format: int64
+        capacity_gib:
+          description: 'The capacity metered for this backup, in GiB: the size of the source volume when the backup was
+            taken. Usage is this capacity multiplied by the time the backup is retained.'
+          type: integer
+          format: int64
+        source_volume_id:
+          description: The volume this backup was taken from. The backup remains usable after that volume is deleted
+          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        status:
+          description: '`pending` from the purchase until the backup is taken, then `available`; while it is taken the
+            backup shows the `create` operation. `failed` means the backup was not created.'
+          type: string
+          enum:
+          - pending
+          - available
+          - deleted
+          - failed
+          - error
+        operation:
+          description: The operation in progress on this backup, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/VolumeBackupOperation'
+          - type: 'null'
+          readOnly: true
+        source_availability_zone_id:
+          description: Availability zone of the source volume. A restore may target another zone in the same region
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+        failure_reason:
+          description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
+            not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
+            order was accepted, and the charge for this backup is refunded.
+          type:
+          - string
+          - 'null'
+          enum:
+          - order_declined
+          - order_canceled
+          - order_expired
+          - checkout_expired
+          - provisioning_failed
+          - null
+        checkout_session_id:
+          description: The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
+            until its checkout completes. Null when the resource was not bought through one.
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+        order_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The Billing order that bought this resource; null until checkout completes.
+        order_item_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The Billing order item for this resource.
+        subscription_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          readOnly: true
+          description: The subscription for this resource; its presence alone does not imply delivery.
+        release_set:
+          description: The subscription that pays for this volume backup, with the resource it pays for, so that a
+            cancellation through Billing can name what it releases. Empty when no subscription pays for it, and
+            once it is released.
+          type: array
+          items:
+            $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
+      required:
+      - id
+      - source_volume_id
+      - name
+      - size_gib
+      - capacity_gib
+      - status
+      - region_id
+      - source_availability_zone_id
+      - created_at
+      - operation
+      - failure_reason
+      - checkout_session_id
+      - order_id
+      - order_item_id
+      - subscription_id
+      - release_set
+      additionalProperties: false
+    VolumeBackupListResponseBody:
+      type: object
+      properties:
+        items:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/VolumeBackupResource'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateVolumeBackupRequestBody:
+      type: object
+      properties:
+        volume_id:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        checkout:
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      required:
+      - volume_id
+      - name
+      additionalProperties: false
+    UpdateVolumeBackupRequestBody:
+      description: The mutable fields of a volume backup. At least one must be given.
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      minProperties: 1
+      additionalProperties: false
+    VolumeBackupOperation:
+      description: An operation still running on this backup. It is not a separate resource; once it finishes, the 
+        backup's `operation` is null again and the backup shows the result.
+      type: object
+      properties:
+        type:
+          description: '`restore`: a volume is being created from this backup with `volume_backup_id` on `create-volume`.'
+          type: string
+          enum:
+          - create
+          - restore
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false
+    CreateVolumeBackupResponseBody:
+      type: object
+      description: The new backup, `pending` until its order is accepted, and its Checkout Session.
+      properties:
+        volume_backup:
+          $ref: '#/components/schemas/VolumeBackupResource'
+        checkout_session_id:
+          description: The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it
+            in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - volume_backup
+      - checkout_session_id
+      - order_id
+      additionalProperties: false

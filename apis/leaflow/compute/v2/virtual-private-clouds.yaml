@@ -1,0 +1,366 @@
+paths:
+  /api/v2/virtual-private-clouds:
+    get:
+      summary: List virtual private clouds
+      operationId: list-virtual-private-clouds
+      tags:
+      - virtual-private-clouds
+      parameters:
+      - name: region_id
+        in: query
+        required: false
+        description: Returns every region when omitted
+        explode: false
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloudListResponseBody'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      summary: Create a virtual private cloud
+      description: Creates a virtual private cloud definition and its default security group. The default security
+        group denies all inbound traffic and permits all outbound traffic.
+      operationId: create-virtual-private-cloud
+      tags:
+      - virtual-private-clouds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualPrivateCloudRequestBody'
+      responses:
+        '202':
+          description: The virtual private cloud definition was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:
+    get:
+      summary: Retrieve a virtual private cloud
+      operationId: get-virtual-private-cloud
+      tags:
+      - virtual-private-clouds
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      summary: Update a virtual private cloud
+      description: Only the name can change. The CIDR is fixed for the network's life, because every subnet and
+        address inside it was allocated from it.
+      operationId: update-virtual-private-cloud
+      tags:
+      - virtual-private-clouds
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVirtualPrivateCloudRequestBody'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      summary: Release a virtual private cloud
+      description: Deletion is rejected while instances or network interfaces remain in the network. Its
+        subnets, routes, security groups and IPv6 configuration are removed with it.
+      operationId: delete-virtual-private-cloud
+      tags:
+      - virtual-private-clouds
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      responses:
+        '202':
+          description: Deletion was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:enableIpv6:
+    parameters:
+    - name: virtualPrivateCloudId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+    post:
+      summary: Enable IPv6 on a virtual private cloud
+      description: |-
+        Gives the virtual private cloud a /56 that is routed to it, and every subnet of it a /64 of that /56; a subnet created afterwards takes its /64 at creation. It requires no elastic IP or NAT gateway: IPv6 is routed, not translated. A network interface created afterwards receives an address of its subnet's /64; addresses cannot be requested or released individually, and security groups apply to them as to IPv4. An interface created before IPv6 was enabled keeps only its IPv4 address.
+
+        Enabling IPv6 that is already enabled answers with the virtual private cloud as it is.
+      operationId: enable-virtual-private-cloud-ipv6
+      tags:
+      - virtual-private-clouds
+      responses:
+        '202':
+          description: Enabling IPv6 was accepted; `ipv6_cidr` names the /56 at once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disableIpv6:
+    parameters:
+    - name: virtualPrivateCloudId
+      in: path
+      required: true
+      schema:
+        $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+    post:
+      summary: Disable IPv6 on a virtual private cloud
+      description: Removes the IPv6 of every subnet and gives the /56 back. Refused while a network interface remains in
+        the virtual private cloud, since its IPv6 address would stop working with nothing reporting it.
+      operationId: disable-virtual-private-cloud-ipv6
+      tags:
+      - virtual-private-clouds
+      responses:
+        '202':
+          description: Disabling IPv6 was accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualPrivateCloud'
+        '409':
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/free-subnet-cidr:
+    get:
+      summary: Get a free subnet CIDR
+      description: The first CIDR of the given prefix length inside the virtual private cloud that no subnet
+        overlaps. It is not reserved; creating the subnet checks it again.
+      operationId: get-virtual-private-cloud-free-subnet-cidr
+      tags:
+      - virtual-private-clouds
+      parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+      - name: prefix_length
+        in: query
+        schema:
+          type: integer
+          format: int64
+          default: 24
+          minimum: 16
+          maximum: 30
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FreeSubnetCidr'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    VirtualPrivateCloud:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+        ipv4_cidr:
+          type: string
+        ipv6_cidr:
+          description: The /56 routed to the virtual private cloud, from which each of its subnets takes a /64; null
+            while IPv6 is not enabled.
+          type:
+          - string
+          - 'null'
+        status:
+          description: '`available` from creation: the network and router are created in the backend by the first
+            member that needs them, so a virtual private cloud nothing uses holds no capacity there. `failed` means the
+            cloud reports the network broken; instances cannot be created in it then and are refused with
+            `VIRTUAL_PRIVATE_CLOUD_UNAVAILABLE`. `deleting` from the moment its deletion began until it is gone:
+            subnets, security groups and routes in it can no longer be created, changed or deleted, and are refused
+            with `VIRTUAL_PRIVATE_CLOUD_DELETING`. A deletion that stopped before the end leaves it `deleting` with no
+            operation, and deleting it again resumes from where it stopped.'
+          type: string
+          enum:
+          - available
+          - deleting
+          - failed
+        operation:
+          description: The operation in progress on this virtual private cloud, or null when none is.
+          anyOf:
+          - $ref: '#/components/schemas/VirtualPrivateCloudOperation'
+          - type: 'null'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - region_id
+      - name
+      - ipv4_cidr
+      - ipv6_cidr
+      - status
+      - operation
+      - created_at
+      - updated_at
+      additionalProperties: false
+    VirtualPrivateCloudOperation:
+      description: An operation still running on this virtual private cloud. It is not a separate resource; once it
+        finishes, the virtual private cloud's `operation` is null again and the virtual private cloud shows the result.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - create
+          - enable_ipv6
+          - disable_ipv6
+          - delete
+        started_at:
+          type: string
+          format: date-time
+      required:
+      - type
+      - started_at
+      additionalProperties: false
+    VirtualPrivateCloudListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VirtualPrivateCloud'
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+      - items
+      - pagination
+      additionalProperties: false
+    CreateVirtualPrivateCloudRequestBody:
+      type: object
+      properties:
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionID
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        ipv4_cidr:
+          description: An RFC 1918 private CIDR with a prefix length between /8 and /24, for example `10.0.0.0/16`.
+          type: string
+          minLength: 1
+          maxLength: 32
+      required:
+      - region_id
+      - name
+      - ipv4_cidr
+      additionalProperties: false
+    UpdateVirtualPrivateCloudRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      minProperties: 1
+      additionalProperties: false
+    FreeSubnetCidr:
+      type: object
+      properties:
+        prefix_length:
+          type: integer
+          format: int64
+        ipv4_cidr:
+          description: Null when no CIDR of that prefix length is free.
+          type:
+          - string
+          - 'null'
+      required:
+      - prefix_length
+      - ipv4_cidr
+      additionalProperties: false
