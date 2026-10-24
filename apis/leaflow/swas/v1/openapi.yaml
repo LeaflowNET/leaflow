@@ -1,0 +1,1152 @@
+openapi: 3.2.1
+info:
+  title: Leaflow SWAS API
+  version: 1.0.0
+  description: Manage SWAS purchases and instances in the current project. Use an IAM scoped token for every
+    request. Amounts are decimal strings in the stated currency; timestamps are UTC RFC 3339. Accepted requests
+    may still be in progress. Read purchase, operation and refund progress separately.
+security:
+- ScopedToken: []
+paths:
+  /api/v1/catalog/plans:
+    get:
+      operationId: list-plans
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+          description: Successful read
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+      parameters:
+      - name: region_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      summary: List plans
+      tags:
+      - Catalog
+      description: Lists available plans and prices for the requested region. A plan without a price is not
+        available to buy.
+  /api/v1/purchases:
+    post:
+      operationId: create-purchase
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseCreate'
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Purchase'
+          description: Request accepted; not completed
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+      summary: Create purchase
+      tags:
+      - Purchase
+      description: Creates a purchase using the current catalog revision and expected price. Reuse the same
+        Idempotency-Key after a timeout. Acceptance is not confirmation of payment or instance delivery.
+  /api/v1/purchases/{purchaseId}:
+    get:
+      operationId: get-purchase
+      parameters:
+      - name: purchaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Purchase'
+          description: Successful read
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+      summary: Get purchase
+      tags:
+      - Purchase
+      description: Returns purchase, delivery and Billing progress. Payment and instance delivery may finish
+        at different times.
+  /api/v1/instances:
+    get:
+      operationId: list-instances
+      parameters:
+      - name: region_id
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+          minLength: 1
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceList'
+          description: Successful read
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+      summary: List instances
+      tags:
+      - Instance
+      description: Lists the current project's instances in the requested region. Pagination uses page and
+        page_size; total_count is returned when known.
+  /api/v1/instances/{instanceId}:
+    get:
+      operationId: get-instance
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Instance'
+          description: Successful read
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+      summary: Get instance
+      tags:
+      - Instance
+      description: Returns an instance and its most recently observed status.
+  /api/v1/instances/{instanceId}:start:
+    post:
+      operationId: start-instance
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementOperation'
+          description: Request accepted; not completed
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartInstance'
+      summary: Start instance
+      tags:
+      - Instance
+      description: Starts an existing instance. Returns an operation to poll; acceptance is not completion.
+  /api/v1/instances/{instanceId}/operations/{operationId}:
+    get:
+      operationId: get-instance-operation
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementOperation'
+          description: Successful read
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+      summary: Get instance operation
+      tags:
+      - Instance
+      description: Returns management progress for the specified instance. Unknown progress is not confirmation
+        of success; do not repeat an operation solely because its outcome is unknown.
+  /api/v1/instances/{instanceId}:stop:
+    post:
+      operationId: stop-instance
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementOperation'
+          description: Request accepted; not completed
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopInstance'
+      summary: Stop instance
+      tags:
+      - Instance
+      description: Stops an existing instance. Returns an operation to poll; acceptance is not completion.
+  /api/v1/instances/{instanceId}/cancellations/{cancellationId}/refund-progress:
+    get:
+      operationId: get-cancellation-refund-progress
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: cancellationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundProgress'
+          description: Successful read
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+      summary: Get cancellation refund progress
+      tags:
+      - Instance
+      description: Returns cancellation and refund progress for the specified instance. Unknown refund amounts
+        and currencies are null. A completed cancellation does not confirm that money has been returned.
+  /api/v1/instances/{instanceId}:reboot:
+    post:
+      operationId: reboot-instance
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementOperation'
+          description: Request accepted; not completed
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Invalid request
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Missing or invalid scoped token
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Current permission denied
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Resource not found
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Conflicting state or operation
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Service unavailable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebootInstance'
+      summary: Reboot instance
+      tags:
+      - Instance
+      description: Reboots an existing instance. Returns an operation to poll; an unchanged Running status
+        does not confirm completion.
+components:
+  securitySchemes:
+    ScopedToken:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  schemas:
+    DecimalAmount:
+      description: A non-negative decimal amount with at most 15 integer digits and 10 fractional digits.
+      allOf:
+      - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      - type: string
+        pattern: ^(0|[1-9][0-9]{0,14})(\.[0-9]{1,10})?$
+    ExpectedQuote:
+      type: object
+      properties:
+        currency:
+          type: string
+          const: USD
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+      required:
+      - currency
+      - amount
+      additionalProperties: false
+    PurchaseCreate:
+      type: object
+      properties:
+        catalog_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        provider_plan_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        billing_price_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        image_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        quantity:
+          type: integer
+          const: 1
+        expected_quote:
+          $ref: '#/components/schemas/ExpectedQuote'
+        region_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - catalog_revision
+      - provider_plan_id
+      - billing_price_id
+      - image_id
+      - quantity
+      - expected_quote
+      - region_id
+      additionalProperties: false
+    Purchase:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        state:
+          type: string
+          enum:
+          - submitted
+          - checkout_create_reserved
+          - checkout_unknown
+          - checkout_open
+          - order_ready
+          - accept_unknown
+          - accepted
+          - create_unknown
+          - awaiting_delivery
+          - delivered
+          - settle_unknown
+          - completed
+          - rejected
+          - provider_rejected
+        checkout_session_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        delivered:
+          type: boolean
+        billing_settled:
+          type: boolean
+      required:
+      - id
+      - state
+      - checkout_session_id
+      - delivered
+      - billing_settled
+      additionalProperties: false
+      description: Durable purchase progress. delivered and billing_settled describe different facts. Acceptance
+        is not cloud delivery or checkout completion.
+    Price:
+      type: object
+      properties:
+        billing_plan_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        billing_price_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        currency:
+          type: string
+          const: USD
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        period_months:
+          anyOf:
+          - type: integer
+            enum:
+            - 1
+            - 3
+            - 6
+            - 12
+            - 24
+            - 36
+          - type: 'null'
+      required:
+      - billing_plan_id
+      - billing_price_id
+      - currency
+      - amount
+      - period_months
+      additionalProperties: false
+    Plan:
+      type: object
+      properties:
+        provider_plan_id:
+          type: string
+        region_id:
+          type: string
+        name:
+          type: string
+        catalog_revision:
+          type: integer
+          minimum: 1
+        buyable:
+          type: boolean
+        price:
+          anyOf:
+          - $ref: '#/components/schemas/Price'
+          - type: 'null'
+        image_ids:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          maxItems: 256
+        cpu:
+          type: integer
+          minimum: 1
+        memory_mb:
+          type: integer
+          minimum: 1
+        disk_gb:
+          type: integer
+          minimum: 1
+      required:
+      - provider_plan_id
+      - region_id
+      - name
+      - catalog_revision
+      - buyable
+      - price
+      - image_ids
+      - cpu
+      - memory_mb
+      - disk_gb
+      additionalProperties: false
+    Catalog:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plan'
+        source_observed_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        complete:
+          type: boolean
+      required:
+      - items
+      - source_observed_at
+      - complete
+      additionalProperties: false
+      description: Bounded catalog snapshot for one requested region. Incomplete or unavailable price information
+        is not a purchasable offer.
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    InstancePrice:
+      type: object
+      additionalProperties: false
+      required:
+      - currency
+      - amount
+      - period_months
+      properties:
+        currency:
+          type: string
+          const: USD
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        period_months:
+          type: integer
+          enum:
+          - 1
+          - 3
+          - 6
+          - 12
+          - 24
+          - 36
+    InstanceCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+      - manage
+      - customer_refund
+      - supplier_refund
+      - release
+      properties:
+        manage:
+          type: boolean
+          const: false
+        customer_refund:
+          type: boolean
+          const: false
+        supplier_refund:
+          type: boolean
+          const: false
+        release:
+          type: boolean
+          const: false
+    Instance:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - purchase_id
+      - project_id
+      - region_id
+      - provider_plan_id
+      - image_id
+      - status
+      - business_status
+      - observation
+      - created_at
+      - expires_at
+      - original_price
+      - source_observed_at
+      - sync_revision
+      - capabilities
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchase_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        region_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+        provider_plan_id:
+          type: string
+          maxLength: 128
+        image_id:
+          type: string
+          maxLength: 128
+        status:
+          type: string
+          enum:
+          - Pending
+          - Starting
+          - Running
+          - Stopping
+          - Stopped
+          - Resetting
+          - Upgrading
+          - Disabled
+          - Unknown
+        business_status:
+          type: string
+          enum:
+          - Normal
+          - Expired
+          - Overdue
+          - Unknown
+        observation:
+          type: string
+          enum:
+          - present
+          - missing
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp.
+          - type: 'null'
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp.
+          - type: 'null'
+        original_price:
+          $ref: '#/components/schemas/InstancePrice'
+        source_observed_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        sync_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        capabilities:
+          $ref: '#/components/schemas/InstanceCapabilities'
+    InstancePagination:
+      $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+    InstanceList:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - pagination
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/Instance'
+        pagination:
+          $ref: '#/components/schemas/InstancePagination'
+    StartInstance:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
+    ManagementOperation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        purchase_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+          - start
+          - stop
+          - reboot
+        state:
+          type: string
+          enum:
+          - queued
+          - dispatch_unknown
+          - provider_ack
+          - completed
+        last_observed_status:
+          type: string
+          enum:
+          - Stopped
+          - Running
+          - Starting
+        created_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        updated_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        reboot_cycle:
+          $ref: '#/components/schemas/RebootCycle'
+      required:
+      - id
+      - purchase_id
+      - action
+      - state
+      - last_observed_status
+      - created_at
+      - updated_at
+      description: Read state to follow the operation. For a reboot, reboot_cycle records a Starting observation
+        followed by a later Running observation. A missing cycle or null running time does not confirm completion.
+    StopInstance:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
+    CustomerRefundProgress:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          const: unknown
+        reason:
+          type: string
+          const: billing_refund_reader_unavailable
+        amount:
+          type: 'null'
+        currency:
+          type: 'null'
+      required:
+      - state
+      - reason
+      - amount
+      - currency
+    SupplierRefundProgress:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          const: not_observed
+        reason:
+          type: string
+          const: supplier_refund_not_queried
+      required:
+      - state
+      - reason
+    RefundProgress:
+      type: object
+      additionalProperties: false
+      properties:
+        purchase_id:
+          type: string
+          format: uuid
+        cancellation_id:
+          type: string
+          format: uuid
+        cancellation_state:
+          type: string
+          enum:
+          - requested
+          - scheduled
+          - releasing
+          - completed
+          - canceled
+          - failed
+        customer_refund:
+          $ref: '#/components/schemas/CustomerRefundProgress'
+        supplier_refund:
+          $ref: '#/components/schemas/SupplierRefundProgress'
+        observed_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+      required:
+      - purchase_id
+      - cancellation_id
+      - cancellation_state
+      - customer_refund
+      - supplier_refund
+      - observed_at
+      description: Cancellation and refund progress are independent. Unknown money amounts and currencies are
+        null; cancellation completion does not confirm cash settlement.
+    RebootInstance:
+      type: object
+      additionalProperties: false
+      properties: {}
+      required: []
+    RebootCycle:
+      type: object
+      additionalProperties: false
+      properties:
+        starting_observed_at:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        running_observed_at:
+          anyOf:
+          - type: string
+            format: date-time
+            description: UTC RFC 3339 timestamp.
+          - type: 'null'
+      required:
+      - starting_observed_at
+      - running_observed_at
+      description: Observed reboot progress. running_observed_at is null until a later Running observation
+        is available.
+servers:
+- url: https://swas.leaflow.cloud
+  description: SWAS API
