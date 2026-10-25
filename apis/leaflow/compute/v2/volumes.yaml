@@ -51,7 +51,7 @@ paths:
 
         A volume bought on its own is licensed: `billing.usage_type` `metered` is refused with `VOLUME_USAGE_TYPE_UNAVAILABLE`. A volume created with an instance follows the machine's terms instead and may be metered.
 
-        The volume shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
+        The volume is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-volume
       tags:
       - volumes
@@ -111,9 +111,9 @@ paths:
 
         **Renaming** is not an operation and is accepted at any time. It returns 200 with `checkout_session_id` and `order_id` null.
 
-        **Resizing** accepts only an increase; a smaller `size_gib` is refused with `VOLUME_CANNOT_SHRINK` (422), since a file system cannot be shrunk from outside the instance. It returns 202 with the volume and the Checkout Session for the resize, which keeps the volume's usage type and period. The volume shows the `resize` operation until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The volume keeps its current size until the resize is applied; once `size_gib` shows the new size, extend the file system inside the instance. If checkout is not completed, the order is not accepted or the resize fails, the volume keeps its size and Billing shows the outcome.
+        **Resizing** accepts only an increase; a smaller `size_gib` is refused with `VOLUME_CANNOT_SHRINK` (422), since a file system cannot be shrunk from outside the instance. It returns 202 with the volume and the Checkout Session for the resize, which keeps the volume's usage type and period. The volume is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The volume keeps its current size until the resize is applied; once `size_gib` shows the new size, extend the file system inside the instance. If checkout is not completed, the order is not accepted or the resize fails, the volume keeps its size and Billing shows the outcome.
 
-        **Changing the type** moves the volume to another volume type at the same capacity, priced as that type, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume shows the `retype` operation until the change is applied, its Checkout Session expires or its order is canceled. A target on the same storage backend takes effect at once; one on another backend copies the volume's data there first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded.
+        **Changing the type** moves the volume to another volume type at the same capacity, priced as that type, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume is `retyping` until the change is applied, its Checkout Session expires or its order is canceled. A target on the same storage backend takes effect at once; one on another backend copies the volume's data there first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded.
 
         An attached volume, including a boot volume, can be resized. The capacity is usable at once, and the volume's `performance` shows what its type gives the new size. **That performance applies from the volume's next attachment, or the next start of its stopped instance**: the storage reads a volume's limits only while connecting it. Until then the attachment's `performance` shows what is in effect.
       operationId: update-volume
@@ -174,7 +174,7 @@ paths:
         '409':
           $ref: ./openapi.yaml#/components/responses/Conflict
         '202':
-          description: Deletion was accepted. Without a subscription the volume shows the `delete` operation until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription the volume is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -193,7 +193,7 @@ paths:
 
         Three restrictions apply: only the most recent snapshot of the volume can be reverted to; the volume must be detached from its instance first; and a volume resized since the snapshot was taken cannot be reverted. To return to an earlier point in time, or to keep the existing volume, create a new volume from the snapshot instead.
 
-        The revert is a request of its own rather than a state of the volume: the response is the volume, which shows the `revert` operation until the revert is complete.
+        The revert is a request of its own rather than a state of the volume: the response is the volume, which is `reverting` until the revert is complete.
       operationId: revert-volume
       tags:
       - volumes
@@ -266,10 +266,11 @@ components:
         performance:
           $ref: '#/components/schemas/VolumePerformance'
         status:
-          description: '`pending` until the volume is created, with no storage allocated before the order is accepted
-            and the `create` operation shown while it is created; then `available`, or `in_use` once attached.
-            `failed` means the volume was not created; `failure_reason` states why. `error` means the cloud reports the
-            volume broken.'
+          description: '`pending` until the volume is created, with no storage allocated before the order is accepted;
+            then `available`, or `in_use` once attached. `failed` means the volume was not created; `failure_reason`
+            states why. `error` means the cloud reports the volume broken. A value naming an operation in progress
+            (`resizing`, `retyping`, `reverting`, `attaching`, `detaching`, `suspending`, `resuming`, `deleting`) is
+            shown while that operation runs; the volume refuses another operation until it ends.'
           type: string
           enum:
           - pending
@@ -278,6 +279,14 @@ components:
           - deleted
           - failed
           - error
+          - resizing
+          - retyping
+          - reverting
+          - attaching
+          - detaching
+          - suspending
+          - resuming
+          - deleting
         checkout_session_id:
           description: The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
             until its checkout completes. Null when the resource was not bought through one.
@@ -338,12 +347,6 @@ components:
           - checkout_expired
           - provisioning_failed
           - null
-        operation:
-          description: The operation in progress on this volume, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/VolumeOperation'
-          - type: 'null'
-          readOnly: true
         attachment:
           anyOf:
           - $ref: '#/components/schemas/VolumeAttachment'
@@ -365,7 +368,6 @@ components:
       - release_set
       - access_state
       - failure_reason
-      - operation
       - attachment
       additionalProperties: false
     VolumeListResponseBody:
@@ -609,30 +611,4 @@ components:
       required:
       - items
       - pagination
-      additionalProperties: false
-    VolumeOperation:
-      description: An operation still running on this volume. It is not a separate resource; once it finishes, the
-        volume's `operation` is null again and the volume shows the result.
-      type: object
-      properties:
-        type:
-          description: '`attach` and `detach` accompany the instance''s `attach_volume` and `detach_volume` operations.
-            `delete` includes release through a Billing cancellation and deletion with an instance.'
-          type: string
-          enum:
-          - create
-          - resize
-          - retype
-          - revert
-          - attach
-          - detach
-          - suspend
-          - resume
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false

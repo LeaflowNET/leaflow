@@ -79,7 +79,7 @@ paths:
         Changes the name, or replaces the security groups. The two are never combined (422 `UPDATE_FIELDS_COMBINED`).
 
         - `name` is not an operation, is accepted at any time and answers 200.
-        - `security_group_ids` is the complete new set, one to five groups of the network interface's virtual private cloud; groups left out are removed. It applies to traffic of the running instance as soon as it is in place, and answers 202 with the network interface showing the `update_security_groups` operation until then.
+        - `security_group_ids` is the complete new set, one to five groups of the network interface's virtual private cloud; groups left out are removed. It applies to traffic of the running instance as soon as it is in place, and answers 202 with the network interface `updating_security_groups` until then.
 
         Secondary IPv4 addresses are added and removed under `/network-interfaces/{networkInterfaceId}/addresses`.
       operationId: update-network-interface
@@ -131,7 +131,7 @@ paths:
           $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
       responses:
         '202':
-          description: Deletion was accepted. The network interface shows the `delete` operation until it is deleted.
+          description: Deletion was accepted. The network interface is `deleting` until it is deleted.
           content:
             application/json:
               schema:
@@ -148,7 +148,7 @@ paths:
     post:
       summary: Add a secondary IPv4 address
       description: |-
-        Adds an IPv4 address in the network interface's subnet, given or chosen by the network, and answers 202 with the network interface showing the `add_address` operation until the address is in place; it then appears among `addresses` with `role` `secondary`. An elastic IP can be associated with it like the primary address.
+        Adds an IPv4 address in the network interface's subnet, given or chosen by the network, and answers 202 with the network interface `adding_address` until the address is in place; it then appears among `addresses` with `role` `secondary`. An elastic IP can be associated with it like the primary address.
 
         **The operating system has to be configured to use it**: DHCP hands out only the primary address. Changing the addresses of a network interface in use may briefly interrupt its traffic.
 
@@ -184,8 +184,8 @@ paths:
   /api/v2/network-interfaces/{networkInterfaceId}/addresses/{addressId}:
     delete:
       summary: Remove a secondary IPv4 address
-      description: Removes a secondary IPv4 address and answers 202 with the network interface showing the `remove_address`
-        operation until it is gone. The primary address goes only with the network interface (409
+      description: Removes a secondary IPv4 address and answers 202 with the network interface `removing_address`
+        until it is gone. The primary address goes only with the network interface (409
         `NETWORK_INTERFACE_ADDRESS_PRIMARY`), and an address an elastic IP is associated with is refused until it is
         disassociated (409 `NETWORK_INTERFACE_ADDRESS_ASSOCIATED`).
       operationId: delete-network-interface-address
@@ -252,18 +252,22 @@ components:
           - type: 'null'
         status:
           description: '`pending` until the interface is created, then `available`. `error` means its creation failed
-            or the cloud reports it broken; delete it and create another.'
+            or the cloud reports it broken; delete it and create another. A value naming an operation in progress
+            (`attaching`, `detaching`, `associating_elastic_ip`, `updating_security_groups`, `adding_address`,
+            `removing_address`, `deleting`) is shown while that operation runs; the interface refuses another
+            operation until it ends.'
           type: string
           enum:
           - pending
           - available
           - error
-        operation:
-          description: The operation in progress on this network interface, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/NetworkInterfaceOperation'
-          - type: 'null'
-          readOnly: true
+          - attaching
+          - detaching
+          - associating_elastic_ip
+          - updating_security_groups
+          - adding_address
+          - removing_address
+          - deleting
       required:
       - id
       - virtual_private_cloud_id
@@ -273,7 +277,6 @@ components:
       - security_group_ids
       - attachment
       - status
-      - operation
       additionalProperties: false
     NetworkInterfaceListResponseBody:
       type: object
@@ -454,30 +457,4 @@ components:
       required:
       - items
       - pagination
-      additionalProperties: false
-    NetworkInterfaceOperation:
-      description: An operation still running on this network interface. It is not a separate resource; once it
-        finishes, the network interface's `operation` is null again and the network interface shows the result.
-      type: object
-      properties:
-        type:
-          description: '`associate_elastic_ip` holds the network interface while an elastic IP is associated with it
-            directly rather than through an instance. `update_security_groups` replaces its security groups,
-            `add_address` and `remove_address` change its secondary IPv4 addresses.'
-          type: string
-          enum:
-          - create
-          - attach
-          - detach
-          - associate_elastic_ip
-          - update_security_groups
-          - add_address
-          - remove_address
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false

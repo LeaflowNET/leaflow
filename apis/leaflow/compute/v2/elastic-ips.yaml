@@ -34,7 +34,7 @@ paths:
 
         Allocation does not select or create a virtual private cloud. A later association selects an assigned network-interface address; Compute then establishes the required network connectivity.
 
-        The elastic IP shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
+        The elastic IP is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-elastic-ip
       tags:
       - elastic-ips
@@ -94,9 +94,9 @@ paths:
         - **Prepaid**: the change goes through a Checkout Session that changes the network subscription, priced for the rest of its period. It starts once Billing accepts the order; if checkout is not completed, the order is not accepted or the change fails, `bandwidth_mbps` keeps its value and Billing shows the outcome.
         - **Pay-as-you-go**: there is no checkout. The change starts at once, `checkout_session_id` and `order_id` are null, and the new limit is metered from the instant it is applied; if it fails, the old limit stays in effect and metered. `checkout` and `proration_date` are refused with `ELASTIC_IP_CHECKOUT_UNUSED`.
 
-        A change of `internet_charge_type` needs no checkout and shows the `update_internet_charge_type` operation until it is applied; see the field.
+        A change of `internet_charge_type` needs no checkout and is `updating_internet_charge_type` until it is applied; see the field.
 
-        The elastic IP shows the `update_bandwidth` operation until the change is applied or ends, so other operations and a second change are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The current limit stays in effect until the change is applied.
+        The elastic IP is `updating_bandwidth` until the change is applied or ends, so other operations and a second change are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The current limit stays in effect until the change is applied.
 
         While the address is associated with an instance, the limit must not exceed the `max_bandwidth_mbps` of that instance's type; a higher limit is refused with `INSTANCE_BANDWIDTH_CEILING`. The limit of an address that is not associated is checked when the address is associated with an instance.
       operationId: update-elastic-ip
@@ -139,7 +139,7 @@ paths:
     delete:
       summary: Release an elastic IP
       description: |-
-        Releases the elastic IP after dissociating it. The elastic IP shows the `delete` operation until cleanup is confirmed; the address then immediately returns to available inventory, with no cooldown period. Deleting the association or replacing it alone does not release the address.
+        Releases the elastic IP after dissociating it. The elastic IP is `deleting` until cleanup is confirmed; the address then immediately returns to available inventory, with no cooldown period. Deleting the association or replacing it alone does not release the address.
 
         Refused with `COMPUTE_PURCHASE_PENDING` while the purchase that created it still awaits checkout or payment; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead.
 
@@ -255,7 +255,7 @@ paths:
       description: |-
         Points the elastic IP at a target: an instance, which means the primary private IPv4 address of its primary network interface, or a network interface address (`network_interface_address_id`) given directly. Exactly one of `instance_id` and `network_interface_address_id`. A network interface address must be an assigned, unreleased IPv4 address on a network interface in this project and region; IPv6 addresses are rejected.
 
-        The target becomes what the elastic IP points at. Repeating the request for the target it already points at changes nothing; an elastic IP associated with another target is refused with `ELASTIC_IP_ALREADY_ASSOCIATED` (409), and is moved by disassociating it first, so that the moment traffic stops reaching the old target is one the caller chose. The elastic IP shows the `associate` operation until the association is confirmed, and with an instance as the target that instance shows the `associate_elastic_ip` operation as well, so the instance must not have another operation in progress.
+        The target becomes what the elastic IP points at. Repeating the request for the target it already points at changes nothing; an elastic IP associated with another target is refused with `ELASTIC_IP_ALREADY_ASSOCIATED` (409), and is moved by disassociating it first, so that the moment traffic stops reaching the old target is one the caller chose. The elastic IP is `associating` until the association is confirmed, and with an instance as the target that instance is `associating_elastic_ip` as well, so the instance must not have another operation in progress.
 
         The elastic IP must be in the same region as the target. With an instance as the target, the elastic IP's `bandwidth_mbps` must not exceed the `max_bandwidth_mbps` of that instance's type; a higher limit is refused with `INSTANCE_BANDWIDTH_CEILING`.
       operationId: associate-elastic-ip
@@ -292,8 +292,8 @@ paths:
     post:
       summary: Remove the association of an elastic IP
       description: The address remains held by the project and simply no longer points at any network interface.
-        The elastic IP shows the `disassociate` operation until the change is confirmed, and an instance whose primary
-        interface it pointed at shows the `disassociate_elastic_ip` operation. Removing an association that does not exist is
+        The elastic IP is `disassociating` until the change is confirmed, and an instance whose primary
+        interface it pointed at is `disassociating_elastic_ip`. Removing an association that does not exist is
         refused with 404 `ELASTIC_IP_NOT_ASSOCIATED`.
       operationId: disassociate-elastic-ip
       tags:
@@ -399,8 +399,10 @@ components:
           $ref: ./identifiers.yaml#/components/schemas/RegionID
         status:
           description: '`pending` until the address is created, with no address allocated before the order is
-            accepted and the `create` operation shown while it is created; then `available`. `failed` means no address
-            was allocated; `failure_reason` states why.'
+            accepted; then `available`. `failed` means no address was allocated; `failure_reason` states why. A
+            value naming an operation in progress (`associating`, `disassociating`, `updating_bandwidth`,
+            `updating_internet_charge_type`, `suspending`, `resuming`, `deleting`) is shown while that operation
+            runs; the elastic IP refuses another operation until it ends.'
           type: string
           enum:
           - pending
@@ -408,6 +410,13 @@ components:
           - deleted
           - failed
           - error
+          - associating
+          - disassociating
+          - updating_bandwidth
+          - updating_internet_charge_type
+          - suspending
+          - resuming
+          - deleting
         checkout_session_id:
           description: The Billing Checkout Session that bought this resource; `order_id` and the order items stay null
             until its checkout completes. Null when the resource was not bought through one.
@@ -479,12 +488,6 @@ components:
           - checkout_expired
           - provisioning_failed
           - null
-        operation:
-          description: The operation in progress on this elastic IP, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/ElasticIPOperation'
-          - type: 'null'
-          readOnly: true
         association:
           anyOf:
           - $ref: '#/components/schemas/ElasticIPAssociation'
@@ -509,7 +512,6 @@ components:
       - release_set
       - access_state
       - failure_reason
-      - operation
       - association
       additionalProperties: false
     TrafficUsage:
@@ -754,27 +756,4 @@ components:
       - associated_at
       - disassociated_at
       - released_at
-      additionalProperties: false
-    ElasticIPOperation:
-      description: An operation still running on this elastic IP. It is not a separate resource; once it finishes,
-        the elastic IP's `operation` is null again and the elastic IP shows the result.
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-          - create
-          - associate
-          - disassociate
-          - update_bandwidth
-          - update_internet_charge_type
-          - suspend
-          - resume
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false

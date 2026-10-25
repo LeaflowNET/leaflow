@@ -108,7 +108,7 @@ paths:
     post:
       summary: Accept a peering
       description: |-
-        Starts the provisioning of the connectivity; the peering shows the `provision` operation until it is `active`. It does not change security groups or provide transitive routing. Only the accepter project may decide; the requester project is refused, because a peering would otherwise be accepted by the party who asked for it. The decision is made once: a peering whose `acceptance` is no longer `pending` refuses both methods.
+        Starts the provisioning of the connectivity; the peering is `provisioning` until it is `active`. It does not change security groups or provide transitive routing. Only the accepter project may decide; the requester project is refused, because a peering would otherwise be accepted by the party who asked for it. The decision is made once: a peering whose `acceptance` is no longer `pending` refuses both methods.
       operationId: accept-virtual-private-cloud-peering
       tags:
       - virtual-private-cloud-peerings
@@ -187,14 +187,17 @@ components:
           - rejected
         status:
           description: '`pending` until the connectivity exists: while acceptance is pending, and after it is accepted
-            while the `provision` operation builds the link. Then `active`. `failed` means the link could not be built;
-            `failure_reason` states why. `deleted` once deleted or rejected.'
+            while the link is built (`provisioning`). Then `active`. `failed` means the link could not be built;
+            `failure_reason` states why. `deleted` once deleted or rejected. `deleting` runs until the link and
+            its peer routes are gone.'
           type: string
           enum:
           - pending
           - active
           - deleted
           - failed
+          - provisioning
+          - deleting
         created_at:
           type: string
           format: date-time
@@ -203,12 +206,6 @@ components:
           type:
           - string
           - 'null'
-        operation:
-          description: The operation in progress on this peering, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/VirtualPrivateCloudPeeringOperation'
-          - type: 'null'
-          readOnly: true
       required:
       - id
       - name
@@ -221,7 +218,6 @@ components:
       - status
       - created_at
       - failure_reason
-      - operation
       additionalProperties: false
     VirtualPrivateCloudPeeringListResponseBody:
       type: object
@@ -255,22 +251,4 @@ components:
       - requester_virtual_private_cloud_id
       - accepter_project_id
       - accepter_virtual_private_cloud_id
-      additionalProperties: false
-    VirtualPrivateCloudPeeringOperation:
-      description: An operation still running on this peering. It is not a separate resource; once it finishes,
-        the peering's `operation` is null again and the peering shows the result.
-      type: object
-      properties:
-        type:
-          description: '`provision` runs after the peering is accepted, until it is `active`.'
-          type: string
-          enum:
-          - provision
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false

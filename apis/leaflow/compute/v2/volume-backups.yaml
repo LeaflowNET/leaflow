@@ -36,7 +36,7 @@ paths:
         Billing Checkout Session: automatic checkout completes at once for metered pricing and the backup is taken as soon
         as the order is accepted; with deferred checkout it stays `pending` until the customer completes checkout in
         Billing. The source and project quotas are checked before the Checkout Session is created, and a refused
-        request creates nothing.\n\nThe backup shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment."
+        request creates nothing.\n\nThe backup is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment."
       operationId: create-volume-backup
       tags:
       - volume-backups
@@ -140,7 +140,7 @@ paths:
         '409':
           $ref: ./openapi.yaml#/components/responses/Conflict
         '202':
-          description: Deletion was accepted. Without a subscription the backup shows the `delete` operation until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription the backup is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -197,8 +197,9 @@ components:
           description: The volume this backup was taken from. The backup remains usable after that volume is deleted
           $ref: ./identifiers.yaml#/components/schemas/VolumeID
         status:
-          description: '`pending` from the purchase until the backup is taken, then `available`; while it is taken the
-            backup shows the `create` operation. `failed` means the backup was not created.'
+          description: '`pending` from the purchase until the backup is taken, then `available`. `failed` means the
+            backup was not created. A value naming an operation in progress (`restoring`, `deleting`) is shown while
+            that operation runs; the backup refuses another operation until it ends.'
           type: string
           enum:
           - pending
@@ -206,12 +207,8 @@ components:
           - deleted
           - failed
           - error
-        operation:
-          description: The operation in progress on this backup, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/VolumeBackupOperation'
-          - type: 'null'
-          readOnly: true
+          - restoring
+          - deleting
         source_availability_zone_id:
           description: Availability zone of the source volume. A restore may target another zone in the same region
           $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
@@ -275,7 +272,6 @@ components:
       - region_id
       - source_availability_zone_id
       - created_at
-      - operation
       - failure_reason
       - checkout_session_id
       - order_id
@@ -322,25 +318,6 @@ components:
           minLength: 1
           maxLength: 128
       minProperties: 1
-      additionalProperties: false
-    VolumeBackupOperation:
-      description: An operation still running on this backup. It is not a separate resource; once it finishes, the 
-        backup's `operation` is null again and the backup shows the result.
-      type: object
-      properties:
-        type:
-          description: '`restore`: a volume is being created from this backup with `volume_backup_id` on `create-volume`.'
-          type: string
-          enum:
-          - create
-          - restore
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false
     CreateVolumeBackupResponseBody:
       type: object

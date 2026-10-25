@@ -259,19 +259,17 @@ components:
             cloud reports the network broken; instances cannot be created in it then and are refused with
             `VIRTUAL_PRIVATE_CLOUD_UNAVAILABLE`. `deleting` from the moment its deletion began until it is gone:
             subnets, security groups and routes in it can no longer be created, changed or deleted, and are refused
-            with `VIRTUAL_PRIVATE_CLOUD_DELETING`. A deletion that stopped before the end leaves it `deleting` with no
-            operation, and deleting it again resumes from where it stopped.'
+            with `VIRTUAL_PRIVATE_CLOUD_DELETING`. A deletion that stopped before the end leaves it `deleting`, and
+            deleting it again resumes from where it stopped. `creating`, `enabling_ipv6` and `disabling_ipv6` name
+            operations in progress; the network refuses another operation until they end.'
           type: string
           enum:
           - available
           - deleting
           - failed
-        operation:
-          description: The operation in progress on this virtual private cloud, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/VirtualPrivateCloudOperation'
-          - type: 'null'
-          readOnly: true
+          - creating
+          - enabling_ipv6
+          - disabling_ipv6
         created_at:
           type: string
           format: date-time
@@ -285,28 +283,8 @@ components:
       - ipv4_cidr
       - ipv6_cidr
       - status
-      - operation
       - created_at
       - updated_at
-      additionalProperties: false
-    VirtualPrivateCloudOperation:
-      description: An operation still running on this virtual private cloud. It is not a separate resource; once it
-        finishes, the virtual private cloud's `operation` is null again and the virtual private cloud shows the result.
-      type: object
-      properties:
-        type:
-          type: string
-          enum:
-          - create
-          - enable_ipv6
-          - disable_ipv6
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false
     VirtualPrivateCloudListResponseBody:
       type: object

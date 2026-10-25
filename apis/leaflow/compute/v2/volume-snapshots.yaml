@@ -36,7 +36,7 @@ paths:
         Billing Checkout Session: automatic checkout completes at once for metered pricing and the snapshot is taken as soon
         as the order is accepted; with deferred checkout it stays `pending` until the customer completes checkout in
         Billing. The source and project quotas are checked before the Checkout Session is created, and a refused
-        request creates nothing.\n\nThe snapshot shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment."
+        request creates nothing.\n\nThe snapshot is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment."
       operationId: create-volume-snapshot
       tags:
       - volume-snapshots
@@ -137,7 +137,7 @@ paths:
         '409':
           $ref: ./openapi.yaml#/components/responses/Conflict
         '202':
-          description: Deletion was accepted. Without a subscription the snapshot shows the `delete` operation until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription the snapshot is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -191,9 +191,10 @@ components:
           type: integer
           format: int64
         status:
-          description: '`pending` once a quota slot is reserved and until the snapshot is taken, showing the `create`
-            operation while it is taken; then `available`. `failed` means the snapshot was not created; its slot is
-            released once no snapshot data remains. `error` means the cloud reports the snapshot broken.'
+          description: '`pending` once a quota slot is reserved and until the snapshot is taken; then `available`.
+            `failed` means the snapshot was not created; its slot is released once no snapshot data remains. `error`
+            means the cloud reports the snapshot broken. A value naming an operation in progress (`restoring`,
+            `deleting`) is shown while that operation runs; the snapshot refuses another operation until it ends.'
           type: string
           enum:
           - pending
@@ -201,12 +202,8 @@ components:
           - deleted
           - failed
           - error
-        operation:
-          description: The operation in progress on this snapshot, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/VolumeSnapshotOperation'
-          - type: 'null'
-          readOnly: true
+          - restoring
+          - deleting
         failure_reason:
           description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
             not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
@@ -266,7 +263,6 @@ components:
       - availability_zone_id
       - region_id
       - created_at
-      - operation
       - failure_reason
       - checkout_session_id
       - order_id
@@ -315,25 +311,6 @@ components:
           minLength: 1
           maxLength: 128
       minProperties: 1
-      additionalProperties: false
-    VolumeSnapshotOperation:
-      description: An operation still running on this snapshot. It is not a separate resource; once it finishes, 
-        the snapshot's `operation` is null again and the snapshot shows the result.
-      type: object
-      properties:
-        type:
-          description: '`restore`: a volume is being reverted to this snapshot (`revert-volume`) or created from it (`create-volume` with `volume_snapshot_id`).'
-          type: string
-          enum:
-          - create
-          - restore
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false
     CreateVolumeSnapshotResponseBody:
       type: object

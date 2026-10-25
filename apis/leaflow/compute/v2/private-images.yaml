@@ -46,7 +46,7 @@ paths:
         Billing Checkout Session: automatic checkout completes at once for metered pricing and the image is captured as soon
         as the order is accepted; with deferred checkout it stays `pending` until the customer completes checkout in
         Billing. The source and project quotas are checked before the Checkout Session is created, and a refused
-        request creates nothing.\n\nThe image shows the `create` operation from the moment its Checkout Session is created until it is delivered or its checkout or order ends. While its purchase awaits checkout or payment its deletion is refused with `COMPUTE_PURCHASE_PENDING`; once the capture runs, deletion is the one operation it accepts."
+        request creates nothing.\n\nThe image is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. While its purchase awaits checkout or payment its deletion is refused with `COMPUTE_PURCHASE_PENDING`; once the capture runs, deletion is the one operation it accepts."
       operationId: create-private-image
       tags:
       - private-images
@@ -135,7 +135,7 @@ paths:
       description: "Deletes a private image of this project; any other image, public images included, is reported as not found.\n\n\
         Deletion is rejected while instances created from the image still exist, as they need it in order to be
         rebuilt.\n\nAn image whose capture has not finished can be deleted; the capture is aborted. This is the one operation
-        accepted while the `create` operation is in progress.\n\nQuota capacity and storage metering are released only
+        accepted while its status is `pending`.\n\nQuota capacity and storage metering are released only
         after cleanup is confirmed.\n\n\
         A resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource is
         released through its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown
@@ -154,7 +154,7 @@ paths:
         '409':
           $ref: ./openapi.yaml#/components/responses/Conflict
         '202':
-          description: Deletion was accepted. Without a subscription the image shows the `delete` operation until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription the image is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -220,10 +220,10 @@ components:
             image
           type: boolean
         status:
-          description: Only available images can install instances. A capture is pending until it finishes and
-            shows the `create` operation while it runs, then becomes available. Failed means no usable image was
-            produced; failure describes the outcome. Error means the image service broke the image or no longer holds
-            it, and nothing can be installed from it.
+          description: Only available images can install instances. A capture is pending until it finishes, then
+            becomes available. Failed means no usable image was produced; failure describes the outcome. Error means
+            the image service broke the image or no longer holds it, and nothing can be installed from it. A value
+            naming an operation in progress (`suspending`, `resuming`, `deleting`) is shown while that operation runs.
           type: string
           enum:
           - pending
@@ -231,6 +231,9 @@ components:
           - deleted
           - failed
           - error
+          - suspending
+          - resuming
+          - deleting
         failure:
           description: Details of why the capture failed; non-empty only when `status` is `failed`
           type:
@@ -258,12 +261,6 @@ components:
         created_at:
           type: string
           format: date-time
-        operation:
-          description: The operation in progress on this image, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/PrivateImageOperation'
-          - type: 'null'
-          readOnly: true
         failure_reason:
           description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
             not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
@@ -331,7 +328,6 @@ components:
       - size_bytes
       - source_instance_id
       - created_at
-      - operation
       - failure_reason
       - checkout_session_id
       - order_id
@@ -401,24 +397,4 @@ components:
       - private_image
       - checkout_session_id
       - order_id
-      additionalProperties: false
-    PrivateImageOperation:
-      description: An operation still running on this image. It is not a separate resource; once it finishes, the 
-        image's `operation` is null again and the image shows the result.
-      type: object
-      properties:
-        type:
-          description: '`create` is the capture of a private image.'
-          type: string
-          enum:
-          - create
-          - suspend
-          - resume
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false

@@ -36,7 +36,7 @@ paths:
       description: |-
         Creates a Billing Checkout Session, including for metered terms, and returns one `pending` instance per requested instance with it. Each new component carries its own commercial terms; their usage type and period must match. A pending instance has no server, boot volume or address, and is not metered.
 
-        Creation starts once Billing accepts the order: the instance stays `pending` with the `create` operation while it is created, then becomes `running`. With automatic checkout, insufficient funds refuse the request and nothing is created. With deferred checkout, the instances stay `pending` until the customer completes checkout in Billing and the order is paid; an expired Checkout Session, or a canceled or expired order, leaves them `failed` with `checkout_expired`, `order_canceled` or `order_expired`. Do not submit another creation request after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
+        Creation starts once Billing accepts the order: the instance stays `pending` while it is created, then becomes `running`. With automatic checkout, insufficient funds refuse the request and nothing is created. With deferred checkout, the instances stay `pending` until the customer completes checkout in Billing and the order is paid; an expired Checkout Session, or a canceled or expired order, leaves them `failed` with `checkout_expired`, `order_canceled` or `order_expired`. Do not submit another creation request after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
 
         The instances are created in the availability zone of their instance type, and the volumes bought with them have to be of volume types of that zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). The types have to have room for all of them, checked before anything is ordered: refused with 409 `INSTANCE_TYPE_SOLD_OUT` or `VOLUME_TYPE_SOLD_OUT` when a type takes no new orders for now, `INSTANCE_TYPE_CAPACITY_REACHED` or `VOLUME_TYPE_CAPACITY_REACHED` when what is sold of it is used up, `INSTANCE_TYPE_NO_HOST_ROOM` when no host of the zone can take the machine, `VOLUME_TYPE_NO_POOL_ROOM` when the storage of the zone cannot take the boot volume, and `ELASTIC_IP_LINE_EXHAUSTED` when the line of the new elastic IPs has fewer addresses left than instances. Two orders placed at the same moment can both pass; an instance that finds a type full when its order is accepted is not created and is refunded, ending `failed` with `provisioning_failed`.
 
@@ -46,7 +46,7 @@ paths:
 
         The network is checked before the Checkout Session is created, and a request it refuses orders and charges nothing. It is refused with `VIRTUAL_PRIVATE_CLOUD_UNAVAILABLE` when the virtual private cloud's `status` is not `available`, `VIRTUAL_PRIVATE_CLOUD_SUBNET_UNAVAILABLE` or `SECURITY_GROUP_UNAVAILABLE` when the subnet or a security group is not ready, `SECURITY_GROUP_OTHER_VIRTUAL_PRIVATE_CLOUD` when a security group belongs to another virtual private cloud, and `NETWORK_INTERFACE_UNAVAILABLE` when the port's `status` is not `available`. `meta` names the resource.
 
-        Each instance shows the `create` operation from the moment the Checkout Session is created until it is delivered or the checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its release with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
+        Each instance is `pending` from the moment the Checkout Session is created until it is delivered or the checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its release with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-instance
       tags:
       - instances
@@ -114,7 +114,7 @@ paths:
 
         **`instance_type_id`** changes the instance's type **cold**: the instance has to be stopped, and is refused with 409 `INSTANCE_RESIZE_REQUIRES_STOP` otherwise. Its operating system is not booted for the change, and it is still stopped once the change is applied; start it when you are ready. An instance stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`; start it once and stop it again. A target type that cannot hold what the instance already uses is refused before anything is ordered: fewer network interfaces than are attached with 409 `INSTANCE_RESIZE_NETWORK_INTERFACES_EXCEED`, fewer elastic IPs than are associated with 409 `INSTANCE_RESIZE_ELASTIC_IPS_EXCEED`, and less purchasable bandwidth than an associated elastic IP has with 409 `INSTANCE_BANDWIDTH_CEILING` naming it in `meta.elastic_ip_id`. The request returns 202 with the instance and the Checkout Session for the change, including for metered terms. The instance keeps its usage type and period, priced with the target type's matching option; a target type without that option is refused with 409 `BILLING_OPTION_UNAVAILABLE`. The resize starts once Billing accepts the order. Do not submit the change again after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
 
-        The instance shows the `resize` operation until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. It keeps its current type until the resize is applied; the new type takes effect, and is billed from then on, when `instance_type_id` shows it. If checkout is not completed, the order is not accepted or the resize fails, the instance keeps its current type and Billing shows the outcome. A completed resize is final and cannot be reverted; to return to the previous type, submit another resize.
+        The instance is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. It keeps its current type until the resize is applied; the new type takes effect, and is billed from then on, when `instance_type_id` shows it. If checkout is not completed, the order is not accepted or the resize fails, the instance keeps its current type and Billing shows the outcome. A completed resize is final and cannot be reverted; to return to the previous type, submit another resize.
       operationId: update-instance
       tags:
       - instances
@@ -176,7 +176,7 @@ paths:
         '409':
           $ref: ./openapi.yaml#/components/responses/Conflict
         '202':
-          description: Release was accepted. Without a subscription the instance shows the `delete` operation until it is released, and `cancellation` is null.
+          description: Release was accepted. Without a subscription the instance is `deleting` until it is released, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -197,7 +197,7 @@ paths:
     post:
       summary: Start an instance
       description: |-
-        Boots the stopped instance on the host it kept; outstanding restrictions can prevent starting. It shows the `start` operation until it is running or the start has failed. Starting a running instance changes nothing.
+        Boots the stopped instance on the host it kept; outstanding restrictions can prevent starting. It is `starting` until it is running or the start has failed. Starting a running instance changes nothing.
 
         When its boot volume grew since it was last connected, the start connects its volumes afresh so that the boot volume runs at the performance of its new size: the instance is taken off its host for that moment and placed again. Only then can the start find no room in the zone; it is refused with 409 `INSTANCE_START_NO_HOST_ROOM`, or ends with the instance still stopped, and can be tried again later. An instance stopped by the legacy stop, which released its host, is placed again the same way.
       operationId: start-instance
@@ -228,7 +228,7 @@ paths:
     post:
       summary: Stop an instance
       description: |-
-        Shuts the instance down **on its host**, as Alibaba Cloud's ordinary stop does: it keeps its volumes, network interfaces, addresses and quota, and the vCPU and memory of its host stay reserved for it, so it starts again without asking for room. **A metered instance keeps being charged for compute while stopped**; its volumes and elastic IPs are charged as always. An instance stopped by a suspension, for non-payment or by the platform, is not charged for compute while the suspension lasts. It shows the `stop` operation until it is stopped. Stopping a stopped instance changes nothing.
+        Shuts the instance down **on its host**, as Alibaba Cloud's ordinary stop does: it keeps its volumes, network interfaces, addresses and quota, and the vCPU and memory of its host stay reserved for it, so it starts again without asking for room. **A metered instance keeps being charged for compute while stopped**; its volumes and elastic IPs are charged as always. An instance stopped by a suspension, for non-payment or by the platform, is not charged for compute while the suspension lasts. It is `stopping` until it is stopped. Stopping a stopped instance changes nothing.
 
         Changing `instance_type_id` is done on a stopped instance and only then. A stopped instance can also be rebuilt and have network interfaces and volumes attached and detached; rescuing it needs it running.
       operationId: stop-instance
@@ -378,7 +378,7 @@ paths:
 
         An instance suspended by the platform must be unsuspended first.
 
-        The instance shows the `reboot` operation until the reboot has finished.
+        The instance is `rebooting` until the reboot has finished.
       operationId: reboot-instance
       tags:
       - instances
@@ -419,7 +419,7 @@ paths:
 
         The image this instance already runs is accepted even after the platform has withdrawn it, since rebuilding is the only way back into an instance broken from the inside. Any *other* withdrawn image is rejected with `IMAGE_RETIRED`, which is a change of image and therefore a new order.
 
-        The instance shows the `rebuild` operation until the rebuild has finished.
+        The instance is `rebuilding` until the rebuild has finished.
       operationId: rebuild-instance
       tags:
       - instances
@@ -437,7 +437,7 @@ paths:
               $ref: '#/components/schemas/RebuildInstanceRequestBody'
       responses:
         '202':
-          description: The rebuild was accepted. The instance shows the `rebuild` operation until it has
+          description: The rebuild was accepted. The instance is `rebuilding` until it has
             finished.
           content:
             application/json:
@@ -481,7 +481,7 @@ paths:
     post:
       summary: Attach a volume
       description: The volume must be in the same region and availability zone as the instance. Returns the
-        volume; the instance shows the `attach_volume` operation and the volume the `attach` operation until the
+        volume; the instance is `attaching_volume` and the volume is `attaching` until the
         attachment is confirmed. Partition the volume and mount the file system inside the instance once it
         is attached.
       operationId: attach-instance-volume
@@ -522,7 +522,7 @@ paths:
 
         The volume the instance boots from cannot be detached, whether it is the boot volume bought with the instance or a volume supplied as the existing boot_volume at launch. Such a request is refused with `INSTANCE_BOOT_VOLUME_LOCKED` and changes nothing; releasing the instance is what frees that volume.
 
-        Returns the volume; the instance shows the `detach_volume` operation and the volume the `detach` operation until the volume is detached.
+        Returns the volume; the instance is `detaching_volume` and the volume is `detaching` until the volume is detached.
       operationId: detach-instance-volume
       tags:
       - instances
@@ -581,8 +581,8 @@ paths:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
     post:
       summary: Attach a network interface
-      description: Returns the network interface; the instance shows the `attach_network_interface` operation
-        and the interface the `attach` operation until the attachment is confirmed. The instance has to be running or
+      description: Returns the network interface; the instance is `attaching_network_interface`
+        and the interface is `attaching` until the attachment is confirmed. The instance has to be running or
         stopped; one stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`.
       operationId: attach-instance-network-interface
       tags:
@@ -620,7 +620,7 @@ paths:
       description: |-
         The primary network interface cannot be detached; the instance would lose its network address. The instance has to be running or stopped; one stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`.
 
-        Returns the network interface; the instance shows the `detach_network_interface` operation and the interface the `detach` operation until it is detached.
+        Returns the network interface; the instance is `detaching_network_interface` and the interface is `detaching` until it is detached.
       operationId: detach-instance-network-interface
       tags:
       - instances
@@ -658,7 +658,7 @@ paths:
 
         In rescue mode, everything only the instance's own system can take is refused with 409 `INSTANCE_UNRESCUE_REQUIRED`: starting, stopping, rebooting, rebuilding, resetting the password, changing `instance_type_id`, attaching or detaching volumes and network interfaces, capturing a private image and running commands. Leave rescue mode with `:unrescue` first. The console stays available, releasing the instance works as usual, and the instance is charged as when running. A suspension that begins in rescue mode takes the instance out of rescue before stopping it, and starting it again once the suspension ends boots its own system.
 
-        A rescue the compute service could not boot ends the `rescue` operation and leaves the instance as it was, or in `error`; request it again or reboot the instance.
+        A rescue the compute service could not boot leaves the instance as it was, or in `error`; request it again or reboot the instance.
 
         The request does not name an image. The rescue image is the region's enabled rescue image for the architecture of the instance's boot volume. A region and architecture with no enabled rescue image is refused with `RESCUE_IMAGE_NOT_CONFIGURED` (409).
       operationId: rescue-instance
@@ -695,7 +695,7 @@ paths:
     post:
       summary: Take an instance out of rescue mode
       description: Restores boot from the original boot volume. Completion is shown by the instance state, and
-        the instance shows the `unrescue` operation until then.
+        the instance is `unrescuing` until then.
       operationId: unrescue-instance
       tags:
       - instances
@@ -814,10 +814,13 @@ components:
           $ref: ./identifiers.yaml#/components/schemas/RegionID
         status:
           description: '`pending` until the instance is created: before the order is accepted no instance
-             exists and addresses are null, and while it is created it shows the `create` operation. Then
-            `running`. `failed` means the instance was not created; `failure_reason` states why. The other
-            values are the state of the instance in the cloud; an operation in progress appears in
-            `operation`, not here.'
+            exists and addresses are null. Then `running`. `failed` means the instance was not created;
+            `failure_reason` states why. The other values are the state of the instance in the cloud. A value
+            naming an operation in progress (`starting`, `stopping`, `rebooting`, `rebuilding`, `rescuing`,
+            `unrescuing`, `resizing`, `resetting_password`, `attaching_volume`, `detaching_volume`,
+            `attaching_network_interface`, `detaching_network_interface`, `associating_elastic_ip`,
+            `disassociating_elastic_ip`, `capturing_image`, `suspending`, `resuming`, `deleting`) is shown
+            while that operation runs; the instance refuses another operation until it ends.'
           type: string
           enum:
           - pending
@@ -829,6 +832,24 @@ components:
           - deleted
           - failed
           - error
+          - starting
+          - stopping
+          - rebooting
+          - rebuilding
+          - rescuing
+          - unrescuing
+          - resizing
+          - resetting_password
+          - attaching_volume
+          - detaching_volume
+          - attaching_network_interface
+          - detaching_network_interface
+          - associating_elastic_ip
+          - disassociating_elastic_ip
+          - capturing_image
+          - suspending
+          - resuming
+          - deleting
         subnet_id:
           anyOf:
           - $ref: ./identifiers.yaml#/components/schemas/SubnetID
@@ -854,12 +875,6 @@ components:
           - checkout_expired
           - provisioning_failed
           - null
-        operation:
-          description: The operation in progress on this instance, or null when none is.
-          anyOf:
-          - $ref: '#/components/schemas/InstanceOperation'
-          - type: 'null'
-          readOnly: true
         checkout_session_id:
           description: The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
             until its checkout completes. Null when the resource was not bought through one.
@@ -953,7 +968,6 @@ components:
       - release_set
       - access_state
       - failure_reason
-      - operation
       additionalProperties: false
     InstanceListResponseBody:
       type: object
@@ -1559,43 +1573,6 @@ components:
       - order_id
       - instances
       - password
-      additionalProperties: false
-    InstanceOperation:
-      description: An operation still running on this instance. It is not a separate resource; once it finishes,
-        the instance's `operation` is null again and the instance shows the result.
-      type: object
-      properties:
-        type:
-          description: '`create` runs from acceptance of the order until the instance is `running` or `failed`.
-            `suspend` and `resume` impose and lift a suspension by the platform or for non-payment. `capture_image` holds the machine while a private image is captured from the volume it boots from; the machine cannot be resized, rebuilt or released meanwhile. `delete` includes
-            release through a Billing cancellation.'
-          type: string
-          enum:
-          - create
-          - start
-          - stop
-          - reboot
-          - rebuild
-          - rescue
-          - unrescue
-          - resize
-          - reset_password
-          - attach_volume
-          - detach_volume
-          - attach_network_interface
-          - detach_network_interface
-          - associate_elastic_ip
-          - disassociate_elastic_ip
-          - capture_image
-          - suspend
-          - resume
-          - delete
-        started_at:
-          type: string
-          format: date-time
-      required:
-      - type
-      - started_at
       additionalProperties: false
     RescueInstanceRequestBody:
       type: object
