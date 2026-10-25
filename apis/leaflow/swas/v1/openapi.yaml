@@ -62,11 +62,20 @@ paths:
           type: string
           minLength: 1
           maxLength: 128
+      - name: include_prices
+        in: query
+        required: false
+        description: Set to true to include all verified billing-period price options. When false or omitted,
+          the response omits prices and preserves the default price representation.
+        schema:
+          type: boolean
+          default: false
       summary: List plans
       tags:
       - Catalog
-      description: Lists available plans and prices for the requested region. A plan without a price is not
-        available to buy.
+      description: Lists one plan per provider plan ID in the requested region. The default response preserves
+        the single price and buyable fields. With include_prices=true, plans also contain verified price options
+        for explicit billing-period selection. Archived snapshot prices are never offered for purchase.
   /api/v1/purchases:
     post:
       operationId: create-purchase
@@ -686,6 +695,8 @@ components:
           type: string
           format: uuid
           pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+          description: Selects a price from the requested plan and current catalog revision. The server resolves
+            its immutable Billing terms, billing period and ownership; the client does not set the billing period.
         image_id:
           type: string
           minLength: 1
@@ -695,6 +706,8 @@ components:
           const: 1
         expected_quote:
           $ref: '#/components/schemas/ExpectedQuote'
+          description: An assertion about the displayed quote, not an authoritative amount. The server obtains
+            a new Billing quote and rejects a mismatch before accepting a purchase.
         region_id:
           type: string
           minLength: 1
@@ -783,6 +796,42 @@ components:
       - amount
       - period_months
       additionalProperties: false
+    PriceOption:
+      type: object
+      description: A verified price option for one billing period. Its Billing price must currently be available,
+        use period-end cancellation without an automatic refund, and match this provider plan and region. Archived
+        snapshots, unknown periods and unverified prices are excluded. Selection does not bypass current permissions,
+        quote checks or disabled purchase controls. IDs and amounts are authoritative only after server revalidation.
+      properties:
+        billing_plan_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        billing_price_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        currency:
+          type: string
+          const: USD
+        amount:
+          $ref: '#/components/schemas/DecimalAmount'
+        period_months:
+          type: integer
+          enum:
+          - 1
+          - 3
+          - 6
+          - 12
+          - 24
+          - 36
+      required:
+      - billing_plan_id
+      - billing_price_id
+      - currency
+      - amount
+      - period_months
+      additionalProperties: false
     Plan:
       type: object
       properties:
@@ -801,6 +850,18 @@ components:
           anyOf:
           - $ref: '#/components/schemas/Price'
           - type: 'null'
+          description: The existing default price representation. Its availability and the buyable field are
+            unchanged by include_prices; clients using price retain the same default billing period.
+        prices:
+          type: array
+          description: Present only when include_prices=true. Contains all currently verified billing-period
+            options, ordered by period_months. Billing price IDs and billing periods are each unique within a plan.
+            An empty array means no verified option is available. It does not make the default price buyable.
+          items:
+            $ref: '#/components/schemas/PriceOption'
+          minItems: 0
+          maxItems: 6
+          uniqueItems: true
         image_ids:
           type: array
           items:
@@ -847,7 +908,7 @@ components:
       - complete
       additionalProperties: false
       description: Bounded catalog snapshot for one requested region. Incomplete or unavailable price information
-        is not a purchasable offer.
+        is not a purchasable offer. Provider plan IDs are unique regardless of the number of billing periods.
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
     InstancePrice:
