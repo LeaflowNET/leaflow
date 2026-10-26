@@ -668,18 +668,6 @@ components:
       - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       - type: string
         pattern: ^(0|[1-9][0-9]{0,14})(\.[0-9]{1,10})?$
-    ExpectedQuote:
-      type: object
-      properties:
-        currency:
-          type: string
-          const: USD
-        amount:
-          $ref: '#/components/schemas/DecimalAmount'
-      required:
-      - currency
-      - amount
-      additionalProperties: false
     PurchaseCreate:
       type: object
       properties:
@@ -697,6 +685,7 @@ components:
           pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
           description: Selects a price from the requested plan and current catalog revision. The server resolves
             its immutable Billing terms, billing period and ownership; the client does not set the billing period.
+            SWAS validates the Price selection only. Billing owns quotes, checkout confirmation and payment.
         image_id:
           type: string
           minLength: 1
@@ -704,10 +693,6 @@ components:
         quantity:
           type: integer
           const: 1
-        expected_quote:
-          $ref: '#/components/schemas/ExpectedQuote'
-          description: An assertion about the displayed quote, not an authoritative amount. The server obtains
-            a new Billing quote and rejects a mismatch before accepting a purchase.
         region_id:
           type: string
           minLength: 1
@@ -718,7 +703,6 @@ components:
       - billing_price_id
       - image_id
       - quantity
-      - expected_quote
       - region_id
       additionalProperties: false
     Purchase:
@@ -760,8 +744,9 @@ components:
       - delivered
       - billing_settled
       additionalProperties: false
-      description: Durable purchase progress. delivered and billing_settled describe different facts. Acceptance
-        is not cloud delivery or checkout completion.
+      description: Durable purchase progress. The checkout_session_id identifies the Billing session for user
+        quote, confirmation and payment. It is not ready while checkout creation is pending. SWAS does not quote
+        or charge automatically. delivered and billing_settled describe different facts; acceptance is not delivery.
     Price:
       type: object
       properties:
@@ -778,6 +763,8 @@ components:
           const: USD
         amount:
           $ref: '#/components/schemas/DecimalAmount'
+          deprecated: true
+          description: Historical display metadata only. New responses omit this field; use Billing for quotes.
         period_months:
           anyOf:
           - type: integer
@@ -793,7 +780,6 @@ components:
       - billing_plan_id
       - billing_price_id
       - currency
-      - amount
       - period_months
       additionalProperties: false
     PriceOption:
@@ -801,7 +787,7 @@ components:
       description: A verified price option for one billing period. Its Billing price must currently be available,
         use period-end cancellation without an automatic refund, and match this provider plan and region. Archived
         snapshots, unknown periods and unverified prices are excluded. Selection does not bypass current permissions,
-        quote checks or disabled purchase controls. IDs and amounts are authoritative only after server revalidation.
+        Price validation or disabled purchase controls. Billing owns quotes and checkout amounts.
       properties:
         billing_plan_id:
           type: string
@@ -816,6 +802,8 @@ components:
           const: USD
         amount:
           $ref: '#/components/schemas/DecimalAmount'
+          deprecated: true
+          description: Historical display metadata only. New responses omit this field; use Billing for quotes.
         period_months:
           type: integer
           enum:
@@ -829,7 +817,6 @@ components:
       - billing_plan_id
       - billing_price_id
       - currency
-      - amount
       - period_months
       additionalProperties: false
     Plan:
@@ -916,7 +903,6 @@ components:
       additionalProperties: false
       required:
       - currency
-      - amount
       - period_months
       properties:
         currency:
@@ -924,6 +910,8 @@ components:
           const: USD
         amount:
           $ref: '#/components/schemas/DecimalAmount'
+          deprecated: true
+          description: Historical display metadata only. Price-only purchases omit this field; use Billing for quotes.
         period_months:
           type: integer
           enum:
