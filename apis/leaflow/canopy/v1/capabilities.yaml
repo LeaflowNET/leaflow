@@ -23,6 +23,19 @@ components:
       - /v1/audio/translations
       - /v1/audio/speech
       - /v1/realtime
+      - /v1/completions
+      - /v1/rerank
+      - /v1/moderations
+      - /v1/images/variations
+      - /v1/files
+      - /v1/uploads
+      - /v1/batches
+      - /v1/fine_tuning/jobs
+      - /v1/assistants
+      - /v1/threads
+      - /v1/vector_stores
+      - /v1/containers
+      - /v1/videos
     ModelCapabilities:
       type: object
       description: Verified capabilities keyed by API endpoint, for example /v1/chat/completions or /v1/responses. Missing
@@ -44,6 +57,29 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ReasoningCapabilities'
           - type: 'null'
+        image:
+          description: Present on image generation and edit endpoints. Null or absent elsewhere.
+          anyOf:
+          - $ref: '#/components/schemas/ImageCapabilities'
+          - type: 'null'
+        audio:
+          description: Present on speech and transcription endpoints. Null or absent elsewhere.
+          anyOf:
+          - $ref: '#/components/schemas/AudioCapabilities'
+          - type: 'null'
+        video:
+          description: Present on the videos endpoint. Null or absent elsewhere.
+          anyOf:
+          - $ref: '#/components/schemas/VideoCapabilities'
+          - type: 'null'
+        parameters:
+          description: Non-standard request fields this endpoint accepts, sent at the top level of the request body.
+            Null or absent means none are declared.
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/ModelParameter'
       required:
       - function_calling
       - structured_output
@@ -100,4 +136,177 @@ components:
       - modes
       - budget_tokens
       - summary
+      additionalProperties: false
+    ImageCapabilities:
+      type: object
+      description: The image parameters this endpoint accepts. The client chooses among them; a value outside the list is
+        rejected before the upstream is called.
+      properties:
+        sizes:
+          description: Size values the upstream accepts, such as 1024x1024 or auto. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        qualities:
+          description: Quality values the upstream accepts. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        response_formats:
+          description: Response formats the upstream accepts. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        max_n:
+          description: The largest number of images one request may ask for. Null means unknown.
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 128
+        supports_stream:
+          description: Whether the endpoint can stream partial images. Null means unknown.
+          type:
+          - boolean
+          - 'null'
+      required:
+      - sizes
+      - qualities
+      - response_formats
+      - max_n
+      - supports_stream
+      additionalProperties: false
+    AudioCapabilities:
+      type: object
+      description: The audio parameters this endpoint accepts.
+      properties:
+        voices:
+          description: Voices the speech endpoint accepts. Empty for transcription endpoints. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        formats:
+          description: Audio container or codec values the endpoint accepts. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        response_formats:
+          description: Response formats the transcription endpoint accepts, such as json or srt. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        max_input_bytes:
+          description: The largest upload the endpoint accepts, in bytes. Null means unknown.
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 0
+        supports_stream:
+          description: Whether the endpoint can stream its response. Null means unknown.
+          type:
+          - boolean
+          - 'null'
+      required:
+      - voices
+      - formats
+      - response_formats
+      - max_input_bytes
+      - supports_stream
+      additionalProperties: false
+    VideoCapabilities:
+      type: object
+      description: The video parameters this endpoint accepts. Video is asynchronous on every endpoint that supports it.
+        Create returns a task, and the task is polled separately.
+      properties:
+        seconds:
+          description: Durations the upstream accepts, in seconds. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: integer
+            minimum: 1
+        sizes:
+          description: Output sizes the upstream accepts, such as 1280x720. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        resolutions:
+          description: Resolution tiers the upstream accepts, such as 720p or 1080p. Null means unknown.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+        supports_input_reference:
+          description: Whether a request may carry a reference image. Null means unknown.
+          type:
+          - boolean
+          - 'null'
+        supports_remix:
+          description: Whether a generated video can be remixed into another task. Null means unknown.
+          type:
+          - boolean
+          - 'null'
+        supports_characters:
+          description: Whether the upstream accepts reusable characters. Null means unknown.
+          type:
+          - boolean
+          - 'null'
+      required:
+      - seconds
+      - sizes
+      - resolutions
+      - supports_input_reference
+      - supports_remix
+      - supports_characters
+      additionalProperties: false
+    ModelParameter:
+      type: object
+      description: A non-standard request field this endpoint accepts. OpenAI SDK callers pass it through `extra_body`, which places it at the top level of the body.
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum:
+          - string
+          - integer
+          - number
+          - boolean
+          - object
+          - array
+        required:
+          type: boolean
+        default:
+          description: The value the upstream assumes when the field is absent; null when there is none. The service never writes it into the request.
+        values:
+          description: The accepted values of an enumerated string parameter. Null when the parameter is not enumerated.
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+      required:
+      - name
+      - description
+      - type
+      - required
       additionalProperties: false

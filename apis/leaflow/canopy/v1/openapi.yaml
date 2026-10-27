@@ -418,9 +418,9 @@ paths:
         - name: requestId
           in: path
           required: true
+          description: A typed request id such as `req_01j...`; a bare UUID is also accepted.
           schema:
             type: string
-            format: uuid
       responses:
         "200":
           description: OK
@@ -1111,11 +1111,11 @@ components:
       additionalProperties: false
     ModelBilling:
       description: |-
-        How requests to a model are billed: under the service's subscription, on the Billing plan `plan_id`, one rate for each token kind. Read the rates from Billing with `search-prices` for the plan, narrowing each price's `rates` with each meter's `dimensions`.
+        How requests to a model are billed: under the service's subscription, on the Billing plan `plan_id`, one rate for each billable kind. Read the rates from Billing with `search-prices` for the plan, narrowing each price's `rates` with each meter's `dimensions`.
 
-        Each token kind is priced on its own. `input` excludes cached input, which is `cache_read`, and `output` excludes reasoning the provider reports separately, which is `reasoning`; a request is billed for each kind it used.
+        Text is billed on the five token kinds. `input` excludes cached input, which is `cache_read`; `output` excludes reasoning the provider reports separately, which is `reasoning`. Media is billed on its own unit and never converted to tokens: `images` counts generated images, `audio_characters` counts the input characters of speech synthesis, `audio_seconds` counts the duration of a transcription, and `video_seconds` counts the duration of a generated video. A request is billed for each kind it used.
 
-        Rates are set per currency, and a currency may not offer a model at all. A model is offered in the currency of the project's billing account when at least one of its token kinds has a rate there; a token kind without a rate in that currency is not charged. Requests to a model with no rate in that currency are refused with 403 `BILLING_MODEL_NOT_OFFERED`.
+        Rates are set per currency, and a currency may not offer a model at all. A model is offered in the currency of the project's billing account when at least one of its billable kinds has a rate there; a kind without a rate in that currency is not charged. Requests to a model with no rate in that currency are refused with 403 `BILLING_MODEL_NOT_OFFERED`.
       type: object
       properties:
         plan_id:
@@ -1125,7 +1125,9 @@ components:
             - "null"
           format: uuid
         meters:
-          description: One entry for each of the five token kinds, in the order input, output, cache_read, cache_write, reasoning.
+          description: One entry for each billable kind the model uses. A text model lists the five token kinds in the order
+            input, output, cache_read, cache_write, reasoning; media kinds follow in the order images, audio_characters,
+            audio_seconds, video_seconds.
           type: array
           items:
             $ref: "#/components/schemas/ModelMeter"
@@ -1136,7 +1138,9 @@ components:
     ModelMeter:
       type: object
       properties:
-        token_kind:
+        kind:
+          description: The billable quantity this entry prices. Token kinds are `input`, `output`, `cache_read`, `cache_write`
+            and `reasoning`; media kinds are `images`, `audio_characters`, `audio_seconds` and `video_seconds`.
           type: string
           enum:
             - input
@@ -1144,17 +1148,77 @@ components:
             - cache_read
             - cache_write
             - reasoning
+            - images
+            - audio_characters
+            - audio_seconds
+            - video_seconds
+            - rerank_units
         meter_lookup_key:
           type: string
+        unit:
+          description: The unit the meter counts in, such as token, image, character or second.
+          type: string
+        dimension_keys:
+          description: The dimension keys every rate of this kind is matched on, in the order the meter declares them.
+          type: array
+          items:
+            type: string
         dimensions:
-          description: The dimension values the usage of this token kind carries, and the rate is matched at.
+          description: One set of dimension values of this kind, useful as a query template. A media kind may have other
+            values on the same keys, such as another size or resolution.
           type: object
           additionalProperties:
             type: string
       required:
-        - token_kind
+        - kind
         - meter_lookup_key
+        - unit
+        - dimension_keys
         - dimensions
+      additionalProperties: false
+    MediaUsage:
+      type: object
+      description: Media quantities and the rate dimensions they were billed at. Absent on a token-only request.
+      properties:
+        images:
+          description: Number of generated images.
+          type: integer
+          format: int64
+        audio_characters:
+          description: Input characters of speech synthesis.
+          type: integer
+          format: int64
+        audio_seconds:
+          description: Duration of transcribed audio.
+          type: integer
+          format: int64
+        video_seconds:
+          description: Duration of a generated video.
+          type: integer
+          format: int64
+        size:
+          description: Image or video size the request asked for, if it carried one.
+          type:
+          - string
+          - 'null'
+        quality:
+          description: Image quality the request asked for, if it carried one.
+          type:
+          - string
+          - 'null'
+        resolution:
+          description: Video resolution tier the request asked for, if it carried one.
+          type:
+          - string
+          - 'null'
+      required:
+        - images
+        - audio_characters
+        - audio_seconds
+        - video_seconds
+        - size
+        - quality
+        - resolution
       additionalProperties: false
     ModelListResponseBody:
       type: object
@@ -1197,8 +1261,8 @@ components:
           - 'null'
           format: date-time
         id:
+          description: A typed request id such as `req_01j...`. Legacy rows may still be returned as a bare UUID.
           type: string
-          format: uuid
         input_tokens:
           type: integer
           format: int64
@@ -1254,6 +1318,11 @@ components:
         reasoning:
           anyOf:
           - $ref: '#/components/schemas/ReasoningDiagnostics'
+          - type: 'null'
+        media:
+          description: Media quantities and their rate dimensions. Null for a token-only request.
+          anyOf:
+          - $ref: '#/components/schemas/MediaUsage'
           - type: 'null'
       required:
       - id
@@ -1313,6 +1382,11 @@ components:
         reasoning_tokens:
           type: integer
           format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+          - $ref: '#/components/schemas/MediaUsage'
+          - type: 'null'
         requests:
           type: integer
           format: int64
@@ -1355,6 +1429,11 @@ components:
         reasoning_tokens:
           type: integer
           format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+          - $ref: '#/components/schemas/MediaUsage'
+          - type: 'null'
         requests:
           type: integer
           format: int64
@@ -1395,6 +1474,11 @@ components:
         reasoning_tokens:
           type: integer
           format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+          - $ref: '#/components/schemas/MediaUsage'
+          - type: 'null'
         requests:
           type: integer
           format: int64
@@ -1428,6 +1512,11 @@ components:
         reasoning_tokens:
           type: integer
           format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+          - $ref: '#/components/schemas/MediaUsage'
+          - type: 'null'
         requests:
           type: integer
           format: int64
