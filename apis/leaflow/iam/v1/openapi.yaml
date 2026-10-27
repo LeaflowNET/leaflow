@@ -833,6 +833,189 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/applications:
+    get:
+      summary: List the applications of this project
+      description: |-
+        Disabled applications are listed. Archived applications are omitted unless
+        `include_archived` is true. An application that is still being created is not listed.
+      operationId: list-applications
+      tags:
+        - Application
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: include_archived
+          in: query
+          description: Include applications that have been deleted
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create an application
+      description: |-
+        Creates an OIDC client for an application of this project. Applications authenticate
+        against `https://auth.leaflow.net/realms/user`.
+
+        The `secret` is present only for a confidential application, and only in this response.
+        It is not stored and cannot be read again; use `:rotateSecret` to obtain a new one.
+
+        Any account of this platform may sign in to the application. Membership of this project
+        is confirmed only when a token is exchanged for a scoped token.
+      operationId: create-application
+      tags:
+        - Application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApplicationRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateApplicationResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}:
+    get:
+      summary: Get an application
+      description: An application that has been deleted is still returned, with `status` `ARCHIVED`.
+      operationId: get-application
+      tags:
+        - Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update an application
+      description: |-
+        Only the name and the redirect URIs can change. The type and `client_id` never change.
+
+        An application that is disabled or deleted cannot be updated.
+      operationId: update-application
+      tags:
+        - Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApplicationRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete an application
+      description: |-
+        The application is removed from the identity provider and its row is retained with
+        `status` `ARCHIVED`. Repeating the call returns the same resource.
+      operationId: delete-application
+      tags:
+        - Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/applications/{applicationId}:rotateSecret:
+    post:
+      summary: Rotate the secret of an application
+      description: |-
+        Returns a new secret and invalidates the previous one immediately. Only an active
+        confidential application has a secret; any other state answers 412.
+      operationId: rotate-application-secret
+      tags:
+        - Application
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RotateApplicationSecretResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1738,4 +1921,130 @@ components:
           maxLength: 128
       required:
         - name
+      additionalProperties: false
+    ApplicationResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [PUBLIC, CONFIDENTIAL]
+        client_id:
+          type: string
+        redirect_uris:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED, ARCHIVED]
+        created_by:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        disabled_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        secret_rotated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - name
+        - type
+        - client_id
+        - redirect_uris
+        - status
+        - created_by
+        - created_at
+        - disabled_at
+        - secret_rotated_at
+      additionalProperties: false
+    CreateApplicationRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        type:
+          type: string
+          enum: [PUBLIC, CONFIDENTIAL]
+        redirect_uris:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+      required: [name, type, redirect_uris]
+      additionalProperties: false
+    CreateApplicationResponseBody:
+      type: object
+      properties:
+        application:
+          $ref: "#/components/schemas/ApplicationResource"
+        secret:
+          description: Present only for a confidential application, and only in this response
+          type:
+            - string
+            - "null"
+      required: [application, secret]
+      additionalProperties: false
+    UpdateApplicationRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        redirect_uris:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+      minProperties: 1
+      additionalProperties: false
+    RotateApplicationSecretResponseBody:
+      type: object
+      properties:
+        secret:
+          type: string
+        rotated_at:
+          type: string
+          format: date-time
+      required: [secret, rotated_at]
+      additionalProperties: false
+    LengthAwarePageApplicationResource:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationResource"
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+      required: [items, total, limit, offset]
       additionalProperties: false
