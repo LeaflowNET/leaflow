@@ -162,7 +162,8 @@ paths:
       summary: Count unread notifications
       description: |-
         Returns the number of unread notifications. This is the value behind the badge in the
-        console, and it is also carried on every realtime event, so it does not normally need to be
+        console, and it is also carried on every `notification.inbox.created` and
+        `notification.inbox.read` message delivered by EventBus, so it does not normally need to be
         requested on its own.
       operationId: count-unread-notifications
       tags:
@@ -874,68 +875,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RevealedCredentialResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/realtime:
-    get:
-      summary: Describe the realtime connection
-      description: |-
-        Returns everything needed to open a realtime connection, and the names of the channels to
-        subscribe to. The parameters are not constants: they differ between environments, so they
-        must be requested rather than compiled in.
-
-        Realtime delivery is an optimisation. Everything it announces is also readable through the
-        listing operations, so a client that cannot connect stays correct by polling or by
-        refreshing.
-      operationId: describe-realtime-connection
-      tags:
-        - Realtime
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RealtimeConnectionResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/realtime/auth:
-    post:
-      summary: Authorize a realtime channel subscription
-      description: |-
-        Authorizes one subscription. Realtime clients call this on their own while subscribing; it
-        is not normally called directly.
-
-        Only two channels are authorized: the one naming you, and the one naming the project in
-        the token. Any other channel returns `REALTIME_CHANNEL_FORBIDDEN`.
-
-        **Authorization is evaluated once, when the subscription is established.** A subscription
-        already open is not revoked when project membership changes, so realtime events carry
-        identifiers and counts only, never the contents of a notification.
-      operationId: authorize-realtime-channel
-      tags:
-        - Realtime
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AuthorizeRealtimeChannelRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RealtimeAuthResource"
         default:
           description: Error
           content:
@@ -1670,83 +1609,6 @@ components:
         - secret
         - username
         - revealed_at
-      additionalProperties: false
-    RealtimeConnectionResource:
-      description: |-
-        Everything needed to open a realtime connection. The connection speaks the Pusher channels
-        protocol, so any client library for it works.
-      type: object
-      properties:
-        auth_path:
-          description: The path a client posts to while subscribing, relative to this API
-          type: string
-        cluster:
-          description: The cluster name some client libraries require; empty when the deployment does not use one
-          type: string
-        enabled:
-          description: False when realtime delivery is not configured in this deployment. Every other field is empty and clients should not attempt to connect
-          type: boolean
-        host:
-          type: string
-        key:
-          description: The application key, which is public and identifies the deployment rather than the caller
-          type: string
-        port:
-          type: integer
-          format: int64
-        announcements_channel:
-          description: |-
-            The channel carrying announcements. It is public: subscribing to it needs no
-            authorization, because an announcement is addressed to everybody. The events on it
-            carry an identifier and nothing else, so a client fetches the list and sees the
-            announcements it is entitled to
-          type: string
-        project_channel:
-          description: The channel carrying events about the project in the token; empty when the token names no project
-          type: string
-        secure:
-          description: Whether to connect over TLS
-          type: boolean
-        user_channel:
-          description: The channel carrying events addressed to you
-          type: string
-      required:
-        - enabled
-        - key
-        - host
-        - port
-        - secure
-        - cluster
-        - auth_path
-        - user_channel
-        - project_channel
-        - announcements_channel
-      additionalProperties: false
-    AuthorizeRealtimeChannelRequestBody:
-      type: object
-      properties:
-        channel_name:
-          description: The channel being subscribed to
-          type: string
-          minLength: 1
-          maxLength: 255
-        socket_id:
-          description: The connection identifier the realtime server assigned to this client
-          type: string
-          minLength: 1
-          maxLength: 128
-      required:
-        - socket_id
-        - channel_name
-      additionalProperties: false
-    RealtimeAuthResource:
-      type: object
-      properties:
-        auth:
-          description: The authorization token for this subscription, passed back to the realtime server by the client library
-          type: string
-      required:
-        - auth
       additionalProperties: false
   parameters:
     NotificationId:

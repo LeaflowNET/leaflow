@@ -27,9 +27,11 @@ info:
 
     Read a thread's state with get-thread and its transcript with list-thread-items. Follow both live
 
-    over the WebSocket described under /api/v1/realtime/tickets. list-thread-messages outlines the
+    through EventBus by subscribing to assistant.thread.frame and assistant.resource.updated; after a
 
-    person's messages for navigating a long conversation.
+    reconnection or an assistant.workspace.invalidated message, read them again. list-thread-messages
+
+    outlines the person's messages for navigating a long conversation.
 
 
     Upload large files with /api/v1/uploads: read /api/v1/upload-configuration first, send exact-sized
@@ -47,7 +49,6 @@ tags:
   - name: Folder
   - name: Task
   - name: Setting
-  - name: Realtime
   - name: Attachment
   - name: Upload
   - name: Memory
@@ -108,10 +109,6 @@ paths:
     $ref: ./tasks.yaml#/paths/~1api~1v1~1tasks~1{task}~1runs~1{run}
   /api/v1/settings:
     $ref: ./settings.yaml#/paths/~1api~1v1~1settings
-  /api/v1/realtime/tickets:
-    $ref: ./realtime.yaml#/paths/~1api~1v1~1realtime~1tickets
-  /api/v1/realtime:
-    $ref: ./realtime.yaml#/paths/~1api~1v1~1realtime
   /api/v1/attachments:
     $ref: ./attachments.yaml#/paths/~1api~1v1~1attachments
   /api/v1/attachments/{attachment}:
@@ -160,6 +157,21 @@ paths:
     $ref: ./channels.yaml#/paths/~1api~1v1~1weixin-logins~1{login}
   /api/v1/weixin-logins/{login}:verifyCode:
     $ref: ./channels.yaml#/paths/~1api~1v1~1weixin-logins~1{login}:verifyCode
+  /api/v1/threads/{thread}/presence:
+    post:
+      summary: Renew client presence
+      description: Renews an already announced browser client while the thread is open. It does not create or replace
+        the client catalogue.
+      operationId: renew-thread-presence
+      tags:
+      - Threads
+      parameters:
+      - $ref: '#/components/parameters/ThreadId'
+      responses:
+        '204':
+          description: Presence renewed
+        default:
+          $ref: '#/components/responses/Error'
 components:
   securitySchemes:
     bearerAuth:
