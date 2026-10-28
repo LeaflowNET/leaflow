@@ -253,6 +253,19 @@ components:
             - string
             - "null"
           format: date-time
+        eventVersion:
+          description: |-
+            For `event`. The event version the condition was checked against. It advances when the event
+            gains a newer version that the condition still fits; when it no longer fits, the task is
+            paused and a failed run records TASK_EVENT_VERSION_INCOMPATIBLE.
+          type:
+            - integer
+            - "null"
+          format: int64
+        eventRunCount:
+          description: For `event`. The event-triggered runs started under the current trigger.
+          type: integer
+          format: int64
         lastRun:
           anyOf:
             - $ref: "#/components/schemas/TaskRunResource"
@@ -271,12 +284,18 @@ components:
         - trigger
         - action
         - nextRunAt
+        - eventVersion
+        - eventRunCount
         - lastRun
         - createdAt
         - updatedAt
       additionalProperties: false
     TaskTrigger:
-      description: When the task runs. `type` determines which fields apply.
+      description: |-
+        When the task runs. `type` determines which fields apply. An `event` task runs when a matching
+        event message arrives. Messages are delivered as they happen and are not stored: a message
+        published while delivery is interrupted does not start a run, and a message can arrive late or
+        more than once.
       type: object
       properties:
         type:
@@ -286,6 +305,7 @@ components:
             - at
             - interval
             - cron
+            - event
         runAt:
           description: For `at`.
           type:
@@ -328,6 +348,52 @@ components:
           format: int64
           minimum: 10
           default: 300
+        event:
+          description: For `event`. The full name of the event to listen for.
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        eventKey:
+          description: |-
+            For `event`. A filter on the message key: layers separated by `/`, `+` matching exactly one
+            layer, and `#` as the last layer matching that layer and every layer below it. Null matches
+            every key.
+          type:
+            - string
+            - "null"
+          maxLength: 512
+        eventCondition:
+          description: |-
+            For `event`. A CEL expression that must be true for a message to count, over `data` (the
+            payload) and `event` (`name`, `version`, `key`, `sender_id` and `created_at`). Reading a field
+            the payload does not carry counts as false; use `has()` for optional fields. Null counts every
+            message.
+          type:
+            - string
+            - "null"
+          maxLength: 2048
+        maxRuns:
+          description: For `event`. The number of event-triggered runs after which the task completes. Null means no limit.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+        expiresAt:
+          description: For `event`. The task stops listening and completes at this time.
+          type:
+            - string
+            - "null"
+          format: date-time
+        cooldownSeconds:
+          description: |-
+            For `event`. The least time between the starts of two event-triggered runs. Messages that
+            match in between are delivered with the next run.
+          type: integer
+          format: int64
+          minimum: 10
+          default: 60
       required:
         - type
       additionalProperties: false
@@ -412,12 +478,25 @@ components:
         trigger:
           description: |-
             How the run started: `schedule` by the task's own trigger, including a task set to run now;
-            `manual` by a person running it outside its schedule; `assistant` by the assistant.
+            `manual` by a person running it outside its schedule; `assistant` by the assistant; `event` by
+            matching event messages.
           type: string
           enum:
             - schedule
             - manual
             - assistant
+            - event
+        eventCount:
+          description: For runs started by events, the number of matching messages the run covers.
+          type: integer
+          format: int64
+        events:
+          description: For runs started by events, up to 20 of the messages the run covers. Null in lists; read the run for it.
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/TaskRunEvent"
       required:
         - id
         - taskId
@@ -428,6 +507,42 @@ components:
         - output
         - errorCode
         - trigger
+        - eventCount
+        - events
+      additionalProperties: false
+    TaskRunEvent:
+      description: An event message that started a run.
+      type: object
+      properties:
+        id:
+          type: string
+        event:
+          type: string
+        version:
+          type: integer
+          format: int64
+        key:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        data:
+          description: The payload as published. Null when it was larger than 4 KiB; see dataBytes.
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+        dataBytes:
+          type: integer
+          format: int64
+      required:
+        - id
+        - event
+        - version
+        - key
+        - createdAt
+        - data
+        - dataBytes
       additionalProperties: false
     CreateTaskRequestBody:
       type: object
@@ -483,6 +598,7 @@ components:
             - at
             - interval
             - cron
+            - event
         actionType:
           type: string
           enum:
