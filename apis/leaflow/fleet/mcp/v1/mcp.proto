@@ -48,12 +48,12 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/mcp/v1;mcpv1";
 // servers are named "<server>__<tool>" together. With "command" (and
 // "args", "env") the Agent starts it and speaks to it over its standard input
 // and output; with "url" (and "headers") it connects to it over Streamable
-// HTTP, or over HTTP with Server-Sent Events when "type" is "sse". "type" may
-// also be "stdio" or "http", the default for its form. "disabled": true keeps
-// a server configured but stopped. Members and fields the Agent does not know
-// are kept as they are. A server whose name or entry is not valid, such as
-// one with neither "command" nor "url", is reported as INVALID; the others
-// still work.
+// HTTP. "type" may be "stdio" or "http", the default for its form; any other,
+// such as "sse" for HTTP with Server-Sent Events of earlier revisions of MCP,
+// makes the entry not valid. "disabled": true keeps a server configured but
+// stopped. Members and fields the Agent does not know are kept as they are. A
+// server whose name or entry is not valid, such as one with neither "command"
+// nor "url", is reported as INVALID; the others still work.
 //
 // The account edits the file by hand or through the platform, and the Agent
 // picks up every change by itself, without restarting: it starts what was
@@ -80,9 +80,11 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/mcp/v1;mcpv1";
 //
 // Servers. The Agent starts or connects to a server when it is first used,
 // and stops it when it has not been used for a while or when the Agent needs
-// room for others. It asks for no client capabilities: servers get no
-// sampling, elicitation or roots. What a server writes to standard error stays
-// on the machine.
+// room for others. Servers get no sampling, elicitation or roots: a request a
+// server makes of the client is answered as by a client without them, ping
+// with an empty result, roots/list with no roots, elicitation declined and
+// others, such as for sampling, with the JSON-RPC error -32601. What a server
+// writes to standard error stays on the machine.
 //
 // Feature "leaflow.fleet.mcp.v1" (leaflow.fleet.machine.v1 Feature):
 // AVAILABLE while leaflow.fleet.directory.v1 is, since servers run as
@@ -155,9 +157,8 @@ service McpService {
   // and passes the request on without checking it against a revision of MCP.
   // When the call is cancelled or its timeout passes, the Agent cancels the
   // request at the server (notifications/cancelled). A request the server
-  // makes of the client meanwhile, such as for sampling, is answered with the
-  // JSON-RPC error -32601, and its notifications, such as of progress, are
-  // dropped.
+  // makes of the client meanwhile is answered as for any request of a server,
+  // and its notifications, such as of progress, are dropped.
   //
   // Fails with:
   //   - NOT_FOUND and reason MCP_SERVER_NOT_FOUND for a server that is not
@@ -248,9 +249,9 @@ message McpServerDefinition {
   repeated string args = 3;
   // STDIO only: variables added to the account's environment. Secret.
   map<string, string> env = 4;
-  // HTTP and SSE only: the endpoint.
+  // HTTP only: the endpoint.
   string url = 5;
-  // HTTP and SSE only: headers sent with every request. Secret.
+  // HTTP only: headers sent with every request. Secret.
   map<string, string> headers = 6;
   // Configured but kept stopped.
   bool disabled = 7;
@@ -263,8 +264,6 @@ enum McpTransport {
   MCP_TRANSPORT_STDIO = 1;
   // Streamable HTTP.
   MCP_TRANSPORT_HTTP = 2;
-  // HTTP with Server-Sent Events, the transport of earlier revisions of MCP.
-  MCP_TRANSPORT_SSE = 3;
 }
 
 // What a server is doing.
