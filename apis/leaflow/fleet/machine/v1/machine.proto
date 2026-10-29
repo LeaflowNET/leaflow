@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package leaflow.fleet.machine.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/machine/v1;machinev1";
+
+// Machines of a fleet: how a machine's Agent enrolls, and what it reports
+// about the machine and the features it offers. Every call travels on the
+// daemon's control connection (leaflow.fleet.control.v1) and fails there with
+// the reasons of each method in a google.rpc.ErrorInfo of the domain
+// "fleet.leaflow.cloud".
+//
+// Enrollment. A new daemon generates its machine key and connects with an
+// enrollment credential. EnrollMachine registers the key and answers PENDING
+// with a pairing code the daemon shows; the person who adds the machine finds
+// the request by that code and approves or denies it. The daemon calls again
+// after retry_after until a decision. On APPROVED it stores machine_id and
+// connects with its machine credential from then on; on DENIED it stops.
+// Nothing but an approval makes a machine usable, so installers carry no
+// secret.
+//
+// Reports. The daemon reports the machine with ReportMachineStatus after
+// every connect and whenever a feature changes, such as when a feature's
+// package is installed or its configuration is edited. Each feature reports
+// its own state through the package that defines it. Nothing is replayed
+// after a reconnect.
+//
+// Events. The daemon records with ReportMachineEvents what the people who
+// manage the machine should see, such as a directory account it does not
+// serve.
+//
+// Features. A machine offers the features of the packages it serves, each
+// named by that package, such as "leaflow.fleet.directory.v1" (logins of the
+// project's directory accounts), "leaflow.fleet.command.v1" (remote
+// commands) and "leaflow.fleet.virtualdesktop.host.v1" (desktop sessions). The
+// service calls the methods of a feature only while the machine reports it
+// AVAILABLE.
+//
+// Trust. The service accepts reports and calls only about the machine's own
+// objects, and closes a connection that reports otherwise with
+// POLICY_VIOLATION.
+
+// Enrolls machines and takes their reports. Served by the service on daemon
+// connections.
+service MachineRegistryService {
+  // Asks to enroll the key of the connection's enrollment credential, or
+  // returns the decision on it. Only on a connection with an enrollment
+  // credential; calling again with the same key continues the same request.
+  //
+  // With a registration_token the key is approved at once into the machine
+  // the token was created for, and the response is APPROVED with that
+  // machine_id. Calling again with the same key and the same token returns
+  // the same answer, so a daemon that stopped before keeping its identity can
+  // call again.
+  //
+  // Fails with:
+  //   - UNAVAILABLE and reason ENROLLMENT_UNAVAILABLE when the service cannot
+  //     record the request now; call again with backoff;
+  //   - PERMISSION_DENIED and reason REGISTRATION_TOKEN_INVALID when the
+  //     registration token is unknown, expired, revoked or used by another
+  //     key, or the key already belongs to a machine or was denied. Nothing
+  //     is recorded and no request is left pending: the daemon stops and says
+  //     so. Without the token the daemon can ask for approval by pairing code.
+  rpc EnrollMachine(EnrollMachineRequest) returns (EnrollMachineResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Reports the machine and its features. The latest report replaces the
+  // previous one.
+  rpc ReportMachineStatus(ReportMachineStatusRequest) returns (ReportMachineStatusResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Records events the people who manage the machine should see, such as a
+  // directory account the daemon does not serve. The daemon reports a
+  // condition when it begins, not again while it lasts, and never reports
+  // what happens inside sessions. An event whose event_id the service has
+  // recorded is recorded once, so that a call can be repeated after its
+  // answer was lost. The service ignores types it does not know and keeps
+  // events for a limited time.
+  //
+  // Fails with RESOURCE_EXHAUSTED and reason MACHINE_EVENTS_LIMITED when the
+  // machine reports more than the service accepts now; report them again
+  // later.
+  rpc ReportMachineEvents(ReportMachineEventsRequest) returns (ReportMachineEventsResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// The request of EnrollMachine.
+message EnrollMachineRequest {
+  // The host name (uname(2) nodename), the machine's first name.
+  string hostname = 1;
+  // A registration token created on the platform for this machine, or empty
+  // to wait for approval by pairing code. A bearer secret that enrolls once:
+  // send it only on a control connection whose certificate was verified, read
+  // it only from a file that only root can read, never log it, and delete it
+  // once the machine is enrolled.
+  string registration_token = 2;
+}
+
+// The decision on an enrollment.
+enum EnrollmentState {
+  ENROLLMENT_STATE_UNSPECIFIED = 0;
+  // Not decided yet. The daemon shows the pairing code and calls again.
+  ENROLLMENT_STATE_PENDING = 1;
+  // Approved; machine_id is set.
+  ENROLLMENT_STATE_APPROVED = 2;
+  // Denied. Final for the key: the daemon stops and says so.
+  ENROLLMENT_STATE_DENIED = 3;
+}
+
+// The response of EnrollMachine.
+message EnrollMachineResponse {
+  // The decision so far.
+  EnrollmentState state = 1;
+  // The machine. APPROVED only. The daemon keeps it with its private key,
+  // readable by root only.
+  string machine_id = 2;
+  // A code that names the request, to show on the machine and to match
+  // with the request on the service. Both sides derive it from the public
+  // key: Crockford's Base32 of the first 50 bits of the SHA-256 of the ASCII
+  // bytes "leaflow.fleet.machine.v1.EnrollMachineResponse.pairing_code", one
+  // zero byte and the key, written "XXXXX-XXXXX". It is not a secret.
+  string pairing_code = 3;
+  // PENDING only: how long to wait before calling again.
+  google.protobuf.Duration retry_after = 4;
+}
+
+// The operating system, from /etc/os-release (os-release(5)).
+message OsRelease {
+  // ID=, such as "debian".
+  string id = 1;
+  // VERSION_ID=, such as "13".
+  string version_id = 2;
+  // PRETTY_NAME=, such as "Debian GNU/Linux 13 (trixie)".
+  string pretty_name = 3;
+}
+
+// A feature the machine offers.
+message Feature {
+  // The full name of the package that defines it, such as
+  // "leaflow.fleet.directory.v1".
+  string name = 1;
+  // Whether it can be used now.
+  FeatureState state = 2;
+  // UNAVAILABLE only: why, plain text for people, at most 1024 bytes, such
+  // as "Xvfb is not installed".
+  string reason = 3;
+  // What the feature can do on this machine, as the dotted names its package
+  // defines. Names a receiver does not know are ignored.
+  repeated string details = 4;
+}
+
+// Whether a feature can be used.
+enum FeatureState {
+  FEATURE_STATE_UNSPECIFIED = 0;
+  // Installed and usable.
+  FEATURE_STATE_AVAILABLE = 1;
+  // Installed but not usable now; Feature.reason says why.
+  FEATURE_STATE_UNAVAILABLE = 2;
+}
+
+// The request of ReportMachineStatus.
+message ReportMachineStatusRequest {
+  // /proc/sys/kernel/random/boot_id, new on every boot.
+  string boot_id = 1;
+  // The host name (uname(2) nodename).
+  string hostname = 2;
+  // The operating system.
+  OsRelease os_release = 3;
+  // The kernel release (uname(2) release), such as "6.12.43+deb13-amd64".
+  string kernel_release = 4;
+  // The hardware (uname(2) machine), such as "x86_64".
+  string architecture = 5;
+  // The Agent's version (Semantic Versioning 2.0.0), such as "1.4.0".
+  string agent_version = 6;
+  // The features the Agent has installed, available or not. A feature
+  // missing here is not installed.
+  repeated Feature features = 7;
+  // Orders the reports the daemon sends on this connection by when it
+  // observed what they report (leaflow.fleet.control.v1 Reports): it
+  // increases with every report, 1 for the first, and a report sent again
+  // keeps its sequence.
+  uint64 sequence = 8;
+}
+
+// The response of ReportMachineStatus.
+message ReportMachineStatusResponse {}
+
+// The request of ReportMachineEvents.
+message ReportMachineEventsRequest {
+  // The events, oldest first, at most 100.
+  repeated MachineEvent events = 1;
+}
+
+// The response of ReportMachineEvents.
+message ReportMachineEventsResponse {}
+
+// Something that happened on the machine.
+message MachineEvent {
+  // Chosen by the daemon, unique on the machine, such as a UUID; at most 64
+  // bytes.
+  string event_id = 1;
+  // What happened.
+  MachineEventType type = 2;
+  // When it happened, on the machine's clock.
+  google.protobuf.Timestamp occurred_at = 3;
+  // The values of the event, with the keys its type names. At most 16
+  // entries; keys at most 64 bytes, values at most 256 bytes.
+  map<string, string> metadata = 4;
+}
+
+// What happened on a machine.
+enum MachineEventType {
+  MACHINE_EVENT_TYPE_UNSPECIFIED = 0;
+  // A directory account (leaflow.fleet.directory.v1) is not served because a
+  // local account uses its name or its uid, or because its uid is within the
+  // subordinate ids of a local user. Metadata "username", and "conflict":
+  // "name", "uid" or "subordinate".
+  MACHINE_EVENT_TYPE_DIRECTORY_ACCOUNT_CONFLICT = 1;
+  // A directory group is not served because a local group uses its name or
+  // its gid, or because its gid is within the subordinate ids of a local
+  // user. Metadata "groupName", and "conflict": "name", "gid" or
+  // "subordinate".
+  MACHINE_EVENT_TYPE_DIRECTORY_GROUP_CONFLICT = 2;
+}

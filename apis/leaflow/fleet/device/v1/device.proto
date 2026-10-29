@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package leaflow.fleet.device.v1;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/device/v1;devicev1";
+
+// Devices of the participant that feed the session: its microphone, camera and
+// gamepads. The session presents them to its applications as virtual devices
+// of the session's user and tells participants when an application uses the
+// microphone or the camera, so that a participant captures only while something
+// consumes it.
+//
+// Channel type "leaflow.fleet.device.v1", lane "metadata": opened by the
+// participant, one per connection. The session sends ServerMessage; the
+// participant sends nothing. It starts with a snapshot: one DeviceDemand for
+// the microphone and one for the camera, then SnapshotEnd; later DeviceDemand
+// messages replace them.
+//
+// Providers. A participant provides a device by opening the channel type of its
+// package (audio input, camera, gamepad) after its person agreed and while the
+// device's demand is ACTIVE; demand is not permission to touch the
+// participant's hardware. One participant at a time provides the microphone and
+// one the camera. A participant whose DevicePolicy.provider_priority is higher
+// than the current provider's replaces it, which then ends with
+// PROVIDER_REPLACED; otherwise the current provider stays and the newcomer's
+// channel is refused with RESOURCE_SHORTAGE. Read-only participants provide
+// nothing.
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The use of a device type changed.
+    DeviceDemand demand = 1;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 2;
+  }
+}
+
+// A type of device a participant can provide.
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  // A microphone, as the session's audio source.
+  DEVICE_TYPE_MICROPHONE = 1;
+  // A camera, as the session's video capture device.
+  DEVICE_TYPE_CAMERA = 2;
+  // A USB device. Reserved: nothing provides it yet.
+  DEVICE_TYPE_USB = 3;
+  // A smart card reader. Reserved: nothing provides it yet.
+  DEVICE_TYPE_SMART_CARD = 4;
+  // A gamepad, as an input device of the session.
+  DEVICE_TYPE_GAMEPAD = 5;
+}
+
+// Whether applications use a device, and who provides it.
+message DeviceDemand {
+  // The device type, MICROPHONE or CAMERA.
+  DeviceType type = 1;
+  // Whether something uses it.
+  DemandState state = 2;
+  // How many applications use it; 0 unless ACTIVE.
+  uint32 consumer_count = 3;
+  // consumer_count is exact. Otherwise it is a lower bound the session
+  // verified, often 1.
+  bool consumer_count_exact = 4;
+  // The applications using it, as far as the session can tell them apart,
+  // at most 32. Empty does not mean that nothing uses it.
+  repeated DeviceConsumer consumers = 5;
+  // The participant that provides the device, as in ParticipantList. 0: none.
+  uint64 provider_participant_id = 6;
+}
+
+// Whether something uses a device.
+enum DemandState {
+  DEMAND_STATE_UNSPECIFIED = 0;
+  // Nothing uses it.
+  DEMAND_STATE_IDLE = 1;
+  // An application records from it: an uncorked recording stream of the
+  // session's audio source, or a streaming video capture. Opening, probing
+  // or listing the device does not count.
+  DEMAND_STATE_ACTIVE = 2;
+  // The session cannot tell. Providers stop; participants never poll instead.
+  DEMAND_STATE_UNAVAILABLE = 3;
+}
+
+// An application using a device.
+message DeviceConsumer {
+  // Identifies it within the demand, opaque, at most 128 bytes.
+  string consumer_id = 1;
+  // Its name, as it reports it. Plain text, at most 128 bytes.
+  string application_name = 2;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// Why the session ended a microphone or camera stream it had granted.
+enum CaptureEndReason {
+  CAPTURE_END_REASON_UNSPECIFIED = 0;
+  // No application uses the device anymore.
+  CAPTURE_END_REASON_NO_CONSUMERS = 1;
+  // The participant's authorization no longer allows it.
+  CAPTURE_END_REASON_PERMISSION_REVOKED = 2;
+  // The session's virtual device went away.
+  CAPTURE_END_REASON_DEVICE_UNAVAILABLE = 3;
+  // A participant with a higher provider priority took over.
+  CAPTURE_END_REASON_PROVIDER_REPLACED = 4;
+  // The longest capture the policy allows has passed.
+  CAPTURE_END_REASON_DEADLINE_EXCEEDED = 5;
+  // No format of the participant can be used.
+  CAPTURE_END_REASON_UNSUPPORTED_FORMAT = 6;
+}
+
+// The session ended a stream. Sent before it closes the stream's channel.
+message CaptureEnd {
+  // Why.
+  CaptureEndReason reason = 1;
+}
+
+// What devices a participant may provide. Carried in the participant's signed
+// authorization; without it the participant provides none. The microphone also
+// needs AudioPolicy.
+message DevicePolicy {
+  // The device types the participant may provide.
+  repeated DeviceType allowed_types = 1;
+  // Decides between participants that may provide the same device: the higher
+  // wins, and on a tie the current provider stays.
+  uint32 provider_priority = 2;
+  // The longest the participant may capture the microphone or the camera at a
+  // stretch. Unset or 0: the session's limit.
+  google.protobuf.Duration max_capture_duration = 3;
+  // Limits of the camera.
+  CameraLimits camera_limits = 4;
+  // Limits of gamepads.
+  GamepadLimits gamepad_limits = 5;
+}
+
+// Limits of the camera. The effective limits are the smallest of these, the
+// participant's and the session's. 0: the session's limit.
+message CameraLimits {
+  // The widest frame, in pixels.
+  uint32 max_width = 1;
+  // The tallest frame, in pixels.
+  uint32 max_height = 2;
+  // The most frames per second.
+  uint32 max_frame_rate = 3;
+  // The largest encoded frame.
+  uint32 max_frame_size_bytes = 4;
+  // The most encoded frames in flight, at most 2.
+  uint32 max_queued_frames = 5;
+  // The oldest a frame in flight may get, at most 200 milliseconds.
+  google.protobuf.Duration max_queue_time = 6;
+}
+
+// Limits of the gamepads one participant provides. 0: the session's limit.
+message GamepadLimits {
+  // The most gamepads, at most 8.
+  uint32 max_devices = 1;
+  // The most axes of one gamepad, at most 32.
+  uint32 max_axes = 2;
+  // The most buttons of one gamepad, at most 64.
+  uint32 max_buttons = 3;
+  // The most changed states per second of one gamepad, at most 250.
+  uint32 max_updates_per_second = 4;
+  // The most bytes of states queued, in flight included, at most 64 KiB.
+  uint32 max_queue_size_bytes = 5;
+  // The oldest a queued state may get, at most 200 milliseconds; older
+  // states are dropped, never their button changes replayed late.
+  google.protobuf.Duration max_queue_time = 6;
+}

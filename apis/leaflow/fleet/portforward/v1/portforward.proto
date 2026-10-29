@@ -1,0 +1,283 @@
+syntax = "proto3";
+
+package leaflow.fleet.portforward.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/portforward/v1;portforwardv1";
+
+// TCP and UDP port forwarding between the participant's machine and the
+// session's (RFC 4254 §7). A forward listens on one side and connects to a
+// fixed target on the other: from the participant's machine into the session's
+// (LOCAL_TO_REMOTE, as ssh -L) or the reverse (REMOTE_TO_LOCAL, as ssh -R). The
+// session binds and connects as the session's user, the participant as its own;
+// nothing binds or connects as root for them. Only native participants can
+// listen and connect; a browser cannot.
+//
+// Channel types:
+//   - "leaflow.fleet.portforward.v1", lane "metadata": opened by the
+//     participant, one per connection. The session sends ServerMessage: a
+//     snapshot of this connection's forwards, then SnapshotEnd, then every
+//     change of a forward in full.
+//   - "leaflow.fleet.portforward.v1.PortForwardService", lane
+//     "interactive": opened by the participant to create and delete forwards.
+//   - "leaflow.fleet.portforward.v1.tcp", lane "bulk": one per TCP
+//     connection, opened by the listening side after it accepted it. The
+//     opener sends TcpOpen first; the other side connects to the forward's
+//     target once, within the connect timeout, and accepts the channel when
+//     connected or refuses it (transport ChannelOpenFailure CONNECT_FAILED).
+//     The opener sends no data before the channel is accepted. Then both
+//     ends send TcpMessage. Closing the channel with CANCELLED resets the
+//     connection; nothing is retried or replayed.
+//   - "leaflow.fleet.portforward.v1.udp", lane "bulk": one per UDP
+//     association, opened by the listening side when a packet arrives from a
+//     new peer. The opener sends UdpOpen; the other side opens a socket to
+//     the target and accepts the channel. Packets then travel as Datagrams
+//     of the channel, each one UdpPacket: unreliable, unordered and never
+//     fragmented; a packet larger than allowed, or arriving while the queue
+//     is full or before acceptance, is dropped whole. Closing the channel, or
+//     idling longer than the policy allows, ends the association.
+//
+// Targets come only from the forward the participant created and the policy
+// allows; addresses a connection came from are reported, never obeyed.
+// Addresses are IP address literals, never host names, so that policies hold
+// without DNS; an IPv4-mapped IPv6 address counts as IPv4. A forward and its
+// connections end when it is deleted, when the connection or the participant's
+// authorization ends, and never come back by themselves. Needs
+// PortForwardPolicy; read-only participants forward nothing.
+
+// A message from the session on the portforward channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // A forward as it is now, in full.
+    Forward forward = 1;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 2;
+  }
+}
+
+// An IP endpoint.
+message Endpoint {
+  // An IPv4 or IPv6 address literal, with a zone for link-local IPv6
+  // addresses (RFC 4007), such as "127.0.0.1" or "fe80::1%eth0".
+  string address = 1;
+  // The port, 1 to 65535. A listener may ask for 0 and learns the port the
+  // system chose.
+  uint32 port = 2;
+}
+
+// Which way a forward goes.
+enum ForwardDirection {
+  FORWARD_DIRECTION_UNSPECIFIED = 0;
+  // The participant listens; the session connects (ssh -L).
+  FORWARD_DIRECTION_LOCAL_TO_REMOTE = 1;
+  // The session listens; the participant connects (ssh -R).
+  FORWARD_DIRECTION_REMOTE_TO_LOCAL = 2;
+}
+
+// The transport protocol of a forward.
+enum ForwardProtocol {
+  FORWARD_PROTOCOL_UNSPECIFIED = 0;
+  // TCP.
+  FORWARD_PROTOCOL_TCP = 1;
+  // UDP.
+  FORWARD_PROTOCOL_UDP = 2;
+}
+
+// What a forward does.
+message ForwardSpec {
+  // Which way it goes.
+  ForwardDirection direction = 1;
+  // Where the listening side listens.
+  Endpoint listen_endpoint = 2;
+  // Where the other side connects.
+  Endpoint target_endpoint = 3;
+  // TCP or UDP.
+  ForwardProtocol protocol = 4;
+}
+
+// A forward of this connection.
+message Forward {
+  // Chosen by the session, never 0 and never reused in the session.
+  uint64 forward_id = 1;
+  // What it does.
+  ForwardSpec spec = 2;
+  // Its state.
+  ForwardState state = 3;
+  // Where the listening side actually listens, with the port it got.
+  Endpoint bound_endpoint = 4;
+  // Its open connections and associations.
+  uint32 connection_count = 5;
+  // Why it failed. Unset otherwise.
+  google.rpc.Status error = 6;
+}
+
+// The state of a forward.
+enum ForwardState {
+  FORWARD_STATE_UNSPECIFIED = 0;
+  // Created; the participant's listener is not reported yet. Nothing is
+  // accepted.
+  FORWARD_STATE_PREPARING = 1;
+  // Listening and forwarding.
+  FORWARD_STATE_ACTIVE = 2;
+  // Deleted.
+  FORWARD_STATE_CLOSED = 3;
+  // It could not listen or stopped working.
+  FORWARD_STATE_FAILED = 4;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// Creates and deletes forwards. The session checks every request against the
+// participant's authorization before anything listens or connects.
+service PortForwardService {
+  // Creates a forward. For REMOTE_TO_LOCAL the session listens and the forward
+  // is ACTIVE; for LOCAL_TO_REMOTE it is PREPARING until the participant
+  // listens and calls ReportListenerReady. Fails with PERMISSION_DENIED for
+  // endpoints the policy does not allow and RESOURCE_EXHAUSTED beyond its
+  // limits.
+  rpc CreateForward(CreateForwardRequest) returns (CreateForwardResponse);
+  // Reports that the participant listens for a LOCAL_TO_REMOTE forward, on the
+  // endpoint it actually bound. The session checks the endpoint against the
+  // policy again and makes the forward ACTIVE; the participant accepts no
+  // connection before. When it refuses, the participant closes its listener.
+  rpc ReportListenerReady(ReportListenerReadyRequest) returns (ReportListenerReadyResponse);
+  // Deletes a forward and resets all its connections. Deleting one that is
+  // gone succeeds.
+  rpc DeleteForward(DeleteForwardRequest) returns (DeleteForwardResponse);
+}
+
+// The request of CreateForward.
+message CreateForwardRequest {
+  // What the forward does.
+  ForwardSpec spec = 1;
+}
+
+// The response of CreateForward.
+message CreateForwardResponse {
+  // The forward.
+  Forward forward = 1;
+}
+
+// The request of ReportListenerReady.
+message ReportListenerReadyRequest {
+  // The forward.
+  uint64 forward_id = 1;
+  // Where the participant listens.
+  Endpoint bound_endpoint = 2;
+  // Why the participant could not listen; the forward then fails. Unset on
+  // success.
+  google.rpc.Status error = 3;
+}
+
+// The response of ReportListenerReady.
+message ReportListenerReadyResponse {
+  // The forward.
+  Forward forward = 1;
+}
+
+// The request of DeleteForward.
+message DeleteForwardRequest {
+  // The forward.
+  uint64 forward_id = 1;
+}
+
+// The response of DeleteForward.
+message DeleteForwardResponse {}
+
+// The first message of a TCP channel.
+message TcpOpen {
+  // The forward whose listener accepted the connection.
+  uint64 forward_id = 1;
+  // Where the connection came from. For display only.
+  Endpoint originator = 2;
+}
+
+// A message of a TCP channel after TcpOpen, from either end.
+message TcpMessage {
+  // The message.
+  oneof message {
+    // The next bytes of the connection, at most 64 KiB.
+    bytes data = 1;
+    // The sender sends nothing more (TCP half-close; RFC 4254 §5.3 "eof").
+    // Once all earlier data reached the socket, the receiver shuts down its
+    // writing; the other direction stays open. The channel closes once both
+    // ends have shut down.
+    TcpShutdown shutdown = 2;
+  }
+}
+
+// The sender sends nothing more on the connection.
+message TcpShutdown {}
+
+// The first message of a UDP channel.
+message UdpOpen {
+  // The forward whose listener received the first packet.
+  uint64 forward_id = 1;
+  // The peer the packets come from. For display only.
+  Endpoint originator = 2;
+}
+
+// One UDP packet, sent as a Datagram of a UDP channel.
+message UdpPacket {
+  // The payload; empty is a valid empty packet. At most
+  // PortForwardPolicy.max_udp_datagram_bytes and what the transport allows.
+  bytes data = 1;
+}
+
+// What a participant may forward. Carried in the participant's signed
+// authorization; without it the participant forwards nothing.
+message PortForwardPolicy {
+  // LOCAL_TO_REMOTE forwards are allowed.
+  bool local_to_remote_allowed = 1;
+  // REMOTE_TO_LOCAL forwards are allowed.
+  bool remote_to_local_allowed = 2;
+  // Where the participant may listen for LOCAL_TO_REMOTE.
+  EndpointPolicy local_listeners = 3;
+  // Where the session may connect for LOCAL_TO_REMOTE.
+  EndpointPolicy remote_targets = 4;
+  // Where the session may listen for REMOTE_TO_LOCAL.
+  EndpointPolicy remote_listeners = 5;
+  // Where the participant may connect for REMOTE_TO_LOCAL.
+  EndpointPolicy local_targets = 6;
+  // The most forwards at once, at most 32. 0: 8.
+  uint32 max_forwards = 7;
+  // The most connections and associations at once, at most 256. 0: 32.
+  uint32 max_connections = 8;
+  // The longest wait for one connection to a target, at most 60 seconds.
+  // Unset: 15 seconds.
+  google.protobuf.Duration connect_timeout = 9;
+  // The longest a connection may last. Unset: until the authorization ends.
+  google.protobuf.Duration max_connection_duration = 10;
+  // The longest a connection may stay idle. Unset: no limit.
+  google.protobuf.Duration idle_timeout = 11;
+  // UDP forwards are allowed. TCP permissions do not imply it.
+  bool udp_allowed = 12;
+  // The largest UDP payload, at most 65507. 0: 1100.
+  uint32 max_udp_datagram_bytes = 13;
+  // The longest a UDP association may stay idle, at most 5 minutes. Unset:
+  // 60 seconds.
+  google.protobuf.Duration udp_idle_timeout = 14;
+}
+
+// The addresses and ports a side may listen on or connect to. An endpoint is
+// allowed when its address lies in one of the prefixes and its port in one
+// of the ranges; empty lists allow nothing.
+message EndpointPolicy {
+  // IPv4 or IPv6 prefixes in CIDR notation (RFC 4632), such as "127.0.0.0/8";
+  // "0.0.0.0/0" and "::/0" allow any address.
+  repeated string prefixes = 1;
+  // The ports.
+  repeated PortRange ports = 2;
+}
+
+// Ports from first to last, inclusive, each 1 to 65535.
+message PortRange {
+  // The first port.
+  uint32 first = 1;
+  // The last port.
+  uint32 last = 2;
+}

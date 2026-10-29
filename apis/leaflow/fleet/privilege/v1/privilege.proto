@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package leaflow.fleet.privilege.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/privilege/v1;privilegev1";
+
+// Approval of privileged operations by a person on a participant device instead
+// of a password: privilege elevation through sudo or polkit, and access to the
+// user's keyring. The PAM stacks of sudo and polkit and the session's Secret
+// Service prompter ask the Agent's privileged daemon, which serializes a
+// PrivilegeRequest and has the session show it to its participants. A
+// participant whose authorization allows approving shows it to its person and
+// returns their decision signed with its participant key, the key named in its
+// authorization. The daemon accepts a decision only for the exact bytes it
+// produced, once, before its own deadline. It checks the signature itself, and
+// the participant's authorization too: signed by the service, current, for this
+// session and with a PrivilegePolicy that allows approving. The session only
+// carries the decision and the authorization. Every participant that may
+// approve is asked, and the first valid decision counts. When none is connected
+// the daemon does not wait, and the program goes on to its next way of
+// authenticating, such as a password.
+//
+// Channel type "leaflow.fleet.privilege.v1", lane "interactive": opened by the
+// participant, one per connection. ServerHello first, then a snapshot of one
+// PrivilegePrompt per pending request, then SnapshotEnd, then prompts and
+// closings as they happen.
+//
+// A request carries claims of the program that asked, such as its command line.
+// They may contain secrets: participants show them to the person and never
+// store or log them.
+
+// Decides on the platform the PAM authentications of directory accounts
+// (leaflow.fleet.directory.v1), so that sudo works where no participant can
+// approve, such as after an SSH login, and its owner can approve from any of
+// their devices. Served by the service on daemon connections
+// (leaflow.fleet.control.v1).
+//
+// The daemon asks for every PAM authentication of a directory account, at the
+// same time as it shows the request to the participants of the session the
+// process belongs to, if any. The first decision counts: the daemon cancels
+// this call (CallCancel) once a participant decides, and stops showing the
+// request once this call answers. A decision of the platform is not signed; the
+// daemon trusts it as it trusts the service for the directory.
+//
+// Unlike a participant, the platform keeps the request's claims with the
+// request and shows them to the account's owner: at most the first 4 KiB of
+// command_line, and remote_host and tty.
+service PrivilegeService {
+  // Decides a request. While the account's owner has set the machine to
+  // approve their requests without asking, the request is approved at once.
+  // Otherwise the owner is asked on the platform, and the answer is their
+  // decision, or EXPIRED once expires_at passes without one. A call without
+  // a timeout runs until expires_at.
+  //
+  // Asking again with the request_id of a request the machine asked about
+  // before continues that request: after its connection dropped, the daemon
+  // asks again with the same PrivilegeRequest and gets the decision on it.
+  //
+  // Fails with:
+  //   - NOT_FOUND and reason ACCOUNT_NOT_FOUND when the username of the
+  //     authentication is not an account of the machine's directory;
+  //   - PERMISSION_DENIED and reason PRIVILEGE_NOT_ALLOWED when the account
+  //     may not become root on the machine (Account.admin), or the operation
+  //     is not a PAM authentication.
+  rpc DecidePrivilegeRequest(DecidePrivilegeRequestRequest) returns (DecidePrivilegeRequestResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// The request of DecidePrivilegeRequest.
+message DecidePrivilegeRequestRequest {
+  // The request, as the daemon shows it to participants.
+  PrivilegeRequest request = 1;
+}
+
+// The response of DecidePrivilegeRequest.
+message DecidePrivilegeRequestResponse {
+  // APPROVED, DENIED or EXPIRED.
+  PrivilegeOutcome outcome = 1;
+}
+
+// A message from the participant.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // A person decided on a request.
+    SignedPrivilegeDecision decision = 1;
+  }
+}
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // What this participant may do. The first message.
+    ServerHello server_hello = 1;
+    // A request is pending.
+    PrivilegePrompt prompt = 2;
+    // A request is no longer pending.
+    PrivilegeRequestClosed request_closed = 3;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 4;
+  }
+}
+
+// What this participant may do.
+message ServerHello {
+  // The participant's authorization allows it to approve requests. Without it
+  // the participant sees requests and cannot decide them.
+  bool approve_allowed = 1;
+}
+
+// A pending request to show.
+message PrivilegePrompt {
+  // A serialized PrivilegeRequest, exactly as the daemon produced it. The
+  // participant shows the request decoded from these bytes and signs their
+  // SHA-256.
+  bytes request = 1;
+}
+
+// A request for a privileged operation, serialized by the Agent's privileged
+// daemon.
+message PrivilegeRequest {
+  // A UUID chosen by the daemon (RFC 9562).
+  string request_id = 1;
+  // 32 random bytes chosen by the daemon.
+  bytes nonce = 2;
+  // The machine.
+  string machine_id = 3;
+  // The session the asking process belongs to. Empty when it belongs to no
+  // session of the platform, such as after an SSH login.
+  string session_id = 4;
+  // When the request was made.
+  google.protobuf.Timestamp created_at = 5;
+  // When the daemon stops waiting and the asking program fails or goes on
+  // to its next way of authenticating. Informational: the daemon times
+  // requests on its own monotonic clock.
+  google.protobuf.Timestamp expires_at = 6;
+  // Claim: the asking process, such as the sudo process, the subject of a
+  // polkit check or the application asking for the keyring. 0 when unknown.
+  uint32 pid = 7;
+  // Claim: the command line of pid, such as "sudo apt install foo".
+  string command_line = 8;
+  // What is to be approved.
+  oneof operation {
+    // Authentication by a PAM stack, for sudo or polkit.
+    PamAuthentication pam_authentication = 9;
+    // Access to a collection of the user's keyring.
+    KeyringAccess keyring_access = 10;
+  }
+}
+
+// Authentication by a PAM stack (pam_start(3)), as sudo and polkit ask for
+// it.
+message PamAuthentication {
+  // The PAM service that asks, such as "sudo" or "polkit-1".
+  string service = 1;
+  // The account to authenticate as (PAM_USER).
+  string username = 2;
+  // The user who asked, when PAM knows it (PAM_RUSER).
+  string requesting_user = 3;
+  // The remote host, when PAM knows it (PAM_RHOST).
+  string remote_host = 4;
+  // The terminal, when PAM knows it (PAM_TTY), such as "/dev/pts/3".
+  string tty = 5;
+  // Claim: the polkit action, such as "org.freedesktop.policykit.exec".
+  // Empty for sudo.
+  string polkit_action_id = 6;
+  // Claim: the localized message polkit asked to show. Empty for sudo.
+  string message = 7;
+  // Claim: the localized polkit details, such as "program" and
+  // "command_line".
+  map<string, string> details = 8;
+}
+
+// Access to a collection of the user's keyring (freedesktop Secret Service
+// API), which an application asked for and which the Secret Service would
+// otherwise prompt for with a password.
+message KeyringAccess {
+  // What the application asked for.
+  KeyringOperation operation = 1;
+  // Claim: the label of the collection, such as "Login".
+  string collection_label = 2;
+}
+
+// An operation on the keyring that needs approval.
+enum KeyringOperation {
+  KEYRING_OPERATION_UNSPECIFIED = 0;
+  // Unlocking a collection (Service.Unlock).
+  KEYRING_OPERATION_UNLOCK_COLLECTION = 1;
+  // Creating a collection (Service.CreateCollection).
+  KEYRING_OPERATION_CREATE_COLLECTION = 2;
+}
+
+// A person's decision, signed by the participant.
+message SignedPrivilegeDecision {
+  // A serialized PrivilegeDecision.
+  bytes decision = 1;
+  // The Ed25519 signature (RFC 8032) over the ASCII bytes
+  // "leaflow.fleet.privilege.v1.PrivilegeDecision", one zero byte
+  // and decision, by the participant key of the connection's authorization.
+  bytes signature = 2;
+}
+
+// A person's decision on one request.
+message PrivilegeDecision {
+  // SHA-256 of PrivilegePrompt.request, 32 bytes.
+  bytes request_sha256 = 1;
+  // The person approved the request. False: denied.
+  bool approved = 2;
+  // When the person decided. Informational.
+  google.protobuf.Timestamp decided_at = 3;
+}
+
+// A request is no longer pending.
+message PrivilegeRequestClosed {
+  // PrivilegeRequest.request_id.
+  string request_id = 1;
+  // How it ended.
+  PrivilegeOutcome outcome = 2;
+}
+
+// How a request ended.
+enum PrivilegeOutcome {
+  PRIVILEGE_OUTCOME_UNSPECIFIED = 0;
+  // A person approved it.
+  PRIVILEGE_OUTCOME_APPROVED = 1;
+  // A person denied it.
+  PRIVILEGE_OUTCOME_DENIED = 2;
+  // Nobody decided before the deadline.
+  PRIVILEGE_OUTCOME_EXPIRED = 3;
+  // The asking program gave up, such as when sudo was interrupted.
+  PRIVILEGE_OUTCOME_CANCELLED = 4;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// What a participant may do with privilege requests. Carried in the
+// participant's signed authorization; the service grants approve_allowed only
+// to the devices of the session's person.
+message PrivilegePolicy {
+  // The participant may approve or deny requests.
+  bool approve_allowed = 1;
+}

@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.draw.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/draw/v1;drawv1";
+
+// The pixels of windows, sent as frames.
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.draw.v1", lane "metadata": opened by the
+//     participant, one per connection, before any frame can flow. The
+//     participant sends ClientMessage, the session ServerMessage. It negotiates
+//     encodings and carries acknowledgements, withdrawals and repaint requests.
+//     FrameAcknowledge may also travel as a Datagram of this channel.
+//   - "leaflow.fleet.virtualdesktop.draw.v1.frame", lane "media": opened by the
+//     session, one per frame. The session sends FrameMessage: one FrameStart,
+//     the frame's WindowDraw messages and one FrameEnd, then closes the
+//     channel; the participant sends nothing.
+//
+// Frames. frame_id starts at 1 and grows by exactly 1 with every frame of a
+// connection, so the participant knows the fate of every frame below the newest
+// it has seen. A frame is presented as a whole or discarded as a whole.
+//
+// Withdrawal. The session may withdraw a frame in flight by closing its channel
+// with CANCELLED. It then also withdraws every frame in flight that depends on
+// it, sends their damage again in later frames, and lists all of them in
+// FrameCancel, since a closed channel may reach the participant before its
+// FrameStart or not at all. The next frame of every window drawn in a withdrawn
+// frame uses no COPY_RECT and, for video, starts with a key frame.
+//
+// Discarding. A frame is completed once the participant presented it, discarded
+// it or learned from FrameCancel that it was withdrawn. The participant
+// discards a frame that draws window w and sends WindowRefresh for w when the
+// frame needs an exact dependency that is not met, a draw cannot be decoded, a
+// size change of w with a larger resize_counter is already shown, or it waited
+// more than one second for a dependency or for w to appear on the window
+// channel. A window that is already gone never causes a discard: its draws are
+// skipped and the frame is presented for its other windows.
+
+// A message from the participant on the draw channel.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // The encodings the participant decodes. The first message of the channel.
+    ClientHello client_hello = 1;
+    // Frames the participant finished with.
+    FrameAcknowledge frame_acknowledge = 2;
+    // Asks for a full repaint of a window.
+    WindowRefresh window_refresh = 3;
+    // Stops or resumes frames to this participant.
+    SuppressOutput suppress_output = 4;
+  }
+}
+
+// A message from the session on the draw channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The encodings the session will use. The first message of the channel.
+    ServerHello server_hello = 1;
+    // Frames the session withdrew.
+    FrameCancel frame_cancel = 2;
+  }
+}
+
+// A message from the session on a frame channel.
+message FrameMessage {
+  // The message.
+  oneof message {
+    // Starts the frame. The first message.
+    FrameStart frame_start = 1;
+    // One encoded rectangle of a window.
+    WindowDraw window_draw = 2;
+    // Ends the frame. The last message.
+    FrameEnd frame_end = 3;
+  }
+}
+
+// What the participant can decode (RFC 6143 §7.5.2 SetEncodings).
+message ClientHello {
+  // Encodings the participant decodes, most preferred first. COPY_RECT and
+  // SOLID_FILL are always supported and need not be listed.
+  repeated Encoding encodings = 1;
+  // WebCodecs codec strings the participant decodes, most preferred first, such
+  // as "avc1.42E01F". Empty: no video.
+  repeated string codecs = 2;
+}
+
+// What the session will send this participant.
+message ServerHello {
+  // The encodings it may use: those of ClientHello.encodings it supports.
+  repeated Encoding encodings = 1;
+  // The codec of video mode, one of ClientHello.codecs. Empty: no video.
+  string codec = 2;
+  // The lowest quality, 0 to 100, lossy encodings may fall to under load.
+  uint32 min_quality = 3;
+  // The quality, 0 to 100, of new still content.
+  uint32 max_quality = 4;
+}
+
+// How the pixels of a WindowDraw are encoded. Every draw decodes on its own;
+// only video deltas depend on earlier video frames of the window.
+enum Encoding {
+  ENCODING_UNSPECIFIED = 0;
+  // Uncompressed pixels, rows top to bottom without padding, 4 bytes per
+  // pixel in the order R, G, B, A with straight alpha (RFC 6143 Raw).
+  ENCODING_RAW = 1;
+  // A copy of another area of the same window as the participant shows it now,
+  // from source_x and source_y; the areas may overlap. data is empty. The
+  // frame needs an exact dependency (RFC 6143 CopyRect).
+  ENCODING_COPY_RECT = 2;
+  // The area filled with fill_pixel. data is empty (MS-RDPEGFX
+  // RDPGFX_SOLIDFILL_PDU).
+  ENCODING_SOLID_FILL = 3;
+  // A PNG (W3C PNG): lossless, with an alpha channel when the window has one,
+  // indexed colour for areas of at most 256 colours.
+  ENCODING_PNG = 4;
+  // A JPEG (ISO/IEC 10918-1): lossy, without alpha.
+  ENCODING_JPEG = 5;
+  // A lossy WebP (RFC 9649): VP8, with alpha in an ALPH chunk when present.
+  ENCODING_WEBP = 6;
+  // H.264 in Annex B byte stream format for a WebCodecs VideoDecoder
+  // configured without a description. One access unit is one video frame.
+  ENCODING_H264 = 7;
+}
+
+// Starts a frame: draws the participant presents together. The session sends
+// one frame per window with updates at each tick of its frame clock, and puts
+// several windows in one frame only when they must change together, such as a
+// menu opening while its window repaints.
+message FrameStart {
+  // The frame.
+  uint64 frame_id = 1;
+  // One entry per window drawn in the frame.
+  repeated FrameReference references = 2;
+}
+
+// What a frame needs of one window's earlier content.
+message FrameReference {
+  // The window. When the participant does not know it yet it holds the frame
+  // for up to one second.
+  uint64 window_id = 1;
+  // The frame of this window the draws were encoded on top of. The participant
+  // presents the frame only when the window's last presented frame is not
+  // older; with COPY_RECT or a video delta it must be exactly this frame.
+  // 0: the frame repaints the window and depends on nothing. The first frame
+  // of a window, the first after a size change and the first after
+  // WindowRefresh use 0; a repaint too large for one frame continues in
+  // frames that depend on it.
+  uint64 reference_frame_id = 2;
+  // Window.resize_counter the draws were encoded for. The participant waits up
+  // to one second for the window with this counter and discards the frame once
+  // a larger counter is shown. The new window size and the frame appear
+  // together.
+  uint64 resize_counter = 3;
+}
+
+// One encoded rectangle of a window, in window coordinates. The draws of a
+// frame apply in order.
+message WindowDraw {
+  // FrameStart.frame_id of this channel.
+  uint64 frame_id = 1;
+  // The window, listed in FrameStart.references.
+  uint64 window_id = 2;
+  // The left edge.
+  uint32 x = 3;
+  // The top edge.
+  uint32 y = 4;
+  // The width, 1 to 16384.
+  uint32 width = 5;
+  // The height, 1 to 16384.
+  uint32 height = 6;
+  // How data is encoded.
+  Encoding encoding = 7;
+  // The encoded pixels. Empty for COPY_RECT and SOLID_FILL.
+  bytes data = 8;
+  // SOLID_FILL only: the colour, 0xRRGGBBAA with straight alpha.
+  fixed32 fill_pixel = 9;
+  // COPY_RECT only: the left edge of the source area.
+  uint32 source_x = 10;
+  // COPY_RECT only: the top edge of the source area.
+  uint32 source_y = 11;
+  // The size of the encoded image when the session scaled it down; the
+  // participant scales it to width × height. Unset: width × height. Not for
+  // RAW, COPY_RECT or SOLID_FILL.
+  leaflow.fleet.virtualdesktop.display.v1.Size scaled_size = 12;
+  // H264 only: a key frame, decodable without earlier video frames (WebCodecs
+  // EncodedVideoChunkType "key").
+  bool key_frame = 13;
+  // H264 only: the presentation time in microseconds, increasing within the
+  // window's video (WebCodecs EncodedVideoChunk timestamp).
+  int64 timestamp_us = 14;
+  // H264 only, on every key frame: the WebCodecs codec string. The participant
+  // reconfigures the window's decoder when it changes.
+  string codec = 15;
+  // H264 only: the next WindowDraw of this frame continues the same access
+  // unit. The participant joins the data of such draws before decoding.
+  bool more_fragments = 16;
+}
+
+// Ends a frame.
+message FrameEnd {
+  // The frame.
+  uint64 frame_id = 1;
+  // The WindowDraw messages of the frame, fragments counted one by one, at
+  // most 4096.
+  uint32 draw_count = 2;
+}
+
+// Frames the session withdrew. The participant treats each as completed: it
+// drops what it received of it and ignores the rest. One it already presented
+// stays presented.
+message FrameCancel {
+  // Ascending, at most 256.
+  repeated uint64 frame_ids = 1;
+}
+
+// The frames the participant has completed, sent after presenting them rather
+// than on receipt, so that the session sees decoding backlog as well as network
+// delay and can pace itself (after MS-RDPEGFX RDPGFX_FRAME_ACKNOWLEDGE_PDU).
+// Frames of different windows complete out of order and a datagram may be lost,
+// so every acknowledgement states all completed frames: a watermark and the
+// completed frames above it. The participant sends one per animation frame in
+// which it completed a frame, as a datagram when it can, and at least every 250
+// milliseconds on the channel itself.
+message FrameAcknowledge {
+  // Every frame up to and including this one is completed.
+  uint64 completed_through_frame_id = 1;
+  // Completed frames above the watermark, ascending, at most 64.
+  repeated uint64 completed_frame_ids = 2;
+  // Frames received in whole or in part and not yet completed.
+  uint32 queue_depth = 3;
+  // Frames completed on the connection so far.
+  uint64 total_frames_decoded = 4;
+  // Microseconds from the FrameEnd of the highest completed frame to its
+  // presentation. 0 when it was discarded or withdrawn.
+  uint32 decode_time_us = 5;
+}
+
+// Asks for a full repaint of a window (RFC 6143 §7.5.3 non-incremental
+// FramebufferUpdateRequest). The next frame of the window depends on nothing,
+// uses no COPY_RECT and, for video, starts with a key frame.
+message WindowRefresh {
+  // The window. 0: every window.
+  uint64 window_id = 1;
+}
+
+// Stops or resumes the frames sent to this participant, such as while its
+// window is hidden (MS-RDPBCGR §2.2.11.3 Suppress Output PDU). While stopped
+// the session keeps the damage and sends one update covering it when frames
+// resume. Nothing but frames is affected. Frames are allowed when the
+// connection starts.
+message SuppressOutput {
+  // false stops frames, true resumes them.
+  bool allow_display_updates = 1;
+}

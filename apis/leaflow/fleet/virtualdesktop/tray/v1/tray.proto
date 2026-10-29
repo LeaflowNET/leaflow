@@ -1,0 +1,352 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.tray.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/tray/v1;trayv1";
+
+// The icons applications show in the system tray, and their menus. The
+// session hosts both tray protocols and presents them alike: items of the
+// freedesktop StatusNotifierItem specification, whose menus follow
+// com.canonical.dbusmenu, and icon windows docked through the freedesktop
+// System Tray Protocol 0.3 with XEmbed 0.5, whose pixels it captures and
+// whose clicks it injects.
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.tray.v1", lane "metadata": opened by the
+//     participant, one per connection. It starts with a snapshot: one TrayIcon
+//     per icon, then SnapshotEnd.
+//   - "leaflow.fleet.virtualdesktop.tray.v1.TrayService", lane "interactive":
+//     opened by the participant to act on icons and menus.
+//
+// Identifiers. tray_icon_id is chosen by the session, is never 0 and is never
+// reused in the session.
+//
+// Updates. The session sends at most one TrayIcon per icon every 50 to 100
+// milliseconds, the latest state, however often the application changes it.
+//
+// Images are rendered at the device pixel ratio of the participant's
+// DisplayConfigure.
+
+// A message from the session on the tray channel. The participant sends nothing
+// on it.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // A tray icon as it is now, in full: new when the participant does not know
+    // its tray_icon_id, otherwise replacing what the participant had.
+    TrayIcon tray_icon = 1;
+    // A tray icon is gone.
+    TrayIconRemoved tray_icon_removed = 2;
+    // A menu changed while a participant may be showing it.
+    TrayMenuUpdated menu_updated = 3;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 4;
+  }
+}
+
+// One tray icon. Field names follow the StatusNotifierItem properties.
+message TrayIcon {
+  // The icon.
+  uint64 tray_icon_id = 1;
+  // How the application provides it.
+  TrayIconProtocol protocol = 2;
+  // The application's own name for the item, stable across sessions (Id).
+  // Empty for XEmbed icons.
+  string item_id = 3;
+  // What the icon is about (Category).
+  TrayIconCategory category = 4;
+  // Whether it asks for attention (Status), such as for unread messages.
+  TrayIconStatus status = 5;
+  // Its title (Title; for XEmbed icons the icon window's _NET_WM_NAME or
+  // WM_NAME). Plain text.
+  string title = 6;
+  // The tooltip. Unset when none.
+  Tooltip tooltip = 7;
+  // The main icon, 22 to 24 pixels (IconName or IconPixmap; for XEmbed icons
+  // the captured pixels).
+  leaflow.fleet.virtualdesktop.display.v1.Icon icon = 8;
+  // Drawn over the bottom-right corner of icon (OverlayIconName or
+  // OverlayIconPixmap). Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon overlay_icon = 9;
+  // Shown instead of icon while status is NEEDS_ATTENTION
+  // (AttentionIconName or AttentionIconPixmap). Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon attention_icon = 10;
+  // A primary activation opens the menu rather than activating the
+  // application (ItemIsMenu). Also set for items that cannot be activated.
+  bool item_is_menu = 11;
+  // The item exports a menu, read with GetTrayMenu (Menu). Never set for
+  // XEmbed icons, whose applications pop up their own menus as windows.
+  bool has_menu = 12;
+  // The application's main window (WindowId), in the ids of the window
+  // channel. 0: none or unknown.
+  uint64 window_id = 13;
+  // The desktop file ID of its application (freedesktop Desktop Entry
+  // Specification). Empty when unknown.
+  string desktop_file_id = 14;
+  // The process that provides it. 0 when unknown.
+  uint32 pid = 15;
+}
+
+// How an application provides a tray icon.
+enum TrayIconProtocol {
+  TRAY_ICON_PROTOCOL_UNSPECIFIED = 0;
+  // A StatusNotifierItem on D-Bus.
+  TRAY_ICON_PROTOCOL_STATUS_NOTIFIER_ITEM = 1;
+  // An icon window docked with XEmbed.
+  TRAY_ICON_PROTOCOL_XEMBED = 2;
+}
+
+// What a tray icon is about (StatusNotifierItem Category).
+enum TrayIconCategory {
+  TRAY_ICON_CATEGORY_UNSPECIFIED = 0;
+  // The status of an application ("ApplicationStatus"); also XEmbed icons.
+  TRAY_ICON_CATEGORY_APPLICATION_STATUS = 1;
+  // Communication, such as a messenger ("Communications").
+  TRAY_ICON_CATEGORY_COMMUNICATIONS = 2;
+  // A system service ("SystemServices").
+  TRAY_ICON_CATEGORY_SYSTEM_SERVICES = 3;
+  // Hardware, such as a battery ("Hardware").
+  TRAY_ICON_CATEGORY_HARDWARE = 4;
+}
+
+// Whether a tray icon asks for attention (StatusNotifierItem Status).
+enum TrayIconStatus {
+  TRAY_ICON_STATUS_UNSPECIFIED = 0;
+  // Idle; the participant may move it to an overflow area ("Passive").
+  TRAY_ICON_STATUS_PASSIVE = 1;
+  // Active ("Active"); also XEmbed icons.
+  TRAY_ICON_STATUS_ACTIVE = 2;
+  // Asks for attention ("NeedsAttention").
+  TRAY_ICON_STATUS_NEEDS_ATTENTION = 3;
+}
+
+// The tooltip of a tray icon (StatusNotifierItem ToolTip).
+message Tooltip {
+  // Its icon. Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon icon = 1;
+  // Its title. Plain text.
+  string title = 2;
+  // Its text. Plain text; the session removes markup.
+  string description = 3;
+}
+
+// A tray icon is gone.
+message TrayIconRemoved {
+  // The icon.
+  uint64 tray_icon_id = 1;
+}
+
+// A menu changed (dbusmenu LayoutUpdated and ItemsPropertiesUpdated). A
+// participant showing the menu or the submenu reads it again with GetTrayMenu.
+message TrayMenuUpdated {
+  // The icon whose menu changed.
+  uint64 tray_icon_id = 1;
+  // The menu's new revision.
+  uint32 revision = 2;
+  // The submenu that changed. 0: the whole menu.
+  int32 parent_id = 3;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// Acts on tray icons and their menus. These calls act on the applications, so
+// they need what input needs: a participant that is not read-only, holding the
+// input lease. GetTrayMenu counts as acting, because the application prepares
+// the menu for showing. An unknown icon fails with NOT_FOUND and reason
+// TRAY_ICON_GONE.
+service TrayService {
+  // Clicks a tray icon (StatusNotifierItem Activate, SecondaryActivate or
+  // ContextMenu; for XEmbed icons a click of button 1, 2 or 3).
+  rpc ClickTrayIcon(ClickTrayIconRequest) returns (ClickTrayIconResponse);
+  // Scrolls over a tray icon (StatusNotifierItem Scroll; for XEmbed icons
+  // clicks of buttons 4 to 7).
+  rpc ScrollTrayIcon(ScrollTrayIconRequest) returns (ScrollTrayIconResponse);
+  // Reads a menu or a submenu of a tray icon whose has_menu is set (dbusmenu
+  // AboutToShow, then GetLayout). An icon without a menu, or an unknown
+  // item, fails with NOT_FOUND; an application that does not answer on D-Bus
+  // with UNAVAILABLE.
+  rpc GetTrayMenu(GetTrayMenuRequest) returns (GetTrayMenuResponse);
+  // Reports a user interaction with a menu item (dbusmenu Event).
+  rpc SendTrayMenuEvent(SendTrayMenuEventRequest) returns (SendTrayMenuEventResponse);
+}
+
+// The request of ClickTrayIcon.
+message ClickTrayIconRequest {
+  // The icon.
+  uint64 tray_icon_id = 1;
+  // The click.
+  TrayIconClick click = 2;
+  // Where the participant shows the icon, in canvas coordinates, so that the
+  // application places what it opens next to it. Unset: the session picks a
+  // place at the top right of the canvas.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle icon_area = 3;
+}
+
+// A click on a tray icon.
+enum TrayIconClick {
+  TRAY_ICON_CLICK_UNSPECIFIED = 0;
+  // The primary click (Activate), usually the left button. For an icon with
+  // item_is_menu and has_menu, the participant shows the menu instead.
+  TRAY_ICON_CLICK_PRIMARY = 1;
+  // The secondary click (SecondaryActivate), usually the middle button.
+  TRAY_ICON_CLICK_SECONDARY = 2;
+  // The context menu click (ContextMenu), usually the right button, for an
+  // icon whose application shows its own menu (has_menu unset).
+  TRAY_ICON_CLICK_CONTEXT_MENU = 3;
+}
+
+// The response of ClickTrayIcon.
+message ClickTrayIconResponse {
+  // The session revision at which the click was delivered.
+  uint64 revision = 1;
+}
+
+// The request of ScrollTrayIcon.
+message ScrollTrayIconRequest {
+  // The icon.
+  uint64 tray_icon_id = 1;
+  // Horizontal scroll in value120 units, as PointerWheel; positive scrolls
+  // right.
+  sint32 delta_x = 2;
+  // Vertical scroll in value120 units; positive scrolls down.
+  sint32 delta_y = 3;
+}
+
+// The response of ScrollTrayIcon.
+message ScrollTrayIconResponse {
+  // The session revision at which the scroll was delivered.
+  uint64 revision = 1;
+}
+
+// The request of GetTrayMenu.
+message GetTrayMenuRequest {
+  // The icon.
+  uint64 tray_icon_id = 1;
+  // The submenu to read, by its item. 0: the whole menu.
+  int32 parent_id = 2;
+}
+
+// The response of GetTrayMenu.
+message GetTrayMenuResponse {
+  // The menu's revision.
+  uint32 revision = 1;
+  // The item named by parent_id with all its descendants.
+  MenuItem layout = 2;
+}
+
+// One item of a tray menu, with its submenu (dbusmenu GetLayout). Every
+// property is filled in, with the dbusmenu default where the application
+// gave none.
+message MenuItem {
+  // Its id in the menu. 0 is the root.
+  int32 menu_item_id = 1;
+  // A standard item or a separator.
+  MenuItemType type = 2;
+  // The label as dbusmenu has it: "__" stands for one underscore, and a
+  // single underscore marks the next character as the access key. Plain
+  // text.
+  string label = 3;
+  // It can be activated.
+  bool enabled = 4;
+  // It is shown.
+  bool visible = 5;
+  // Its icon, 16 pixels. Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon icon = 6;
+  // Its keyboard shortcut, shown next to the label: chords pressed in turn.
+  repeated KeyChord shortcut = 7;
+  // Whether it is a check box or a radio item.
+  MenuItemToggleType toggle_type = 8;
+  // Whether it is on. UNSPECIFIED when toggle_type is NONE.
+  MenuItemToggleState toggle_state = 9;
+  // It opens a submenu. Its children may stay empty until the submenu is
+  // read with GetTrayMenu.
+  bool has_submenu = 10;
+  // How the item is to be presented.
+  MenuItemDisposition disposition = 11;
+  // The items of its submenu, in order.
+  repeated MenuItem children = 12;
+}
+
+// The type of a menu item (dbusmenu "type").
+enum MenuItemType {
+  MENU_ITEM_TYPE_UNSPECIFIED = 0;
+  // An item that can be clicked or opens a submenu ("standard").
+  MENU_ITEM_TYPE_STANDARD = 1;
+  // A separator line ("separator").
+  MENU_ITEM_TYPE_SEPARATOR = 2;
+}
+
+// Keys pressed together, such as ["Control", "S"]: modifiers first, then the
+// key.
+message KeyChord {
+  // The key names.
+  repeated string keys = 1;
+}
+
+// Whether a menu item toggles (dbusmenu "toggle-type").
+enum MenuItemToggleType {
+  MENU_ITEM_TOGGLE_TYPE_UNSPECIFIED = 0;
+  // It does not toggle ("").
+  MENU_ITEM_TOGGLE_TYPE_NONE = 1;
+  // An independent check box ("checkmark").
+  MENU_ITEM_TOGGLE_TYPE_CHECKMARK = 2;
+  // One of a group of which one is on ("radio").
+  MENU_ITEM_TOGGLE_TYPE_RADIO = 3;
+}
+
+// The state of a toggling menu item (dbusmenu "toggle-state").
+enum MenuItemToggleState {
+  MENU_ITEM_TOGGLE_STATE_UNSPECIFIED = 0;
+  // Off (0).
+  MENU_ITEM_TOGGLE_STATE_OFF = 1;
+  // On (1).
+  MENU_ITEM_TOGGLE_STATE_ON = 2;
+  // Neither (any other value).
+  MENU_ITEM_TOGGLE_STATE_INDETERMINATE = 3;
+}
+
+// How a menu item is to be presented (dbusmenu "disposition").
+enum MenuItemDisposition {
+  MENU_ITEM_DISPOSITION_UNSPECIFIED = 0;
+  // As usual ("normal").
+  MENU_ITEM_DISPOSITION_NORMAL = 1;
+  // As information ("informative").
+  MENU_ITEM_DISPOSITION_INFORMATIVE = 2;
+  // As a warning ("warning").
+  MENU_ITEM_DISPOSITION_WARNING = 3;
+  // As an alert ("alert").
+  MENU_ITEM_DISPOSITION_ALERT = 4;
+}
+
+// The request of SendTrayMenuEvent.
+message SendTrayMenuEventRequest {
+  // The icon.
+  uint64 tray_icon_id = 1;
+  // The item.
+  int32 menu_item_id = 2;
+  // What happened.
+  MenuEventType type = 3;
+}
+
+// A user interaction with a menu item (dbusmenu Event "eventId").
+enum MenuEventType {
+  MENU_EVENT_TYPE_UNSPECIFIED = 0;
+  // The item was activated ("clicked"). Participants always send it.
+  MENU_EVENT_TYPE_CLICKED = 1;
+  // Its submenu was opened ("opened"). Optional.
+  MENU_EVENT_TYPE_OPENED = 2;
+  // Its submenu was closed ("closed"). Optional.
+  MENU_EVENT_TYPE_CLOSED = 3;
+  // The pointer is over the item ("hovered"). Optional.
+  MENU_EVENT_TYPE_HOVERED = 4;
+}
+
+// The response of SendTrayMenuEvent. A disabled or unknown item fails with
+// FAILED_PRECONDITION and reason MENU_ITEM_UNAVAILABLE.
+message SendTrayMenuEventResponse {
+  // The session revision at which the event was delivered.
+  uint64 revision = 1;
+}

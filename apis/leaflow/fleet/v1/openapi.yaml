@@ -1,0 +1,3777 @@
+openapi: 3.2.1
+info:
+  title: Leaflow Fleet API
+  version: 1.0.0
+  description: |-
+    Machines that run the Leaflow Fleet Agent (`leaflow-fleet-agent`): adding machines, the
+    accounts and groups that log in to them, running commands, opening and closing sessions, with
+    or without a desktop, and admitting participants to them.
+
+    ## What this API sees
+
+    This API coordinates. It admits participants to sessions and passes the signaling of their
+    PeerConnections, but everything a session shows or receives — terminals, files, the screen,
+    input, the clipboard, printing and privilege approvals on a participant — travels end to end
+    between the participant and the session, encrypted with keys that never leave them. The
+    platform sees which machine, which session and who is connected, and nothing of what happens
+    inside.
+
+    Commands and privilege requests decided on the platform are the exception: the platform passes
+    a command and its output between the caller and the machine, and keeps the command line of a
+    privilege request it asks the owner about; it sees both.
+
+    ## Authentication
+
+    Every request carries a scoped token; see the `bearerAuth` security scheme.
+
+    **Neither the path nor the headers carry a `project_id`**: the current project is determined by
+    the token.
+
+    ## Adding a machine
+
+    1. Install the Agent and run `leaflow-fleet-agent daemon enroll` on the machine. The command
+       carries no secret. The machine shows a pairing code such as `7K2QM-9XWTD`.
+    2. Find the request with `GET /api/v1/enrollments:find?pairing_code=…`. Compare its `hostname`
+       and `source_address` with the machine in front of you: the pairing code is not a secret,
+       and anyone can request enrollment.
+    3. Approve it with `POST /api/v1/enrollments/{enrollmentId}:approve`. The machine joins the
+       current project within its next polling interval.
+
+    ## Adding a machine without interaction
+
+    A machine that is set up unattended, such as by cloud-init on first boot, joins with a
+    registration token instead of a pairing code:
+
+    1. Create a registration with `POST /api/v1/machine-registrations`. It reserves a machine in
+       the current project under the given name and returns its `machine_id` and a `token`. The
+       token is returned only in this response.
+    2. Give the token to the machine in a file that only root can read, and run
+       `leaflow-fleet-agent daemon enroll --url <control endpoint> --token-file <path>`. The
+       machine joins the current project as `machine_id` at once, and the Agent deletes the file.
+
+    A token enrolls one machine once, and only until the registration expires. Anyone who reads
+    the token before the machine uses it can enroll a key of their own instead, so pass it only
+    to the machine, keep its lifetime short, and compare the `public_key` of the used
+    registration with the key the machine shows when that matters. Revoke a registration that
+    will not be used with `DELETE /api/v1/machine-registrations/{registrationId}`.
+
+    ## Trusting a machine's key
+
+    Each machine has an Ed25519 key that it generates itself and that never leaves it. Participants
+    verify that key end to end before they exchange any data with a session, so a client must
+    decide which key belongs to a machine without relying on any party in between:
+
+    - When approving an enrollment, recompute the pairing code from `public_key` and compare it
+      with the code the machine shows. The code is derived as documented for
+      `EnrollMachineResponse.pairing_code` in `leaflow/fleet/machine/v1/machine.proto`.
+      Approve only when they match, and remember the key for the machine.
+    - On any other client, remember the key the first time it connects to the machine, and
+      refuse to continue whenever the machine later proves a different key. The fingerprint can
+      be compared with the one the Agent prints on the machine.
+
+    A machine that is reinstalled enrolls again as a new machine with a new key.
+
+    ## Features
+
+    A machine reports what it offers in `features`, each named after the protocol package that
+    defines it:
+
+    - `leaflow.fleet.directory.v1`: the accounts of the project's members and the project's groups
+      exist on the machine; members log in over SSH with their keys and become root through sudo
+      as their permissions allow;
+    - `leaflow.fleet.command.v1`: running commands;
+    - `leaflow.fleet.mcp.v1`: the MCP servers each account configures on the machine, local ones
+      and remote ones it connects to;
+    - `leaflow.fleet.host.v1`: terminal sessions, with programs, files, ports, sound, devices,
+      printers and privilege approvals;
+    - `leaflow.fleet.virtualdesktop.host.v1`: sessions with a desktop.
+
+    A machine installed without a desktop does not offer `leaflow.fleet.virtualdesktop.host.v1`. A
+    request that needs a feature the machine does not report available fails with
+    `FEATURE_UNAVAILABLE`, whose `metadata.feature` names the feature.
+
+    ## Directory
+
+    Every user has one account, as with Google Cloud OS Login: a username and a uid that are the
+    same on every machine of every project. The account is created the first time the user may log
+    in to a machine or opens a session; its username comes from the email address, such as
+    `alice_example_com` for `alice@example.com`, and its owner can change it. A project's machines
+    know the accounts of the project's members and the groups the project defines. A member who
+    leaves the project can no longer log in, and files keep their owner.
+
+    Who may log in to which machines, and who may become root there through sudo, are permissions
+    of the project's roles: `fleet:machines.login` and `fleet:machines.admin`, each for all
+    machines or for chosen ones. Changes reach the machines within about a minute, and every login
+    and elevation is checked against the current permissions while the machine is connected. To
+    keep a member out of some machines, deny them `fleet:machines.login` on those machines.
+    Elevation through sudo is never approved by a password; see "Approving sudo".
+
+    Members log in over SSH with the keys they own among the project's SSH keys, while they may
+    log in to the machine.
+
+    Machines resolve directory accounts and groups themselves and never write them into their local
+    account files. A local account or group that already uses a name or id of the directory keeps
+    it, and the machine records the conflict among its events.
+
+    ## Running commands
+
+    `POST /api/v1/machines/{machineId}:runCommand` runs one command line on the machine as the
+    caller's account, as `ssh machine 'command'` would, but without SSH: the machine needs no open
+    port, no distributed key and no address the caller can reach. Like logging in, it requires
+    `fleet:machines.login` on the machine. Inside the command, `sudo` works without a prompt for
+    a caller with `fleet:machines.admin` on the machine: the request approves the elevation.
+
+    ## MCP servers
+
+    A machine that offers `leaflow.fleet.mcp.v1` reaches the MCP servers its accounts configure:
+    servers it runs itself and remote servers it connects to. Each account configures them in
+    `~/.local/share/leaflow/agent/mcp.json` in its home directory, in the `mcpServers` format other
+    MCP clients use, by hand or through this API; the machine picks up every change by itself.
+    The caller's servers run as the caller's account, and the requests below act on them only.
+
+    The configuration stays on the machine. The values of `env` and `headers` often hold
+    credentials: this API writes them, and they then pass through the platform, but never returns
+    them. Arguments, URLs, tool arguments and tool results pass through the platform as they are.
+
+    ## Approving sudo
+
+    An account may become root through sudo on a machine while its user has
+    `fleet:machines.admin` there. Each elevation is approved, in the first of these ways that
+    applies:
+
+    - inside a command run through this API, by the request itself;
+    - at once, while the user has approved their requests on the machine without asking, for a
+      while or until removed (`PUT /api/v1/machines/{machineId}/privilege-auto-approval`);
+    - by the user, on any of their devices, for a request listed by `GET /api/v1/privilege-requests`
+      (`POST …:approve` or `…:deny`), or on a participant of the session the asking process belongs
+      to. A request nobody decides expires, and sudo fails.
+
+    Requests reach the user's devices as they happen through EventBus: the event
+    `leaflow.fleet.privilege.requested` when one is waiting and `leaflow.fleet.privilege.decided`
+    when it ends, each addressed to the user in the current project and carrying the request's
+    `id`. A client that subscribes to them needs no polling; one that does not can list the
+    pending requests.
+
+    ## Connections that drop
+
+    A machine's Agent and a session's process each keep a connection to the service, and on a poor
+    network it may drop and come back within seconds. Requests do not fail for that:
+
+    - A request that needs the machine or the session's process waits while it connects again,
+      for as long as the request would wait for its answer, and fails with `MACHINE_OFFLINE` or
+      `SESSION_UNAVAILABLE` only when it does not come back in that time.
+    - What the machine or the session's process received before its connection dropped, such as a
+      command or a session being opened, goes on, and its result is returned once it has
+      connected again within that time.
+
+    A machine stays `online` for up to a minute after its connection was lost, while its Agent
+    connects again; a machine whose Agent stops is offline at once.
+
+    ## Operations that do not exist
+
+    Some resources lack an operation on purpose:
+
+    - Accounts are created when they are first needed and are never deleted, so that files keep
+      their owner.
+    - Enrollment requests are made only by machines.
+    - A machine registration cannot be changed; revoke it and create another.
+    - Machine events are a log: they are listed, never changed, and kept for 30 days.
+    - A privilege request is decided only by the user whose account asks, or on a participant of
+      the session it comes from.
+
+    ## Joining a session
+
+    1. Have an Ed25519 key, for as long as the client wants: one per participant or one kept by
+       the client. The private key must never leave the client; in a browser, use a
+       non-extractable WebCrypto key.
+    2. Get the ICE servers with `GET /api/v1/sessions/{sessionId}/rtc-configuration`, create a
+       PeerConnection with them and its data channels (`leaflow/fleet/transport/v1/transport.proto`)
+       and make an offer. Wait briefly for ICE candidates, such as until gathering completes or
+       one second has passed, so that the offer carries them.
+    3. Join with `POST /api/v1/sessions/{sessionId}/participants`, sending the public key and the
+       offer. The answer carries the participant's signed authorization, the keys the service
+       signs with, and the first PeerConnection: the session's SDP answer, its ICE candidates and
+       the signed PeerAuthorization. Pass candidates gathered later with
+       `POST …/participants/{participantId}/peer-connections/{peerConnectionId}/candidates`.
+    4. Renew the participant with `POST …/participants/{participantId}:renew` well before
+       `lease_expires_at`, every 15 seconds, presenting the PeerAuthorization of each
+       PeerConnection; the answer renews them. A participant whose lease runs out ends, and its
+       PeerConnections stop within 30 seconds of their last lease.
+    5. When a path fails, start another PeerConnection with
+       `POST …/participants/{participantId}/peer-connections` and move the connection to it with
+       `:prepareMigration` and `:commitMigration`. Abandon a PeerConnection that does not
+       connect with `DELETE …/peer-connections/{peerConnectionId}`.
+    6. Leave with `DELETE …/participants/{participantId}`.
+
+    Signaling travels only through these requests; a participant holds no other connection to
+    the service.
+
+    What a participant may do in a session is decided when it is created, from the caller's
+    permissions and what the request asks for, and does not change afterwards. Participants are not
+    told apart by kind: a person in a browser and a program that operates the session are both
+    participants, named by the `client_name` they choose, and either can be disconnected.
+
+    Every participant that ends, including through `DELETE`, is announced through EventBus as
+    `leaflow.fleet.participant.ended`, addressed to its user in the current project, with its
+    `session_id`, `participant_id` (a decimal string) and `reason`: `left` when its user ended it,
+    `removed` when someone else did, `lease_expired` when it was not renewed in time,
+    `session_ended` when its session ended, `session_process_lost` when the session's process did
+    not come back in time, `permission_revoked` when a permission it was created with was revoked
+    from its user, `membership_ended` when its user is no longer a member of the project,
+    `user_inactive` when its user's account was suspended or banned or its deletion was requested,
+    `project_deletion_requested` when deletion of the project was requested, `machine_removed` when
+    its machine was removed, or `key_revoked` when the key that signed its authorization was
+    revoked. A participant whose creation failed is not announced.
+servers:
+  - url: https://fleet.leaflow.cloud
+    description: Machines, accounts, commands, sessions and participants
+security:
+  - bearerAuth: []
+tags:
+  - name: Machine
+  - name: Enrollment
+  - name: Command
+  - name: Account
+  - name: Group
+  - name: Session
+  - name: Participant
+  - name: Privilege
+  - name: MCP
+paths:
+  /api/v1/machines:
+    get:
+      summary: List machines
+      description: Returns the machines of the current project, newest first.
+      operationId: list-machines
+      tags:
+        - Machine
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: keyword
+          in: query
+          description: Match the machine name or host name, case-insensitively
+          explode: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}:
+    get:
+      summary: Get a machine
+      operationId: get-machine
+      tags:
+        - Machine
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update a machine
+      description: Changes the machine's name. Requires `fleet:machines.manage`.
+      operationId: update-machine
+      tags:
+        - Machine
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMachineRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove a machine
+      description: |-
+        Removes the machine from the project. Every participant of its sessions is disconnected at
+        once and the Agent is refused from then on; to use the machine again, enroll it again.
+        Sessions still open on the machine can no longer be reached and end according to their own
+        timeouts. Nothing on the machine is deleted.
+
+        Requires `fleet:machines.manage`.
+      operationId: delete-machine
+      tags:
+        - Machine
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      responses:
+        "204":
+          description: Removed
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/events:
+    get:
+      summary: List the events of a machine
+      description: |-
+        Returns what the machine reported about itself, newest first, such as a directory account
+        it does not serve because a local account uses its name. Events are kept for 30 days.
+      operationId: list-machine-events
+      tags:
+        - Machine
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: type
+          in: query
+          description: Return only events of this type
+          explode: false
+          schema:
+            $ref: "#/components/schemas/MachineEventType"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineEventList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}:runCommand:
+    post:
+      summary: Run a command
+      description: |-
+        Runs one command line on the machine as the caller's account, with its login shell, and
+        returns once it exited or was killed, with its exit status and what it wrote. Pipes,
+        redirection and `&&` work; there is no terminal and no standard input. The machine admits
+        the account through PAM as for a login. The account is created if the caller has none yet.
+        A command that fails is still a successful request: its exit status is its result.
+
+        Inside the command, `sudo` works without a prompt while the caller has
+        `fleet:machines.admin` on the machine, and refuses otherwise.
+
+        The request is held until the command ends, at most `timeout_seconds` and a few seconds
+        more. Neither the command nor its output is hidden from the platform: do not put secrets
+        into either.
+
+        Requires `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.command.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `COMMAND_START_FAILED` when the shell could not start; nothing ran;
+        - `COMMAND_LOST` when the machine lost the command while it ran. The command may have run
+          in part, and its output is lost;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time. The command may have run.
+      operationId: run-machine-command
+      tags:
+        - Command
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunCommandRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunCommandResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/mcp-configuration:
+    get:
+      summary: Get the caller's MCP configuration on a machine
+      description: |-
+        Returns the caller's MCP configuration file on the machine and every server in it, with
+        what each is doing now. The values of `env` and `headers` are never returned, only their
+        keys. Requires `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      operationId: get-mcp-configuration
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpConfigurationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Replace the caller's MCP configuration on a machine
+      description: |-
+        Replaces the caller's MCP configuration file on the machine as a whole, also one that cannot
+        be read or is not valid. The machine starts the servers that were added, stops the ones
+        that were removed and restarts the ones that changed when they are next used. The account
+        is created if the caller has none yet. The content, secrets included, passes through the
+        platform. Requires `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MCP_CONFIGURATION_CHANGED` when the file is no longer at `expected_revision`;
+        - `MCP_CONFIGURATION_INVALID` when `content` is not an object with an object `mcpServers`,
+          with `metadata.line` and `metadata.column`;
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      operationId: replace-mcp-configuration
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceMcpConfigurationRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpConfigurationFile"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/mcp-servers/{serverName}:
+    put:
+      summary: Add or replace an MCP server
+      description: |-
+        Adds a server to the caller's MCP configuration on the machine, or replaces the one with
+        the same name. The values of `env` and `headers` the request gives, secrets included, pass
+        through the platform; those named in `keep_env` and `keep_headers` stay as they are on the
+        machine. The account is created if the caller has none yet. Requires
+        `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MCP_CONFIGURATION_CHANGED` when the file is no longer at `expected_revision`;
+        - `MCP_CONFIGURATION_INVALID` when the file cannot be read or is not valid; replace it
+          whole first;
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      operationId: update-mcp-server
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/McpServerName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMcpServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateMcpServerResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove an MCP server
+      description: |-
+        Removes a server from the caller's MCP configuration on the machine and stops it. Removing
+        one that is not configured succeeds. Requires `fleet:machines.login` on the machine.
+
+        Fails as replacing a server does.
+      operationId: delete-mcp-server
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/McpServerName"
+        - name: expected_revision
+          in: query
+          description: |-
+            The configuration's `revision` as last read; absent only for one that was `missing`
+          schema:
+            type: string
+            maxLength: 64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpConfigurationFile"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/mcp-servers/{serverName}:send:
+    post:
+      summary: Send an MCP request to a server
+      description: |-
+        Sends one JSON-RPC request of MCP to one of the caller's servers on the machine, such as
+        `tools/call`, `resources/read` or `prompts/get`, and returns the server's response. The
+        machine starts or connects to the server if it is not running, and handles its
+        initialization itself; a request still running when `timeout_seconds` passes is cancelled
+        at the server. Requests the server makes of the client, such as for sampling, are refused,
+        and its notifications, such as of progress, are dropped. A response with a JSON-RPC error
+        is a successful request. Neither the request nor the response is hidden from the
+        platform. Requires `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MCP_SERVER_NOT_FOUND` when the server is not configured;
+        - `MCP_SERVER_UNAVAILABLE` when it could not be started or reached, with
+          `metadata.failure`, an `McpServerFailure`;
+        - `INVALID_ARGUMENT` when `request` is not one JSON-RPC request, such as a notification, or
+          is one of initialization;
+        - `RESULT_TOO_LARGE` when the response is larger than 8 MiB;
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      operationId: send-mcp-request
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/McpServerName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMcpRequestRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendMcpRequestResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/mcp-servers/{serverName}/tools/{toolName}:call:
+    post:
+      summary: Call an MCP tool
+      description: |-
+        Calls one tool of one of the caller's servers on the machine and returns its MCP
+        `CallToolResult`. A tool that reports an error, with `isError`, is a successful request. A
+        tool whose name cannot appear in a path is called with `send-mcp-request`. Neither the
+        arguments nor the result is hidden from the platform. Requires `fleet:machines.login` on
+        the machine.
+
+        Fails as sending a request does, and with `MCP_REQUEST_FAILED` when the server answers
+        with a JSON-RPC error, such as for a tool it does not offer or arguments it does not
+        accept, with the error's `metadata.code` and `metadata.message`.
+      operationId: call-mcp-tool
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/McpServerName"
+        - name: toolName
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallMcpToolRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallMcpToolResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/mcp-tools:
+    get:
+      summary: List the caller's MCP tools on a machine
+      description: |-
+        Lists the tools of the caller's servers on the machine, or of one of them, that match
+        `query`: every word of it, ignoring case, in the tool's name, title or description. They
+        are ordered by server, then by tool name. Servers that are not running are started to
+        learn their tools; one that cannot be is named in `unavailable_servers`, and the others are
+        listed anyway. Slow servers do not hold the request up: those still starting are named
+        with `timeout` and go on starting, so that a later request lists their tools. Requires
+        `fleet:machines.login` on the machine.
+
+        Fails with:
+        - `MCP_SERVER_NOT_FOUND` when `server` is not configured;
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, as for opening a session;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      operationId: list-mcp-tools
+      tags:
+        - MCP
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - name: server
+          in: query
+          description: Only this server's tools
+          schema:
+            type: string
+            maxLength: 64
+        - name: query
+          in: query
+          description: Words that each must occur in a tool's name, title or description
+          schema:
+            type: string
+            maxLength: 256
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: page_token
+          in: query
+          description: "`next_page_token` of the previous page"
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpToolList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/privilege-auto-approval:
+    get:
+      summary: Get the caller's automatic approval for a machine
+      description: |-
+        Returns the caller's automatic approval of their privilege requests on the machine. Fails
+        with `PRIVILEGE_AUTO_APPROVAL_NOT_FOUND` while the caller is asked every time, including
+        after its `expires_at` has passed.
+      operationId: get-privilege-auto-approval
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeAutoApprovalResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Approve the caller's privilege requests on a machine without asking
+      description: |-
+        Approves the caller's privilege requests on the machine at once, until `expires_at`, or
+        until removed when `expires_at` is null, replacing any earlier automatic approval. It
+        applies to the caller's own account only, which is created if the caller has none yet,
+        and only while they may become root on the machine. Fails with `INVALID_ARGUMENT` when
+        `expires_at` has passed.
+      operationId: update-privilege-auto-approval
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrivilegeAutoApprovalRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeAutoApprovalResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove the caller's automatic approval for a machine
+      description: |-
+        Removes it: the caller is asked about every later privilege request on the machine.
+        Removing one that does not exist succeeds.
+      operationId: delete-privilege-auto-approval
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      responses:
+        "204":
+          description: Removed
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/privilege-auto-approvals:
+    get:
+      summary: List the caller's automatic approvals
+      description: |-
+        Returns the caller's automatic approvals on the machines of the current project that are
+        in effect, the most recently set first.
+      operationId: list-privilege-auto-approvals
+      tags:
+        - Privilege
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeAutoApprovalList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/privilege-requests:
+    get:
+      summary: List the caller's privilege requests
+      description: |-
+        Returns the caller's privilege requests on the project's machines, newest first. Requests
+        are kept for 30 days.
+      operationId: list-privilege-requests
+      tags:
+        - Privilege
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: state
+          in: query
+          description: Return only the requests in this state
+          explode: false
+          schema:
+            $ref: "#/components/schemas/PrivilegeRequestState"
+        - name: machine_id
+          in: query
+          description: Return only the requests on this machine
+          explode: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeRequestList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/privilege-requests/{requestId}:
+    get:
+      summary: Get a privilege request
+      description: Returns one of the caller's privilege requests.
+      operationId: get-privilege-request
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/PrivilegeRequestId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeRequestResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/privilege-requests/{requestId}:approve:
+    post:
+      summary: Approve a privilege request
+      description: |-
+        Approves one of the caller's pending requests; the waiting sudo goes on as root. Fails with
+        `PRIVILEGE_REQUEST_CLOSED` when the request is no longer pending, with `metadata.state`
+        giving how it ended.
+      operationId: approve-privilege-request
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/PrivilegeRequestId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeRequestResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/privilege-requests/{requestId}:deny:
+    post:
+      summary: Deny a privilege request
+      description: |-
+        Denies one of the caller's pending requests; the waiting sudo fails. Fails with
+        `PRIVILEGE_REQUEST_CLOSED` as for approving.
+      operationId: deny-privilege-request
+      tags:
+        - Privilege
+      parameters:
+        - $ref: "#/components/parameters/PrivilegeRequestId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivilegeRequestResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/enrollments:find:
+    get:
+      summary: Find an enrollment request by its pairing code
+      description: |-
+        Returns the pending enrollment request whose pairing code matches, or no enrollment when
+        none does. Mistyped codes are expected and are not an error. Letters are matched
+        case-insensitively, `I` and `L` are read as `1`, `O` as `0`, and spaces and hyphens are
+        ignored.
+
+        Only requests that are still pending are found. A request is pending while its machine
+        keeps polling; one it stops polling expires after a few hours.
+
+        Requires `fleet:machines.manage`.
+      operationId: find-enrollment-by-pairing-code
+      tags:
+        - Enrollment
+      parameters:
+        - name: pairing_code
+          in: query
+          required: true
+          description: The code the machine shows, such as `7K2QM-9XWTD`
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FindEnrollmentResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/enrollments/{enrollmentId}:approve:
+    post:
+      summary: Approve an enrollment request
+      description: |-
+        Adds the machine to the current project under the given name and returns it. The Agent
+        learns the decision the next time it polls.
+
+        A request that is no longer pending is rejected with `ENROLLMENT_NOT_PENDING`.
+
+        Requires `fleet:machines.manage`.
+      operationId: approve-enrollment
+      tags:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveEnrollmentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/enrollments/{enrollmentId}:deny:
+    post:
+      summary: Deny an enrollment request
+      description: |-
+        Refuses the request. The decision is final for the machine's key: the Agent stops
+        polling and reports that it was denied.
+
+        A request that is no longer pending is rejected with `ENROLLMENT_NOT_PENDING`.
+
+        Requires `fleet:machines.manage`.
+      operationId: deny-enrollment
+      tags:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machine-registrations:
+    get:
+      summary: List machine registrations
+      description: |-
+        Returns the registrations of the current project, newest first. Registrations are kept
+        for 30 days.
+
+        Requires `fleet:machines.manage`.
+      operationId: list-machine-registrations
+      tags:
+        - Enrollment
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineRegistrationList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a machine registration
+      description: |-
+        Reserves a machine in the current project under the given name and returns the
+        registration with a one-time token. A machine that presents the token when it enrolls
+        joins the project as `registration.machine_id` without approval. The token is returned
+        only in this response and cannot be read again.
+
+        Requires `fleet:machines.manage`.
+      operationId: create-machine-registration
+      tags:
+        - Enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMachineRegistrationRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateMachineRegistrationResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machine-registrations/{registrationId}:
+    get:
+      summary: Get a machine registration
+      description: Requires `fleet:machines.manage`.
+      operationId: get-machine-registration
+      tags:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/RegistrationId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineRegistrationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Revoke a machine registration
+      description: |-
+        Revokes the registration: its token no longer enrolls a machine. Revoking a registration
+        that is already revoked or expired succeeds and changes nothing else. A registration that
+        a machine has used is rejected with `MACHINE_REGISTRATION_USED`; to remove that machine,
+        delete the machine.
+
+        Requires `fleet:machines.manage`.
+      operationId: delete-machine-registration
+      tags:
+        - Enrollment
+      parameters:
+        - $ref: "#/components/parameters/RegistrationId"
+      responses:
+        "204":
+          description: Revoked
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/accounts:
+    get:
+      summary: List accounts
+      description: |-
+        Returns the accounts of the project's members, ordered by username. A member who has never
+        been able to log in to a machine has no account yet.
+      operationId: list-accounts
+      tags:
+        - Account
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: user_id
+          in: query
+          description: Return only the account of this member
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          description: Match the username or the display name, case-insensitively
+          explode: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/accounts/{accountId}:
+    get:
+      summary: Get an account
+      description: Returns the account of a member of the project.
+      operationId: get-account
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update an account
+      description: |-
+        Changes the caller's own account, only the fields present in the request. The account is
+        the same in every project, and a new username takes effect on the machines of all of them
+        within about a minute; the uid stays, so files keep their owner.
+
+        Fails with:
+        - `ACCOUNT_NOT_OWNED` when the account is another member's;
+        - `DIRECTORY_NAME_TAKEN` when another account or a group uses the username.
+      operationId: update-account
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/groups:
+    get:
+      summary: List groups
+      description: Returns the groups of the project's directory, ordered by name.
+      operationId: list-groups
+      tags:
+        - Group
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a group
+      description: |-
+        Creates a group in the project's directory. It reaches the machines within about a minute.
+
+        Fails with `DIRECTORY_NAME_TAKEN` when an account, or another group of the project, uses the
+        name.
+
+        Requires `fleet:directory.manage`.
+      operationId: create-group
+      tags:
+        - Group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/groups/{groupId}:
+    get:
+      summary: Get a group
+      operationId: get-group
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Rename a group
+      description: |-
+        The gid stays, so files keep their group. Fails with `DIRECTORY_NAME_TAKEN` as for creating
+        a group.
+
+        Requires `fleet:directory.manage`.
+      operationId: update-group
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGroupRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a group
+      description: |-
+        Removes the group from the directory. Machines stop resolving it within about a minute;
+        files keep its gid.
+
+        Requires `fleet:directory.manage`.
+      operationId: delete-group
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "204":
+          description: Deleted
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/groups/{groupId}/members:
+    get:
+      summary: List the members of a group
+      description: Returns the accounts in the group, ordered by username.
+      operationId: list-group-members
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Add an account to a group
+      description: |-
+        The account must be a member's. Fails with `GROUP_MEMBER_EXISTS` when the account is
+        already in the group.
+
+        Requires `fleet:directory.manage`.
+      operationId: create-group-member
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupMemberRequest"
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/groups/{groupId}/members/{accountId}:
+    delete:
+      summary: Remove an account from a group
+      description: |-
+        Removing an account that is not in the group succeeds.
+
+        Requires `fleet:directory.manage`.
+      operationId: delete-group-member
+      tags:
+        - Group
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "204":
+          description: Removed
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions:
+    get:
+      summary: List sessions
+      description: |-
+        Returns the sessions of the current project's machines, newest first. Closed sessions are
+        omitted unless `include_closed` is true.
+      operationId: list-sessions
+      tags:
+        - Session
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: machine_id
+          in: query
+          description: Return only the sessions of this machine
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: user_id
+          in: query
+          description: Return only the sessions of this member
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: include_closed
+          in: query
+          description: Include closed sessions; defaults to false
+          explode: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Open a session
+      description: |-
+        Opens a session for the caller on a machine, as the caller's account, and returns once it
+        is ready. With `desktop` the session has a desktop. Without, it is a terminal session: its
+        one terminal runs the caller's login shell from the start, every participant attaches to
+        that terminal, and the session ends when the shell exits; a caller who wants another
+        terminal opens another session. Either kind also offers programs, files, ports, sound,
+        devices, printers and privilege approvals. The account is created if the caller has none
+        yet. Requires `fleet:machines.login` on the machine.
+
+        On a machine an account has at most one session with a desktop and at most 8 sessions in
+        all. Sessions without a desktop run side by side, such as one for a program and one for a
+        person; several participants can also share one session.
+
+        Fails with:
+        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer sessions, or with `desktop`,
+          desktops;
+        - `USER_HAS_DESKTOP_SESSION` with `desktop` when the account already has a session with a
+          desktop on the machine, which `metadata.sessionId` names; connect to it instead;
+        - `SESSION_LIMIT_REACHED` when the account already has 8 open sessions on the machine;
+          close one first;
+        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
+          the machine refuses the account, such as while it has not received the account yet or a
+          local account uses its name; `PAM_PERMISSION_DENIED` carries the machine's message in
+          `metadata.pamMessage`;
+        - `SESSION_CONFLICT` with `desktop` when the account has a graphical session on the
+          machine that Fleet did not open;
+        - `DISPLAY_UNAVAILABLE` or `SESSION_START_FAILED` when the machine could not start it;
+        - `MACHINE_TIMEOUT` when the machine did not answer in time. The session may still open;
+          list the sessions before trying again.
+      operationId: create-session
+      tags:
+        - Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}:
+    get:
+      summary: Get a session
+      operationId: get-session
+      tags:
+        - Session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}:close:
+    post:
+      summary: Close a session
+      description: |-
+        Ends the session in order: its applications are asked to exit and get a grace period
+        before the session is terminated. Returns once the session is closed. Closing a closed
+        session succeeds.
+
+        The owner may close their own session; closing another member's requires
+        `fleet:sessions.manage`. Fails with `MACHINE_OFFLINE` or `MACHINE_TIMEOUT` as
+        for opening a session.
+      operationId: close-session
+      tags:
+        - Session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}:terminate:
+    post:
+      summary: Terminate a session
+      description: |-
+        Ends the session at once, killing every process in it. Returns once the session is
+        closed. Terminating a closed session succeeds.
+
+        The owner may terminate their own session; terminating another member's requires
+        `fleet:sessions.manage`. Fails with `MACHINE_OFFLINE` or `MACHINE_TIMEOUT` as
+        for opening a session.
+      operationId: terminate-session
+      tags:
+        - Session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/rtc-configuration:
+    get:
+      summary: Get the ICE servers for a session
+      description: |-
+        Returns the STUN and TURN servers for the PeerConnections the caller starts to the session,
+        with TURN credentials of its own, and the policy for using them. Ask again once
+        `expires_at` has passed; the credentials of a PeerConnection already relayed last longer.
+
+        Requires that the caller may join the session, as for `create-participant`.
+
+        Fails with:
+        - `SESSION_CLOSED` when the session has ended;
+        - `SESSION_ACCESS_DENIED` when the caller may not join the session.
+      operationId: get-session-rtc-configuration
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RtcConfiguration"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants:
+    post:
+      summary: Join a session
+      description: |-
+        Admits one participant with the given public key to the session: signs its authorization,
+        has the session accept it, and starts its first PeerConnection with the offer. The answer
+        carries the participant, its authorization and the PeerConnection with the session's
+        answer. The participant lasts while it is renewed.
+
+        Joining again with the public key of one of the caller's participants of the session that
+        has not ended, with the same `client_name`, `read_only` and `permissions`, returns that
+        participant with a new PeerConnection for the offer, and the session gains no second
+        participant: a request whose answer was lost, such as on an unreliable network, is sent
+        again as it was. Its earlier PeerConnection, whose answer the client never received, is
+        given up by the session once it fails.
+
+        The owner of a session may operate it. Joining another member's session requires
+        `fleet:sessions.view`, which admits watching only, or
+        `fleet:sessions.control`, which also admits operating it. Each further capability
+        of the session — file transfer, the clipboard, terminals and programs, port forwarding,
+        devices and audio, printing, SSH agent forwarding, approving privilege requests and
+        reading logs — is granted only with its permission; a participant that may only watch gets
+        none of them. A request may ask for less: to watch only, or for some of the capabilities.
+
+        Fails with the following, and then no participant was created:
+        - `SESSION_CLOSED` when the session has ended;
+        - `SESSION_ACCESS_DENIED` when the caller may not join the session;
+        - `OFFER_INVALID` when the offer is not an SDP offer that names a SHA-256 DTLS fingerprint;
+        - `SESSION_UNAVAILABLE` when the session's process is not connected and does not connect
+          again in time, or did not answer in time; try again after the error's `retry_delay`;
+        - `PARTICIPANT_LIMIT_REACHED` when the session has as many participants as it admits;
+        - `PARTICIPANT_REFUSED` when the session refused the participant;
+        - `PARTICIPANT_KEY_IN_USE` when the public key belongs to a participant of the session that
+          another user holds, or that was created with another `client_name`, `read_only` or
+          `permissions`; join with a new key;
+        - `PEER_CONNECTION_ABORTED` when the session gave up the PeerConnection; try again with a
+          new offer. The participant of a repeated request stays.
+      operationId: create-participant
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateParticipantRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateParticipantResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: List the participants of a session
+      description: Returns the participants of the session, in the order they joined.
+      operationId: list-session-participants
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParticipantList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}:renew:
+    post:
+      summary: Renew a participant
+      description: |-
+        Extends the participant's lease and returns renewed PeerAuthorizations for the
+        PeerConnections whose current ones the request presents. The service sends them to the
+        session as well, and the participant passes each one to the session over its PeerConnection
+        (`Packet.peer_authorization` of the transport protocol), so that the lease holds while
+        either path to the session is down. A
+        presented authorization that the service did not sign for this participant, or whose
+        PeerConnection has ended, is left out of the answer. When the participant's authorization
+        nears its end, the answer carries a renewed one, which the session already holds.
+
+        Only the participant's user may renew it.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended; create another;
+        - `PARTICIPANT_PERMISSION_REVOKED` when a permission the participant was created with has
+          been revoked from the caller; it has ended, and another can be created with the
+          permissions the caller holds now;
+        - `PROJECT_MEMBERSHIP_REQUIRED` when the caller is no longer a member of the project; the
+          participant has ended.
+      operationId: renew-participant
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewParticipantRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenewParticipantResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}:prepareMigration:
+    post:
+      summary: Prepare a migration
+      description: |-
+        Passes the participant's checkpoint for the next epoch to the session and returns the
+        session's checkpoint for it: the `prepare` and `prepared` steps of `Migration` in
+        `leaflow/fleet/transport/v1/transport.proto`. Repeating the step returns the same answer.
+
+        Only the participant's user may migrate it.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended;
+        - `CHECKPOINT_INVALID` when the checkpoint is not a serialized `Checkpoint`;
+        - `SESSION_UNAVAILABLE` when the session's process is not connected and does not connect
+          again in time, or did not answer in time; try again after the error's `retry_delay`.
+      operationId: prepare-participant-migration
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStep"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationStep"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}:commitMigration:
+    post:
+      summary: Commit a migration
+      description: |-
+        Commits the epoch the participant prepared and returns the session's checkpoint once it
+        committed it: the `commit` and `committed` steps of `Migration` in
+        `leaflow/fleet/transport/v1/transport.proto`. Repeating the step returns the same answer.
+
+        Only the participant's user may migrate it.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended;
+        - `CHECKPOINT_INVALID` when the checkpoint is not a serialized `Checkpoint`;
+        - `SESSION_UNAVAILABLE` when the session's process is not connected and does not connect
+          again in time, or did not answer in time; try again after the error's `retry_delay`.
+      operationId: commit-participant-migration
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStep"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationStep"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}/peer-connections:
+    post:
+      summary: Start a PeerConnection
+      description: |-
+        Starts another PeerConnection of the participant with the offer, such as after a path
+        failed, and returns the session's answer, its ICE candidates and the signed
+        PeerAuthorization. Move the participant's connection to it with
+        `prepare-participant-migration` and `commit-participant-migration`.
+
+        Only the participant's user may start one.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended;
+        - `OFFER_INVALID` when the offer is not an SDP offer that names a SHA-256 DTLS fingerprint;
+        - `RATE_LIMIT_EXCEEDED` when the participant started too many PeerConnections in the
+          last minute; try again after the error's `retry_delay`;
+        - `SESSION_UNAVAILABLE` when the session's process is not connected and does not connect
+          again in time, or did not answer in time; try again after the error's `retry_delay`;
+        - `PEER_CONNECTION_ABORTED` when the session gave up the PeerConnection; start another.
+      operationId: create-peer-connection
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePeerConnectionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerConnection"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}/peer-connections/{peerConnectionId}:
+    delete:
+      summary: Abandon a PeerConnection
+      description: |-
+        Tells the session to give up the PeerConnection and close it. Abandoning a PeerConnection
+        that has ended succeeds.
+
+        Only the participant's user may abandon it.
+
+        Fails with `PARTICIPANT_NOT_FOUND` when the participant has ended.
+      operationId: delete-peer-connection
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+        - $ref: "#/components/parameters/PeerConnectionId"
+      responses:
+        "204":
+          description: Abandoned
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}/peer-connections/{peerConnectionId}/candidates:
+    post:
+      summary: Add ICE candidates to a PeerConnection
+      description: |-
+        Passes the ICE candidates the participant gathered after its offer to the session, and with
+        `end_of_candidates`, that it has gathered all (RFC 8838). The session ignores those of a
+        PeerConnection that has ended.
+
+        Only the participant's user may add them.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended;
+        - `SESSION_UNAVAILABLE` when the session's process is not connected and does not connect
+          again in time; try again after the error's `retry_delay`.
+      operationId: create-peer-connection-candidates
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+        - $ref: "#/components/parameters/PeerConnectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePeerConnectionCandidatesRequest"
+      responses:
+        "204":
+          description: Passed on
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/participants/{participantId}:
+    get:
+      summary: Get a participant of a session
+      description: Returns a participant of the session.
+      operationId: get-participant
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParticipantResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: End a participant
+      description: |-
+        Ends the participant: the session detaches it and closes its PeerConnections, and the
+        session goes on. A participant leaves this way; others are disconnected this way.
+
+        The participant's user and the owner of the session may end it; otherwise this
+        requires `fleet:sessions.manage`.
+      operationId: delete-participant
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+      responses:
+        "204":
+          description: Disconnected
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  parameters:
+    MachineId:
+      name: machineId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    McpServerName:
+      name: serverName
+      in: path
+      required: true
+      description: |-
+        The server's key in `mcpServers`: a letter or digit, then up to 63 letters, digits, `_`
+        or `-`, without `__`, since the tools of all servers are named `<server>__<tool>` together
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    EnrollmentId:
+      name: enrollmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RegistrationId:
+      name: registrationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PrivilegeRequestId:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ParticipantId:
+      name: participantId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    PeerConnectionId:
+      name: peerConnectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 40
+        pattern: "^[a-z0-9-]+$"
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    NamedIdentity:
+      $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+    PublicKey:
+      description: An Ed25519 public key (RFC 8032), 32 bytes in standard Base64 (RFC 4648)
+      type: string
+      pattern: "^[A-Za-z0-9+/]{43}=$"
+    OperatingSystem:
+      description: The operating system, from the machine's /etc/os-release
+      type: object
+      required:
+        - id
+        - version_id
+        - pretty_name
+      properties:
+        id:
+          description: ID=, such as `debian`
+          type: string
+        version_id:
+          description: VERSION_ID=, such as `13`
+          type: string
+        pretty_name:
+          description: PRETTY_NAME=, such as `Debian GNU/Linux 13 (trixie)`
+          type: string
+      additionalProperties: false
+    MachineResource:
+      type: object
+      required:
+        - id
+        - name
+        - hostname
+        - public_key
+        - online
+        - operating_system
+        - kernel_release
+        - architecture
+        - features
+        - agent_version
+        - directory_synced
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 128
+        hostname:
+          description: The host name the machine last reported
+          type: string
+        public_key:
+          $ref: "#/components/schemas/PublicKey"
+        online:
+          description: |-
+            The machine's Agent is connected, or lost its connection less than a minute ago and
+            may connect again
+          type: boolean
+        operating_system:
+          description: Null until the machine has reported once
+          oneOf:
+            - $ref: "#/components/schemas/OperatingSystem"
+            - type: "null"
+        kernel_release:
+          description: Such as `6.12.43+deb13-amd64`; empty until the machine has reported once
+          type: string
+        architecture:
+          description: Such as `x86_64`; empty until the machine has reported once
+          type: string
+        features:
+          description: What the machine offers; empty until the machine has reported once
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineFeature"
+        agent_version:
+          description: The Agent software the machine last connected with
+          type: string
+        directory_synced:
+          description: The machine serves the project's current directory
+          type: boolean
+        created_at:
+          description: When the machine was added to the project
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    FeatureState:
+      description: "`available` can be used now. `unavailable` is installed but cannot be used, as `reason` says."
+      type: string
+      enum:
+        - available
+        - unavailable
+    MachineFeature:
+      type: object
+      required:
+        - name
+        - state
+        - reason
+        - details
+      properties:
+        name:
+          description: The protocol package that defines the feature, such as `leaflow.fleet.command.v1`
+          type: string
+        state:
+          $ref: "#/components/schemas/FeatureState"
+        reason:
+          description: Why it cannot be used, such as `Xvfb is not installed`; empty while available
+          type: string
+        details:
+          description: What it can do on this machine, as the dotted names its package defines, such as `audio.pipewire`
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    MachineList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    MachineEventType:
+      description: |-
+        `directory_account_conflict`: an account is not served on the machine because a local
+        account uses its name or uid, or its uid is among the subordinate ids of a local user;
+        metadata `username`, and `conflict` `name`, `uid` or `subordinate`.
+        `directory_group_conflict`: a group is not served because a local group uses its name or
+        gid, or its gid is among the subordinate ids of a local user; metadata `groupName`, and
+        `conflict` `name`, `gid` or `subordinate`.
+      type: string
+      enum:
+        - directory_account_conflict
+        - directory_group_conflict
+    MachineEventResource:
+      type: object
+      required:
+        - id
+        - type
+        - metadata
+        - occurred_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/MachineEventType"
+        metadata:
+          description: The values of the event, with the keys its type names
+          type: object
+          additionalProperties:
+            type: string
+        occurred_at:
+          description: When it happened, on the machine's clock
+          type: string
+          format: date-time
+        created_at:
+          description: When the service recorded it
+          type: string
+          format: date-time
+      additionalProperties: false
+    MachineEventList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineEventResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    UpdateMachineRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+    EnrollmentState:
+      description: |-
+        `pending` waits for a decision. `approved` added the machine to a project. `denied` is
+        final for the machine's key.
+      type: string
+      enum:
+        - pending
+        - approved
+        - denied
+    EnrollmentResource:
+      type: object
+      required:
+        - id
+        - pairing_code
+        - public_key
+        - hostname
+        - source_address
+        - state
+        - created_at
+        - last_seen_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        pairing_code:
+          description: The code the machine shows, `XXXXX-XXXXX`
+          type: string
+        public_key:
+          $ref: "#/components/schemas/PublicKey"
+        hostname:
+          description: The host name the machine reported; chosen by whoever runs the machine
+          type: string
+        source_address:
+          description: The IP address the request came from
+          type: string
+        state:
+          $ref: "#/components/schemas/EnrollmentState"
+        machine_id:
+          description: The machine, once the request is approved
+          type:
+            - string
+            - "null"
+          format: uuid
+        created_at:
+          description: When the machine first asked to enroll
+          type: string
+          format: date-time
+        last_seen_at:
+          description: When the machine last polled
+          type: string
+          format: date-time
+      additionalProperties: false
+    FindEnrollmentResponse:
+      description: "`enrollment` is the pending request with that pairing code, absent when there is none."
+      type: object
+      properties:
+        enrollment:
+          $ref: "#/components/schemas/EnrollmentResource"
+      additionalProperties: false
+    ApproveEnrollmentRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          description: The name of the machine in the project
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+    MachineRegistrationState:
+      description: |-
+        `pending` waits for a machine to use the token; `used` enrolled a machine; `expired` was not
+        used in time; `revoked` was revoked before it was used.
+      type: string
+      enum:
+        - pending
+        - used
+        - expired
+        - revoked
+    MachineRegistrationResource:
+      type: object
+      required:
+        - id
+        - machine_id
+        - name
+        - state
+        - created_at
+        - expires_at
+        - used_at
+        - public_key
+        - source_address
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_id:
+          description: The machine that the registration's token enrolls
+          type: string
+          format: uuid
+        name:
+          description: The name of the machine in the project
+          type: string
+        state:
+          $ref: "#/components/schemas/MachineRegistrationState"
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          description: When the token stops enrolling a machine
+          type: string
+          format: date-time
+        used_at:
+          description: When a machine used the token; null until then
+          type:
+            - string
+            - "null"
+          format: date-time
+        public_key:
+          description: The key of the machine that used the token; null until then
+          oneOf:
+            - $ref: "#/components/schemas/PublicKey"
+            - type: "null"
+        source_address:
+          description: The IP address the machine used the token from; null until then
+          type:
+            - string
+            - "null"
+      additionalProperties: false
+    MachineRegistrationList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineRegistrationResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    CreateMachineRegistrationRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          description: The name of the machine in the project
+          type: string
+          minLength: 1
+          maxLength: 128
+        expires_in_seconds:
+          description: How long the token can be used, from now
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 86400
+          default: 3600
+      additionalProperties: false
+    CreateMachineRegistrationResponse:
+      type: object
+      required:
+        - registration
+        - token
+      properties:
+        registration:
+          $ref: "#/components/schemas/MachineRegistrationResource"
+        token:
+          description: |-
+            The token to give to the machine, returned only in this response. A secret: anyone who
+            has it can enroll a machine into the current project until it is used, expires or is
+            revoked. Never put it in a URL.
+          type: string
+      additionalProperties: false
+    DirectoryName:
+      description: A username or a group name, as useradd(8) and groupadd(8) accept it
+      type: string
+      minLength: 1
+      maxLength: 32
+      pattern: "^[a-z_][a-z0-9_-]*$"
+    AccountResource:
+      type: object
+      required:
+        - id
+        - user
+        - username
+        - uid
+        - gid
+        - display_name
+        - home_directory
+        - shell
+        - groups
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/NamedIdentity"
+        username:
+          description: The login name on every machine
+          type: string
+        uid:
+          description: The user id on every machine
+          type: integer
+          format: int64
+        gid:
+          description: The id of the account's own group, which has its username as name
+          type: integer
+          format: int64
+        display_name:
+          description: The full name on the machines
+          type: string
+        home_directory:
+          type: string
+        shell:
+          type: string
+        groups:
+          description: The names of the project's groups the account is in, besides its own
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AccountList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    UpdateAccountRequest:
+      type: object
+      properties:
+        username:
+          $ref: "#/components/schemas/DirectoryName"
+        shell:
+          description: An absolute path, such as `/bin/bash`
+          type: string
+          minLength: 2
+          maxLength: 255
+          pattern: "^/[^\\s:]+$"
+      additionalProperties: false
+    GroupResource:
+      type: object
+      required:
+        - id
+        - name
+        - gid
+        - member_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        gid:
+          description: The group id on every machine of the project
+          type: integer
+          format: int64
+        member_count:
+          type: integer
+          format: int64
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    GroupList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    CreateGroupRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          $ref: "#/components/schemas/DirectoryName"
+      additionalProperties: false
+    UpdateGroupRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          $ref: "#/components/schemas/DirectoryName"
+      additionalProperties: false
+    CreateGroupMemberRequest:
+      type: object
+      required:
+        - account_id
+      properties:
+        account_id:
+          type: string
+          format: uuid
+      additionalProperties: false
+    SessionMode:
+      description: |-
+        `desktop` runs a desktop environment and shows it as one canvas. `seamless` shows every
+        application window on its own.
+      type: string
+      enum:
+        - desktop
+        - seamless
+    SessionState:
+      description: '`opening` starts; `open` runs; `closing` is ending; `closed` has ended.'
+      type: string
+      enum:
+        - opening
+        - open
+        - closing
+        - closed
+    SessionCloseReason:
+      description: |-
+        Why a session ended. `close_requested` and `terminate_requested` follow a request;
+        `logout` the user logged out, such as when the shell of a terminal session exited;
+        `disconnected_timeout`, `no_participant_timeout` and `max_lifetime` a time limit passed;
+        `display_exit` and `process_lost` the session failed; `open_failed` it never opened;
+        `access_revoked` its user may no longer log in;
+        `machine_restarted` the machine restarted; `unknown` the machine no longer reports it.
+      type: string
+      enum:
+        - close_requested
+        - terminate_requested
+        - logout
+        - disconnected_timeout
+        - no_participant_timeout
+        - max_lifetime
+        - display_exit
+        - process_lost
+        - open_failed
+        - access_revoked
+        - machine_restarted
+        - unknown
+    SessionResource:
+      type: object
+      required:
+        - id
+        - machine_id
+        - user
+        - username
+        - state
+        - desktop
+        - process_connected
+        - last_input_at
+        - close_reason
+        - created_at
+        - closed_at
+      properties:
+        id:
+          type: string
+        machine_id:
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/NamedIdentity"
+        username:
+          description: The Linux user the session runs as; `user` is the project member who owns the session
+          type: string
+        state:
+          $ref: "#/components/schemas/SessionState"
+        desktop:
+          description: The session's desktop; null for a session without one
+          oneOf:
+            - $ref: "#/components/schemas/DesktopState"
+            - type: "null"
+        process_connected:
+          description: |-
+            The session's process is connected to the service, so participants can join and start
+            PeerConnections. False while it connects again, such as after it restarted; such
+            requests then wait for it and fail with `SESSION_UNAVAILABLE` only if it does not come
+            back in time.
+          type: boolean
+        last_input_at:
+          description: The last input of a person in the session
+          type:
+            - string
+            - "null"
+          format: date-time
+        close_reason:
+          description: Null until the session is closed
+          anyOf:
+            - $ref: "#/components/schemas/SessionCloseReason"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        closed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      additionalProperties: false
+    SessionList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    CreateSessionRequest:
+      type: object
+      required:
+        - machine_id
+      properties:
+        machine_id:
+          type: string
+          format: uuid
+        desktop:
+          $ref: "#/components/schemas/DesktopOptions"
+      additionalProperties: false
+    DesktopOptions:
+      description: A desktop for the session, on a machine that offers `leaflow.fleet.virtualdesktop.host.v1`
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          $ref: "#/components/schemas/SessionMode"
+        width:
+          description: The first width of the canvas, normally the participant's; the machine's default when omitted
+          type: integer
+          format: int64
+          minimum: 320
+          maximum: 16384
+        height:
+          description: The first height of the canvas; given together with `width`
+          type: integer
+          format: int64
+          minimum: 200
+          maximum: 16384
+        session_desktop:
+          description: |-
+            In `desktop` mode, the desktop environment to start: a detail of the machine's
+            `leaflow.fleet.virtualdesktop.host.v1` feature without its `desktop.` prefix, such as
+            `XFCE`; the machine's default when omitted
+          type: string
+          maxLength: 128
+      additionalProperties: false
+    DesktopState:
+      type: object
+      required:
+        - mode
+        - display
+      properties:
+        mode:
+          $ref: "#/components/schemas/SessionMode"
+        display:
+          description: The X display, such as `:100`
+          type: string
+      additionalProperties: false
+    RunCommandRequest:
+      type: object
+      required:
+        - command
+      properties:
+        command:
+          description: The command line, which the account's login shell runs with `-c`; at most 65536 bytes and no NUL
+          type: string
+          minLength: 1
+          maxLength: 65536
+        timeout_seconds:
+          description: Kills the command, and every process it started, this long after it started
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 300
+          default: 60
+      additionalProperties: false
+    RunCommandResponse:
+      type: object
+      required:
+        - exit_status
+        - signal
+        - timed_out
+        - stdout
+        - stdout_truncated
+        - stderr
+        - stderr_truncated
+      properties:
+        exit_status:
+          description: The status it exited with, 0 being success; null when a signal ended it
+          type:
+            - integer
+            - "null"
+          format: int32
+        signal:
+          description: The signal that ended it, such as 9 when the timeout killed it; null when it exited
+          type:
+            - integer
+            - "null"
+          format: int32
+        timed_out:
+          description: The timeout ended it
+          type: boolean
+        stdout:
+          description: What it wrote to standard output, at most 1 MiB, in standard Base64
+          type: string
+          contentEncoding: base64
+        stdout_truncated:
+          description: "`stdout` is cut short"
+          type: boolean
+        stderr:
+          description: What it wrote to standard error, at most 1 MiB, in standard Base64
+          type: string
+          contentEncoding: base64
+        stderr_truncated:
+          description: "`stderr` is cut short"
+          type: boolean
+      additionalProperties: false
+    McpConfigurationFile:
+      type: object
+      required:
+        - state
+        - revision
+        - invalid_line
+        - invalid_column
+        - set_aside
+      properties:
+        state:
+          description: |-
+            `ok` when the file was read in full; `missing` when there is none, which is no server;
+            `unreadable` when it cannot be read and `invalid` when it is not an object with an
+            object `mcpServers`: then the machine serves the servers of the file it last read in
+            full, if any, and none otherwise.
+          type: string
+          enum:
+            - ok
+            - missing
+            - unreadable
+            - invalid
+        revision:
+          description: |-
+            SHA-256 of the file in lower-case hex, empty while it is `missing`. Edits carry it as
+            `expected_revision`, so that they fail rather than undo an edit made in between.
+          type: string
+        invalid_line:
+          description: With `invalid`, the line of the first error, counted from 1; null otherwise
+          type:
+            - integer
+            - "null"
+          format: int64
+        invalid_column:
+          description: With `invalid`, the column of the first error, counted from 1; null otherwise
+          type:
+            - integer
+            - "null"
+          format: int64
+        set_aside:
+          description: |-
+            The name, in the file's directory, under which the machine set aside a file that was not
+            valid when it started to serve the account, and put an empty configuration in its place;
+            null when it did not
+          type:
+            - string
+            - "null"
+      additionalProperties: false
+    McpConfigurationResource:
+      type: object
+      required:
+        - file
+        - servers
+      properties:
+        file:
+          $ref: "#/components/schemas/McpConfigurationFile"
+        servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServerResource"
+      additionalProperties: false
+    McpTransport:
+      description: |-
+        `stdio` for a program the machine starts as the account, `http` for Streamable HTTP and
+        `sse` for HTTP with Server-Sent Events, the transport of earlier revisions of MCP
+      type: string
+      enum:
+        - stdio
+        - http
+        - sse
+    McpServerFailure:
+      description: |-
+        Why a server failed or is not valid: `invalid_definition`, `start_failed` (its program could
+        not be started), `exited`, `unreachable`, `unauthorized` (it asked for authorization the
+        headers do not give, such as through OAuth), `protocol_error` or `timeout`
+      type: string
+      enum:
+        - invalid_definition
+        - start_failed
+        - exited
+        - unreachable
+        - unauthorized
+        - protocol_error
+        - timeout
+    McpServerResource:
+      type: object
+      required:
+        - name
+        - transport
+        - command
+        - args
+        - env_keys
+        - url
+        - header_keys
+        - disabled
+        - state
+        - failure
+        - implementation
+        - tool_count
+      properties:
+        name:
+          description: Its key in `mcpServers`
+          type: string
+        transport:
+          $ref: "#/components/schemas/McpTransport"
+        command:
+          description: With `stdio`, the program
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        env_keys:
+          description: The variables `env` sets; their values are never returned
+          type: array
+          items:
+            type: string
+        url:
+          description: With `http` and `sse`, the endpoint
+          type: string
+        header_keys:
+          description: The headers `headers` sends; their values are never returned
+          type: array
+          items:
+            type: string
+        disabled:
+          description: Configured but kept stopped
+          type: boolean
+        state:
+          description: |-
+            `stopped` before its first use or after it was idle, `starting`, `running`, `failed`
+            (it is tried again when next used), `disabled` or `invalid`
+          type: string
+          enum:
+            - stopped
+            - starting
+            - running
+            - failed
+            - disabled
+            - invalid
+        failure:
+          description: With `failed` and `invalid`, why; null otherwise
+          anyOf:
+            - $ref: "#/components/schemas/McpServerFailure"
+            - type: "null"
+        implementation:
+          description: With `running`, what the server said of itself; null otherwise
+          anyOf:
+            - $ref: "#/components/schemas/McpImplementation"
+            - type: "null"
+        tool_count:
+          description: With `running`, how many tools it offers; null otherwise
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    McpImplementation:
+      type: object
+      required:
+        - name
+        - version
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        title:
+          type: string
+      additionalProperties: false
+    UpdateMcpServerRequest:
+      type: object
+      properties:
+        transport:
+          description: Unset for `stdio` with `command` and `http` with `url`
+          allOf:
+            - $ref: "#/components/schemas/McpTransport"
+        command:
+          description: With `stdio`, the program, looked up in the account's `PATH`
+          type: string
+          maxLength: 4096
+        args:
+          description: |-
+            With `stdio`; shown to anyone who reads the configuration, so no place for credentials
+          type: array
+          maxItems: 256
+          items:
+            type: string
+            maxLength: 65536
+        env:
+          description: With `stdio`, variables added to the account's environment
+          type: object
+          maxProperties: 256
+          additionalProperties:
+            type: string
+            maxLength: 65536
+        url:
+          description: |-
+            With `http` and `sse`, the endpoint; shown to anyone who reads the configuration
+          type: string
+          maxLength: 4096
+        headers:
+          description: With `http` and `sse`, headers sent with every request
+          type: object
+          maxProperties: 256
+          additionalProperties:
+            type: string
+            maxLength: 65536
+        disabled:
+          description: Configured but kept stopped
+          type: boolean
+          default: false
+        keep_env:
+          description: Variables of the server's current `env` whose values stay as they are
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        keep_headers:
+          description: Headers of the server's current `headers` whose values stay as they are
+          type: array
+          maxItems: 256
+          items:
+            type: string
+        expected_revision:
+          description: |-
+            The configuration's `revision` as last read; absent only for one that was `missing`
+          type: string
+          maxLength: 64
+      additionalProperties: false
+    UpdateMcpServerResponse:
+      type: object
+      required:
+        - file
+        - server
+      properties:
+        file:
+          $ref: "#/components/schemas/McpConfigurationFile"
+        server:
+          $ref: "#/components/schemas/McpServerResource"
+      additionalProperties: false
+    ReplaceMcpConfigurationRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          description: The new file, an object with an object `mcpServers`, at most 1 MiB as JSON
+          type: object
+          additionalProperties: true
+        expected_revision:
+          description: |-
+            The configuration's `revision` as last read; absent replaces whatever is there, such as
+            a file that cannot be read
+          type: string
+          maxLength: 64
+      additionalProperties: false
+    SendMcpRequestRequest:
+      type: object
+      required:
+        - request
+      properties:
+        request:
+          description: One JSON-RPC 2.0 request of MCP, at most 4 MiB
+          type: object
+          additionalProperties: true
+        timeout_seconds:
+          description: How long to wait for the response
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 300
+          default: 60
+      additionalProperties: false
+    SendMcpRequestResponse:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          description: The server's JSON-RPC 2.0 response, with the id of the request
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    CallMcpToolRequest:
+      type: object
+      properties:
+        arguments:
+          description: The tool's arguments, as its `input_schema` describes them
+          type: object
+          additionalProperties: true
+        timeout_seconds:
+          description: How long to wait for the result
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 300
+          default: 60
+      additionalProperties: false
+    CallMcpToolResponse:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          description: |-
+            The tool's MCP `CallToolResult`, with `content`, `structuredContent` and `isError`
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    McpToolResource:
+      type: object
+      required:
+        - server
+        - name
+        - title
+        - description
+        - input_schema
+        - output_schema
+        - annotations
+      properties:
+        server:
+          description: The server that offers it
+          type: string
+        name:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        input_schema:
+          description: The JSON Schema of its arguments
+          type: object
+          additionalProperties: true
+        output_schema:
+          description: The JSON Schema of its structured result; null when it has none
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+        annotations:
+          description: |-
+            Its MCP `ToolAnnotations`, such as `readOnlyHint`; hints of the server, not guarantees
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+      additionalProperties: false
+    McpUnavailableServer:
+      type: object
+      required:
+        - name
+        - failure
+      properties:
+        name:
+          type: string
+        failure:
+          $ref: "#/components/schemas/McpServerFailure"
+      additionalProperties: false
+    McpToolList:
+      type: object
+      required:
+        - items
+        - next_page_token
+        - unavailable_servers
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpToolResource"
+        next_page_token:
+          description: Null on the last page
+          type:
+            - string
+            - "null"
+        unavailable_servers:
+          description: Servers whose tools are missing because they could not be started or reached
+          type: array
+          items:
+            $ref: "#/components/schemas/McpUnavailableServer"
+      additionalProperties: false
+    UpdatePrivilegeAutoApprovalRequest:
+      type: object
+      required:
+        - expires_at
+      properties:
+        expires_at:
+          description: When the automatic approval ends; null for one that lasts until removed
+          type:
+            - string
+            - "null"
+          format: date-time
+      additionalProperties: false
+    PrivilegeAutoApprovalResource:
+      type: object
+      required:
+        - id
+        - machine_id
+        - expires_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_id:
+          type: string
+          format: uuid
+        expires_at:
+          description: When the automatic approval ends; null for one that lasts until removed
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    PrivilegeAutoApprovalList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrivilegeAutoApprovalResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    PrivilegeDecider:
+      description: |-
+        Who decided a request on the platform: `user` the user, or `auto_approval` the user's
+        automatic approval for the machine, at once.
+      type: string
+      enum:
+        - user
+        - auto_approval
+    PrivilegeRequestState:
+      description: |-
+        `pending` waits for a decision; `approved` and `denied` were decided on the platform, as
+        `decided_by` tells; `expired` was not decided in time; `cancelled` means the machine
+        stopped waiting for the platform, because a participant of the session decided first or
+        the asking program gave up.
+      type: string
+      enum:
+        - pending
+        - approved
+        - denied
+        - expired
+        - cancelled
+    PrivilegeRequestResource:
+      type: object
+      required:
+        - id
+        - machine_id
+        - session_id
+        - username
+        - pam_service
+        - command_line
+        - remote_host
+        - tty
+        - state
+        - decided_by
+        - created_at
+        - expires_at
+        - decided_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_id:
+          type: string
+          format: uuid
+        session_id:
+          description: |-
+            The session the asking program runs in; null when it runs in none, such as after an
+            SSH login
+          type:
+            - string
+            - "null"
+          maxLength: 40
+        username:
+          description: The account that asks to become root
+          type: string
+        pam_service:
+          description: The PAM service that asks, such as `sudo`
+          type: string
+        command_line:
+          description: |-
+            What the machine reports the asking program runs, at most 4 KiB, such as
+            `sudo apt install foo`. A claim of the machine.
+          type: string
+        remote_host:
+          description: Where the login came from, when the machine knows it
+          type: string
+        tty:
+          description: The terminal, when the machine knows it, such as `/dev/pts/3`
+          type: string
+        state:
+          $ref: "#/components/schemas/PrivilegeRequestState"
+        decided_by:
+          description: Who decided an `approved` or `denied` request; null in any other state
+          anyOf:
+            - $ref: "#/components/schemas/PrivilegeDecider"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        decided_at:
+          description: When the request stopped pending; null while pending
+          type:
+            - string
+            - "null"
+          format: date-time
+      additionalProperties: false
+    PrivilegeRequestList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrivilegeRequestResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    ParticipantResource:
+      type: object
+      required:
+        - id
+        - user
+        - client_name
+        - read_only
+        - permissions
+        - source_address
+        - created_at
+      properties:
+        id:
+          description: The participant; `participant_id` of the protocol
+          type: integer
+          format: int64
+        user:
+          $ref: "#/components/schemas/NamedIdentity"
+        client_name:
+          description: The name the participant's client gave itself, such as `console` or `assistant`; neither unique nor verified
+          type: string
+        read_only:
+          description: The participant may only watch
+          type: boolean
+        permissions:
+          description: The capabilities granted to the participant, as permission names such as `fleet:files.transfer`
+          type: array
+          items:
+            type: string
+        source_address:
+          description: The IP address the participant joined from; empty when it joined through a platform service
+          type: string
+        created_at:
+          description: When the participant joined
+          type: string
+          format: date-time
+      additionalProperties: false
+    ParticipantList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParticipantResource"
+      additionalProperties: false
+    SignedMessage:
+      description: |-
+        A message the service signed: the serialized message, the key that signed it and the
+        signature, as in `SignedAuthorization` and `SignedPeerAuthorization` of the protocol. Each
+        byte string is standard Base64.
+      type: object
+      required:
+        - key_id
+        - message
+        - signature
+      properties:
+        key_id:
+          type: string
+        message:
+          description: The serialized message; decode it only after the signature verified
+          type: string
+          format: byte
+        signature:
+          type: string
+          format: byte
+      additionalProperties: false
+    SigningKey:
+      description: A key the service signs with, as `SigningKeys` of the protocol
+      type: object
+      required:
+        - key_id
+        - public_key
+      properties:
+        key_id:
+          type: string
+        public_key:
+          $ref: "#/components/schemas/PublicKey"
+      additionalProperties: false
+    IceServer:
+      description: A STUN or TURN server, as W3C RTCIceServer
+      type: object
+      required:
+        - urls
+      properties:
+        urls:
+          type: array
+          items:
+            type: string
+        username:
+          description: TURN only
+          type: string
+        credential:
+          description: TURN only. A secret for the relay; never log it.
+          type: string
+      additionalProperties: false
+    RtcConfiguration:
+      description: The ICE servers for the PeerConnections the caller starts, as W3C RTCConfiguration
+      type: object
+      required:
+        - ice_servers
+        - ice_transport_policy
+        - expires_at
+      properties:
+        ice_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/IceServer"
+        ice_transport_policy:
+          type: string
+          enum:
+            - all
+            - relay
+        expires_at:
+          description: No PeerConnection starts with these servers after this time
+          type: string
+          format: date-time
+      additionalProperties: false
+    IceCandidate:
+      description: An ICE candidate (RFC 8445), as W3C RTCIceCandidateInit
+      type: object
+      required:
+        - candidate
+      properties:
+        candidate:
+          description: The candidate attribute; it names network addresses, so never log it
+          type: string
+          maxLength: 4096
+        sdp_mid:
+          description: The media stream identification tag of the candidate (RFC 5888)
+          type: string
+          maxLength: 64
+      additionalProperties: false
+    PeerConnection:
+      description: |-
+        One PeerConnection of a participant, as the session answered it. Set the answer as the
+        remote description, add the candidates, and verify the authorization before sending
+        application data; the SHA-256 of its `message` goes into `Hello.authorization_sha256`.
+      type: object
+      required:
+        - id
+        - answer
+        - candidates
+        - authorization
+      properties:
+        id:
+          description: The PeerConnection; its 16 bytes are `peer_connection_id` of the transport protocol
+          type: string
+          format: uuid
+        answer:
+          description: The session's SDP answer (RFC 8866); it holds ICE credentials, so never log it
+          type: string
+        candidates:
+          description: |-
+            The session's ICE candidates gathered until it reported the end of its candidates, or
+            until 10 seconds after its answer
+          type: array
+          items:
+            $ref: "#/components/schemas/IceCandidate"
+        authorization:
+          description: The signed `PeerAuthorization` of the PeerConnection, the same one the session holds
+          allOf:
+            - $ref: "#/components/schemas/SignedMessage"
+      additionalProperties: false
+    CreateParticipantResponse:
+      type: object
+      required:
+        - participant
+        - authorization
+        - rtc_configuration
+        - signing_keys
+        - lease_expires_at
+        - peer_connection
+      properties:
+        participant:
+          $ref: "#/components/schemas/ParticipantResource"
+        authorization:
+          description: The participant's signed `Authorization`, the same one the session holds
+          allOf:
+            - $ref: "#/components/schemas/SignedMessage"
+        rtc_configuration:
+          description: The ICE servers for later PeerConnections of the participant
+          allOf:
+            - $ref: "#/components/schemas/RtcConfiguration"
+        signing_keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/SigningKey"
+        lease_expires_at:
+          description: When the participant ends unless renewed
+          type: string
+          format: date-time
+        peer_connection:
+          description: The first PeerConnection, started with the request's offer
+          allOf:
+            - $ref: "#/components/schemas/PeerConnection"
+      additionalProperties: false
+    RenewParticipantRequest:
+      type: object
+      properties:
+        peer_authorizations:
+          description: The current signed `PeerAuthorization` of each PeerConnection to renew
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/SignedMessage"
+      additionalProperties: false
+    RenewParticipantResponse:
+      type: object
+      required:
+        - lease_expires_at
+        - peer_authorizations
+        - rtc_configuration
+        - signing_keys
+      properties:
+        lease_expires_at:
+          type: string
+          format: date-time
+        peer_authorizations:
+          description: The renewed signed `PeerAuthorization`s, in the order of the request
+          type: array
+          items:
+            $ref: "#/components/schemas/SignedMessage"
+        authorization:
+          description: A renewed signed `Authorization`, when the current one nears its end
+          allOf:
+            - $ref: "#/components/schemas/SignedMessage"
+        rtc_configuration:
+          $ref: "#/components/schemas/RtcConfiguration"
+        signing_keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/SigningKey"
+      additionalProperties: false
+    CreateParticipantRequest:
+      type: object
+      required:
+        - public_key
+        - offer
+      properties:
+        public_key:
+          $ref: "#/components/schemas/PublicKey"
+        client_name:
+          description: A name for the client that joins, such as `console` or `assistant`, shown to the other participants. It is neither unique nor verified.
+          type: string
+          maxLength: 64
+        read_only:
+          description: The participant only watches, even if the caller may operate the session
+          type: boolean
+        permissions:
+          description: |-
+            The capabilities the participant may use, as permission names such as
+            `fleet:files.transfer`; when omitted, every capability the caller holds. A
+            capability the caller does not hold is not granted.
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            enum:
+              - fleet:files.transfer
+              - fleet:clipboard.use
+              - fleet:terminal.use
+              - fleet:ports.forward
+              - fleet:devices.use
+              - fleet:printing.use
+              - fleet:ssh_agent.use
+              - fleet:privilege.approve
+              - fleet:logs.read
+        offer:
+          description: |-
+            The SDP offer (RFC 8866) of the first PeerConnection, with the ICE candidates gathered
+            so far; it holds ICE credentials, so never log it
+          type: string
+          maxLength: 65536
+      additionalProperties: false
+    CreatePeerConnectionRequest:
+      type: object
+      required:
+        - offer
+      properties:
+        offer:
+          description: |-
+            The SDP offer (RFC 8866) of the PeerConnection, with the ICE candidates gathered so
+            far; it holds ICE credentials, so never log it
+          type: string
+          maxLength: 65536
+      additionalProperties: false
+    CreatePeerConnectionCandidatesRequest:
+      type: object
+      properties:
+        candidates:
+          type: array
+          maxItems: 64
+          items:
+            $ref: "#/components/schemas/IceCandidate"
+        end_of_candidates:
+          description: The participant has gathered all its candidates
+          type: boolean
+      additionalProperties: false
+    MigrationStep:
+      type: object
+      required:
+        - checkpoint
+      properties:
+        checkpoint:
+          description: A serialized `Checkpoint` of `leaflow/fleet/transport/v1/transport.proto`
+          type: string
+          format: byte
+          maxLength: 262144
+      additionalProperties: false

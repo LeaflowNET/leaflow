@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package leaflow.fleet.terminal.v1;
+
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/terminal/v1;terminalv1";
+
+// The terminal of a session without a desktop: the login shell of the
+// session's user, with its groups, home directory and shell, never as another
+// account (RFC 4254 §6.2 "pty-req" with §6.5 "shell"; participants cannot
+// choose the command). Such a session is a terminal session and has exactly
+// one terminal: its shell starts when the session opens, before any
+// participant attaches, and the session ends when the shell exits
+// (leaflow.fleet.host.v1 SESSION_CLOSE_REASON_LOGOUT). Participants cannot
+// start another terminal; a user who wants another opens another session. A
+// session with a desktop has no terminal of this package: its terminals are
+// programs on the desktop.
+//
+// The shell starts at 80 columns and 24 rows, with TERM "xterm-256color" and
+// UTF-8 input. When it cannot start, the session ends as when it exits.
+//
+// The terminal belongs to the session and outlives the connections that show
+// it: its output is one byte stream numbered from 0, of which the session keeps
+// the last 1 to 4 MiB, so that a participant that attaches again continues
+// where it left off, and one that attaches later from 0 reads what the shell
+// wrote before, as far as it is kept. Client input is never replayed. The
+// stream belongs to the session process (transport Hello.instance_id): when
+// that process restarts, the shell starts again and so does the stream, and a
+// participant connected to the new process attaches from 0.
+//
+// Channel type "leaflow.fleet.terminal.v1", lane "interactive": opened by the
+// participant, one per view of the terminal. The participant sends
+// ClientMessage, starting with TerminalAttach; the session answers
+// TerminalAttached, or an error and closes the channel, then sends the output
+// from that offset on. Closing the channel only detaches; the shell keeps
+// running. When the shell exits, the session sends TerminalExit on every
+// channel, closes them and ends.
+//
+// Bytes. Input and output are raw bytes: keys, committed text, pastes,
+// terminal mouse reports and answers to terminal queries go in, in one
+// ordered stream; the participant's preedit text does not. Neither side buffers
+// lines, strips control or escape sequences, translates newlines or
+// re-encodes; message boundaries may split characters and escape sequences.
+//
+// Pacing. Several participants may attach to the terminal and all may type;
+// each sees what the others type as the shell echoes it. The session stops
+// reading the terminal only while every attached participant is out of channel
+// credit, so the shell runs at the pace of the fastest; a participant that
+// falls behind by more than half the kept output is detached with CANCELLED
+// and attaches again. While nobody is attached the session keeps reading into
+// the kept output.
+//
+// Needs TerminalPolicy; read-only participants do not open the channel.
+
+// A message from the participant on the terminal channel.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // Shows the terminal. The first message.
+    TerminalAttach attach = 1;
+    // Input for the terminal.
+    TerminalInput input = 2;
+    // The participant's terminal changed size. The latest size of any
+    // participant applies, and the shell gets SIGWINCH.
+    TerminalSize resize = 3;
+  }
+}
+
+// A message from the session on the terminal channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // Where the output that follows starts. The first message.
+    TerminalAttached attached = 1;
+    // Output of the terminal, continuing the stream.
+    TerminalOutput output = 2;
+    // Another participant changed the size.
+    TerminalSize resize = 3;
+    // The shell ended. The last message.
+    TerminalExit exit = 4;
+    // The terminal could not be attached: PERMISSION_DENIED without
+    // TerminalPolicy, RESOURCE_EXHAUSTED when as many participants are
+    // attached as the session admits, INVALID_ARGUMENT for an offset beyond
+    // the output, or NOT_FOUND once the shell has exited. The only message.
+    google.rpc.Status error = 5;
+  }
+}
+
+// Shows the terminal.
+message TerminalAttach {
+  // The output offset the participant has applied up to. 0: nothing yet.
+  uint64 offset = 1;
+}
+
+// Where the output that follows starts.
+message TerminalAttached {
+  // The offset of the first output that follows: the requested one when it
+  // is still kept, otherwise the current end, and nothing is replayed.
+  uint64 offset = 1;
+  // The requested offset is no longer kept. The participant resets its terminal
+  // (ECMA-48 RIS) before applying what follows, and the session makes the
+  // program redraw by changing the size and back (SIGWINCH).
+  bool reset = 2;
+  // The size the terminal has now.
+  TerminalSize size = 3;
+}
+
+// Input for the terminal.
+message TerminalInput {
+  // The bytes, at most 64 KiB.
+  bytes data = 1;
+}
+
+// Output of the terminal.
+message TerminalOutput {
+  // The bytes, at most 64 KiB.
+  bytes data = 1;
+}
+
+// The size of a terminal (RFC 4254 §6.7 "window-change"; struct winsize).
+message TerminalSize {
+  // Columns, 1 to 65535.
+  uint32 columns = 1;
+  // Rows, 1 to 65535.
+  uint32 rows = 2;
+  // The width of the text area in pixels. 0 when unknown.
+  uint32 width_px = 3;
+  // The height of the text area in pixels. 0 when unknown.
+  uint32 height_px = 4;
+}
+
+// How the shell ended (RFC 4254 §6.10).
+message TerminalExit {
+  // How it ended. Unset when the terminal ended without its shell exiting,
+  // such as when the session was closed.
+  oneof status {
+    // It exited with this code, 0 to 255 ("exit-status").
+    uint32 exit_code = 1;
+    // A signal ended it, named without "SIG", such as "TERM" or "HUP", or
+    // in the form "name@domain" ("exit-signal").
+    string signal_name = 2;
+  }
+  // The signal dumped core.
+  bool core_dumped = 3;
+}
+
+// Allows a participant to use the terminal. Carried in the participant's
+// signed authorization.
+message TerminalPolicy {}

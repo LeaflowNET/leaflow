@@ -1,0 +1,283 @@
+syntax = "proto3";
+
+package leaflow.fleet.filetransfer.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/filetransfer/v1;filetransferv1";
+
+// Files moving between the participant and the session, and the session user's
+// files. File operations run as the session's user; nothing here runs as
+// root.
+//
+// Channel types:
+//   - "leaflow.fleet.filetransfer.v1", lane "interactive": opened by
+//     the participant, one per connection. Both ends send FileTransferMessage.
+//   - "leaflow.fleet.filetransfer.v1.content", lane "bulk": opened by
+//     the receiver of a file, one per file and at most four at a time per
+//     connection. The opener sends one FileContentRequest; the source answers
+//     with FileContent messages, the last of them the end. The receiver
+//     closes the channel with NO_ERROR once it has verified, flushed and
+//     stored the file, or with CANCELLED to stop. Flow control is the
+//     channel's credit, which the receiver returns as it writes.
+//   - "leaflow.fleet.filetransfer.v1.FileSystemService", lane
+//     "interactive": opened by the participant to browse and change files.
+//
+// Transfers. The sender of files offers them with FileTransferOffer. The
+// receiver chooses with FileTransferRequest and the sender confirms with
+// FileTransferResponse before any content is requested; a content request
+// that arrives first waits up to five seconds for its confirmation, then
+// fails. The receiver fetches each regular file over a content channel and
+// reports with FileTransferResult. Bytes nobody asked for are never written.
+//
+// An offer names files by opaque ids and plain names, never by paths of the
+// source. A name is one path component of at most 255 bytes: not empty, not
+// "." or "..", without "/" or NUL. Symbolic links are never transferred.
+// Offers belong to the connection: when it ends, its offers and unfinished
+// files are discarded and nothing resumes; the originals and files already
+// stored remain. File sizes and counts are not limited beyond
+// FileTransferPolicy; a failed file ends with google.rpc.Status and never
+// ends the session. Read-only participants open none of these channels.
+
+// A message on the filetransfer channel, from either end.
+message FileTransferMessage {
+  // The message.
+  oneof message {
+    // Files the sender offers.
+    FileTransferOffer offer = 1;
+    // The receiver chooses files of an offer.
+    FileTransferRequest request = 2;
+    // The sender confirms the files chosen.
+    FileTransferResponse response = 3;
+    // Stops a transfer.
+    FileTransferCancel cancel = 4;
+    // What the receiver stored.
+    FileTransferResult result = 5;
+  }
+}
+
+// Files the sender offers. At most FileTransferPolicy.max_entries entries and
+// 512 KiB.
+message FileTransferOffer {
+  // Chosen by the sender, unique on the connection.
+  string transfer_id = 1;
+  // The files and directories. A directory comes before its contents.
+  repeated FileEntry entries = 2;
+  // The sum of the regular files' sizes.
+  uint64 total_size_bytes = 3;
+  // From the participant only: the directory of the session user to store the
+  // files in, which needs FileTransferPolicy.file_system_allowed. Empty: the
+  // user's private transfer directory. Existing files are never overwritten.
+  string destination_directory = 4;
+}
+
+// One file or directory of an offer.
+message FileEntry {
+  // Chosen by the sender, unique in the offer. Not a path.
+  string file_id = 1;
+  // The directory it is in. Empty for a top-level entry.
+  string parent_id = 2;
+  // Its name.
+  string name = 3;
+  // A regular file or a directory.
+  FileType type = 4;
+  // The exact size of a regular file; 0 for a directory.
+  uint64 size_bytes = 5;
+  // Its media type, such as "text/plain". Empty when unknown.
+  string mime_type = 6;
+}
+
+// The type of a file.
+enum FileType {
+  FILE_TYPE_UNSPECIFIED = 0;
+  // A regular file.
+  FILE_TYPE_REGULAR = 1;
+  // A directory.
+  FILE_TYPE_DIRECTORY = 2;
+  // A symbolic link, listed by ListDirectory but never transferred.
+  FILE_TYPE_SYMBOLIC_LINK = 3;
+}
+
+// The receiver chooses files of an offer.
+message FileTransferRequest {
+  // Chosen by the receiver, unique among its requests on the connection.
+  uint64 request_id = 1;
+  // The offer.
+  string transfer_id = 2;
+  // The regular files, and the directories whose whole contents, it wants.
+  repeated string file_ids = 3;
+  // The files go to the receiver's clipboard once stored. Needs the matching
+  // direction of the participant's ClipboardPolicy as well.
+  bool clipboard = 4;
+}
+
+// The sender confirms the files chosen.
+message FileTransferResponse {
+  // FileTransferRequest.request_id.
+  uint64 request_id = 1;
+  // The offer.
+  string transfer_id = 2;
+  // The files the receiver may fetch.
+  repeated string file_ids = 3;
+  // Why the sender refused. Unset on success.
+  google.rpc.Status error = 4;
+}
+
+// Stops a transfer. Either end; open content channels of it close with
+// CANCELLED.
+message FileTransferCancel {
+  // The transfer.
+  string transfer_id = 1;
+}
+
+// What the receiver stored of an offer. Sent once, when it has fetched
+// everything it chose, or on failure.
+message FileTransferResult {
+  // The transfer.
+  string transfer_id = 1;
+  // The files verified and stored.
+  repeated string file_ids = 2;
+  // Why the rest failed. Unset when nothing failed.
+  google.rpc.Status error = 3;
+}
+
+// Asks for the content of one regular file the sender confirmed. The only
+// message the opener of a content channel sends.
+message FileContentRequest {
+  // The transfer.
+  string transfer_id = 1;
+  // The file.
+  string file_id = 2;
+}
+
+// Part of a file's content, from the source.
+message FileContent {
+  // The part.
+  oneof part {
+    // The next bytes, in order, at most 256 KiB.
+    bytes data = 1;
+    // The end of the file. The last message of the channel.
+    FileContentEnd end = 2;
+  }
+}
+
+// The end of a file. The receiver checks the size and the digest before
+// storing it.
+message FileContentEnd {
+  // SHA-256 of the whole content, 32 bytes. Empty with error.
+  bytes sha256 = 1;
+  // Why the source could not send the file, such as because it changed or
+  // vanished. Unset on success.
+  google.rpc.Status error = 2;
+}
+
+// The files of the session's user, by absolute path. Paths are resolved as
+// that user; an empty path is the user's home directory. Nothing is removed
+// recursively and nothing is overwritten implicitly. Needs
+// FileTransferPolicy.file_system_allowed.
+service FileSystemService {
+  // Lists a directory of at most 4096 entries and 512 KiB, a page at a time.
+  // A page token becomes invalid when the directory changes, and is then
+  // refused with ABORTED.
+  rpc ListDirectory(ListDirectoryRequest) returns (ListDirectoryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Creates a directory.
+  rpc CreateDirectory(CreateDirectoryRequest) returns (CreateDirectoryResponse);
+  // Renames or moves a file or directory.
+  rpc RenameFile(RenameFileRequest) returns (RenameFileResponse);
+  // Removes a file or an empty directory.
+  rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse);
+  // Offers files of the user to the participant, which fetches them as for any
+  // offer.
+  rpc CreateFileOffer(CreateFileOfferRequest) returns (CreateFileOfferResponse);
+}
+
+// The request of ListDirectory.
+message ListDirectoryRequest {
+  // The directory.
+  string path = 1;
+  // At most 256; 0 means 256.
+  uint32 page_size = 2;
+  // From the previous response. Empty for the first page.
+  string page_token = 3;
+}
+
+// The response of ListDirectory.
+message ListDirectoryResponse {
+  // The absolute path that was listed.
+  string path = 1;
+  // The entries of this page.
+  repeated DirectoryEntry entries = 2;
+  // Empty on the last page.
+  string next_page_token = 3;
+}
+
+// One entry of a directory.
+message DirectoryEntry {
+  // Its name.
+  string name = 1;
+  // Its type.
+  FileType type = 2;
+  // The size of a regular file.
+  uint64 size_bytes = 3;
+  // When its content last changed.
+  google.protobuf.Timestamp modified_at = 4;
+  // The POSIX permission bits. Informational only.
+  uint32 mode = 5;
+}
+
+// The request of CreateDirectory.
+message CreateDirectoryRequest {
+  // The directory to create. Its parent must exist.
+  string path = 1;
+}
+
+// The response of CreateDirectory.
+message CreateDirectoryResponse {}
+
+// The request of RenameFile.
+message RenameFileRequest {
+  // The file or directory.
+  string source_path = 1;
+  // Its new path. Fails with ALREADY_EXISTS when something is there.
+  string destination_path = 2;
+}
+
+// The response of RenameFile.
+message RenameFileResponse {}
+
+// The request of RemoveFile.
+message RemoveFileRequest {
+  // The file, or the empty directory.
+  string path = 1;
+}
+
+// The response of RemoveFile.
+message RemoveFileResponse {}
+
+// The request of CreateFileOffer.
+message CreateFileOfferRequest {
+  // The files and directories to offer, with their contents.
+  repeated string paths = 1;
+}
+
+// The response of CreateFileOffer.
+message CreateFileOfferResponse {
+  // The offer, also valid on the filetransfer channel.
+  FileTransferOffer offer = 1;
+}
+
+// What a participant may do with files. Carried in the participant's signed
+// authorization; without it the participant may do none of this.
+message FileTransferPolicy {
+  // The participant may send files to the session.
+  bool upload_allowed = 1;
+  // The participant may receive files from the session.
+  bool download_allowed = 2;
+  // The participant may use FileSystemService and choose where uploads go.
+  bool file_system_allowed = 3;
+  // The most entries, directories included, of one offer. 0: 1024.
+  uint32 max_entries = 4;
+}

@@ -1,0 +1,309 @@
+syntax = "proto3";
+
+package leaflow.fleet.host.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/host/v1;hostv1";
+
+// The sessions a machine hosts: logins of the project's directory accounts
+// (leaflow.fleet.directory.v1) that participants reach end to end through a
+// session process (leaflow.fleet.session.v1). The Fleet service asks the
+// machine's Agent to open and end them, and the Agent reports them. Every
+// call travels on the daemon's control connection (leaflow.fleet.control.v1)
+// and fails there with the reasons of each method in a google.rpc.ErrorInfo
+// of the domain "fleet.leaflow.cloud".
+//
+// Kinds. A session without options is a terminal session: it has one
+// terminal, whose login shell starts when the session opens and whose exit
+// ends the session (leaflow.fleet.terminal.v1), and its participants also use
+// the other domains of the session layer, such as programs, files, ports,
+// sound, devices, printers and approvals. Options add a feature, such as a
+// desktop (leaflow.fleet.virtualdesktop.host.v1 DesktopOptions); the session
+// then offers that feature's domains with those of the session layer, but no
+// terminal.
+//
+// Reconciliation. The daemon reports every session with ReportSessions after
+// every connect and whenever its list of sessions changes, and each change of
+// a session with ReportSessionState. The full report is authoritative for
+// what the daemon observed before it: a session the service holds open on the
+// machine but missing from it has ended, unless a newer report of that
+// session arrived, and a changed boot_id means every earlier session ended.
+// A session the machine reports open that the service holds ended, such as
+// one whose session process the service no longer admits, is ended by the
+// service with TerminateSession. Nothing is replayed after a reconnect.
+//
+// Accounts. A session runs as the directory account of its platform user,
+// admitted by PAM as any login is, and ends when the account may no longer
+// log in (SESSION_CLOSE_REASON_ACCESS_REVOKED).
+//
+// Feature "leaflow.fleet.host.v1" (leaflow.fleet.machine.v1 Feature):
+// AVAILABLE while the Agent's session package is installed. Details, each
+// present when the machine has it:
+//   - "privilege.sudo", "privilege.polkit": elevations a person approves on
+//     a participant (leaflow.fleet.privilege.v1);
+//   - "audio.pulseaudio", "audio.pipewire": sound and the participant's
+//     microphone (leaflow.fleet.audio.v1);
+//   - "camera.v4l2loopback": the participant's camera
+//     (leaflow.fleet.camera.v1);
+//   - "gamepad.uinput": the participant's gamepads (leaflow.fleet.gamepad.v1);
+//   - "printing.cups": printers of the machine besides the participant's
+//     (leaflow.fleet.printing.v1).
+
+// Opens and ends the sessions of a machine. Served by the daemon on its
+// control connection; the service calls it.
+service SessionHostService {
+  // Opens a session for a platform user, as the user's directory account,
+  // and returns once it is ready: its session process started, with what
+  // its options add, such as the X server of a desktop. On a machine, an
+  // account has at most one session with a desktop, since a desktop's
+  // per-user services exist once per account, and at most 8 sessions in all:
+  // sessions without a desktop run side by side, such as one for a program
+  // and one for a person. Calling again with the session_id of an open
+  // session of the same user returns that session.
+  //
+  // Fails with:
+  //   - INVALID_ARGUMENT and reason INVALID_REQUEST for an option of a type
+  //     the Agent does not know or one given twice;
+  //   - FAILED_PRECONDITION and reason FEATURE_UNAVAILABLE for an option of
+  //     a feature the machine does not report available, with metadata
+  //     "feature", the feature's name;
+  //   - NOT_FOUND and reason USER_NOT_FOUND for an account the machine's
+  //     copy of the directory does not hold;
+  //   - PERMISSION_DENIED and reason USER_NOT_ALLOWED for an account that
+  //     may not log in to the machine, one the machine does not serve (a
+  //     conflict) or one outside the groups the machine allows sessions;
+  //   - PERMISSION_DENIED and reason ACCOUNT_EXPIRED when PAM reports the
+  //     account expired (PAM_ACCT_EXPIRED);
+  //   - PERMISSION_DENIED and reason PAM_PERMISSION_DENIED when PAM refuses
+  //     the account or the session (PAM_PERM_DENIED), with metadata
+  //     "pamMessage", the text PAM gave;
+  //   - ALREADY_EXISTS and reason USER_HAS_DESKTOP_SESSION for a session
+  //     with a desktop when the user has one with another id, with metadata
+  //     "sessionId";
+  //   - FAILED_PRECONDITION and reason SESSION_LIMIT_REACHED when the user
+  //     has 8 open sessions on the machine;
+  //   - ALREADY_EXISTS and reason SESSION_ID_CONFLICT when another user's
+  //     session has the id;
+  //   - INTERNAL and reason SESSION_START_FAILED when the session process or
+  //     what its options add failed to start; what had started was undone;
+  //   - the reasons the package of an option lists.
+  // A call without a timeout may run 120 seconds.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Ends a session in order: its programs get SIGTERM and grace_period to
+  // exit, then the session is terminated. Answers once the session is
+  // CLOSED, and at once for one already closed.
+  //
+  // Fails with NOT_FOUND and reason SESSION_NOT_FOUND for a session that
+  // never existed on the machine since it booted.
+  rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Ends a session at once, killing every process in it (logind
+  // TerminateSession). Answers once the session is CLOSED, and at once for
+  // one already closed.
+  //
+  // Fails with NOT_FOUND and reason SESSION_NOT_FOUND for a session that
+  // never existed on the machine since it booted.
+  rpc TerminateSession(TerminateSessionRequest) returns (TerminateSessionResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// Takes the reports of a machine's sessions. Served by the service on daemon
+// connections.
+service SessionRegistryService {
+  // Reports every session of the machine.
+  rpc ReportSessions(ReportSessionsRequest) returns (ReportSessionsResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Reports that a session changed state. Only for a session the service
+  // opened or saw in a full report.
+  // CLOSED is final: later reports of the session are ignored.
+  rpc ReportSessionState(ReportSessionStateRequest) returns (ReportSessionStateResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// A session on a machine.
+message Session {
+  // Chosen by the service: 1 to 40 characters of [a-z0-9-], such as a UUID.
+  // The machine names files and sockets after it.
+  string session_id = 1;
+  // The platform user who owns the session, which logind records as its
+  // RemoteUser.
+  string user_id = 2;
+  // The directory account (PAM_USER).
+  string username = 3;
+  // The account's user id.
+  uint32 uid = 4;
+  // Where it is in its life.
+  SessionState state = 5;
+  // The logind session (XDG_SESSION_ID).
+  string xdg_session_id = 6;
+  // When it was opened.
+  google.protobuf.Timestamp created_at = 7;
+  // The last input of a person in the session. Informational.
+  google.protobuf.Timestamp last_input_at = 8;
+  // Why the session ended. CLOSED only.
+  SessionCloseReason close_reason = 10;
+  // Plain text for logs about close_reason, at most 1024 bytes.
+  string reason_phrase = 11;
+  // The state of what its options added, at most one of each type, such as
+  // leaflow.fleet.virtualdesktop.host.v1 DesktopState. A type the service does
+  // not know is ignored.
+  repeated google.protobuf.Any details = 12;
+}
+
+// Where a session is in its life.
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  // The PAM session opens and the session process starts.
+  SESSION_STATE_OPENING = 1;
+  // Logged in: the session runs.
+  SESSION_STATE_OPEN = 2;
+  // Logged out; its processes are being cleaned up.
+  SESSION_STATE_CLOSING = 4;
+  // Gone.
+  SESSION_STATE_CLOSED = 5;
+}
+
+// Why a session ended.
+enum SessionCloseReason {
+  SESSION_CLOSE_REASON_UNSPECIFIED = 0;
+  // CloseSession was called.
+  SESSION_CLOSE_REASON_CLOSE_REQUESTED = 1;
+  // TerminateSession was called.
+  SESSION_CLOSE_REASON_TERMINATE_REQUESTED = 2;
+  // The user logged out, such as when the shell of a terminal session
+  // exited.
+  SESSION_CLOSE_REASON_LOGOUT = 3;
+  // SessionPolicy.disconnected_timeout passed.
+  SESSION_CLOSE_REASON_DISCONNECTED_TIMEOUT = 4;
+  // SessionPolicy.no_participant_timeout passed.
+  SESSION_CLOSE_REASON_NO_PARTICIPANT_TIMEOUT = 5;
+  // SessionPolicy.max_lifetime passed.
+  SESSION_CLOSE_REASON_MAX_LIFETIME = 6;
+  // What an option added and the session cannot go on without exited
+  // unexpectedly, such as the X server of a desktop.
+  SESSION_CLOSE_REASON_DISPLAY_EXIT = 7;
+  // The session process died, and the daemon cleaned up what was left.
+  SESSION_CLOSE_REASON_PROCESS_LOST = 8;
+  // Opening failed and was undone.
+  SESSION_CLOSE_REASON_OPEN_FAILED = 9;
+  // The account may no longer log in to the machine.
+  SESSION_CLOSE_REASON_ACCESS_REVOKED = 10;
+}
+
+// Timeouts and limits of a session, which the daemon enforces even while the
+// service is unreachable. A timeout that is unset or zero is off.
+message SessionPolicy {
+  // Ends the session this long after its last participant left (xrdp
+  // DisconnectedTimeLimit).
+  google.protobuf.Duration disconnected_timeout = 1;
+  // Ends the session this long after it opened.
+  google.protobuf.Duration max_lifetime = 2;
+  // Ends the session when no participant came this long after it opened.
+  google.protobuf.Duration no_participant_timeout = 3;
+  // Limits on the user's resources.
+  ResourceControl resource_control = 4;
+}
+
+// Limits on the resources of the user's slice (user-UID.slice), as
+// systemd.resource-control(5) properties. 0: not set.
+message ResourceControl {
+  // MemoryHigh=, in bytes: where throttling starts.
+  uint64 memory_high_bytes = 1;
+  // MemoryMax=, in bytes: the hard limit.
+  uint64 memory_max_bytes = 2;
+  // CPUWeight=, 1 to 10000.
+  uint32 cpu_weight = 3;
+  // CPUQuota=, in percent of one CPU; above 100 on several CPUs.
+  uint32 cpu_quota_percent = 4;
+  // TasksMax=.
+  uint32 tasks_max = 5;
+}
+
+// The request of OpenSession.
+message OpenSessionRequest {
+  // The id of the new session, in the format of Session.session_id.
+  string session_id = 1;
+  // The platform user who will own it.
+  string user_id = 2;
+  // The platform user's directory account. The daemon only checks that the
+  // account may have a session.
+  string username = 3;
+  // The address of the participant that asked, for PAM_RHOST and logind's
+  // RemoteHost. Empty: the service's host name, so that the session is
+  // always remote.
+  string remote_host = 4;
+  // Timeouts and limits.
+  SessionPolicy policy = 5;
+  // What the session has besides the session layer, at most one of each
+  // type, such as leaflow.fleet.virtualdesktop.host.v1 DesktopOptions. None: a
+  // session without a desktop.
+  repeated google.protobuf.Any options = 6;
+}
+
+// The response of OpenSession.
+message OpenSessionResponse {
+  // The session, OPEN.
+  Session session = 1;
+}
+
+// The request of CloseSession.
+message CloseSessionRequest {
+  // The session.
+  string session_id = 1;
+  // How long programs get to exit after SIGTERM. Unset: the daemon's
+  // default.
+  google.protobuf.Duration grace_period = 2;
+}
+
+// The response of CloseSession.
+message CloseSessionResponse {}
+
+// The request of TerminateSession.
+message TerminateSessionRequest {
+  // The session.
+  string session_id = 1;
+}
+
+// The response of TerminateSession.
+message TerminateSessionResponse {}
+
+// The request of ReportSessions.
+message ReportSessionsRequest {
+  // /proc/sys/kernel/random/boot_id, new on every boot.
+  string boot_id = 1;
+  // Every session since the machine booted, closed ones included until a
+  // report that carried them closed was answered with success.
+  repeated Session sessions = 2;
+  // Orders the reports the daemon sends on this connection by when it
+  // observed what they report (leaflow.fleet.control.v1 Reports): it
+  // increases with every report, 1 for the first, and a report sent again
+  // keeps its sequence.
+  uint64 sequence = 3;
+}
+
+// The response of ReportSessions.
+message ReportSessionsResponse {}
+
+// The request of ReportSessionState.
+message ReportSessionStateRequest {
+  // The session as it is now. Its user_id must be the one the service holds
+  // for it.
+  Session session = 1;
+  // Orders the reports the daemon sends on this connection by when it
+  // observed what they report (leaflow.fleet.control.v1 Reports): it
+  // increases with every report, 1 for the first, and a report sent again
+  // keeps its sequence.
+  uint64 sequence = 2;
+}
+
+// The response of ReportSessionState.
+message ReportSessionStateResponse {}

@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.display.v1;
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/display/v1;displayv1";
+
+// The canvas of the virtual desktop: its size, the part windows may use and
+// how the session presents it; also the geometry and image types the other
+// packages share.
+//
+// Coordinates. The canvas is the X root window. One canvas pixel is one CSS
+// pixel of the participant; the origin is the top-left corner, x grows to the
+// right and y downward. Every field holding a Rectangle states whether it is
+// in canvas coordinates or relative to a window.
+//
+// Channel type "leaflow.fleet.virtualdesktop.display.v1", lane "metadata". The
+// participant opens one per connection. It starts with a snapshot: Display,
+// then SnapshotEnd.
+
+// A message from the participant.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // The participant's viewport changed.
+    DisplayConfigure configure = 1;
+  }
+}
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The canvas as it is now, in full.
+    Display display = 1;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 2;
+  }
+}
+
+// How the session presents its windows. Fixed for the life of the session.
+enum SessionMode {
+  SESSION_MODE_UNSPECIFIED = 0;
+  // Every application window is sent on its own and the participant composes
+  // them; the Agent is the window manager (Xpra seamless mode; MS-RDPERP
+  // RemoteApp).
+  SESSION_MODE_SEAMLESS = 1;
+  // A desktop environment runs in the session and the whole canvas is sent
+  // as one window (Xpra desktop mode).
+  SESSION_MODE_DESKTOP = 2;
+}
+
+// The canvas. Sent in the snapshot and whenever any field changes.
+message Display {
+  // How the session presents its windows.
+  SessionMode session_mode = 1;
+  // The canvas size.
+  Size size = 2;
+  // The largest size the canvas can take.
+  Size max_size = 3;
+  // The part of the canvas windows are placed and maximized in, in canvas
+  // coordinates (EWMH _NET_WORKAREA).
+  Rectangle work_area = 4;
+  // In SESSION_MODE_DESKTOP, the window that carries the whole canvas.
+  optional uint64 root_window_id = 5;
+}
+
+// The participant's viewport, sent when the channel opens and after the
+// viewport or the device pixel ratio changes, debounced (Xpra
+// configure-display; MS-RDPEDISP DISPLAYCONTROL_MONITOR_LAYOUT_PDU). The
+// session remembers the latest of every participant and applies the driver's:
+// the canvas follows one participant at a time (see the window channel).
+// Read-only participants never drive, and the DisplayConfigure of a participant
+// that shows native windows is ignored.
+message DisplayConfigure {
+  // The viewport size in CSS pixels. The session clamps it to
+  // Display.max_size. Even sizes avoid encoder padding.
+  Size size = 1;
+  // window.devicePixelRatio of the participant (CSSOM View), greater than 0 and
+  // at most 8.
+  double device_pixel_ratio = 2;
+  // The part of the viewport the participant's own interface leaves free, in
+  // canvas coordinates. Unset: all of it.
+  Rectangle work_area = 3;
+  // The decorations the participant draws around decorated windows. The session
+  // reports them to applications as _NET_FRAME_EXTENTS. Unset: none.
+  FrameExtents frame_extents = 4;
+  // Makes this participant the driver and applies its configuration now. A
+  // participant leaves it false when it only reports its viewport, such as when
+  // it joins a session somebody else is using.
+  bool drive = 5;
+}
+
+// The widths of the decorations around a window, in pixels (EWMH
+// _NET_FRAME_EXTENTS).
+message FrameExtents {
+  // The left border.
+  uint32 left = 1;
+  // The right border.
+  uint32 right = 2;
+  // The top border, title bar included.
+  uint32 top = 3;
+  // The bottom border.
+  uint32 bottom = 4;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// A size in pixels.
+message Size {
+  // The width.
+  uint32 width = 1;
+  // The height.
+  uint32 height = 2;
+}
+
+// An axis-aligned rectangle in pixels (X11 RECTANGLE). The field that holds it
+// states the coordinate space.
+message Rectangle {
+  // The left edge. Negative when it lies left of the origin.
+  sint32 x = 1;
+  // The top edge. Negative when it lies above the origin.
+  sint32 y = 2;
+  // The width.
+  uint32 width = 3;
+  // The height.
+  uint32 height = 4;
+}
+
+// A still image, such as an icon, sent as PNG. It comes from the session, so
+// the participant decodes it only as a bitmap.
+//
+// Each channel caches the last 256 images it carried, keyed by content_hash and
+// evicting the least recently used; the cache starts empty when the channel
+// opens. Both ends apply every Image of a channel in order: the image becomes
+// the most recently used, and an Image with data adds its entry. The session
+// mirrors the participant's cache and leaves data empty only for an image the
+// participant holds. A participant that still meets an unknown hash without
+// data falls back to Icon.icon_name or a placeholder.
+message Image {
+  // Always "image/png".
+  string mime_type = 1;
+  // The PNG. Empty when the receiver holds content_hash in this channel's
+  // cache.
+  bytes data = 2;
+  // The size of the PNG.
+  Size size = 3;
+  // SHA-256 of the PNG, 32 bytes. Set even when data is empty.
+  bytes content_hash = 4;
+}
+
+// One icon at one or more sizes (EWMH _NET_WM_ICON; StatusNotifierItem
+// IconPixmap; freedesktop Icon Theme Specification).
+message Icon {
+  // The icon at each size, smallest first.
+  repeated Image images = 1;
+  // The icon's name in the freedesktop icon theme, such as
+  // "org.gnome.Nautilus". Empty when unknown.
+  string icon_name = 2;
+}

@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package leaflow.fleet.camera.v1;
+
+import "google/protobuf/duration.proto";
+import "leaflow/fleet/device/v1/device.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/camera/v1;camerav1";
+
+// The participant's camera as the session's video capture device (after
+// MS-RDPECAM). The session decodes the frames and feeds the pixels to the
+// private capture device of the session's user. Paths and handles of the
+// participant's devices never travel.
+//
+// Channel types:
+//   - "leaflow.fleet.camera.v1", lane "metadata": opened by the participant
+//     that provides the camera (see the device package), only while its demand
+//     is ACTIVE and after its person agreed. The participant sends one
+//     CameraRequest; the session sends CameraServerMessage: the grant, key
+//     frame requests, and the end when it stops the stream. Closing the channel
+//     stops the camera at once.
+//   - "leaflow.fleet.camera.v1.frame", lane "media": opened by the participant,
+//     one per frame, after the grant. It carries one CameraFrame, then closes.
+//     The participant abandons a frame that a newer one overtook by closing its
+//     channel with CANCELLED; nothing of an incomplete frame reaches the
+//     capture device.
+
+// Asks to provide the camera.
+message CameraRequest {
+  // The formats the participant can produce, most preferred first, at most 8.
+  repeated CameraFormat formats = 1;
+}
+
+// A message from the session on the camera channel.
+message CameraServerMessage {
+  // The message.
+  oneof message {
+    // The session accepts the stream. The first message.
+    CameraGrant grant = 1;
+    // Asks for a key frame.
+    KeyFrameRequest key_frame_request = 2;
+    // The session ends the stream. The last message.
+    leaflow.fleet.device.v1.CaptureEnd end = 3;
+  }
+}
+
+// The session accepts a camera stream, within limits fixed until the channel
+// closes. A change of format needs a new channel.
+message CameraGrant {
+  // One of CameraRequest.formats, within the effective CameraLimits.
+  CameraFormat format = 1;
+  // The largest CameraFrame.data.
+  uint32 max_frame_size_bytes = 2;
+  // The most frames in flight, at most 2.
+  uint32 max_queued_frames = 3;
+  // The oldest a frame in flight may get, at most 200 milliseconds.
+  google.protobuf.Duration max_queue_time = 4;
+  // The participant stops capturing after this long; the session ends the
+  // stream with DEADLINE_EXCEEDED then.
+  google.protobuf.Duration max_capture_duration = 5;
+}
+
+// A format of camera frames.
+message CameraFormat {
+  // How frames are encoded.
+  CameraEncoding encoding = 1;
+  // The frame width in pixels.
+  uint32 width = 2;
+  // The frame height in pixels.
+  uint32 height = 3;
+  // The most frames per second, as a fraction: frame_rate_numerator divided
+  // by frame_rate_denominator, such as 10/1. Sources may deliver fewer.
+  uint32 frame_rate_numerator = 4;
+  // See frame_rate_numerator. Not 0.
+  uint32 frame_rate_denominator = 5;
+  // JPEG: "image/jpeg". H264: the WebCodecs codec string, such as
+  // "avc1.42E01F".
+  string codec = 6;
+  // H264 only: the AVCDecoderConfigurationRecord (WebCodecs
+  // VideoDecoderConfig.description).
+  bytes description = 7;
+}
+
+// How camera frames are encoded.
+enum CameraEncoding {
+  CAMERA_ENCODING_UNSPECIFIED = 0;
+  // Every frame is one complete JPEG (ISO/IEC 10918-1), as a browser makes
+  // it from a captured VideoFrame.
+  CAMERA_ENCODING_JPEG = 1;
+  // H.264, one complete access unit in AVC format per frame. Offered only
+  // when the participant can encode it.
+  CAMERA_ENCODING_H264 = 2;
+}
+
+// One frame.
+message CameraFrame {
+  // Grows by one with every frame of the camera channel, starting at 1. The
+  // session drops a frame older than one it has shown.
+  uint64 sequence = 1;
+  // The capture time in microseconds, on the participant's media clock.
+  int64 timestamp_us = 2;
+  // Its duration in microseconds. 0 when unknown.
+  uint32 duration_us = 3;
+  // The frame decodes on its own: always for JPEG; for H264 an IDR frame of
+  // the granted configuration.
+  bool key_frame = 4;
+  // The encoded frame, at most CameraGrant.max_frame_size_bytes.
+  bytes data = 5;
+}
+
+// Asks for a key frame after a frame was lost, abandoned or not decodable.
+// The session drops H264 frames until a key frame; the participant sends one
+// soon, or the session ends the stream.
+message KeyFrameRequest {
+  // The last frame the session used.
+  uint64 after_sequence = 1;
+}

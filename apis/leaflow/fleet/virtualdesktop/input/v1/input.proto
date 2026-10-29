@@ -1,0 +1,608 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.input.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/input/v1;inputv1";
+
+// Keyboard, pointer and text input.
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.input.v1", lane "input": opened by the
+//     participant, one per connection. The participant sends ClientMessage,
+//     input as a keyboard, pointer or touch screen gives it; PointerMotion
+//     travels as a Datagram of the channel. The session sends ServerMessage:
+//     the state of the focused editor and dropped input.
+//   - "leaflow.fleet.virtualdesktop.input.v1.InputService", lane "input":
+//     opened by a participant that operates the session through calls, to
+//     inject input and learn where it went.
+//
+// The session ignores input from read-only participants. Input on the input
+// channel always takes the input lease (leaflow.fleet.virtualdesktop.lease.v1),
+// from whoever held it.
+//
+// Order. Every message of the participant on the input channel carries
+// input_seq from one counter of the connection, starting at 1. Everything but
+// PointerMotion travels in order on the channel; PointerMotion travels as a
+// datagram and may overtake or trail it. The session therefore drops a motion
+// whose input_seq is below the highest it has applied, and a motion whose
+// after_input_seq names input it has not applied yet. After sending other input
+// the participant sends one motion with the current position in the next
+// animation frame, so that hover effects catch up.
+//
+// Driver. A press of a key or button, a wheel turn or inserted text from a
+// participant that has a viewport makes it the driver (see the window channel).
+// Releases belong to the press they end and never change the driver; neither
+// does pointer motion.
+//
+// Coordinates. A pointer position is a window and a point relative to it, so
+// that the participant may lay windows out differently from the session. In a
+// desktop session the window is the one carrying the whole canvas. Points
+// may lie outside the window during a pointer grab.
+//
+// Clipboard before paste. The clipboard travels on its own channel, so a
+// paste could overtake its content. KeyEvent and PointerButton therefore name
+// the clipboard content they need, and the session holds them until the
+// session owns the selection with that content. Later input waits behind
+// them in order. When it fails, is replaced or takes more than 2 seconds the
+// dependent input is dropped with InputError and older content is never
+// pasted; releases of keys and buttons pressed before are still applied.
+//
+// Text input. The participant's own input method composes text, as its person
+// knows it, and the session hands the result to the native input context of
+// the focused editor in the session (IBus or another input method
+// framework). The session reports the focused editor with TextInputState.
+// Plain text goes as InsertText. A composition in progress goes as
+// Composition messages, so that the application shows the preedit text, and
+// the real keys the input method consumes while composing go along as its
+// KEY phases. An editor is identified by window_id, input_context_id and
+// focus_serial; text bound to an editor that has since changed is cancelled,
+// never redirected to another one.
+//
+// Keys. A KeyEvent is a physical key the person pressed. Applications and the
+// native input method interpret it; missing caret geometry or an uncertain
+// text delivery never suppresses it.
+
+// A message from the participant on the input channel.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // A key was pressed or released.
+    KeyEvent key_event = 1;
+    // The pointer moved. Sent as a Datagram.
+    PointerMotion pointer_motion = 2;
+    // A pointer button was pressed or released.
+    PointerButton pointer_button = 3;
+    // The wheel or touchpad scrolled.
+    PointerWheel pointer_wheel = 4;
+    // Text to insert.
+    InsertText insert_text = 5;
+    // A step of a composition of the participant's input method.
+    Composition composition = 6;
+  }
+}
+
+// A message from the session on the input channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The focused text field changed.
+    TextInputState text_input_state = 1;
+    // Key, pointer or wheel input was dropped.
+    InputError input_error = 2;
+    // Inserted or composed text was dropped.
+    TextInputError text_input_error = 3;
+  }
+}
+
+// A physical key was pressed or released (RFC 6143 KeyEvent). The session
+// turns off X auto-repeat; the participant sends its repeated key presses as
+// further presses, and releases every pressed key when it loses focus.
+message KeyEvent {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // A press or a release.
+  bool pressed = 2;
+  // The X keysym, such as 0x61 for "a" or 0xff0d for Return, or 0x01000000
+  // plus the code point for other characters. A release carries the keysym
+  // of its press. 0 when unknown; the session then uses code.
+  uint32 keysym = 3;
+  // The physical key as a W3C UI Events KeyboardEvent code value, such as
+  // "KeyA". Empty when unknown.
+  string code = 4;
+  // The lock keys after the event, so a Caps Lock press carries the new
+  // state. The session sets its lock modifiers to match before typing the key,
+  // compensating Shift for the letters Caps Lock inverts, and applies a lock
+  // key press as state instead of typing it. Unset: every lock is off.
+  LockKeyState lock_key_state = 5;
+  // The window the participant shows focused. When another window has the X
+  // focus the session activates this one first, because a WindowActivate sent
+  // on the window channel may arrive later. 0: the window with the X focus. For
+  // a window that is gone, presses are dropped and releases still typed.
+  uint64 window_id = 6;
+  // The sequence of the latest clipboard content this participant offered,
+  // until the session confirmed it. See "Clipboard before paste".
+  optional uint64 clipboard_sequence = 7;
+}
+
+// The state of the lock keys (MS-RDPBCGR TS_SYNC_EVENT; W3C UI Events
+// getModifierState).
+message LockKeyState {
+  // Caps Lock is on.
+  bool caps_lock = 1;
+  // Num Lock is on.
+  bool num_lock = 2;
+  // Scroll Lock is on.
+  bool scroll_lock = 3;
+}
+
+// The pointer moved (RFC 6143 PointerEvent; Xpra pointer-motion). Only the
+// latest position matters; at most one per animation frame.
+message PointerMotion {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // The window the point is relative to.
+  uint64 window_id = 2;
+  // The point.
+  sint32 x = 3;
+  // See x.
+  sint32 y = 4;
+  // input_seq of the last other input the participant sent before this motion;
+  // 0 when none.
+  uint64 after_input_seq = 5;
+}
+
+// A pointer button was pressed or released. It carries its own position, and
+// the session moves the pointer there first, so a lost motion never moves a
+// click.
+message PointerButton {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // The window the point is relative to.
+  uint64 window_id = 2;
+  // The point.
+  sint32 x = 3;
+  // See x.
+  sint32 y = 4;
+  // The X button number from 1: 1 left, 2 middle, 3 right, 8 back, 9
+  // forward. Scrolling uses PointerWheel.
+  uint32 button = 5;
+  // A press or a release.
+  bool pressed = 6;
+  // The sequence of the latest clipboard content this participant offered,
+  // until the session confirmed it. See "Clipboard before paste".
+  optional uint64 clipboard_sequence = 7;
+}
+
+// The wheel or touchpad scrolled. The participant adds up the deltas of an
+// animation frame into one message; the session turns every 120 units into
+// one X button 4 to 7 click and keeps the remainder.
+message PointerWheel {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // The window the point is relative to.
+  uint64 window_id = 2;
+  // The point.
+  sint32 x = 3;
+  // See x.
+  sint32 y = 4;
+  // Horizontal scroll in value120 units (Wayland wl_pointer axis_value120);
+  // positive scrolls right.
+  sint32 delta_x = 5;
+  // Vertical scroll in value120 units; positive scrolls down.
+  sint32 delta_y = 6;
+}
+
+// The focused editor of the session, as its native input method context
+// reports it. Sent when the input channel opens and whenever the focus, the
+// caret or the editor changes.
+message TextInputState {
+  // The window of the focused editor. 0 when no window has focus.
+  uint64 window_id = 1;
+  // An editable control or a terminal has focus and accepts text, whether
+  // or not its caret is known. The participant keeps a local text field focused
+  // while it is set, so that its own input method can start.
+  bool enabled = 2;
+  // The caret, relative to the window, for placing the input method's
+  // candidate window. Unset when the application does not report it
+  // reliably; text input still works.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle cursor_rectangle = 3;
+  // Window.resize_counter the rectangles belong to. The participant does not
+  // apply rectangles of an earlier window size.
+  uint64 resize_counter = 4;
+  // Where cursor_rectangle came from. UNSPECIFIED when it is unset.
+  CursorSource cursor_source = 5;
+  // Identifies the focused editor within the session, opaque. Different
+  // editors of one window differ; moving the caret or resizing does not change
+  // it. Empty when nothing editable has focus or it cannot be verified.
+  string input_context_id = 6;
+  // Grows whenever editing focus moves, is lost or comes back; not when the
+  // caret moves. Compositions and composed text are bound to it.
+  uint64 focus_serial = 7;
+  // The bounds of the focused control, relative to the window (AT-SPI2
+  // Component.GetExtents; EditContext controlBounds). The participant may
+  // anchor its candidate window there when cursor_rectangle is unset; it never
+  // treats it as the caret.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle control_rectangle = 8;
+  // The editor's native input context takes Composition messages: preedit
+  // text and the real keys consumed while composing. Otherwise the participant
+  // sends only InsertText.
+  bool composition_supported = 9;
+}
+
+// Where a caret rectangle came from.
+enum CursorSource {
+  CURSOR_SOURCE_UNSPECIFIED = 0;
+  // The native input context reported it, such as by IBus
+  // SetCursorLocation.
+  CURSOR_SOURCE_INPUT_CONTEXT = 1;
+  // An empty accessibility text range at the insertion point.
+  CURSOR_SOURCE_TEXT_RANGE = 2;
+  // The bounds of the character boundary at the accessibility caret offset.
+  // The extent of the preceding character never stands in for it.
+  CURSOR_SOURCE_CHARACTER_BOUNDARY = 3;
+}
+
+// Text to insert (W3C Input Events inputType).
+message InsertText {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // The text, UTF-8. Not empty.
+  string text = 2;
+  // The window of the editor, from TextInputState. A window that is gone or
+  // no longer focused cancels the insertion; it is never activated for it.
+  uint64 window_id = 3;
+  // TextInputState.input_context_id of the editor.
+  string input_context_id = 4;
+  // TextInputState.focus_serial when the composition began. Checked for
+  // INSERT_FROM_COMPOSITION only.
+  uint64 focus_serial = 5;
+  // What the insertion is.
+  InputType input_type = 6;
+}
+
+// What an insertion is (W3C Input Events inputType).
+enum InputType {
+  INPUT_TYPE_UNSPECIFIED = 0;
+  // Ordinary text ("insertText"), such as from a virtual keyboard. It goes to
+  // the editor focused once the input before it has been applied.
+  INPUT_TYPE_INSERT_TEXT = 1;
+  // The result of a composition ("insertFromComposition"). It goes only to
+  // the editor the composition began in, and is cancelled when that editor
+  // lost focus since.
+  INPUT_TYPE_INSERT_FROM_COMPOSITION = 2;
+}
+
+// A step of a composition of the participant's input method (W3C UI Events
+// CompositionEvent; EditContext). Sent only while
+// TextInputState.composition_supported is set.
+message Composition {
+  // The position in the input order.
+  uint64 input_seq = 1;
+  // The window of the editor.
+  uint64 window_id = 2;
+  // TextInputState.input_context_id of the editor.
+  string input_context_id = 3;
+  // TextInputState.focus_serial when the composition began.
+  uint64 focus_serial = 4;
+  // Window.resize_counter when the composition began.
+  uint64 resize_counter = 5;
+  // Chosen by the participant at BEGIN, unique on the connection; the later
+  // phases repeat it.
+  uint64 composition_id = 6;
+  // The step.
+  CompositionPhase phase = 7;
+  // UPDATE and COMMIT: the preedit or committed text, UTF-8, at most 64 KiB.
+  // May be empty to end an empty composition. Empty for the other phases.
+  string text = 8;
+  // UPDATE and COMMIT: the start of the preedit selection, in UTF-16 code
+  // units as EditContext counts them, on a code point boundary. 0 for the
+  // other phases.
+  uint32 selection_start = 9;
+  // The end of the preedit selection, not before selection_start.
+  uint32 selection_end = 10;
+  // KEY only: the key.
+  CompositionKey key = 11;
+}
+
+// A step of a composition.
+enum CompositionPhase {
+  COMPOSITION_PHASE_UNSPECIFIED = 0;
+  // A composition begins ("compositionstart").
+  COMPOSITION_PHASE_BEGIN = 1;
+  // The preedit text changed ("compositionupdate").
+  COMPOSITION_PHASE_UPDATE = 2;
+  // A real key the input method consumed while composing. The session hands
+  // it to the editor's native input context and waits until that context
+  // consumed it.
+  COMPOSITION_PHASE_KEY = 3;
+  // The composition ended with text ("compositionend").
+  COMPOSITION_PHASE_COMMIT = 4;
+  // The composition was abandoned.
+  COMPOSITION_PHASE_CANCEL = 5;
+}
+
+// A real key consumed while composing. Never made up from text.
+message CompositionKey {
+  // A press or a release.
+  bool pressed = 1;
+  // The W3C UI Events KeyboardEvent code value of the actual event, at most
+  // 64 bytes. A key without a code is not sent.
+  string code = 2;
+  // The lock keys, as in KeyEvent.
+  LockKeyState lock_key_state = 3;
+}
+
+// The session dropped a KeyEvent, PointerButton or PointerWheel. Its
+// google.rpc.ErrorInfo reason is one of:
+//   CLIPBOARD_INPUT_DEPENDENCY_FAILED  the clipboard content it named was not
+//                                      in place in time;
+//   INPUT_QUEUE_FULL                   too much input waited to be applied.
+message InputError {
+  // input_seq of the dropped input.
+  uint64 input_seq = 1;
+  // Its window.
+  uint64 window_id = 2;
+  // Why.
+  google.rpc.Status error = 3;
+}
+
+// The session dropped an InsertText or a Composition. Its
+// google.rpc.ErrorInfo reason is one of:
+//   TEXT_INPUT_CONTEXT_CHANGED    the editor of the text changed;
+//   TEXT_INPUT_NOT_DELIVERED      the text could not be handed over;
+//   TEXT_INPUT_UNCONFIRMED        the application did not confirm the text
+//                                 (see paused);
+//   NATIVE_COMPOSITION_CANCELLED  the native input context ended the
+//                                 composition.
+message TextInputError {
+  // input_seq of the dropped input.
+  uint64 input_seq = 1;
+  // Its window.
+  uint64 window_id = 2;
+  // The editor it was bound to, as when it was sent.
+  string input_context_id = 3;
+  // Its focus_serial, as when it was sent.
+  uint64 focus_serial = 4;
+  // The composition cancelled with it. 0: none. The participant ends only this
+  // composition; new ones may begin in the same editor.
+  uint64 composition_id = 5;
+  // Text input of this participant is paused: the session dropped text whose
+  // delivery the application did not confirm, without replaying it. Pointer,
+  // key and window input go on. Text is accepted again once a TextInputState
+  // names an editor with a larger focus_serial.
+  bool paused = 6;
+  // Why.
+  google.rpc.Status error = 7;
+}
+
+// Input through calls. Gestures run in the session as a whole, with the timing
+// of a person, so that double clicks, drags and key chords work whatever the
+// network delay (after the Chrome DevTools Protocol Input domain). Keys are
+// named as X keysym names (XStringToKeysym), such as "Return", "Control_L",
+// "F13" or "U20AC", or given as a single character, such as "/"; an unknown
+// name fails with INVALID_ARGUMENT and reason UNKNOWN_KEYSYM (metadata
+// "keysym"). Every call follows the rules for operation calls
+// (leaflow.fleet.virtualdesktop.lease.v1) and returns the session revision at
+// which it took effect.
+//
+// What a gesture presses is released when its call ends, however it ends. Keys
+// and buttons pressed with DispatchKey and DispatchPointerButton stay down
+// until released, until the participant leaves or until another participant
+// takes the input lease. A press of a pointer button brings the window it goes
+// to to the front, as a person's click does.
+//
+// Besides the refusals of those rules, calls fail with:
+//   - NOT_FOUND and reason WINDOW_NOT_FOUND for a window that is gone
+//     (metadata "windowId");
+//   - FAILED_PRECONDITION and reason WINDOW_HIDDEN for a minimized window;
+//   - FAILED_PRECONDITION and reason WINDOW_RESIZED, see Point;
+//   - INVALID_ARGUMENT and reason OUT_OF_BOUNDS for a point outside its
+//     window or the canvas;
+//   - FAILED_PRECONDITION and reason WINDOW_NOT_ACTIVATED when the window
+//     could not be brought to the front or given the keyboard focus;
+//   - UNAVAILABLE and reason INPUT_UNAVAILABLE when the window system did not
+//     apply the input in time;
+//   - for TypeText, FAILED_PRECONDITION and reason TEXT_INPUT_NOT_DELIVERED
+//     when the text was not handed to the editor, or TEXT_INPUT_UNCONFIRMED
+//     when the application did not confirm it (EXECUTION_STATE_UNKNOWN).
+service InputService {
+  // Clicks a point, once or up to three times in a row.
+  rpc Click(ClickRequest) returns (ClickResponse);
+  // Moves the pointer to a point.
+  rpc MovePointer(MovePointerRequest) returns (MovePointerResponse);
+  // Scrolls at a point.
+  rpc Scroll(ScrollRequest) returns (ScrollResponse);
+  // Presses a button at one point, moves to another and releases it there.
+  rpc Drag(DragRequest) returns (DragResponse);
+  // Presses keys in order and releases them in reverse, such as
+  // ["Control_L", "s"].
+  rpc PressKeys(PressKeysRequest) returns (PressKeysResponse);
+  // Types text into the focused editor the way a participant's InsertText goes:
+  // through its input method context when it has one, else its accessible
+  // text interface, and into a terminal as keys.
+  rpc TypeText(TypeTextRequest) returns (TypeTextResponse);
+  // Presses or releases a pointer button, for gestures the calls above do
+  // not cover, such as a long press.
+  rpc DispatchPointerButton(DispatchPointerButtonRequest) returns (DispatchPointerButtonResponse);
+  // Presses or releases a key, for gestures the calls above do not cover.
+  rpc DispatchKey(DispatchKeyRequest) returns (DispatchKeyResponse);
+  // Returns where the pointer is (X11 QueryPointer).
+  rpc GetPointerPosition(GetPointerPositionRequest) returns (GetPointerPositionResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// A point for input through calls.
+message Point {
+  // The window the point is relative to. 0: canvas coordinates; the input
+  // goes to the window shown there.
+  uint64 window_id = 1;
+  // The point, within the window's client area.
+  sint32 x = 2;
+  // See x.
+  sint32 y = 3;
+  // Window.resize_counter the caller saw, such as in a capture. When the
+  // window's size changed since, the call fails with FAILED_PRECONDITION and
+  // reason WINDOW_RESIZED, before anything happens. 0: not checked.
+  uint64 resize_counter = 4;
+}
+
+// The request of Click.
+message ClickRequest {
+  // Where.
+  Point point = 1;
+  // The X button number, as in PointerButton. 0: 1.
+  uint32 button = 2;
+  // Clicks in a row, 1 to 3. 0: 1.
+  uint32 count = 3;
+  // Modifier keys held during the click, at most 8, such as ["Control_L"].
+  repeated string modifiers = 4;
+}
+
+// The response of Click.
+message ClickResponse {
+  // The window that received the click. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the click ended.
+  uint64 revision = 2;
+}
+
+// The request of MovePointer.
+message MovePointerRequest {
+  // Where.
+  Point point = 1;
+}
+
+// The response of MovePointer.
+message MovePointerResponse {
+  // The window under the pointer. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the pointer arrived.
+  uint64 revision = 2;
+}
+
+// The request of Scroll.
+message ScrollRequest {
+  // Where the pointer is while scrolling.
+  Point point = 1;
+  // Horizontal scroll in value120 units, as PointerWheel, at most 12000
+  // either way; positive scrolls right.
+  sint32 delta_x = 2;
+  // Vertical scroll in value120 units, at most 12000 either way; positive
+  // scrolls down.
+  sint32 delta_y = 3;
+  // Modifier keys held while scrolling.
+  repeated string modifiers = 4;
+}
+
+// The response of Scroll.
+message ScrollResponse {
+  // The window that received the scroll. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the scroll ended.
+  uint64 revision = 2;
+}
+
+// The request of Drag.
+message DragRequest {
+  // Where the button goes down.
+  Point start = 1;
+  // Where it comes up.
+  Point end = 2;
+  // The X button number. 0: 1.
+  uint32 button = 3;
+  // Modifier keys held during the drag.
+  repeated string modifiers = 4;
+  // How long the pointer takes from start to end, at most 5 seconds. Unset:
+  // 350 milliseconds.
+  google.protobuf.Duration duration = 5;
+}
+
+// The response of Drag.
+message DragResponse {
+  // The window under the end point. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the button came up.
+  uint64 revision = 2;
+}
+
+// The request of PressKeys.
+message PressKeysRequest {
+  // The keys, 1 to 8, pressed in this order and released in reverse.
+  repeated string keys = 1;
+  // The window to activate first. 0: the active window.
+  uint64 window_id = 2;
+}
+
+// The response of PressKeys.
+message PressKeysResponse {
+  // The window that received the keys. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the last key came up.
+  uint64 revision = 2;
+}
+
+// The request of TypeText.
+message TypeTextRequest {
+  // The text, at most 16384 characters. Not empty.
+  string text = 1;
+}
+
+// The response of TypeText.
+message TypeTextResponse {
+  // The window of the editor that received it. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which the text was typed.
+  uint64 revision = 2;
+}
+
+// The request of DispatchPointerButton.
+message DispatchPointerButtonRequest {
+  // Where. The pointer moves there first.
+  Point point = 1;
+  // The X button number, as in PointerButton.
+  uint32 button = 2;
+  // A press or a release.
+  bool pressed = 3;
+}
+
+// The response of DispatchPointerButton.
+message DispatchPointerButtonResponse {
+  // The window that received it. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which it was injected.
+  uint64 revision = 2;
+}
+
+// The request of DispatchKey.
+message DispatchKeyRequest {
+  // The key.
+  string key = 1;
+  // A press or a release.
+  bool pressed = 2;
+}
+
+// The response of DispatchKey.
+message DispatchKeyResponse {
+  // The window with the X focus that received it. 0: none.
+  uint64 window_id = 1;
+  // The session revision at which it was injected.
+  uint64 revision = 2;
+}
+
+// The request of GetPointerPosition.
+message GetPointerPositionRequest {}
+
+// The response of GetPointerPosition.
+message GetPointerPositionResponse {
+  // The pointer, in canvas coordinates.
+  sint32 x = 1;
+  // See x.
+  sint32 y = 2;
+  // The window under the pointer. 0: none.
+  uint64 window_id = 3;
+}

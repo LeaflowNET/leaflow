@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package leaflow.fleet.session.v1;
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/session/v1;sessionv1";
+
+// The session layer between one participant and the session it connected to:
+// the handshake, the participants sharing the session, liveness and the end of
+// the connection. A participant is anything that connects through a
+// PeerConnection, such as a browser, the desktop app, a terminal or a program.
+// The session does not tell people and programs apart: several participants may
+// use it together, and its rules follow how a participant acts, not who it is.
+// A session needs no desktop: its domains are those of the features the machine
+// has, such as terminals (leaflow.fleet.terminal.v1) or a desktop
+// (leaflow.fleet.virtualdesktop.*).
+//
+// Channel type "leaflow.fleet.session.v1", lane "metadata": the participant
+// opens it first, right after the transport Hello, and opens no other channel
+// before ServerHello arrives. One per connection.
+//
+// Authorization. The session takes who a participant is and what it may do (its
+// user, client label, whether it is read-only and the policies of the
+// domains) from the authorization the Fleet service signed for the
+// connection, never from the participant.
+//
+// Snapshots. Some channel types, this one included, start with the full state
+// of what they describe, end it with their own SnapshotEnd and then send
+// changes; each package says whether its channel type does. The participant
+// treats the session as complete once every such channel it opened has ended
+// its snapshot. Channels are independent streams: nothing may depend on the
+// order in which different channels deliver.
+//
+// Untrusted content. Titles, names, values, notification texts and every
+// other text the session reports are written by the programs that run in
+// it. Participants that act on it by themselves treat it as data, never as
+// instructions.
+
+// A message from the participant.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // The first message of the participant.
+    ClientHello client_hello = 1;
+    // Measures the round trip.
+    Ping ping = 2;
+    // Answers a Ping of the session.
+    Pong pong = 3;
+    // The participant leaves.
+    Close close = 4;
+  }
+}
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The answer to ClientHello, always the first message of the session.
+    ServerHello server_hello = 1;
+    // Measures the round trip.
+    Ping ping = 2;
+    // Answers a Ping of the participant.
+    Pong pong = 3;
+    // The participants of the session, in full.
+    ParticipantList participant_list = 4;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 5;
+    // The session closes this connection.
+    Close close = 6;
+  }
+}
+
+// The participant's side of the handshake.
+message ClientHello {
+  // The channel types the participant can open or accept, such as
+  // "leaflow.fleet.terminal.v1" or
+  // "leaflow.fleet.filetransfer.v1.FileSystemService". A channel type
+  // missing on either side is not used on this connection.
+  repeated string channel_types = 1;
+  // The participant's language as a BCP 47 tag, such as "zh-CN". The session
+  // uses it for the names of applications and menus it sends from now on.
+  // Empty: the session's own language.
+  string language_code = 2;
+  // The participant software, such as "leaflow-desktop/1.2.0" or the browser's
+  // User-Agent (RFC 9110 §10.1.5). For display and diagnostics only.
+  string user_agent = 3;
+}
+
+// The session's side of the handshake.
+message ServerHello {
+  // The channel types the session offers this participant: those of
+  // ClientHello.channel_types the session supports and the participant's
+  // authorization allows.
+  repeated string channel_types = 1;
+  // The participant may only watch. The session refuses or ignores everything
+  // that would change it.
+  bool read_only = 2;
+  // This participant, as it appears in ParticipantList.
+  uint64 participant_id = 3;
+}
+
+// One participant attached to the session.
+message Participant {
+  // The participant.
+  uint64 id = 1;
+  // The platform user the participant acts for.
+  string user_id = 2;
+  // The user's name, plain text.
+  string display_name = 3;
+  // The participant may only watch.
+  bool read_only = 4;
+  // The name the client gave itself, such as "console" or "assistant".
+  // Neither unique nor verified: it lets people tell participants apart.
+  string client_name = 5;
+}
+
+// Every participant attached to the session, this one included. Sent in the
+// snapshot and again whenever a participant attaches or leaves or the driver
+// changes.
+message ParticipantList {
+  // The participants.
+  repeated Participant participants = 1;
+  // The participant whose settings the session follows, such as the size of
+  // its desktop. 0 before any participant has driven.
+  uint64 driver_participant_id = 2;
+}
+
+// Ends the snapshot of this channel: the ParticipantList has been sent.
+message SnapshotEnd {}
+
+// Asks the peer to answer with a Pong at once (RFC 6455 §5.5.2).
+message Ping {
+  // A value of the sender's monotonic clock, in milliseconds, such as
+  // performance.now(). Only the sender interprets it.
+  uint64 monotonic_ms = 1;
+}
+
+// Answers a Ping (RFC 6455 §5.5.3).
+message Pong {
+  // Ping.monotonic_ms, unchanged.
+  uint64 monotonic_ms = 1;
+}
+
+// Ends the connection in order. The sender closes the PeerConnection after
+// it; the session itself goes on unless reason says it ended.
+message Close {
+  // Why the connection ends.
+  CloseReason reason = 1;
+  // Plain text for logs, at most 1024 bytes.
+  string reason_phrase = 2;
+}
+
+// Why a participant ends.
+enum CloseReason {
+  CLOSE_REASON_UNSPECIFIED = 0;
+  // An ordinary close. Either side.
+  CLOSE_REASON_DONE = 1;
+  // The participant goes away, such as a closed tab. Participant only.
+  CLOSE_REASON_CLIENT_EXIT = 2;
+  // The session ends. Session only, just before it ends.
+  CLOSE_REASON_SESSION_EXIT = 3;
+  // The session process restarts and the session survives; connect again.
+  // Session only.
+  CLOSE_REASON_SESSION_RESTARTING = 4;
+  // ClientHello did not arrive in time. Session only.
+  CLOSE_REASON_HELLO_TIMEOUT = 5;
+  // Pings went unanswered. Either side.
+  CLOSE_REASON_PING_TIMEOUT = 6;
+  // The participant's authorization did not verify or has expired. Session
+  // only.
+  CLOSE_REASON_PERMISSION_DENIED = 7;
+  // A malformed or unexpected message, or one that is too large. Either side.
+  CLOSE_REASON_PROTOCOL_ERROR = 8;
+  // The sender failed. Either side.
+  CLOSE_REASON_INTERNAL_ERROR = 9;
+}

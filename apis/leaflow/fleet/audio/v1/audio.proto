@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package leaflow.fleet.audio.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+import "leaflow/fleet/device/v1/device.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/audio/v1;audiov1";
+
+// Sound between the session and the participant, as codec packets that
+// participants encode and decode with WebCodecs: the session's sound played by
+// the participant (MS-RDPEA audio output) and the participant's microphone
+// recorded by the session (MS-RDPEAI audio input).
+//
+// Channel types:
+//   - "leaflow.fleet.audio.v1.output", lane "media": opened by a participant to
+//     play the session's sound, after a gesture of its person, as browsers
+//     require. Read-only participants may. The participant sends one
+//     AudioRequest; the session sends OutputServerMessage: the format, then
+//     packets as Datagrams of the channel. The session captures the monitor of
+//     its sound output and drops packets queued longer than about 200
+//     milliseconds. Closing the channel stops the sound.
+//   - "leaflow.fleet.audio.v1.input", lane "media": opened by the
+//     participant that provides the microphone (see the device package), only
+//     while its demand is ACTIVE. The participant sends InputClientMessage: the
+//     request, then packets as Datagrams; the session sends
+//     InputServerMessage: the grant, and the end when it stops the stream.
+//     The session feeds the packets to its virtual microphone and discards
+//     what is queued when the stream ends. Closing the channel stops it.
+//
+// Datagrams may be lost or reordered: the receiver plays packets in sequence
+// order, conceals gaps and drops packets older than one it played. Needs
+// AudioPolicy.
+
+// Asks for a stream. The first message of the participant on both channels.
+message AudioRequest {
+  // WebCodecs codec strings, most preferred first, such as "opus": for
+  // output those the participant decodes (AudioDecoder.isConfigSupported), for
+  // input those it encodes (AudioEncoder.isConfigSupported).
+  repeated string codecs = 1;
+}
+
+// The format of a stream, fixed until its channel closes.
+message AudioFormat {
+  // One of AudioRequest.codecs.
+  string codec = 1;
+  // The sample rate, 8000 to 48000 Hz. 48000 for Opus.
+  uint32 sample_rate_hz = 2;
+  // The number of channels, 1 or 2.
+  uint32 channel_count = 3;
+  // WebCodecs AudioDecoderConfig.description, such as an OpusHead (RFC 7845
+  // §5.1). May be empty.
+  bytes description = 4;
+}
+
+// One encoded packet (WebCodecs EncodedAudioChunk).
+message AudioData {
+  // Grows by one with every packet of the channel, starting at 1.
+  uint64 sequence = 1;
+  // The time of its first sample in microseconds, on the sender's media
+  // clock.
+  int64 timestamp_us = 2;
+  // Its duration in microseconds, such as 20000. 0 when unknown.
+  uint32 duration_us = 3;
+  // Exactly one codec packet, such as one Opus packet (RFC 6716).
+  bytes data = 4;
+}
+
+// A message from the session on the output channel.
+message OutputServerMessage {
+  // The message.
+  oneof message {
+    // The format of the stream: the first codec of the request the session
+    // encodes. The first message.
+    AudioFormat format = 1;
+    // A packet. Sent as a Datagram.
+    AudioData data = 2;
+    // The session cannot play, such as when no codec of the request can be
+    // encoded or its sound output went away. The last message.
+    google.rpc.Status error = 3;
+  }
+}
+
+// A message from the participant on the input channel.
+message InputClientMessage {
+  // The message.
+  oneof message {
+    // The codecs the participant can encode. The first message.
+    AudioRequest request = 1;
+    // A packet of exactly 20 milliseconds of the granted format. Sent as a
+    // Datagram.
+    AudioData data = 2;
+  }
+}
+
+// A message from the session on the input channel.
+message InputServerMessage {
+  // The message.
+  oneof message {
+    // The session accepts the stream. The first message.
+    InputGrant grant = 1;
+    // The session ends the stream. The last message.
+    leaflow.fleet.device.v1.CaptureEnd end = 2;
+  }
+}
+
+// The session accepts a microphone stream.
+message InputGrant {
+  // The format to send: 48000 Hz, one channel, in 20 millisecond packets.
+  AudioFormat format = 1;
+  // The participant stops capturing after this long; the session ends the
+  // stream with DEADLINE_EXCEEDED then.
+  google.protobuf.Duration max_capture_duration = 2;
+}
+
+// Allows a participant to play the session's sound, and with DevicePolicy to
+// provide the microphone. Carried in the participant's signed authorization.
+message AudioPolicy {}

@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package leaflow.fleet.sshagent.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/sshagent/v1;sshagentv1";
+
+// SSH agent forwarding: programs in the session sign with the SSH agent the
+// participant's person chose on their own machine, through an SSH_AUTH_SOCK in
+// the session user's private runtime directory, so that keys never leave that
+// machine (the SSH agent protocol, draft-ietf-sshm-ssh-agent; OpenSSH
+// "auth-agent@openssh.com" channels). Smart-card backed identities of that
+// agent work too; the card itself is not forwarded.
+//
+// Channel types:
+//   - "leaflow.fleet.sshagent.v1", lane "metadata": opened by a participant
+//     that offers its agent, after its person agreed. The participant sends one
+//     ProviderHello; the session sends ProviderStatus whenever the
+//     participant's role changes. Closing the channel withdraws the offer.
+//   - "leaflow.fleet.sshagent.v1.connection", lane "interactive":
+//     opened by the session toward the selected provider, one per connection
+//     a program makes to SSH_AUTH_SOCK. The provider accepts the channel once
+//     it reached its agent, or refuses it. Both ends send AgentMessage;
+//     closing the channel closes the program's connection.
+//
+// Selection. Of the participants offering an agent, the one with the highest
+// SshAgentPolicy.provider_priority is selected; on a tie the selected one
+// stays. A connection keeps the provider it was opened toward, even when
+// another is selected later.
+//
+// Requests. The provider passes on only requests for identities (11),
+// signatures (13), and the extensions "query" and "session-bind@openssh.com"
+// (27). It answers every other request, such as adding or removing keys,
+// locking, or loading PKCS#11 or FIDO providers, with SSH_AGENT_FAILURE (5).
+// Confirmations, PINs and touches stay with the agent on the participant's
+// machine; nothing approves for it, and nothing is retried.
+//
+// Read-only participants offer no agent.
+
+// Offers the participant's agent.
+message ProviderHello {
+  // A name for the agent to show, at most 256 bytes, such as "OpenSSH
+  // agent". Never a path, key or PIN.
+  string display_name = 1;
+  // The largest agent message the participant handles, at most 256 KiB.
+  uint32 max_message_size_bytes = 2;
+  // The most connections the participant handles at once.
+  uint32 max_connections = 3;
+}
+
+// The participant's role as a provider.
+message ProviderStatus {
+  // The role.
+  ProviderState state = 1;
+  // SELECTED only: the path of SSH_AUTH_SOCK in the session, for display, at
+  // most 108 bytes.
+  string auth_sock_path = 2;
+  // UNAVAILABLE only: why.
+  google.rpc.Status error = 3;
+}
+
+// The role of a participant that offers its agent.
+enum ProviderState {
+  PROVIDER_STATE_UNSPECIFIED = 0;
+  // Another participant is selected.
+  PROVIDER_STATE_AVAILABLE = 1;
+  // This participant is selected: new connections go to it.
+  PROVIDER_STATE_SELECTED = 2;
+  // The session cannot forward an agent, such as without a socket.
+  PROVIDER_STATE_UNAVAILABLE = 3;
+}
+
+// One SSH agent protocol message. A connection that ends in the middle of a
+// message is invalid.
+message AgentMessage {
+  // The message without its length prefix: the type byte and the contents,
+  // at most the smaller of 256 KiB and the provider's
+  // max_message_size_bytes.
+  bytes data = 1;
+}
+
+// What a participant may do with SSH agents. Carried in the participant's
+// signed authorization; without it the participant offers no agent.
+message SshAgentPolicy {
+  // Decides between participants offering an agent: the higher is selected, and
+  // on a tie the selected one stays.
+  uint32 provider_priority = 1;
+  // The most connections at once, at most 32. 0: the session's limit.
+  uint32 max_connections = 2;
+  // The largest agent message, at most 256 KiB. 0: the session's limit.
+  uint32 max_message_size_bytes = 3;
+  // How long one request may wait for its answer, such as for a touch or a
+  // PIN, at most 5 minutes. Unset: 2 minutes.
+  google.protobuf.Duration request_timeout = 4;
+}

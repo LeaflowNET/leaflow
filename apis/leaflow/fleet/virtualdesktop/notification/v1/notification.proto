@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.notification.v1;
+
+import "google/protobuf/timestamp.proto";
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/notification/v1;notificationv1";
+
+// The desktop notifications of the session's applications (freedesktop
+// Desktop Notifications Specification 1.3; message names after Xpra's
+// notification packets). The session is the notification server of its
+// applications and draws nothing itself: participants show the notifications.
+// Expiry runs in the session, so applications learn that their notifications
+// closed even when no participant is connected. Balloon messages of XEmbed tray
+// icons (System Tray Protocol) arrive as notifications too. Sound hints are
+// not forwarded. Notifications travel only between the session and its
+// participants and never enter logs.
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.notification.v1", lane "metadata": opened
+//     by the participant, one per connection. It starts with a snapshot: one
+//     Notification per open notification, oldest first, then SnapshotEnd.
+//   - "leaflow.fleet.virtualdesktop.notification.v1.NotificationService", lane
+//     "interactive": opened by the participant to act on notifications.
+//
+// Identifiers. notification_id is chosen by the session, is never 0 and is
+// never reused in the session; a notification an application replaces keeps
+// its id.
+//
+// The content comes from applications: summary, application names and action
+// labels are plain text, and body is already reduced to the markup subset
+// below, but participants sanitize it again before rendering it.
+
+// A message from the session on the notification channel. The participant sends
+// nothing on it.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // A notification as it is now, in full: new when the participant does not
+    // know its notification_id, otherwise replacing it in place.
+    Notification notification = 1;
+    // A notification closed.
+    NotificationClosed notification_closed = 2;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 3;
+  }
+}
+
+// One notification (Notify).
+message Notification {
+  // The notification.
+  uint64 notification_id = 1;
+  // The name of the sending application (app_name). May be empty.
+  string app_name = 2;
+  // The application's icon (app_icon, else the Icon of its desktop entry).
+  // Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon app_icon = 3;
+  // The summary (summary). Plain text.
+  string summary = 4;
+  // The text (body), reduced to <b>, <i>, <u> and <a href> with the schemes
+  // http, https and mailto; other tags are removed, keeping their text. May
+  // be empty.
+  string body = 5;
+  // The buttons, in the application's order (actions).
+  repeated NotificationAction actions = 6;
+  // How urgent it is (hint "urgency").
+  Urgency urgency = 7;
+  // Its category, such as "im.received" or "email.arrived" (hint
+  // "category"). Empty when none.
+  string category = 8;
+  // The desktop file ID of the sending application (hint "desktop-entry").
+  // Empty when unknown.
+  string desktop_file_id = 9;
+  // Its image, at most 128 × 128 pixels (hint "image-data" or
+  // "image-path"). Unset when none.
+  leaflow.fleet.virtualdesktop.display.v1.Image image = 10;
+  // It stays after an action is invoked, until closed (hint "resident").
+  bool resident = 11;
+  // It is not to be kept in any history (hint "transient").
+  bool transient = 12;
+  // The process that sent it. 0 when unknown.
+  uint32 pid = 13;
+  // When it appeared or was last replaced.
+  google.protobuf.Timestamp created_at = 14;
+  // When the session will close it as expired: the application's timeout,
+  // 6 seconds when it asked for the default. Unset: it does not expire, as
+  // for critical ones.
+  google.protobuf.Timestamp expires_at = 15;
+}
+
+// A button of a notification (Notify "actions").
+message NotificationAction {
+  // The action's key. "default" is the action of clicking the notification
+  // itself and is shown as no button.
+  string action_key = 1;
+  // Its label. Plain text.
+  string label = 2;
+  // The icon named by action_key, when the application asks for icons
+  // instead of labels (hint "action-icons"). label then serves as the
+  // accessible name. Unset otherwise.
+  leaflow.fleet.virtualdesktop.display.v1.Icon icon = 3;
+}
+
+// How urgent a notification is (hint "urgency").
+enum Urgency {
+  URGENCY_UNSPECIFIED = 0;
+  // Low (0).
+  URGENCY_LOW = 1;
+  // Normal (1); also when the application gave none.
+  URGENCY_NORMAL = 2;
+  // Critical (2): it does not expire.
+  URGENCY_CRITICAL = 3;
+}
+
+// A notification closed (NotificationClosed).
+message NotificationClosed {
+  // The notification.
+  uint64 notification_id = 1;
+  // Why.
+  NotificationCloseReason reason = 2;
+}
+
+// Why a notification closed (NotificationClosed "reason").
+enum NotificationCloseReason {
+  NOTIFICATION_CLOSE_REASON_UNSPECIFIED = 0;
+  // It expired (1).
+  NOTIFICATION_CLOSE_REASON_EXPIRED = 1;
+  // A participant dismissed it (2).
+  NOTIFICATION_CLOSE_REASON_DISMISSED = 2;
+  // Its application closed it (3).
+  NOTIFICATION_CLOSE_REASON_CLOSED_BY_APPLICATION = 3;
+  // Another reason, such as its application exiting (4).
+  NOTIFICATION_CLOSE_REASON_UNDEFINED = 4;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// Acts on notifications for the session's user. Read-only participants fail
+// with PERMISSION_DENIED. An unknown or closed notification fails with
+// NOT_FOUND and reason NOTIFICATION_GONE.
+service NotificationService {
+  // Invokes an action of a notification (ActionInvoked). It acts on the
+  // application, so it needs the input lease like input. The notification
+  // then closes as dismissed unless it is resident.
+  rpc InvokeNotificationAction(InvokeNotificationActionRequest) returns (InvokeNotificationActionResponse);
+  // Dismisses a notification (NotificationClosed with reason 2).
+  rpc DismissNotification(DismissNotificationRequest) returns (DismissNotificationResponse);
+}
+
+// The request of InvokeNotificationAction.
+message InvokeNotificationActionRequest {
+  // The notification.
+  uint64 notification_id = 1;
+  // One of its NotificationAction.action_key.
+  string action_key = 2;
+}
+
+// The response of InvokeNotificationAction.
+message InvokeNotificationActionResponse {
+  // The session revision at which the action was invoked.
+  uint64 revision = 1;
+}
+
+// The request of DismissNotification.
+message DismissNotificationRequest {
+  // The notification.
+  uint64 notification_id = 1;
+}
+
+// The response of DismissNotification.
+message DismissNotificationResponse {
+  // The session revision at which it closed.
+  uint64 revision = 1;
+}

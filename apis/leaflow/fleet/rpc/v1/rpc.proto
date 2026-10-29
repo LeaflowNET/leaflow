@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package leaflow.fleet.rpc.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/rpc/v1;rpcv1";
+
+// Calls of protobuf service methods carried inside a Fleet connection instead
+// of over gRPC's own HTTP/2 transport, for the services of every family. The
+// request and response types are those of the method; this package only
+// frames them.
+//
+// Two carriers use it:
+//   - A channel dedicated to one service. Its protocol name is the full name
+//     of the service, such as
+//     "leaflow.fleet.filetransfer.v1.FileSystemService". The
+//     endpoint that opened the channel is the client: it sends ClientMessage
+//     and receives ServerMessage.
+//   - A control connection (leaflow.fleet.control.v1), where both ends call
+//     methods of each other and carry Call, CallResult and CallCancel in
+//     their own envelopes.
+//
+// Each end numbers its own calls. A CallResult or a CallCancel refers to a
+// Call that travelled in the opposite direction.
+//
+// Errors. CallResult.error is a google.rpc.Status. Its details carry a
+// google.rpc.ErrorInfo whose reason is listed by the package that defines
+// the method, and whose domain is "fleet.leaflow.cloud". A reason a receiver
+// does not know is handled by the canonical code of the status.
+//
+// Execution. The ErrorInfo of a failed call that acts on the session carries
+// the metadata key "executionState" with an ExecutionState name, telling the
+// caller whether retrying is safe. A missing key means
+// EXECUTION_STATE_UNKNOWN.
+
+// Invokes a method.
+message Call {
+  // Identifies the call among the calls the sender has made on this carrier;
+  // CallResult and CallCancel echo it. A UUID (RFC 9562); the service's are
+  // unique across all control connections (leaflow.fleet.control.v1). It
+  // only correlates: resending a Call with the same request_id starts another
+  // call, so a method is retried safely only when the method itself is
+  // idempotent.
+  string request_id = 1;
+  // The method, in the form of a gRPC request path: "/" + full service name
+  // + "/" + method name, such as
+  // "/leaflow.fleet.filetransfer.v1.FileSystemService/ListDirectory".
+  string method = 2;
+  // The serialized request message of the method.
+  bytes payload = 3;
+  // How long the callee may work on the call, counted from receipt. When it
+  // passes the result is DEADLINE_EXCEEDED. Unset: the default the method
+  // documents.
+  google.protobuf.Duration timeout = 4;
+  // Set by the service on the calls it makes on a control connection
+  // (leaflow.fleet.control.v1): an opaque value of at most 256 bytes that the
+  // callee copies into the CallResult. It lets any address of the service
+  // pass on a result that arrives on a later connection.
+  bytes resume_token = 5;
+}
+
+// The result of a Call. Exactly one CallResult answers every Call, including
+// a cancelled one. Calls still outstanding when the carrier closes are never
+// resent, except a call that a control connection (leaflow.fleet.control.v1)
+// shows never reached the callee; a control connection carries the results of
+// the others on the callee's next connection, other carriers drop them.
+message CallResult {
+  // The request_id of the Call being answered.
+  string request_id = 1;
+  // Exactly one is set.
+  oneof result {
+    // The serialized response message of the method.
+    bytes payload = 2;
+    // Why the call failed.
+    google.rpc.Status error = 3;
+  }
+  // The resume_token of the Call, unchanged.
+  bytes resume_token = 4;
+}
+
+// Asks the callee to stop working on a call. The CallResult still follows:
+// CANCELLED when the callee stopped in time, otherwise the result it reached.
+message CallCancel {
+  // The request_id of the Call to cancel.
+  string request_id = 1;
+}
+
+// A message from the client of a service channel.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // Starts a call.
+    Call call = 1;
+    // Cancels a call.
+    CallCancel call_cancel = 2;
+  }
+}
+
+// A message from the server of a service channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // Answers a call.
+    CallResult call_result = 1;
+  }
+}
+
+// How far a failed call got, for deciding whether to retry it.
+enum ExecutionState {
+  EXECUTION_STATE_UNSPECIFIED = 0;
+  // Nothing was done; retrying is safe. Every refusal.
+  EXECUTION_STATE_NOT_STARTED = 1;
+  // Everything was done; the result says nothing about the effect.
+  EXECUTION_STATE_COMPLETED = 2;
+  // It may or may not have had an effect. The caller observes the session
+  // before retrying; nobody repeats the call for it.
+  EXECUTION_STATE_UNKNOWN = 3;
+}

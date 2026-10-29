@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.capture.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/capture/v1;capturev1";
+
+// Still images of the session for participants that look at it through calls
+// rather than through the video stream.
+//
+// Channel type "leaflow.fleet.virtualdesktop.capture.v1.CaptureService", lane
+// "bulk": opened by the participant. Read-only participants may capture.
+//
+// Coordinates. A capture of a window is in the coordinates of that window's
+// client area; its popups and dialogs may lie outside it, at negative
+// coordinates too. A capture of the canvas is in canvas coordinates. A pixel
+// (x, y) of the image shows the point (area.x + x * area.width / size.width,
+// area.y + y * area.height / size.height). To act on it, a client finds the
+// topmost of the response's windows that contains the point and sends input
+// to that window at the point minus its origin, with its resize_counter, so
+// that input is refused rather than misplaced when the window changed size
+// since.
+
+// Captures what the session shows, after the Chrome DevTools Protocol
+// Page.captureScreenshot.
+service CaptureService {
+  // Captures a window or the canvas as a still image.
+  rpc CaptureScreenshot(CaptureScreenshotRequest) returns (CaptureScreenshotResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// The request of CaptureScreenshot.
+message CaptureScreenshotRequest {
+  // The window to capture. 0: the canvas, every window composited in
+  // stacking order as a driver shows them, with black where no window is. A
+  // window that no longer exists fails with NOT_FOUND and reason
+  // WINDOW_NOT_FOUND.
+  uint64 window_id = 1;
+  // What a window capture shows. Ignored for the canvas.
+  CaptureMode mode = 2;
+  // The part to capture, in the coordinates of the capture. It must lie
+  // within it; otherwise the call fails with INVALID_ARGUMENT and reason
+  // OUT_OF_BOUNDS. Unset: all of it.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle clip = 3;
+  // The widest image in pixels; a larger capture is scaled down keeping its
+  // aspect ratio, never up. When max_width and max_height are both 0 the
+  // longest edge is at most 1568 pixels.
+  uint32 max_width = 4;
+  // The tallest image in pixels.
+  uint32 max_height = 5;
+  // The image format: "image/png" (W3C PNG), "image/jpeg" (ISO/IEC 10918-1)
+  // or "image/webp" (RFC 9649). Empty: the session chooses.
+  string mime_type = 6;
+  // The quality of a lossy format, 1 to 100. 0: the session's default.
+  uint32 quality = 7;
+  // Draws the pointer into the image where it is.
+  bool include_pointer = 8;
+  // Waits until the captured area has not changed for this long, so that the
+  // image does not show an animation or a repaint halfway. Unset: capture
+  // now.
+  google.protobuf.Duration quiet_period = 9;
+  // The longest wait for quiet_period, at most 10 seconds. When it passes the
+  // session captures anyway. Unset: 3 seconds.
+  google.protobuf.Duration timeout = 10;
+}
+
+// What a capture of a window shows.
+enum CaptureMode {
+  CAPTURE_MODE_UNSPECIFIED = 0;
+  // The window with its override-redirect popups, such as menus and the
+  // lists of combo boxes, and the windows transient for it, such as dialogs,
+  // composited in stacking order. The default.
+  CAPTURE_MODE_WITH_POPUPS = 1;
+  // Only the window's own content, even where other windows cover it (X11
+  // Composite NameWindowPixmap).
+  CAPTURE_MODE_CONTENT = 2;
+}
+
+// The response of CaptureScreenshot.
+message CaptureScreenshotResponse {
+  // The encoded image.
+  bytes data = 1;
+  // The format of data.
+  string mime_type = 2;
+  // The size of the image in pixels.
+  leaflow.fleet.virtualdesktop.display.v1.Size size = 3;
+  // The area the image shows, in the coordinates of the capture.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle area = 4;
+  // The windows composited into the image, bottom to top. For CONTENT, just
+  // the window.
+  repeated CapturedWindow windows = 5;
+  // When the image was taken.
+  google.protobuf.Timestamp captured_at = 7;
+  // The area had been unchanged for quiet_period when it was captured. False
+  // when the timeout passed first.
+  bool quiet = 8;
+  // The session revision the image shows.
+  uint64 revision = 9;
+}
+
+// A window in a capture.
+message CapturedWindow {
+  // The window.
+  uint64 window_id = 1;
+  // Its client area, in the coordinates of the capture.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
+  // Its Window.resize_counter when captured.
+  uint64 resize_counter = 3;
+}

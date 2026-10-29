@@ -1,0 +1,596 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.datatransfer.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+import "leaflow/fleet/filetransfer/v1/filetransfer.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/datatransfer/v1;datatransferv1";
+
+// Data passed between the participant's own desktop and the session by copy and
+// paste or by drag and drop. As in the W3C HTML DataTransfer interface and the
+// Wayland data device, both share one model: the side that has the data lists
+// the formats it can provide, as media types, and the other side reads a
+// format when it needs it (delayed rendering, MS-RDPECLIP). Files are
+// referenced as a file transfer offer and fetched like any other. The session
+// converts formats to and from ICCCM targets, such as UTF8_STRING and
+// "text/plain"; text is UTF-8, and the session turns CRLF from the participant
+// into LF. In the session, copy and paste use the X11 selections and drag and
+// drop uses XDND (freedesktop XDND protocol 5).
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.datatransfer.v1.clipboard", lane
+//     "interactive": opened by the participant, one per connection. The
+//     participant sends ClipboardClientMessage, the session
+//     ClipboardServerMessage.
+//   - "leaflow.fleet.virtualdesktop.datatransfer.v1.drag", lane "interactive":
+//     opened by the participant, one per connection. The participant sends
+//     DragClientMessage, the session DragServerMessage.
+//   - "leaflow.fleet.virtualdesktop.datatransfer.v1.data", lane "bulk": opened
+//     by the side that reads data, one per read and at most four per drag. The
+//     opener sends one DataRequest; the side that has the data answers with
+//     DataResponse messages. Flow control is the channel's credit; closing the
+//     channel with CANCELLED abandons the read, and the other side releases
+//     what it spooled for it.
+//   - "leaflow.fleet.virtualdesktop.datatransfer.v1.DataTransferService", lane
+//     "interactive": opened by the participant, for participants that operate
+//     the session through calls and have no clipboard or drag loop of their
+//     own, and to drop uploaded files.
+//
+// Read-only participants transfer no data, so that a watcher cannot take away
+// what was copied in the session. Data has no size limit and never enters
+// logs. The data of a drag never goes through a clipboard.
+//
+// Copy and paste. The clipboard channel starts with a snapshot:
+// ClipboardStatus, then, when an application owns a shared selection and the
+// participant may read it, its ClipboardFormatList, then SnapshotEnd. The
+// participant sends no format list before SnapshotEnd. The input channel is not
+// ordered against this one: input that may paste names the sequence of the
+// latest format list the participant sent (see the input channel), and the
+// session holds it until its ClipboardFormatListResponse for that list
+// succeeded.
+//
+// Drag and drop. The side holding the real source sends DragStart; the other
+// side confirms it with DragStartResponse. The participant always reports the
+// targets of its own drag loop: DragEnter for each new target, DragPosition
+// while over it, DragLeave and DragDrop. The side where the target lives
+// answers every position with DragStatus and ends the drag with DragFinish.
+//   - Into the session: the participant's drag enters the canvas; the
+//     participant sends DragStart, then reports the session windows it crosses,
+//     and the session drags into them as an XDND source. A browser learns the
+//     files of a drag only when they are dropped, so it announces
+//     files_available and provides the offer when the target reads the files.
+//   - Out of the session: when a drag that the participant's input drives in a
+//     session window reaches the edge of the participant's view of the session,
+//     the participant asks with DragSourceRequest. The session installs its own
+//     XDND target, waits for the source's XdndEnter, then answers with the
+//     DragStart; the participant continues the drag in its own drag loop,
+//     reporting its own targets with window_id 0.
+// Neither side starts a native drag because of a message alone: a drag is
+// bound to the person's current gesture and the input lease, and the pointer
+// grab passes to the participant's drag loop explicitly, so that no release is
+// applied twice. Each DragEnter names a new target_id, and sequence grows
+// across the whole drag; a status applies only to the target and sequence it
+// echoes, so a late status never accepts another target. Positions of one
+// target may be coalesced before sending; enter, leave, drop and finish never
+// are. DragLeave clears the target and keeps the drag. DragDrop is allowed
+// only on the target of the last accepting status. DragFinish ends a drag
+// once, with the action the target performed; MOVE succeeds only when both
+// source and target keep their native move semantics, and the session never
+// deletes source files on a guess. A connection has at most one drag at a
+// time and a session one drag from a native source of its own; competing ones
+// fail with RESOURCE_EXHAUSTED. A drag lasts at most DragPolicy.max_duration.
+// Cancellation, expiry, loss of the source or of the input lease, and the end
+// of the connection release everything a drag holds; while the channel lives
+// the target still sends a failed DragFinish, but nothing is replayed after a
+// disconnect.
+
+// Data of one format.
+message DataTransferItem {
+  // The media type.
+  string mime_type = 1;
+  // The data.
+  bytes data = 2;
+}
+
+// A message from the participant on the clipboard channel.
+message ClipboardClientMessage {
+  // The message.
+  oneof message {
+    // The participant became the owner of a selection.
+    ClipboardFormatList format_list = 1;
+    // The participant applied a format list of the session.
+    ClipboardFormatListResponse format_list_response = 2;
+  }
+}
+
+// A message from the session on the clipboard channel.
+message ClipboardServerMessage {
+  // The message.
+  oneof message {
+    // What this participant may do, first in the snapshot and again whenever it
+    // changes.
+    ClipboardStatus status = 1;
+    // An application became the owner of a selection.
+    ClipboardFormatList format_list = 2;
+    // The session applied a format list of the participant.
+    ClipboardFormatListResponse format_list_response = 3;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 4;
+  }
+}
+
+// An X11 selection (ICCCM).
+enum Selection {
+  SELECTION_UNSPECIFIED = 0;
+  // CLIPBOARD: explicit copy or cut, then paste.
+  SELECTION_CLIPBOARD = 1;
+  // PRIMARY: select to copy, middle button to paste. Reserved: neither side
+  // sends it yet, and messages that use it are ignored.
+  SELECTION_PRIMARY = 2;
+}
+
+// What the participant may do with the clipboard. The participant does not
+// offer, read or accept what it forbids.
+message ClipboardStatus {
+  // The participant receives the session's format lists and reads their data
+  // (ClipboardPolicy.read_allowed).
+  bool read_allowed = 1;
+  // The participant's format lists are applied to the session
+  // (ClipboardPolicy.write_allowed).
+  bool write_allowed = 2;
+  // The selections shared. For now only CLIPBOARD.
+  repeated Selection selections = 3;
+}
+
+// The sender became the owner of a selection (MS-RDPECLIP Format List PDU).
+// From the session: an application copied; the session read its targets. From
+// the participant: its person copied, or is about to paste into a session
+// window; the session takes ownership of the selection, then answers.
+message ClipboardFormatList {
+  // The selection.
+  Selection selection = 1;
+  // Grows by one with every format list of the sender on the connection,
+  // starting at 1. A list replaces the older lists of its selection; a read
+  // that names an older one fails with ABORTED.
+  uint64 sequence = 2;
+  // The formats offered, most preferred first, such as "text/plain",
+  // "text/html" or "image/png". Empty: the selection has no owner anymore.
+  repeated string mime_types = 3;
+  // Data of small formats sent along, at most 64 KiB in total, so that a
+  // paste of them needs no round trip.
+  repeated DataTransferItem items = 4;
+  // Files copied. The receiver fetches them as for any offer, with
+  // FileTransferRequest.clipboard set, and puts verified local copies on its
+  // clipboard; paths of the source never travel.
+  leaflow.fleet.filetransfer.v1.FileTransferOffer file_offer = 5;
+}
+
+// The receiver of a format list applied it (MS-RDPECLIP Format List Response
+// PDU). Always sent. From the session, success releases the input that waits
+// for its sequence; failure drops that input, and older content is never
+// pasted instead.
+message ClipboardFormatListResponse {
+  // ClipboardFormatList.selection.
+  Selection selection = 1;
+  // ClipboardFormatList.sequence.
+  uint64 sequence = 2;
+  // Unset on success. Otherwise PERMISSION_DENIED when the direction is not
+  // allowed, FAILED_PRECONDITION when the selection could not be taken, or
+  // ABORTED when a newer list was applied first.
+  google.rpc.Status error = 3;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// A message from the participant on the drag channel.
+message DragClientMessage {
+  // The message.
+  oneof message {
+    // Asks the session for the native drag a session window started.
+    DragSourceRequest source_request = 1;
+    // Withdraws a DragSourceRequest.
+    DragSourceCancel source_cancel = 2;
+    // A drag of the participant reaches the session.
+    DragStart start = 3;
+    // The participant confirms a drag of the session.
+    DragStartResponse start_response = 4;
+    // The participant's drag loop entered a target.
+    DragEnter enter = 5;
+    // The participant's drag loop moved over its target.
+    DragPosition position = 6;
+    // The participant's drag loop left its target.
+    DragLeave leave = 7;
+    // The participant's drag loop dropped on its target.
+    DragDrop drop = 8;
+    // What a target of the participant's desktop would do with a drop.
+    DragStatus status = 9;
+    // A drag of the session ended on the participant's desktop.
+    DragFinish finish = 10;
+    // The participant abandoned a drag.
+    DragCancel cancel = 11;
+  }
+}
+
+// A message from the session on the drag channel.
+message DragServerMessage {
+  // The message.
+  oneof message {
+    // The answer to a DragSourceRequest.
+    DragSourceResponse source_response = 1;
+    // The session confirms a drag of the participant.
+    DragStartResponse start_response = 2;
+    // What a session window would do with a drop.
+    DragStatus status = 3;
+    // A drag of the participant ended in the session.
+    DragFinish finish = 4;
+    // The session abandoned a drag, such as when its source went away.
+    DragCancel cancel = 5;
+  }
+}
+
+// What can be done with dragged data (XDND actions; HTML dropEffect).
+enum DragAction {
+  DRAG_ACTION_UNSPECIFIED = 0;
+  // The target copies the data.
+  DRAG_ACTION_COPY = 1;
+  // The target takes the data and the source deletes it.
+  DRAG_ACTION_MOVE = 2;
+  // The target links to the data.
+  DRAG_ACTION_LINK = 3;
+}
+
+// Asks the session for the native drag that a session window started with the
+// participant's held button. The session answers with DragSourceResponse: the
+// DragStart once the source's XdndEnter reached the session's own XDND target,
+// or an error when no drag comes, such as on a timeout.
+message DragSourceRequest {
+  // Chosen by the participant, never reused on the connection.
+  uint64 request_id = 1;
+  // The window the drag started in.
+  uint64 source_window_id = 2;
+  // input_seq of the participant's latest input of the gesture.
+  uint64 input_seq = 3;
+}
+
+// The answer to a DragSourceRequest.
+message DragSourceResponse {
+  // DragSourceRequest.request_id.
+  uint64 request_id = 1;
+  // The outcome.
+  oneof result {
+    // The drag. The participant confirms it with DragStartResponse before
+    // starting its own drag loop.
+    DragStart start = 2;
+    // Why there is no drag.
+    google.rpc.Status error = 3;
+  }
+}
+
+// Withdraws a DragSourceRequest before it was answered, such as when the
+// person released the button or pressed Escape. The session removes its XDND
+// target and answers the request with CANCELLED; a later result never starts
+// a drag.
+message DragSourceCancel {
+  // DragSourceRequest.request_id.
+  uint64 request_id = 1;
+}
+
+// A drag reaches the other side.
+message DragStart {
+  // Chosen by the source side, unique on the connection.
+  string drag_id = 1;
+  // The session window the drag came from. 0 for a drag of the participant.
+  uint64 source_window_id = 2;
+  // The formats the source provides, most faithful first, at most 32 unique
+  // ones of at most 255 bytes each.
+  repeated string mime_types = 3;
+  // The actions the source allows, most preferred first.
+  repeated DragAction actions = 4;
+  // input_seq of the participant's latest input of the gesture. 0 for a drag
+  // from the participant's desktop into the session.
+  uint64 input_seq = 5;
+  // The files dragged, as names, types and sizes. Unset when no files are
+  // dragged or they are provided only when read.
+  leaflow.fleet.filetransfer.v1.FileTransferOffer file_offer = 6;
+  // Files are dragged whose offer the target reads with DataRequest.files,
+  // such as from a browser that learns them only at the drop.
+  bool files_available = 7;
+}
+
+// Confirms or refuses a DragStart.
+message DragStartResponse {
+  // The drag.
+  string drag_id = 1;
+  // Why the drag was refused. Unset when it was accepted.
+  google.rpc.Status error = 2;
+}
+
+// The participant's drag loop entered a target.
+message DragEnter {
+  // The drag.
+  string drag_id = 1;
+  // A new id for this target, chosen by the participant.
+  string target_id = 2;
+  // The session window under the pointer. 0: a target of the participant's own
+  // desktop.
+  uint64 window_id = 3;
+  // The point relative to the window.
+  sint32 x = 4;
+  // See x.
+  sint32 y = 5;
+  // Window.resize_counter the point belongs to.
+  uint64 resize_counter = 6;
+  // The position in the drag's order.
+  uint64 sequence = 7;
+  // The action the participant proposes, such as MOVE while Shift is held.
+  DragAction proposed_action = 8;
+}
+
+// The participant's drag loop moved over its current target.
+message DragPosition {
+  // The drag.
+  string drag_id = 1;
+  // The target.
+  string target_id = 2;
+  // The point relative to the target's window.
+  sint32 x = 3;
+  // See x.
+  sint32 y = 4;
+  // Window.resize_counter the point belongs to.
+  uint64 resize_counter = 5;
+  // The position in the drag's order.
+  uint64 sequence = 6;
+  // The action the participant proposes.
+  DragAction proposed_action = 7;
+}
+
+// What a target would do with a drop there (XdndStatus).
+message DragStatus {
+  // The drag.
+  string drag_id = 1;
+  // The target.
+  string target_id = 2;
+  // The DragEnter or DragPosition sequence it answers.
+  uint64 sequence = 3;
+  // The target would take a drop.
+  bool accepted = 4;
+  // The action it would perform.
+  DragAction action = 5;
+  // Why it would not take one. Unset otherwise.
+  google.rpc.Status error = 6;
+}
+
+// The participant's drag loop left its target (XdndLeave). The drag goes on.
+message DragLeave {
+  // The drag.
+  string drag_id = 1;
+  // The target.
+  string target_id = 2;
+  // The position in the drag's order.
+  uint64 sequence = 3;
+}
+
+// The participant's drag loop dropped on its target (XdndDrop).
+message DragDrop {
+  // The drag.
+  string drag_id = 1;
+  // The target, which the last status accepted.
+  string target_id = 2;
+  // The position in the drag's order.
+  uint64 sequence = 3;
+  // The action to perform.
+  DragAction action = 4;
+}
+
+// A drag ended (XdndFinished). Sent once per drag by the side of the target.
+message DragFinish {
+  // The drag.
+  string drag_id = 1;
+  // The target it ended on. Empty when it ended on none.
+  string target_id = 2;
+  // The target took the drop.
+  bool accepted = 3;
+  // The action the target performed.
+  DragAction action = 4;
+  // Why the drop failed. Unset on success or when nothing took it.
+  google.rpc.Status error = 5;
+}
+
+// A drag was abandoned.
+message DragCancel {
+  // The drag.
+  string drag_id = 1;
+  // Why, when it failed. Unset when a person cancelled it.
+  google.rpc.Status error = 2;
+}
+
+// Asks for data of a clipboard selection or of a drag (MS-RDPECLIP Format
+// Data Request PDU). The only message the opener of a data channel sends.
+message DataRequest {
+  // Whose data.
+  oneof source {
+    // The data of a format list.
+    ClipboardSource clipboard = 1;
+    // The data of a drag, by DragStart.drag_id.
+    string drag_id = 2;
+  }
+  // What to read.
+  oneof format {
+    // The data of one of the formats offered.
+    string mime_type = 3;
+    // The offer of the dragged files, of a drag that announced
+    // files_available. Must be true.
+    bool files = 4;
+  }
+}
+
+// A format list to read from.
+message ClipboardSource {
+  // The selection.
+  Selection selection = 1;
+  // ClipboardFormatList.sequence.
+  uint64 sequence = 2;
+}
+
+// Part of the data read, from the side that has it (MS-RDPECLIP Format Data
+// Response PDU). The data comes as the total size, the bytes in order, then
+// the end; a files read is answered by a file offer alone.
+message DataResponse {
+  // The part.
+  oneof part {
+    // The size of the whole data. The first message; the session spools the
+    // whole data before sending it, so the size is known.
+    uint64 total_size_bytes = 1;
+    // The next bytes, at most 256 KiB.
+    bytes data = 2;
+    // The end of the data. The last message.
+    DataEnd end = 3;
+    // The answer to a files read: the files, fetched as for any offer. The
+    // only message.
+    leaflow.fleet.filetransfer.v1.FileTransferOffer file_offer = 4;
+    // The read failed; the reader discards what it received. NOT_FOUND when
+    // the format is not offered or the application refused it,
+    // RESOURCE_EXHAUSTED when storage ran out, PERMISSION_DENIED when the
+    // direction is not allowed, ABORTED when the format list was replaced,
+    // or DEADLINE_EXCEEDED when the application did not answer in time. The
+    // last message.
+    google.rpc.Status error = 5;
+  }
+}
+
+// The end of the data read.
+message DataEnd {
+  // SHA-256 of all the data, 32 bytes.
+  bytes sha256 = 1;
+}
+
+// Copy and paste and drops through calls, and drops of uploaded files. Calls
+// need a participant that is not read-only; drops also need the input lease.
+service DataTransferService {
+  // Returns the formats a selection holds and, if asked, the data of one.
+  // Needs ClipboardPolicy.read_allowed.
+  rpc ReadClipboard(ReadClipboardRequest) returns (ReadClipboardResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Takes a selection with the given data. Needs
+  // ClipboardPolicy.write_allowed.
+  rpc WriteClipboard(WriteClipboardRequest) returns (WriteClipboardResponse);
+  // Drops the stored files of a completed upload on a point of a window, as
+  // an XDND copy of their file URIs, and returns once the window took the
+  // drop or refused it. Needs FileTransferPolicy.upload_allowed.
+  rpc DropFiles(DropFilesRequest) returns (DropFilesResponse);
+  // Drops data, or files of the session, on a point of a window as a drag
+  // from nowhere would, and returns once the window took the drop or refused
+  // it. Needs DragPolicy.upload_allowed.
+  rpc DropData(DropDataRequest) returns (DropDataResponse);
+}
+
+// The request of ReadClipboard.
+message ReadClipboardRequest {
+  // The selection. Unset: CLIPBOARD.
+  Selection selection = 1;
+  // The format to return the data of. Empty: none, only the formats. One the
+  // selection does not hold fails with NOT_FOUND.
+  string mime_type = 2;
+}
+
+// The response of ReadClipboard.
+message ReadClipboardResponse {
+  // The formats available, most preferred first. Empty: the selection has no
+  // owner.
+  repeated string mime_types = 1;
+  // The data of the format asked for. Data larger than 960 KiB, what fits a
+  // channel message, fails with RESOURCE_EXHAUSTED.
+  DataTransferItem item = 2;
+}
+
+// The request of WriteClipboard.
+message WriteClipboardRequest {
+  // The selection. Unset: CLIPBOARD.
+  Selection selection = 1;
+  // The data, one item per format, at most 960 KiB in total. Files of the
+  // session are written as "text/uri-list" with file URIs. Empty: clears the
+  // selection. The session holds the content itself, so it stays after the
+  // client left.
+  repeated DataTransferItem items = 2;
+}
+
+// The response of WriteClipboard.
+message WriteClipboardResponse {
+  // The session revision at which the session took the selection.
+  uint64 revision = 1;
+}
+
+// The request of DropFiles.
+message DropFilesRequest {
+  // The upload, whose files the session has stored.
+  string transfer_id = 1;
+  // The window.
+  uint64 window_id = 2;
+  // The point, relative to the window.
+  sint32 x = 3;
+  // See x.
+  sint32 y = 4;
+  // Window.resize_counter the point belongs to.
+  uint64 resize_counter = 5;
+}
+
+// The response of DropFiles.
+message DropFilesResponse {
+  // The window took the drop.
+  bool accepted = 1;
+  // The session revision at which the drop ended.
+  uint64 revision = 2;
+}
+
+// The request of DropData.
+message DropDataRequest {
+  // The window.
+  uint64 window_id = 1;
+  // The point, relative to the window.
+  sint32 x = 2;
+  // See x.
+  sint32 y = 3;
+  // The data, one item per format, at most 960 KiB in total. Files of the
+  // session are dropped as "text/uri-list" with file URIs.
+  repeated DataTransferItem items = 4;
+  // The action to propose.
+  DragAction action = 5;
+}
+
+// The response of DropData.
+message DropDataResponse {
+  // The window took the drop.
+  bool accepted = 1;
+  // The action it performed.
+  DragAction action = 2;
+  // The session revision at which the drop ended.
+  uint64 revision = 3;
+}
+
+// What a participant may do with the clipboard. Carried in the participant's
+// signed authorization; without it the participant shares no clipboard.
+message ClipboardPolicy {
+  // The participant may read the session's clipboard.
+  bool read_allowed = 1;
+  // The participant may write the session's clipboard.
+  bool write_allowed = 2;
+}
+
+// What a participant may drag. Carried in the participant's signed
+// authorization; without it the participant drags nothing. Dragging files also
+// needs the matching direction of FileTransferPolicy.
+message DragPolicy {
+  // The participant may drag into the session.
+  bool upload_allowed = 1;
+  // The participant may drag out of the session.
+  bool download_allowed = 2;
+  // The formats that may be dragged, exactly. Empty: none; files travel only
+  // as offers.
+  repeated string allowed_mime_types = 3;
+  // The longest a drag may last, at most 5 minutes. Unset or 0: no drags.
+  google.protobuf.Duration max_duration = 4;
+}

@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.host.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/host/v1;hostv1";
+
+// Desktop sessions: a session of the machine (leaflow.fleet.host.v1) that also
+// has an X server and the domains of the desktop, such as windows, input and
+// the clipboard. OpenSession with DesktopOptions among its options opens one;
+// its Session carries DesktopState among its details.
+//
+// With DesktopOptions, OpenSession also fails with these reasons of the
+// domain "fleet.leaflow.cloud":
+//   - RESOURCE_EXHAUSTED and reason DISPLAY_UNAVAILABLE when no X display
+//     number was free after 3 attempts;
+//   - FAILED_PRECONDITION and reason SESSION_CONFLICT when the user has a
+//     graphical session the Agent did not open (logind), which would share
+//     its D-Bus and sound.
+//
+// Feature "leaflow.fleet.virtualdesktop.host.v1" (leaflow.fleet.machine.v1
+// Feature): AVAILABLE while the Agent's desktop package is installed and its
+// X server can start. Details, each present when the machine has it:
+//   - "x11.xvfb", "x11.xorg-dummy": the X server sessions run on;
+//   - "accessibility.at-spi": the accessibility tree;
+//   - "desktop." followed by the DesktopNames of an installed X session
+//     (XDG_SESSION_DESKTOP), such as "desktop.XFCE": a desktop environment
+//     SESSION_MODE_DESKTOP can start.
+
+// What a desktop session is opened with: an option of OpenSession.
+message DesktopOptions {
+  // How the session shows its windows.
+  leaflow.fleet.virtualdesktop.display.v1.SessionMode mode = 1;
+  // The first size of the canvas, normally the participant's. Unset: the
+  // Agent's default.
+  leaflow.fleet.virtualdesktop.display.v1.Size size = 2;
+  // The largest size the canvas may grow to. Unset: the Agent's default.
+  leaflow.fleet.virtualdesktop.display.v1.Size max_size = 3;
+  // SESSION_MODE_DESKTOP only: the desktop environment to start, one the
+  // feature's details name after "desktop.". Empty: the Agent's default.
+  string session_desktop = 4;
+}
+
+// What a desktop session is: a detail of its Session.
+message DesktopState {
+  // The X display, such as ":10" (X(7)).
+  string display = 1;
+  // How the session shows its windows.
+  leaflow.fleet.virtualdesktop.display.v1.SessionMode mode = 2;
+}

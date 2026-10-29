@@ -1,0 +1,372 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.change.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "leaflow/fleet/virtualdesktop/accessibility/v1/accessibility.proto";
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+import "leaflow/fleet/virtualdesktop/notification/v1/notification.proto";
+import "leaflow/fleet/virtualdesktop/tray/v1/tray.proto";
+import "leaflow/fleet/virtualdesktop/window/v1/window.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/change/v1;changev1";
+
+// What changed in the session, for clients that act on it and need to learn
+// what each action did. The session observes its windows through X11 events,
+// its pixels through the X11 DAMAGE extension, its tray icons and
+// notifications and, where applications expose them, its accessibility trees
+// through AT-SPI2 events, and reports what changed once the session has
+// become quiet (after XCTest quiescence). All but accessibility changes are
+// observed for every application; accessibility changes only for
+// applications that expose a tree.
+//
+// Channel type "leaflow.fleet.virtualdesktop.change.v1.ChangeService", lane
+// "interactive": opened by the participant. Read-only participants may use it.
+// The session records changes while at least one participant has the channel
+// open and keeps them for at least 60 seconds.
+//
+// Revisions. Every change carries the session revision at which it was
+// observed. A client passes the revision its action returned, such as
+// ClickResponse.revision, as after_revision and learns what was
+// observed after the action took effect. That includes changes the action did
+// not cause, such as a message arriving meanwhile.
+
+// Reports what changed in the session and waits for conditions on it.
+service ChangeService {
+  // Waits for changes after a revision and for the session to become quiet
+  // after them, then returns them. An after_revision whose changes are no
+  // longer kept fails with OUT_OF_RANGE and reason REVISION_COMPACTED; the
+  // client then reads the state anew.
+  rpc WaitForChanges(WaitForChangesRequest) returns (WaitForChangesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Waits until conditions on windows and accessibility nodes hold, or a
+  // timeout passes. The session samples them every 100 milliseconds and
+  // answers once all of them held in stable_samples samples in a row.
+  rpc WaitForCondition(WaitForConditionRequest) returns (WaitForConditionResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// The request of WaitForChanges. The call returns once something in scope has
+// changed after after_revision and the session has then been quiet for
+// quiet_period, or when the timeout passes, whichever comes first. Changes
+// observed before the call count, so a call made late returns at once.
+//
+// Quiet. The session is quiet once nothing in scope has changed for
+// quiet_period and no node in scope is busy (aria-busy). Repaints of at most
+// 256 pixels of a window within 100 milliseconds, such as a blinking caret,
+// neither break the quiet nor are reported.
+message WaitForChangesRequest {
+  // Returns the changes with a larger revision. 0: the revision when the call
+  // arrives, so that only changes from then on count.
+  uint64 after_revision = 1;
+  // The scope: this window, the windows transient for it or in its group, and
+  // the override-redirect windows of its process, such as its menus. 0: every
+  // window.
+  uint64 window_id = 2;
+  // How long nothing may change for the session to be quiet. Unset: 300
+  // milliseconds.
+  google.protobuf.Duration quiet_period = 3;
+  // The longest wait, at most 10 seconds. 0 seconds: return what changed so
+  // far without waiting. Unset: 3 seconds.
+  google.protobuf.Duration timeout = 4;
+  // The most changes to return, at most 4096. 0: 256.
+  uint32 max_changes = 5;
+}
+
+// The response of WaitForChanges. Changes are coalesced: something that
+// appeared and vanished within the range is not reported, nor are the nodes
+// of a window that closed within it, and several updates of one window or
+// node are reported once, as its latest state with all changed fields, at
+// the revision of the last update. Of window activations and focus moves
+// only the last is reported.
+message WaitForChangesResponse {
+  // The changes in revision order.
+  repeated Change changes = 1;
+  // The revision up to which changes were observed, to pass as after_revision
+  // next time.
+  uint64 revision = 2;
+  // How the wait ended.
+  WaitOutcome outcome = 3;
+  // Changes beyond max_changes were left out. revision covers them, so a
+  // client that needs them reads the state anew.
+  bool truncated = 4;
+}
+
+// How a wait for changes ended.
+enum WaitOutcome {
+  WAIT_OUTCOME_UNSPECIFIED = 0;
+  // Nothing in scope changed before the timeout. changes is empty.
+  WAIT_OUTCOME_UNCHANGED = 1;
+  // Things changed and the session then became quiet.
+  WAIT_OUTCOME_SETTLED = 2;
+  // The timeout passed while things were still changing, such as during an
+  // animation or a video.
+  WAIT_OUTCOME_CHANGING = 3;
+}
+
+// One change.
+message Change {
+  // The session revision at which it was observed.
+  uint64 revision = 1;
+  // When it was observed.
+  google.protobuf.Timestamp observed_at = 2;
+  // What changed. Names follow AT-SPI2 events.
+  oneof change {
+    // A window appeared (window:create).
+    WindowCreated window_created = 3;
+    // A window changed.
+    WindowUpdated window_updated = 4;
+    // A window is gone (window:destroy).
+    WindowDestroyed window_destroyed = 5;
+    // A window became the active one (window:activate).
+    WindowActivated window_activated = 6;
+    // Pixels of a window changed (X11 DamageNotify).
+    WindowRepainted window_repainted = 7;
+    // A node was added to a tree (object:children-changed:add).
+    NodeAdded node_added = 8;
+    // A node changed (object:property-change, object:state-changed,
+    // object:text-changed).
+    NodeUpdated node_updated = 9;
+    // A node was removed from a tree (object:children-changed:remove).
+    NodeRemoved node_removed = 10;
+    // The keyboard focus moved (focus:).
+    FocusChanged focus_changed = 11;
+    // An application announced a message (object:announcement; aria-live).
+    Announcement announcement = 12;
+    // A tray icon appeared.
+    TrayIconAdded tray_icon_added = 13;
+    // A tray icon changed, such as its status turning to NEEDS_ATTENTION.
+    TrayIconUpdated tray_icon_updated = 14;
+    // A tray icon is gone.
+    TrayIconRemoved tray_icon_removed = 15;
+    // A notification appeared or was replaced in place.
+    NotificationShown notification_shown = 16;
+    // A notification closed.
+    NotificationClosed notification_closed = 17;
+  }
+}
+
+// A window appeared.
+message WindowCreated {
+  // The window as the window channel describes it, without its icon.
+  leaflow.fleet.virtualdesktop.window.v1.Window window = 1;
+}
+
+// A window changed.
+message WindowUpdated {
+  // The window now, without its icon.
+  leaflow.fleet.virtualdesktop.window.v1.Window window = 1;
+  // The fields of window that changed, such as "title" or "geometry".
+  google.protobuf.FieldMask changed_fields = 2;
+}
+
+// A window is gone.
+message WindowDestroyed {
+  // The window as it was last, without its icon.
+  leaflow.fleet.virtualdesktop.window.v1.Window window = 1;
+}
+
+// A window became the active one.
+message WindowActivated {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// Pixels of a window changed.
+message WindowRepainted {
+  // The window.
+  uint64 window_id = 1;
+  // Rectangles covering every changed pixel, in window coordinates, at most
+  // 16. A client captures them with CaptureScreenshot to see what changed.
+  repeated leaflow.fleet.virtualdesktop.display.v1.Rectangle areas = 2;
+  // Window.resize_counter the areas belong to.
+  uint64 resize_counter = 3;
+}
+
+// A node was added to a tree.
+message NodeAdded {
+  // The node, without its subtree.
+  leaflow.fleet.virtualdesktop.accessibility.v1.Node node = 1;
+}
+
+// A node changed.
+message NodeUpdated {
+  // The node now, without its subtree.
+  leaflow.fleet.virtualdesktop.accessibility.v1.Node node = 1;
+  // The fields of node that changed, such as "name", "value" or "states".
+  google.protobuf.FieldMask changed_fields = 2;
+}
+
+// A node was removed from a tree.
+message NodeRemoved {
+  // The node as it was last reported, without its subtree. Of a node whose
+  // changes were never reported, only node_id and, where known, parent_id
+  // and window_id.
+  leaflow.fleet.virtualdesktop.accessibility.v1.Node node = 1;
+}
+
+// The keyboard focus moved.
+message FocusChanged {
+  // The window with the focus. 0: none.
+  uint64 window_id = 1;
+  // The focused node. Unset when its application exposes no tree.
+  leaflow.fleet.virtualdesktop.accessibility.v1.Node node = 2;
+}
+
+// An application announced a message for assistive technologies, such as
+// "Message sent".
+message Announcement {
+  // The message.
+  string text = 1;
+  // How urgently it was announced.
+  Politeness politeness = 2;
+  // The node that announced it. 0 when unknown.
+  uint64 node_id = 3;
+  // Its window. 0 when unknown.
+  uint64 window_id = 4;
+}
+
+// A tray icon appeared.
+message TrayIconAdded {
+  // The icon as the tray channel describes it, without its images.
+  leaflow.fleet.virtualdesktop.tray.v1.TrayIcon tray_icon = 1;
+}
+
+// A tray icon changed.
+message TrayIconUpdated {
+  // The icon now, without its images.
+  leaflow.fleet.virtualdesktop.tray.v1.TrayIcon tray_icon = 1;
+  // The fields of tray_icon that changed, such as "status" or "tooltip".
+  google.protobuf.FieldMask changed_fields = 2;
+}
+
+// A tray icon is gone.
+message TrayIconRemoved {
+  // The icon as it was last, without its images.
+  leaflow.fleet.virtualdesktop.tray.v1.TrayIcon tray_icon = 1;
+}
+
+// A notification appeared or was replaced in place.
+message NotificationShown {
+  // The notification as the notification channel describes it, without its
+  // images.
+  leaflow.fleet.virtualdesktop.notification.v1.Notification notification = 1;
+}
+
+// A notification closed.
+message NotificationClosed {
+  // The notification as it was last, without its images.
+  leaflow.fleet.virtualdesktop.notification.v1.Notification notification = 1;
+  // Why it closed.
+  leaflow.fleet.virtualdesktop.notification.v1.NotificationCloseReason reason = 2;
+}
+
+// How urgently a message is announced (WAI-ARIA 1.2 aria-live).
+enum Politeness {
+  POLITENESS_UNSPECIFIED = 0;
+  // When the user is idle (aria-live="polite").
+  POLITENESS_POLITE = 1;
+  // At once (aria-live="assertive").
+  POLITENESS_ASSERTIVE = 2;
+}
+
+// The request of WaitForCondition.
+message WaitForConditionRequest {
+  // 1 to 8 conditions, all of which must hold.
+  repeated Condition conditions = 1;
+  // How many samples in a row all conditions must hold in, 1 to 5. 0: 2;
+  // 1 when the timeout is 0 seconds.
+  uint32 stable_samples = 2;
+  // The longest wait, at most 10 seconds. 0 seconds: sample once. Unset: 5
+  // seconds.
+  google.protobuf.Duration timeout = 3;
+}
+
+// A condition on the session.
+message Condition {
+  // The condition.
+  oneof condition {
+    // On windows.
+    WindowCondition window = 1;
+    // On accessibility nodes.
+    NodeCondition node = 2;
+  }
+}
+
+// A window matching these fields exists, or none does. A field that is not
+// set matches any window.
+message WindowCondition {
+  // Only this window.
+  uint64 window_id = 1;
+  // A part of the title, compared case-insensitively.
+  string title_contains = 2;
+  // The desktop file ID, exactly.
+  string desktop_file_id = 3;
+  // The window it is transient for.
+  optional uint64 transient_for = 4;
+  // One of these types.
+  repeated leaflow.fleet.virtualdesktop.window.v1.WindowType window_types = 5;
+  // All of these states.
+  repeated leaflow.fleet.virtualdesktop.window.v1.WindowState states = 6;
+  // The condition holds when no window matches instead, such as when a
+  // dialog closed.
+  bool absent = 7;
+}
+
+// A node matching the rule exists in a subtree, or none does.
+message NodeCondition {
+  // The subtree to search: that of this window. Set at most one of window_id
+  // and node_id; neither: all trees.
+  uint64 window_id = 1;
+  // The subtree to search: that of this node.
+  uint64 node_id = 2;
+  // What to match.
+  leaflow.fleet.virtualdesktop.accessibility.v1.MatchRule rule = 3;
+  // The condition holds when no node matches instead.
+  bool absent = 4;
+}
+
+// The response of WaitForCondition.
+message WaitForConditionResponse {
+  // SATISFIED when every condition held; otherwise UNSATISFIED when one was
+  // found not to hold, or UNKNOWN. UNKNOWN is never success.
+  ConditionStatus status = 1;
+  // The outcome of each condition, in the order of the request.
+  repeated ConditionResult results = 2;
+  // How long the session waited.
+  google.protobuf.Duration elapsed = 3;
+  // The session revision of the last sample.
+  uint64 revision = 4;
+}
+
+// The outcome of a condition.
+enum ConditionStatus {
+  CONDITION_STATUS_UNSPECIFIED = 0;
+  // It holds.
+  CONDITION_STATUS_SATISFIED = 1;
+  // It does not hold.
+  CONDITION_STATUS_UNSATISFIED = 2;
+  // The session could not tell, such as because the window exposes no tree
+  // or the search was incomplete. Absence is proven only by a complete
+  // search.
+  CONDITION_STATUS_UNKNOWN = 3;
+}
+
+// The outcome of one condition at the last sample.
+message ConditionResult {
+  // The outcome.
+  ConditionStatus status = 1;
+  // Window conditions: the matching windows.
+  repeated uint64 window_ids = 2;
+  // Node conditions: the matching nodes, at most 16, without their subtrees.
+  repeated leaflow.fleet.virtualdesktop.accessibility.v1.Node nodes = 3;
+  // Why the status is UNKNOWN, as an ErrorInfo reason such as
+  // TREE_UNAVAILABLE, WINDOW_NOT_FOUND, NODE_NOT_FOUND or SEARCH_INCOMPLETE,
+  // or NOT_STABLE when the condition held but not in enough samples. Empty
+  // otherwise.
+  string reason = 4;
+}

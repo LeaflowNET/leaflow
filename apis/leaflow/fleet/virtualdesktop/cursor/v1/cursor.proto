@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.cursor.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/cursor/v1;cursorv1";
+
+// The shape and position of the mouse cursor, and what other participants act
+// on. X shows one cursor at a time, chosen by the window under the pointer, so
+// the participant shows it over every window of the session and its own cursors
+// over its own interface.
+//
+// Channel type "leaflow.fleet.virtualdesktop.cursor.v1", lane "metadata". The
+// participant opens one per connection. It starts with a snapshot: the current
+// Cursor and PointerPosition, then SnapshotEnd.
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The cursor now shown.
+    Cursor cursor = 1;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 2;
+    // The pointer moved, other than by this participant.
+    PointerPosition pointer_position = 3;
+    // Another participant's operation call acted on an area.
+    Highlight highlight = 4;
+  }
+}
+
+// A cursor shape (X11 XFIXES CursorNotify; Xpra cursor-data). Shapes repeat
+// cheaply: the image is cached by its content hash.
+message Cursor {
+  // The CSS cursor keyword that matches the shape, such as "default", "text"
+  // or "ew-resize" (CSS Basic User Interface Module Level 4); "none" hides
+  // the cursor. When the participant supports the keyword it uses it instead of
+  // the image. Empty: use the image.
+  string name = 1;
+  // The shape as a PNG with straight alpha, one pixel per canvas pixel.
+  // Unset when name is "none".
+  leaflow.fleet.virtualdesktop.display.v1.Image image = 2;
+  // The hotspot from the left of the image, in pixels.
+  uint32 hotspot_x = 3;
+  // The hotspot from the top of the image, in pixels.
+  uint32 hotspot_y = 4;
+  // The X cursor serial (XFIXES), for diagnostics.
+  uint64 serial = 5;
+}
+
+// Where the pointer is (RFB PointerPos pseudo-encoding; Xpra pointer-position),
+// so that a participant can show the pointer of whoever else moves it, such as
+// another participant holding the input lease. Sent when the pointer was moved
+// by another participant or by an application, at most once per 16 milliseconds
+// with the latest position; never for this participant's own input.
+message PointerPosition {
+  // The window the point is relative to. 0: canvas coordinates.
+  uint64 window_id = 1;
+  // The point.
+  sint32 x = 2;
+  // See x.
+  sint32 y = 3;
+  // The participant whose input moved it, as in ParticipantList. 0: an
+  // application moved it.
+  uint64 participant_id = 4;
+}
+
+// The area an operation call acted on, so that the other participants see what
+// it does (after the Chrome DevTools Protocol Overlay highlights). Sent to the
+// other participants for every operation call that acts on a place, such as an
+// injected click or an action on an accessibility node. The participant draws
+// it briefly.
+message Highlight {
+  // The participant that acted, as in ParticipantList.
+  uint64 participant_id = 1;
+  // The window the area is relative to. 0: canvas coordinates.
+  uint64 window_id = 2;
+  // The area: the bounds of the node acted on, or a small square around the
+  // point of injected pointer input.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle area = 3;
+  // The accessible name of the node acted on, plain text. Empty when the
+  // action had no node.
+  string label = 4;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}

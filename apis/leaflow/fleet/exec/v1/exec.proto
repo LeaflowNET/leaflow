@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package leaflow.fleet.exec.v1;
+
+import "google/protobuf/duration.proto";
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/exec/v1;execv1";
+
+// Programs run without a terminal as the session's user, never as root (RFC
+// 4254 §6.5 "exec", with an argument vector instead of a command line).
+//
+// Channel type "leaflow.fleet.exec.v1", lane "bulk": opened by the participant,
+// one per run and at most four at a time per connection. The participant sends
+// ClientMessage, starting with ExecStart; the session sends ServerMessage: the
+// output as the program writes it, then exactly one ExecExit, and closes the
+// channel. Closing the channel with CANCELLED, or the end of the connection,
+// kills the program's process group and nothing else. Output beyond the
+// channel's credit waits, so a participant that reads slowly slows the program
+// down.
+//
+// Neither the arguments nor the output enter logs. Needs ExecPolicy;
+// read-only participants open none.
+
+// A message from the participant.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // Starts the program. The first message.
+    ExecStart start = 1;
+    // Bytes for the program's standard input, when ExecStart.stdin is
+    // set.
+    ExecInput input = 2;
+    // Closes the program's standard input (RFC 4254 §5.3 "eof").
+    ExecInputEnd input_end = 3;
+  }
+}
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // Bytes the program wrote.
+    ExecOutput output = 1;
+    // The program ended, or never ran. The last message.
+    ExecExit exit = 2;
+  }
+}
+
+// Starts a program. No shell interprets the arguments; a participant that wants
+// one runs it, such as ["/bin/sh", "-lc", "ls | wc -l"].
+message ExecStart {
+  // The program and its arguments. argv[0] is looked up in PATH unless it
+  // contains "/".
+  repeated string argv = 1;
+  // The working directory. Empty: the user's home directory.
+  string working_directory = 2;
+  // Kills the program when it runs longer, at most 10 minutes. Unset: 120
+  // seconds.
+  google.protobuf.Duration timeout = 3;
+  // The program reads standard input from ExecInput. Otherwise its
+  // standard input is empty.
+  bool stdin = 4;
+  // Environment variables added to the session's.
+  map<string, string> environment = 5;
+}
+
+// Bytes for the program's standard input.
+message ExecInput {
+  // At most 64 KiB.
+  bytes data = 1;
+}
+
+// Closes the program's standard input.
+message ExecInputEnd {}
+
+// Bytes the program wrote (RFC 4254 §5.2 data and extended data). Each
+// stream keeps its own order. A run writes at most 16 MiB in total; then the
+// session kills it.
+message ExecOutput {
+  // Where it wrote them.
+  OutputStream stream = 1;
+  // At most 64 KiB.
+  bytes data = 2;
+}
+
+// An output stream of a program.
+enum OutputStream {
+  OUTPUT_STREAM_UNSPECIFIED = 0;
+  // Standard output.
+  OUTPUT_STREAM_STDOUT = 1;
+  // Standard error (SSH_EXTENDED_DATA_STDERR).
+  OUTPUT_STREAM_STDERR = 2;
+}
+
+// How the program ended (RFC 4254 §6.10).
+message ExecExit {
+  // How it ended. Unset when it never ran.
+  oneof status {
+    // It exited with this code, 0 to 255, including a nonzero one
+    // ("exit-status").
+    uint32 exit_code = 1;
+    // A signal ended it, named without "SIG", such as "KILL"
+    // ("exit-signal").
+    string signal_name = 2;
+  }
+  // The signal dumped core.
+  bool core_dumped = 3;
+  // Why the session could not start it or killed it: NOT_FOUND for a missing
+  // program, DEADLINE_EXCEEDED after the timeout, CANCELLED, or
+  // RESOURCE_EXHAUSTED beyond the output limit. Unset when it ended by
+  // itself, whatever its exit code.
+  google.rpc.Status error = 4;
+}
+
+// Allows a participant to run commands. Carried in the participant's signed
+// authorization.
+message ExecPolicy {}

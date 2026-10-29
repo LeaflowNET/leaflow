@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package leaflow.fleet.logs.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/logs/v1;logsv1";
+
+// Diagnostic records of the session's Agent process, for troubleshooting a
+// session from a participant. A record is an event of a module with typed
+// fields; it has no free text, and string fields are identifiers only, so
+// records never carry what people type or see: no input, screen, clipboard,
+// file or terminal content, no credentials, and nothing of other users or of
+// the system.
+//
+// Channel type "leaflow.fleet.logs.v1", lane "bulk": opened by the participant.
+// The participant sends one LogSubscribeRequest within 15 seconds; the session
+// answers with LogsServerMessage: the acceptance, then batches of the matching
+// records as they happen. Needs LogsPolicy.
+
+// Which records to send. A record matches when it meets every field that is
+// set.
+message LogSubscribeRequest {
+  // The lowest level. Unset: INFO.
+  LogLevel min_level = 1;
+  // The module, exactly, at most 64 bytes. Empty: all.
+  string module = 2;
+  // The event, exactly, at most 64 bytes. Empty: all.
+  string event = 3;
+}
+
+// A message from the session.
+message LogsServerMessage {
+  // The message.
+  oneof message {
+    // The subscription is active. The first message.
+    LogSubscriptionAccepted accepted = 1;
+    // Matching records.
+    LogRecordBatch batch = 2;
+  }
+}
+
+// The subscription is active, with the bounds of its queue. Records beyond
+// them are dropped and counted.
+message LogSubscriptionAccepted {
+  // The most records queued for the participant.
+  uint32 max_queued_records = 1;
+  // The most bytes queued for the participant.
+  uint32 max_queued_bytes = 2;
+}
+
+// Matching records, in the order they were written.
+message LogRecordBatch {
+  // At most 128.
+  repeated LogRecord records = 1;
+  // Records dropped since the previous batch because the participant read too
+  // slowly.
+  uint64 dropped_count = 2;
+}
+
+// One diagnostic record.
+message LogRecord {
+  // Grows by one with every record of the session.
+  uint64 sequence = 1;
+  // When it was written.
+  google.protobuf.Timestamp time = 2;
+  // How severe it is.
+  LogLevel level = 3;
+  // The module that wrote it, such as "window", at most 64 bytes.
+  string module = 4;
+  // What happened, such as "configure_rejected", at most 64 bytes.
+  string event = 5;
+  // Its details.
+  map<string, LogValue> fields = 6;
+}
+
+// The value of a field.
+message LogValue {
+  // The value.
+  oneof value {
+    // An unsigned integer.
+    uint64 unsigned_integer = 1;
+    // A signed integer.
+    sint64 integer = 2;
+    // A floating-point number.
+    double number = 3;
+    // A boolean.
+    bool boolean = 4;
+    // An identifier, such as a reason code. Never free text.
+    string identifier = 5;
+  }
+}
+
+// How severe a record is (the levels of Rust tracing and OpenTelemetry).
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  // TRACE.
+  LOG_LEVEL_TRACE = 1;
+  // DEBUG.
+  LOG_LEVEL_DEBUG = 2;
+  // INFO.
+  LOG_LEVEL_INFO = 3;
+  // WARN.
+  LOG_LEVEL_WARN = 4;
+  // ERROR.
+  LOG_LEVEL_ERROR = 5;
+}
+
+// Allows a participant to read the diagnostic records of this session only.
+// Carried in the participant's signed authorization.
+message LogsPolicy {}

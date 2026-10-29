@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package leaflow.fleet.command.v1;
+
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/command/v1;commandv1";
+
+// Commands the platform runs on a machine through its Agent, instead of
+// logging in over SSH: no open port, no key to distribute and no address to
+// reach, since the Agent's control connection (leaflow.fleet.control.v1)
+// already leads to the machine. Every call fails with the reasons of each
+// method in a google.rpc.ErrorInfo of the domain "fleet.leaflow.cloud".
+//
+// Accounts. A command runs as the directory account of the platform user who
+// asked for it (leaflow.fleet.directory.v1), the account the user also logs
+// in with over SSH and opens sessions as; never as a local account. The Agent
+// runs it through the account and session stacks of its PAM service, so it
+// is refused whenever a login of the account would be.
+//
+// Elevation. Inside a command, sudo(8) succeeds without a prompt while the
+// account may become root (Account.admin, asked with GetAccount at that
+// moment), and refuses otherwise: the user asked for the command, so
+// the request stands for the approval a person gives on a participant of a
+// session (leaflow.fleet.privilege.v1).
+//
+// A command is one line for the account's login shell, as `ssh host
+// 'command'` runs it (RFC 4254 §6.5 "exec"): pipes, redirection and `&&`
+// work, and there is no terminal and no standard input.
+//
+// Neither the command nor its output is confidential to the platform: do
+// not put secrets into either.
+//
+// Feature "leaflow.fleet.command.v1" (leaflow.fleet.machine.v1 Feature):
+// AVAILABLE while leaflow.fleet.directory.v1 is, since commands run as
+// directory accounts.
+
+// Runs commands. Served by the daemon; the service calls it.
+service CommandService {
+  // Runs one command and returns once it exited or was killed, with what it
+  // wrote. A command that fails is still a successful call: its exit status
+  // is its result.
+  //
+  // Fails with:
+  //   - INVALID_ARGUMENT and reason INVALID_REQUEST for an empty command,
+  //     one longer than 65536 bytes or one containing a NUL byte, or a
+  //     timeout outside 1 to 300 seconds;
+  //   - NOT_FOUND and reason USER_NOT_FOUND for an account the machine's
+  //     copy of the directory does not hold for user_id;
+  //   - PERMISSION_DENIED and reason USER_NOT_ALLOWED for an account that
+  //     may not log in to the machine or one the machine does not serve (a
+  //     conflict);
+  //   - PERMISSION_DENIED and reason ACCOUNT_EXPIRED when PAM reports the
+  //     account expired (PAM_ACCT_EXPIRED);
+  //   - PERMISSION_DENIED and reason PAM_PERMISSION_DENIED when PAM refuses
+  //     the account or the session (PAM_PERM_DENIED), with metadata
+  //     "pamMessage", the text PAM gave;
+  //   - INTERNAL and reason COMMAND_START_FAILED when the shell could not
+  //     start; nothing ran;
+  //   - INTERNAL and reason COMMAND_LOST when the Agent lost the command
+  //     while it ran: it may have run in part, and what it wrote is gone.
+  // Calling again runs the command again: a caller that lost the result,
+  // such as with CONNECTION_LOST, does not know whether it ran. A call
+  // without a timeout may run the command's timeout and 10 seconds more.
+  rpc RunCommand(RunCommandRequest) returns (RunCommandResponse);
+}
+
+// The request of RunCommand.
+message RunCommandRequest {
+  // The platform user who asked for the command.
+  string user_id = 1;
+  // The user's directory account (leaflow.fleet.directory.v1 Account), whose
+  // user_id is the one above.
+  string username = 2;
+  // The command line for the account's login shell (`shell -c command`).
+  string command = 3;
+  // Kills the command, and every process it started, when it has not ended
+  // this long after it started: the shell still runs or its output is still
+  // open. 1 to 300 seconds; unset: 60 seconds. As with ssh, a command ends
+  // without waiting for what it left running in the background with its
+  // output elsewhere (`nohup daemon >log 2>&1 &`), and that keeps running.
+  google.protobuf.Duration timeout = 4;
+}
+
+// The response of RunCommand.
+message RunCommandResponse {
+  // How the command ended.
+  oneof termination {
+    // It exited with this status (wait(2) WEXITSTATUS), 0 being success.
+    // Any other value is the command's own verdict.
+    int32 exit_status = 1;
+    // A signal ended it (wait(2) WTERMSIG), such as 9 when the timeout
+    // killed it.
+    int32 signal = 2;
+  }
+  // The timeout ended it.
+  bool timed_out = 3;
+  // What it wrote to standard output, at most 1 MiB; the rest is discarded.
+  bytes stdout = 4;
+  // stdout is cut short.
+  bool stdout_truncated = 5;
+  // What it wrote to standard error, at most 1 MiB; the rest is discarded.
+  bytes stderr = 6;
+  // stderr is cut short.
+  bool stderr_truncated = 7;
+}

@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package leaflow.fleet.gamepad.v1;
+
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/gamepad/v1;gamepadv1";
+
+// The participant's gamepads as input devices of the session's user. Names
+// follow the W3C Gamepad API.
+//
+// Channel type "leaflow.fleet.gamepad.v1", lane "input": opened by the
+// participant, one per gamepad it provides, within GamepadLimits.max_devices,
+// after its person agreed and a gamepad is connected. The participant sends
+// GamepadClientMessage: the descriptor, then states; the session sends
+// GamepadServerMessage: the opening once the virtual device exists, a receipt
+// for every state it wrote, and the closing when it ends the device. Closing
+// the channel, or the end of the connection, releases every button, returns
+// every axis to its neutral value and removes the device; nothing is replayed
+// or adopted by another connection.
+//
+// Until the device is open the participant keeps only the newest complete
+// state, and sends it first with its original time. It never drops a button
+// change it observed; it may merge changes of axes only, and drops states older
+// than GamepadLimits.max_queue_time. Messages are at most 16 KiB and strings at
+// most 512 bytes; every value is finite and within its range.
+
+// A message from the participant.
+message GamepadClientMessage {
+  // The message.
+  oneof message {
+    // The gamepad. The first message.
+    GamepadDescriptor descriptor = 1;
+    // The gamepad's state now.
+    GamepadState state = 2;
+  }
+}
+
+// A message from the session.
+message GamepadServerMessage {
+  // The message.
+  oneof message {
+    // The virtual device exists. The first message.
+    GamepadOpen open = 1;
+    // A state was written to the device.
+    GamepadApplied applied = 2;
+    // The session removed the device. The last message.
+    GamepadClose close = 3;
+  }
+}
+
+// A gamepad. It never claims to be another model than it is.
+message GamepadDescriptor {
+  // Its name (Gamepad.id).
+  string name = 1;
+  // Its USB vendor ID. Unset when unknown. Serial numbers and Bluetooth
+  // addresses are never sent.
+  optional uint32 vendor_id = 2;
+  // Its USB product ID. Unset when unknown.
+  optional uint32 product_id = 3;
+  // How its buttons and axes are laid out.
+  GamepadMapping mapping = 4;
+  // The number of buttons.
+  uint32 button_count = 5;
+  // The resting value of each axis, from -1 to 1, one per axis. All 0 for
+  // the standard mapping.
+  repeated float neutral_axes = 6;
+}
+
+// How a gamepad's buttons and axes are laid out (Gamepad.mapping).
+enum GamepadMapping {
+  GAMEPAD_MAPPING_UNSPECIFIED = 0;
+  // The W3C standard gamepad layout ("standard"). The session maps the
+  // D-pad to a hat and keeps the triggers analog.
+  GAMEPAD_MAPPING_STANDARD = 1;
+  // The device's own order and resting values ("").
+  GAMEPAD_MAPPING_RAW = 2;
+}
+
+// The virtual device exists.
+message GamepadOpen {
+  // The descriptor in effect: the participant's, with the standard mapping
+  // normalized.
+  GamepadDescriptor descriptor = 1;
+}
+
+// The full state of a gamepad.
+message GamepadState {
+  // Grows by one with every state of the channel, starting at 1.
+  uint64 sequence = 1;
+  // When the participant read it, in microseconds on its own clock
+  // (Gamepad.timestamp). Informational.
+  int64 timestamp_us = 2;
+  // The axes, each from -1 to 1, as many as the descriptor has.
+  repeated float axes = 3;
+  // The buttons, as many as the descriptor has.
+  repeated GamepadButton buttons = 4;
+}
+
+// The state of a button (GamepadButton).
+message GamepadButton {
+  // It is pressed.
+  bool pressed = 1;
+  // It is touched, where the device can tell.
+  bool touched = 2;
+  // How far it is pressed, from 0 to 1, independent of pressed.
+  float value = 3;
+}
+
+// A state was written to the device and reported (SYN_REPORT), not merely
+// received.
+message GamepadApplied {
+  // GamepadState.sequence.
+  uint64 sequence = 1;
+  // Why it could not be written. Unset on success.
+  google.rpc.Status error = 2;
+}
+
+// The session removed the device.
+message GamepadClose {
+  // Why.
+  GamepadCloseReason reason = 1;
+  // Details. Unset when the reason says enough.
+  google.rpc.Status error = 2;
+}
+
+// Why the session removed a gamepad.
+enum GamepadCloseReason {
+  GAMEPAD_CLOSE_REASON_UNSPECIFIED = 0;
+  // The participant's authorization does not allow it.
+  GAMEPAD_CLOSE_REASON_PERMISSION_DENIED = 1;
+  // The participant's authorization no longer allows it.
+  GAMEPAD_CLOSE_REASON_PERMISSION_REVOKED = 2;
+  // The session cannot create or keep the virtual device.
+  GAMEPAD_CLOSE_REASON_DEVICE_UNAVAILABLE = 3;
+  // The participant broke the rules above.
+  GAMEPAD_CLOSE_REASON_PROTOCOL_ERROR = 4;
+  // A limit of GamepadLimits was exceeded.
+  GAMEPAD_CLOSE_REASON_RESOURCE_EXHAUSTED = 5;
+}

@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package leaflow.fleet.directory.v1;
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/directory/v1;directoryv1";
+
+// Logins of platform users on the machines of their projects, after Google
+// Cloud OS Login: every platform user has one account, with the same name and
+// uid on every machine of every project, and each project has its groups;
+// the service allocates their ids. Every call travels on the daemon's control
+// connection (leaflow.fleet.control.v1) and fails there with the reasons of
+// each method in a google.rpc.ErrorInfo of the domain "fleet.leaflow.cloud".
+//
+// The service sends each machine its copy with SetDirectory, and changes to
+// it with UpdateDirectory: the accounts of the project's members and the
+// project's groups, with for every account whether it may log in to this
+// machine, whether it may become root through sudo and the SSH keys it logs
+// in with. The Agent answers name service (NSS) lookups, PAM and sshd from
+// that copy, for every way into the machine (sshd, su, cron, sessions), and
+// asks GetAccount when an account logs in or elevates, so that withdrawn
+// access holds from the next login on; while the service is unreachable it
+// decides from its copy. Directory accounts and groups never appear in
+// /etc/passwd or /etc/group, and the local accounts and groups of the
+// machine are left as they are. Directory accounts have no password: a
+// person on a participant of one of the account's sessions approves elevation
+// through sudo, or the account's owner does on the platform, or their setting
+// for the machine does at once (leaflow.fleet.privilege.v1); inside a command
+// the platform runs for the account, its request does
+// (leaflow.fleet.command.v1).
+//
+// Feature "leaflow.fleet.directory.v1" (leaflow.fleet.machine.v1 Feature):
+// AVAILABLE while the Agent's NSS module serves passwd and group and its PAM
+// module is in the account stack of the machine's PAM services. Details, each
+// present when the machine has it:
+//   - "ssh": sshd(8) takes the accounts' SSH keys from the Agent's
+//     AuthorizedKeysCommand;
+//   - "sudo": sudo is installed, so accounts with Account.admin may become
+//     root.
+
+// Keeps the machine's copy of the directory. Served by the daemon; the
+// service calls it, one call at a time per machine, so that an earlier copy
+// never arrives after a later one.
+service MachineDirectoryService {
+  // Replaces the machine's copy of the directory. The Agent serves the
+  // accounts and groups of the request through NSS and PAM from then on,
+  // keeps the copy across restarts and answers from it while the service is
+  // unreachable. A request with the revision the Agent holds changes
+  // nothing.
+  //
+  // For each account:
+  //   - its name, uid, primary group (its own group of the same name and
+  //     id), GECOS name, home directory and shell resolve whatever its
+  //     access, so that the files it owns keep their owner;
+  //   - PAM admits it only while login_allowed is set; when it loses it,
+  //     the Agent ends what it runs through the machine's features, such as
+  //     its sessions, which end with SESSION_CLOSE_REASON_ACCESS_REVOKED
+  //     (leaflow.fleet.host.v1);
+  //   - sshd(8) accepts its ssh_public_keys, through the Agent's
+  //     AuthorizedKeysCommand, only while login_allowed is set;
+  //   - sudo(8) lets it become root only while admin is set as well;
+  //   - its home directory is created on its first login, owned by it, and
+  //     never deleted.
+  // Each group resolves with its members. An account or group missing from
+  // the request no longer resolves; its files keep their ids.
+  //
+  // An account or group whose name or id a local account or group of the
+  // machine already uses is not served, so that it can take over no local
+  // file or right. So is one with an id outside 65536 to 2147483647 (below
+  // are the system's and the local administrator's) or within the
+  // subordinate ids of a local user (subuid(5), subgid(5)). The Agent reports
+  // each with ReportMachineEvents (leaflow.fleet.machine.v1) when it begins.
+  //
+  // Fails with INVALID_ARGUMENT and reason INVALID_REQUEST, with metadata
+  // "field" naming the first offending field, for a directory that breaks a
+  // rule of Directory, Account or Group; nothing of it is served then.
+  rpc SetDirectory(SetDirectoryRequest) returns (SetDirectoryResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Changes the machine's copy of the directory from base_revision, the
+  // revision it holds, to revision: the accounts and groups of the request
+  // are added or replace those of the same name, and the names removed go.
+  // What results is served exactly as the same directory sent whole with
+  // SetDirectory would be. The service sends a change instead of the whole
+  // directory when it knows the revision the machine holds
+  // (ReportDirectoryStatus, or the last call that succeeded), and the whole
+  // directory whenever this call fails. A request with the revision the
+  // Agent holds already changes nothing, so that a retry succeeds.
+  //
+  // Fails with:
+  //   - FAILED_PRECONDITION and reason REVISION_MISMATCH, with metadata
+  //     "revision", the revision the Agent holds (empty for none), when
+  //     base_revision is not it; the copy stays as it is;
+  //   - INVALID_ARGUMENT and reason INVALID_REQUEST, with metadata "field"
+  //     naming the first offending field, for a request that names an entry
+  //     twice, adds and removes the same name or removes one the copy does
+  //     not have, or whose result breaks a rule of Directory, Account or
+  //     Group; the copy stays as it is.
+  rpc UpdateDirectory(UpdateDirectoryRequest) returns (UpdateDirectoryResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// Answers the Agent's questions about the directory and takes its reports.
+// Served by the service on daemon connections.
+service DirectoryService {
+  // Returns an account of the calling machine's directory as it stands now,
+  // from the platform's current permissions and keys: the Account that
+  // SetDirectory would carry now. The Agent asks when the account logs in and
+  // when it asks to become root, and replaces its copy of the account with
+  // the answer.
+  //
+  // Fails with NOT_FOUND and reason ACCOUNT_NOT_FOUND for a name that is not
+  // an account of the machine's directory.
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Reports the copy the Agent serves. The Agent reports after every connect
+  // and after every SetDirectory or UpdateDirectory that changed its copy.
+  // The service sends SetDirectory, or UpdateDirectory from the reported
+  // revision, when it is not the one the service holds.
+  rpc ReportDirectoryStatus(ReportDirectoryStatusRequest) returns (ReportDirectoryStatusResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// The directory of the machine's project, as the machine sees it.
+message Directory {
+  // Names this content: it changes whenever anything below changes. 1 to
+  // 256 bytes without control characters.
+  string revision = 1;
+  // At most 10000.
+  repeated Account accounts = 2;
+  // At most 10000.
+  repeated Group groups = 3;
+}
+
+// A directory account (passwd(5)).
+message Account {
+  // The login name, as useradd(8) accepts it by default: 1 to 32 characters
+  // of [a-z0-9_-], starting with a letter or "_". No other account or group
+  // of the directory has it.
+  string username = 1;
+  // The user id, from 65536 to 2147483647. No other account has it.
+  uint32 uid = 2;
+  // The primary group id: the account's own group, of the same name and id,
+  // so equal to uid.
+  uint32 gid = 3;
+  // The full name for the GECOS field, plain text of at most 1024 bytes;
+  // ':' and ',' show as spaces.
+  string display_name = 4;
+  // The home directory: an absolute path below /home without ".", ".." or
+  // empty components, whitespace or ':', such as "/home/alice". No other
+  // account has it.
+  string home_directory = 5;
+  // The login shell: an absolute path with the same rules, such as
+  // "/bin/bash".
+  string shell = 6;
+  // The platform user of the account.
+  string user_id = 7;
+  // The SSH public keys the account logs in with, each an authorized_keys(5)
+  // key without options, such as "ssh-ed25519 AAAAC3Nz...".
+  repeated string ssh_public_keys = 9;
+  // The account may log in to this machine.
+  bool login_allowed = 10;
+  // The account may become root on this machine through sudo(8).
+  bool admin = 11;
+}
+
+// A directory group (group(5)).
+message Group {
+  // The group name, by the rules of Account.username; no account or other
+  // group of the directory has it.
+  string name = 1;
+  // The group id, from 65536 to 2147483647; no other group and no account's
+  // own group has it.
+  uint32 gid = 2;
+  // The usernames of its members, each an account of the directory.
+  repeated string members = 3;
+}
+
+// The request of SetDirectory.
+message SetDirectoryRequest {
+  // The machine's whole directory.
+  Directory directory = 1;
+}
+
+// The response of SetDirectory.
+message SetDirectoryResponse {}
+
+// The request of UpdateDirectory.
+message UpdateDirectoryRequest {
+  // The revision the change applies to: Directory.revision of the copy the
+  // machine holds.
+  string base_revision = 1;
+  // Directory.revision after the change.
+  string revision = 2;
+  // Accounts added, or replacing the account of the same username.
+  repeated Account accounts = 3;
+  // Groups added, or replacing the group of the same name.
+  repeated Group groups = 4;
+  // The usernames of the accounts removed.
+  repeated string removed_accounts = 5;
+  // The names of the groups removed.
+  repeated string removed_groups = 6;
+}
+
+// The response of UpdateDirectory.
+message UpdateDirectoryResponse {}
+
+// The request of GetAccount.
+message GetAccountRequest {
+  // The account's login name.
+  string username = 1;
+}
+
+// The response of GetAccount.
+message GetAccountResponse {
+  // The account as the calling machine's directory has it now.
+  Account account = 1;
+}
+
+// The request of ReportDirectoryStatus.
+message ReportDirectoryStatusRequest {
+  // Directory.revision of the copy the Agent serves. Empty before the first
+  // SetDirectory.
+  string revision = 1;
+  // Orders the reports the daemon sends on this connection by when it
+  // observed what they report (leaflow.fleet.control.v1 Reports): it
+  // increases with every report, 1 for the first, and a report sent again
+  // keeps its sequence.
+  uint64 sequence = 2;
+}
+
+// The response of ReportDirectoryStatus.
+message ReportDirectoryStatusResponse {}

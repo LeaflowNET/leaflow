@@ -1,0 +1,502 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.accessibility.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/accessibility/v1;accessibilityv1";
+
+// The accessibility trees the applications of the session expose, and the
+// actions they offer through them.
+//
+// Channel type
+// "leaflow.fleet.virtualdesktop.accessibility.v1.AccessibilityService", lane
+// "interactive": opened by the participant.
+//
+// Model. Applications expose their user interface as a tree of nodes through
+// AT-SPI2. The session presents these trees as one, after the Chrome DevTools
+// Protocol Accessibility domain: roles mapped to WAI-ARIA 1.2 as W3C Core
+// Accessibility API Mappings 1.2 maps them, states and actions as AT-SPI2
+// names them. The root has one child per application exposing a tree; an
+// application's children are its windows. The session turns on the
+// platform's accessibility support when it starts and never changes how
+// applications are launched, so an application that does not follow that
+// setting exposes no tree; its windows remain reachable through capture and
+// input only.
+//
+// Identifiers. node_id is chosen by the session, is never 0 and is never
+// reused in the session. It names the same object for as long as the
+// application keeps it. Calls fail with NOT_FOUND and reason NODE_NOT_FOUND
+// for a node that is gone or defunct (metadata "nodeId"), with NOT_FOUND and
+// reason WINDOW_NOT_FOUND for a window that is gone, with
+// FAILED_PRECONDITION and reason TREE_UNAVAILABLE for a window whose
+// application exposes no tree, and with UNAVAILABLE and reason
+// ROUTE_UNAVAILABLE while the session's accessibility bus does not run.
+//
+// Coordinates. The bounds of a node are in the coordinates of its window's
+// client area (AT-SPI2 ATSPI_COORD_TYPE_WINDOW), so that they stay valid
+// while the window moves; input to a node goes to that window at a point of
+// its bounds.
+//
+// Changes. PerformAction, SetValue, SetTextSelection, SelectOptions and
+// InvokeMenuItem act on applications and follow the rules for operation calls
+// (leaflow.fleet.virtualdesktop.lease.v1). A call returns once the application
+// accepted the request, with the session revision at which it did; whether it
+// had the intended effect is for the caller to observe, such as through the
+// change package.
+
+// Reads and operates the accessibility trees.
+service AccessibilityService {
+  // Returns part of the tree.
+  rpc GetTree(GetTreeRequest) returns (GetTreeResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Returns the nodes of a subtree that match a rule (AT-SPI2
+  // Collection.GetMatches).
+  rpc FindNodes(FindNodesRequest) returns (FindNodesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Returns the deepest node at a point of a window and its ancestors
+  // (AT-SPI2 Component.GetAccessibleAtPoint).
+  rpc GetNodeAtPoint(GetNodeAtPointRequest) returns (GetNodeAtPointResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Returns the active window and the node with the keyboard focus.
+  rpc GetFocus(GetFocusRequest) returns (GetFocusResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Returns the text of a node and its caret and selections (AT-SPI2 Text).
+  rpc GetText(GetTextRequest) returns (GetTextResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Performs an action on a node.
+  rpc PerformAction(PerformActionRequest) returns (PerformActionResponse);
+  // Replaces the text or the numeric value of a node and reads it back.
+  rpc SetValue(SetValueRequest) returns (SetValueResponse);
+  // Moves the caret or selects text in a node (AT-SPI2 Text.SetSelection,
+  // Text.SetCaretOffset).
+  rpc SetTextSelection(SetTextSelectionRequest) returns (SetTextSelectionResponse);
+  // Makes the selected options of a combo box or list box exactly the ones
+  // named, opening it as needed (after Playwright selectOption).
+  rpc SelectOptions(SelectOptionsRequest) returns (SelectOptionsResponse);
+  // Opens the menus of a window's menu bar along a path of item names and
+  // activates the last item.
+  rpc InvokeMenuItem(InvokeMenuItemRequest) returns (InvokeMenuItemResponse);
+}
+
+// One node of an accessibility tree (CDP Accessibility.AXNode). Texts are
+// written by applications; see the session channel on untrusted content.
+message Node {
+  // The node.
+  uint64 node_id = 1;
+  // Its parent. 0 for the root.
+  uint64 parent_id = 2;
+  // Its children in order, all of them, whether returned or not.
+  repeated uint64 child_ids = 3;
+  // The WAI-ARIA 1.2 role, such as "button" or "menuitem", as Core-AAM 1.2
+  // maps the platform role. Empty when none corresponds, such as for an
+  // application or a top-level window.
+  string role = 4;
+  // The role as the platform names it, such as the AT-SPI2 role name
+  // "push button".
+  string platform_role = 5;
+  // The accessible name (W3C Accessible Name and Description Computation 1.2).
+  string name = 6;
+  // The accessible description.
+  string description = 7;
+  // The text of a text field, or the value of a widget with one, at most
+  // 1000 characters; GetText reads more. Empty when redacted.
+  string value = 8;
+  // The numeric value of a range widget, such as a slider. Unset for others.
+  RangeValue range_value = 9;
+  // Its states (AT-SPI2 GetState).
+  repeated State states = 10;
+  // The standard actions it offers.
+  repeated Action actions = 11;
+  // The actions it offers as the platform names them, such as the AT-SPI2
+  // action names "click", "press" or "activate".
+  repeated string platform_actions = 12;
+  // Where it is, in the coordinates of window_id. It may lie outside the
+  // client area when scrolled out of view. Unset when it has no extent.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle bounds = 13;
+  // The window it is in. 0 only when unknown, and then bounds is unset.
+  uint64 window_id = 14;
+  // The process of its application. 0 when unknown.
+  uint32 pid = 15;
+  // The heading or tree level, from 1 (aria-level). 0: none.
+  uint32 level = 16;
+  // Its position among its siblings in a set, from 1 (aria-posinset). 0:
+  // none.
+  uint32 position_in_set = 17;
+  // The number of items in its set (aria-setsize). 0: none.
+  uint32 set_size = 18;
+  // The row of a cell or a row, from 1 (aria-rowindex). 0: none.
+  uint32 row_index = 19;
+  // The column of a cell, from 1 (aria-colindex). 0: none.
+  uint32 column_index = 20;
+  // The relations to other nodes.
+  repeated Relation relations = 21;
+  // The object attributes the platform reports, such as "placeholder-text"
+  // (AT-SPI2 Accessible.GetAttributes).
+  map<string, string> attributes = 22;
+  // A password field (AT-SPI2 ROLE_PASSWORD_TEXT): its value is withheld.
+  bool redacted = 23;
+}
+
+// The value of a range widget (aria-valuenow, aria-valuemin, aria-valuemax;
+// AT-SPI2 Value).
+message RangeValue {
+  // The current value.
+  double current = 1;
+  // The lowest value.
+  double minimum = 2;
+  // The highest value.
+  double maximum = 3;
+  // The smallest step. 0 when unknown.
+  double step = 4;
+}
+
+// A state of a node (AT-SPI2 AtspiStateType).
+enum State {
+  STATE_UNSPECIFIED = 0;
+  // ATSPI_STATE_ACTIVE: the active window, or the active item of a
+  // container.
+  STATE_ACTIVE = 1;
+  // ATSPI_STATE_BUSY.
+  STATE_BUSY = 2;
+  // ATSPI_STATE_CHECKABLE.
+  STATE_CHECKABLE = 3;
+  // ATSPI_STATE_CHECKED.
+  STATE_CHECKED = 4;
+  // ATSPI_STATE_COLLAPSED.
+  STATE_COLLAPSED = 5;
+  // ATSPI_STATE_EDITABLE.
+  STATE_EDITABLE = 6;
+  // ATSPI_STATE_ENABLED.
+  STATE_ENABLED = 7;
+  // ATSPI_STATE_EXPANDABLE.
+  STATE_EXPANDABLE = 8;
+  // ATSPI_STATE_EXPANDED.
+  STATE_EXPANDED = 9;
+  // ATSPI_STATE_FOCUSABLE.
+  STATE_FOCUSABLE = 10;
+  // ATSPI_STATE_FOCUSED.
+  STATE_FOCUSED = 11;
+  // ATSPI_STATE_HAS_POPUP.
+  STATE_HAS_POPUP = 12;
+  // ATSPI_STATE_INDETERMINATE: partly checked or partly pressed.
+  STATE_INDETERMINATE = 13;
+  // ATSPI_STATE_INVALID_ENTRY.
+  STATE_INVALID_ENTRY = 14;
+  // ATSPI_STATE_MODAL.
+  STATE_MODAL = 15;
+  // ATSPI_STATE_MULTI_LINE.
+  STATE_MULTI_LINE = 16;
+  // ATSPI_STATE_MULTISELECTABLE.
+  STATE_MULTISELECTABLE = 17;
+  // ATSPI_STATE_PRESSED.
+  STATE_PRESSED = 18;
+  // ATSPI_STATE_READ_ONLY.
+  STATE_READ_ONLY = 19;
+  // ATSPI_STATE_REQUIRED.
+  STATE_REQUIRED = 20;
+  // ATSPI_STATE_SELECTABLE.
+  STATE_SELECTABLE = 21;
+  // ATSPI_STATE_SELECTED.
+  STATE_SELECTED = 22;
+  // ATSPI_STATE_SENSITIVE: it responds to the user.
+  STATE_SENSITIVE = 23;
+  // ATSPI_STATE_SHOWING: drawn on the screen, though possibly covered.
+  STATE_SHOWING = 24;
+  // ATSPI_STATE_SINGLE_LINE.
+  STATE_SINGLE_LINE = 25;
+  // ATSPI_STATE_VISIBLE: meant to be visible, though possibly not showing.
+  STATE_VISIBLE = 26;
+  // ATSPI_STATE_VISITED.
+  STATE_VISITED = 27;
+}
+
+// A standard action, mapped from the platform's actions (after AccessKit
+// Action).
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  // The default action, typically what a click does, such as the AT-SPI2
+  // action "click", "press", "activate", "toggle" or "jump".
+  ACTION_CLICK = 1;
+  // Moves the keyboard focus to it (AT-SPI2 Component.GrabFocus).
+  ACTION_FOCUS = 2;
+  // Expands it.
+  ACTION_EXPAND = 3;
+  // Collapses it.
+  ACTION_COLLAPSE = 4;
+  // Opens its context menu.
+  ACTION_SHOW_CONTEXT_MENU = 5;
+  // Scrolls its ancestors until it is visible (AT-SPI2 Component.ScrollTo).
+  ACTION_SCROLL_INTO_VIEW = 6;
+  // Selects it in its container (AT-SPI2 Selection.SelectChild).
+  ACTION_SELECT = 7;
+  // Deselects it in its container (AT-SPI2 Selection.DeselectChild).
+  ACTION_DESELECT = 8;
+  // Raises its range value by one step.
+  ACTION_INCREMENT = 9;
+  // Lowers its range value by one step.
+  ACTION_DECREMENT = 10;
+}
+
+// A relation from a node to others (AT-SPI2 Accessible.GetRelationSet).
+message Relation {
+  // The relation.
+  RelationType type = 1;
+  // The nodes it relates to.
+  repeated uint64 target_ids = 2;
+}
+
+// The type of a relation, after the WAI-ARIA 1.2 relationship attributes.
+enum RelationType {
+  RELATION_TYPE_UNSPECIFIED = 0;
+  // The targets name this node (aria-labelledby).
+  RELATION_TYPE_LABELLED_BY = 1;
+  // The targets describe this node (aria-describedby).
+  RELATION_TYPE_DESCRIBED_BY = 2;
+  // This node controls the targets (aria-controls).
+  RELATION_TYPE_CONTROLS = 3;
+  // Reading continues at the targets (aria-flowto).
+  RELATION_TYPE_FLOWS_TO = 4;
+}
+
+// What nodes to match (after AT-SPI2 MatchRule). A node matches when it meets
+// every field that is set. Texts compare case-insensitively after collapsing
+// white space.
+message MatchRule {
+  // The WAI-ARIA role, exactly.
+  string role = 1;
+  // The platform role, exactly.
+  string platform_role = 2;
+  // The accessible name, exactly.
+  string name = 3;
+  // A part of the accessible name.
+  string name_contains = 4;
+  // The value, exactly.
+  string value = 5;
+  // A part of the text the node shows: its name or its text (after
+  // Playwright getByText).
+  string text_contains = 6;
+  // States the node has, all of them.
+  repeated State states = 7;
+  // States the node has none of.
+  repeated State excluded_states = 8;
+}
+
+// The request of GetTree.
+message GetTreeRequest {
+  // The root of the part returned: the node of this window. Set at most one
+  // of window_id and node_id; neither: the root of all trees.
+  uint64 window_id = 1;
+  // The root of the part returned: this node.
+  uint64 node_id = 2;
+  // The deepest level below the root to return. 0: no limit.
+  uint32 max_depth = 3;
+  // The most nodes to return. 0: 5000.
+  uint32 max_nodes = 4;
+  // Only nodes one can act on, and their ancestors: enabled, not passive,
+  // with an action, editable text, a value or a selectable state.
+  bool interactive_only = 5;
+  // Only nodes drawn on the screen (STATE_SHOWING), and their ancestors.
+  bool showing_only = 6;
+}
+
+// The response of GetTree.
+message GetTreeResponse {
+  // The root first, then depth first in pre-order. Every node lists all its
+  // children, so a caller reads a subtree that was cut off with another
+  // GetTree.
+  repeated Node nodes = 1;
+  // Nothing was left out: no limit cut the tree and no application timed
+  // out.
+  bool complete = 2;
+  // The session revision the nodes belong to.
+  uint64 revision = 3;
+}
+
+// The request of FindNodes.
+message FindNodesRequest {
+  // The subtree to search: that of this window. Set at most one of window_id
+  // and node_id; neither: all trees.
+  uint64 window_id = 1;
+  // The subtree to search: that of this node.
+  uint64 node_id = 2;
+  // What to match.
+  MatchRule rule = 3;
+  // The most nodes to return. 0: 50.
+  uint32 max_results = 4;
+}
+
+// The response of FindNodes.
+message FindNodesResponse {
+  // The matches, in tree order, without their subtrees.
+  repeated Node nodes = 1;
+  // More nodes matched than max_results.
+  bool truncated = 2;
+  // The session revision the nodes belong to.
+  uint64 revision = 3;
+}
+
+// The request of GetNodeAtPoint.
+message GetNodeAtPointRequest {
+  // The window.
+  uint64 window_id = 1;
+  // The point, relative to the window.
+  sint32 x = 2;
+  // See x.
+  sint32 y = 3;
+}
+
+// The response of GetNodeAtPoint.
+message GetNodeAtPointResponse {
+  // The deepest node at the point first, then its ancestors up to its
+  // window.
+  repeated Node nodes = 1;
+  // The session revision the nodes belong to.
+  uint64 revision = 2;
+}
+
+// The request of GetFocus.
+message GetFocusRequest {}
+
+// The response of GetFocus.
+message GetFocusResponse {
+  // The active window (EWMH _NET_ACTIVE_WINDOW). 0: none.
+  uint64 window_id = 1;
+  // The node with the keyboard focus. Unset when unknown.
+  Node node = 2;
+  // The session revision it belongs to.
+  uint64 revision = 3;
+}
+
+// The request of GetText.
+message GetTextRequest {
+  // A node with text.
+  uint64 node_id = 1;
+  // The first character to return. Offsets count Unicode code points, as
+  // AT-SPI2 Text does.
+  uint32 start_offset = 2;
+  // The most characters to return, at most 1048576. 0: 65536.
+  uint32 max_characters = 3;
+}
+
+// The response of GetText. A redacted node fails with PERMISSION_DENIED.
+message GetTextResponse {
+  // The text from start_offset.
+  string text = 1;
+  // The length of the whole text in characters.
+  uint32 character_count = 2;
+  // The caret. Unset when the node has none.
+  optional uint32 caret_offset = 3;
+  // The selected ranges.
+  repeated TextRange selections = 4;
+}
+
+// A range of text, in characters.
+message TextRange {
+  // Its first character.
+  uint32 start_offset = 1;
+  // The character after its last.
+  uint32 end_offset = 2;
+}
+
+// The request of PerformAction.
+message PerformActionRequest {
+  // The node.
+  uint64 node_id = 1;
+  // The standard action. Set exactly one of action and platform_action.
+  Action action = 2;
+  // One of the node's platform_actions, by name.
+  string platform_action = 3;
+}
+
+// The response of PerformAction. A node without the action, or without the
+// platform interface it needs, fails with FAILED_PRECONDITION and reason
+// ACTION_NOT_SUPPORTED; one whose application refuses it with ABORTED and
+// reason ACTION_REFUSED.
+message PerformActionResponse {
+  // The session revision at which the application accepted the action.
+  uint64 revision = 1;
+}
+
+// The request of SetValue.
+message SetValueRequest {
+  // The node, a text field or a range widget.
+  uint64 node_id = 1;
+  // The new value.
+  oneof value {
+    // Replaces the whole text of a text field (AT-SPI2
+    // EditableText.SetTextContents).
+    string text = 2;
+    // Sets the value of a range widget (AT-SPI2 Value.CurrentValue).
+    double number = 3;
+  }
+}
+
+// The response of SetValue.
+message SetValueResponse {
+  // The node as read back after the change.
+  Node node = 1;
+  // The session revision at which the value was set.
+  uint64 revision = 2;
+}
+
+// The request of SetTextSelection.
+message SetTextSelectionRequest {
+  // A node with text.
+  uint64 node_id = 1;
+  // The text to select, in characters. An empty range moves the caret to its
+  // start.
+  TextRange range = 2;
+}
+
+// The response of SetTextSelection.
+message SetTextSelectionResponse {
+  // The session revision at which the selection was set.
+  uint64 revision = 1;
+}
+
+// The request of SelectOptions.
+message SelectOptionsRequest {
+  // The combo box or list box.
+  uint64 node_id = 1;
+  // The options to select, by accessible name, compared exactly after
+  // collapsing white space. One for a control that selects one. A name the
+  // control lacks fails with NOT_FOUND and reason OPTION_NOT_FOUND
+  // (metadata "option").
+  repeated string option_names = 2;
+}
+
+// The response of SelectOptions.
+message SelectOptionsResponse {
+  // The control as read back after the change.
+  Node node = 1;
+  // The session revision at which the options were selected.
+  uint64 revision = 2;
+}
+
+// The request of InvokeMenuItem. The session opens one menu level at a time,
+// matching each name exactly after trimming surrounding white space, and
+// waits for each menu to appear. It fails before activating anything: with
+// NOT_FOUND and reason MENU_ITEM_NOT_FOUND when a name matches no item, with
+// FAILED_PRECONDITION and reason MENU_ITEM_AMBIGUOUS when it matches several,
+// and with FAILED_PRECONDITION and reason MENU_ITEM_DISABLED when an item is
+// disabled. The ErrorInfo metadata "pathIndex" names the failing name. Menus
+// it opened are closed again on failure.
+message InvokeMenuItemRequest {
+  // The window whose menu bar to use.
+  uint64 window_id = 1;
+  // Item names from the menu bar down, such as ["File", "Save As…"]. 1 to
+  // 16 names.
+  repeated string path = 2;
+}
+
+// The response of InvokeMenuItem.
+message InvokeMenuItemResponse {
+  // The session revision at which the last item was activated.
+  uint64 revision = 1;
+}

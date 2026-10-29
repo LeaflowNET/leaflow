@@ -1,0 +1,283 @@
+syntax = "proto3";
+
+package leaflow.fleet.printing.v1;
+
+import "google/rpc/status.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/printing/v1;printingv1";
+
+// Printers of the participant's machine offered to the session's applications
+// (after MS-RDPEPC; attributes and states named after IPP/1.1, RFC 8011). The
+// session presents the shared printers only to its own user, through a private
+// print queue, and hands every job to the participant, which prints it on its
+// own machine. This version carries PDF documents to printers whose drivers
+// take PDF. A participant may also share a printer that keeps documents instead
+// of printing them, such as one that saves each as a PDF file on its machine;
+// it reports such a job COMPLETED once the file is saved.
+//
+// Channel types:
+//   - "leaflow.fleet.printing.v1", lane "interactive": opened by the
+//     participant that shares printers, after its person chose them. The
+//     participant sends ClientMessage, the session ServerMessage.
+//   - "leaflow.fleet.printing.v1.document", lane "bulk": opened by
+//     the participant, one per job it accepted. It sends one
+//     PrintDocumentRequest; the session answers with PrintDocument
+//     messages. Flow control is the channel's credit.
+//
+// Jobs. Once an application has spooled a whole document, the session
+// creates a job with PrintJobCreate. The participant checks the printer, the
+// options and its limits and accepts or refuses it with
+// PrintJobCreateResponse. It fetches the document, verifies its size and
+// digest and stores it, then waits for PrintJobSubmit before it submits the
+// job to its own print queue; nothing prints before that. It reports every
+// change with PrintJobStatus. A submission whose outcome was lost is reported
+// as UNKNOWN and never repeated. Cancelling is best effort once a job was
+// submitted and touches only that job.
+//
+// Printers and jobs belong to the connection: when it ends, its printers
+// disappear and unfinished documents are discarded. Printer ids are opaque,
+// never queue names, paths or device URIs of the participant's machine.
+// Documents never enter logs. Needs PrintingPolicy; read-only participants
+// share no printers.
+
+// A message from the participant on the printing channel.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // The printers the participant shares now, in full.
+    PrinterList printer_list = 1;
+    // The participant accepts or refuses a job.
+    PrintJobCreateResponse job_create_response = 2;
+    // What became of a job.
+    PrintJobStatus job_status = 3;
+    // The participant cancelled a job, such as at its person's request.
+    PrintJobCancel job_cancel = 4;
+  }
+}
+
+// A message from the session on the printing channel.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The session applied a PrinterList.
+    PrinterListResponse printer_list_response = 1;
+    // An application printed a document.
+    PrintJobCreate job_create = 2;
+    // The participant may submit a job it stored.
+    PrintJobSubmit job_submit = 3;
+    // An application cancelled a job.
+    PrintJobCancel job_cancel = 4;
+  }
+}
+
+// The printers the participant shares, replacing the previous list.
+message PrinterList {
+  // At most PrintingPolicy.max_printers.
+  repeated Printer printers = 1;
+}
+
+// The session applied a PrinterList.
+message PrinterListResponse {
+  // Why it refused the list, such as for more printers than allowed. Unset
+  // on success.
+  google.rpc.Status error = 1;
+}
+
+// A printer of the participant.
+message Printer {
+  // Chosen by the participant, never reused on the connection.
+  string printer_id = 1;
+  // Its name for people (printer-name), at most 256 bytes. Plain text.
+  string name = 2;
+  // Its state (printer-state).
+  PrinterState state = 3;
+  // It accepts jobs now (printer-is-accepting-jobs).
+  bool accepting_jobs = 4;
+  // The paper it has (media-supported).
+  repeated PrintMedia media = 5;
+  // How it can use the sides of the paper (sides-supported).
+  repeated Sides sides = 6;
+  // Its resolutions (printer-resolution-supported).
+  repeated PrintResolution resolutions = 7;
+  // It prints in colour (print-color-mode-supported has "color").
+  bool color_supported = 8;
+  // The most copies of one job (copies-supported).
+  uint32 max_copies = 9;
+  // The document formats it takes (document-format-supported), such as
+  // "application/pdf".
+  repeated string document_mime_types = 10;
+}
+
+// The state of a printer (printer-state), with the IPP values.
+enum PrinterState {
+  PRINTER_STATE_UNSPECIFIED = 0;
+  // Ready ("idle").
+  PRINTER_STATE_IDLE = 3;
+  // Printing ("processing").
+  PRINTER_STATE_PROCESSING = 4;
+  // Needs attention ("stopped").
+  PRINTER_STATE_STOPPED = 5;
+}
+
+// A paper size (media).
+message PrintMedia {
+  // Its self-describing name (PWG 5101.1), such as "iso_a4_210x297mm".
+  string media_id = 1;
+  // Its width in hundredths of a millimetre.
+  uint32 width = 2;
+  // Its height in hundredths of a millimetre.
+  uint32 height = 3;
+}
+
+// How to use the sides of the paper (sides).
+enum Sides {
+  SIDES_UNSPECIFIED = 0;
+  // "one-sided".
+  SIDES_ONE_SIDED = 1;
+  // "two-sided-long-edge".
+  SIDES_TWO_SIDED_LONG_EDGE = 2;
+  // "two-sided-short-edge".
+  SIDES_TWO_SIDED_SHORT_EDGE = 3;
+}
+
+// A resolution (printer-resolution).
+message PrintResolution {
+  // Dots per inch across.
+  uint32 x_dpi = 1;
+  // Dots per inch down.
+  uint32 y_dpi = 2;
+}
+
+// How to print a job.
+message PrintOptions {
+  // PrintMedia.media_id of the paper.
+  string media_id = 1;
+  // How to use the sides of the paper.
+  Sides sides = 2;
+  // Prints in colour; otherwise monochrome (print-color-mode).
+  bool color = 3;
+  // The number of copies (copies).
+  uint32 copies = 4;
+  // The resolution. Unset: the printer's default.
+  PrintResolution resolution = 5;
+}
+
+// An application printed a document, which the session has spooled whole.
+message PrintJobCreate {
+  // Chosen by the session, unique on the connection.
+  string job_id = 1;
+  // The printer.
+  string printer_id = 2;
+  // The name the application gave it (job-name). Plain text.
+  string name = 3;
+  // The size of the document, at most PrintingPolicy.max_document_size_bytes.
+  uint64 document_size_bytes = 4;
+  // Its format: "application/pdf".
+  string document_mime_type = 5;
+  // How to print it.
+  PrintOptions options = 6;
+}
+
+// The participant accepts or refuses a job.
+message PrintJobCreateResponse {
+  // The job.
+  string job_id = 1;
+  // Why the participant refused it, such as an unknown printer, unsupported
+  // options or too many jobs. Unset when it accepted it.
+  google.rpc.Status error = 2;
+}
+
+// The participant may submit a job it stored.
+message PrintJobSubmit {
+  // The job.
+  string job_id = 1;
+}
+
+// A job is cancelled. From either side.
+message PrintJobCancel {
+  // The job.
+  string job_id = 1;
+}
+
+// What became of a job.
+message PrintJobStatus {
+  // The job.
+  string job_id = 1;
+  // How far the participant got with it.
+  PrintJobPhase phase = 2;
+  // Its state in the participant's print queue, once submitted.
+  PrintJobState state = 3;
+  // Why it failed. Unset otherwise.
+  google.rpc.Status error = 4;
+}
+
+// How far the participant got with a job.
+enum PrintJobPhase {
+  PRINT_JOB_PHASE_UNSPECIFIED = 0;
+  // Fetching the document.
+  PRINT_JOB_PHASE_RECEIVING = 1;
+  // The document is stored and verified.
+  PRINT_JOB_PHASE_VERIFIED = 2;
+  // The job is in the participant's print queue.
+  PRINT_JOB_PHASE_SUBMITTED = 3;
+  // The submission may have happened, but its outcome is unknown.
+  PRINT_JOB_PHASE_UNKNOWN = 4;
+}
+
+// The state of a submitted job (job-state), with the IPP values.
+enum PrintJobState {
+  PRINT_JOB_STATE_UNSPECIFIED = 0;
+  // Waiting ("pending").
+  PRINT_JOB_STATE_PENDING = 3;
+  // Held ("pending-held").
+  PRINT_JOB_STATE_PENDING_HELD = 4;
+  // Printing ("processing").
+  PRINT_JOB_STATE_PROCESSING = 5;
+  // Stopped while printing ("processing-stopped").
+  PRINT_JOB_STATE_PROCESSING_STOPPED = 6;
+  // Cancelled ("canceled").
+  PRINT_JOB_STATE_CANCELED = 7;
+  // Failed ("aborted").
+  PRINT_JOB_STATE_ABORTED = 8;
+  // Printed, as the participant's print queue reports ("completed").
+  PRINT_JOB_STATE_COMPLETED = 9;
+}
+
+// Asks for the document of an accepted job. The only message the opener of a
+// document channel sends.
+message PrintDocumentRequest {
+  // The job.
+  string job_id = 1;
+}
+
+// Part of a document, from the session.
+message PrintDocument {
+  // The part.
+  oneof part {
+    // The next bytes, in order, at most 256 KiB.
+    bytes data = 1;
+    // The end of the document. The last message.
+    PrintDocumentEnd end = 2;
+    // Why the session could not provide it. The last message.
+    google.rpc.Status error = 3;
+  }
+}
+
+// The end of a document. The participant checks the size and the digest before
+// storing it.
+message PrintDocumentEnd {
+  // SHA-256 of the whole document, 32 bytes.
+  bytes sha256 = 1;
+}
+
+// What a participant may print. Carried in the participant's signed
+// authorization; without it the participant shares no printers. It shares
+// nothing else, such as files or devices.
+message PrintingPolicy {
+  // The largest document, at most 128 MiB. 0: no documents.
+  uint64 max_document_size_bytes = 1;
+  // The most jobs received or submitted at a time, at most 4. 0: no jobs.
+  uint32 max_jobs = 2;
+  // The most printers shared, at most 16. 0: none.
+  uint32 max_printers = 3;
+}

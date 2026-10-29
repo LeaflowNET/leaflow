@@ -1,0 +1,617 @@
+syntax = "proto3";
+
+package leaflow.fleet.virtualdesktop.window.v1;
+
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/window/v1;windowv1";
+
+// The windows of the session: what they are, where they are, their stacking
+// order and focus, and the operations a participant asks for. Names and
+// semantics follow ICCCM and EWMH; message names follow Xpra's window packets.
+//
+// Channel types:
+//   - "leaflow.fleet.virtualdesktop.window.v1", lane "metadata": opened by the
+//     participant, one per connection. The participant sends ClientMessage,
+//     starting with ClientHello; the session sends ServerMessage, starting with
+//     a snapshot: one Window per window from the bottom of the stack to the
+//     top, override-redirect windows last, then WindowGrab if a grab is in
+//     progress, then SnapshotEnd. Operations on it are sent and forgotten, as a
+//     person's window manager does.
+//   - "leaflow.fleet.virtualdesktop.window.v1.WindowService", lane
+//     "interactive": opened by a participant to operate windows through calls
+//     and learn the outcome. It learns about windows from the window channel.
+//
+// Native windows. In SESSION_MODE_SEAMLESS a participant may show every window
+// as a window of its own desktop, whose window manager places it. While such a
+// participant drives, the session leaves placement to it: it neither keeps
+// windows inside the work area nor gives maximized and fullscreen windows their
+// geometry itself, and it grows the canvas to contain every window. It ignores
+// that participant's DisplayConfigure.
+//
+// Identifiers. window_id is chosen by the Agent, is never 0, is not an X
+// window id and is never reused in the session. A field that names another
+// window uses the same ids; 0 means none.
+//
+// Geometry. Every Rectangle here is the client area, without the decorations
+// the participant draws, in canvas coordinates.
+//
+// The driver. The canvas and the managed windows follow one participant at a
+// time, the driver named in the session channel's ParticipantList. A
+// participant that is not read-only and that has sent DisplayConfigure or shows
+// native windows becomes the driver when it sends WindowStacking,
+// WindowActivate, WindowConfigure, WindowClose, WindowMinimize or
+// WindowStateChange, or input that the input channel says makes it the driver;
+// the session applies the operation. A participant with neither never becomes
+// the driver: its operations are applied and the driver sees their result like
+// any change. Calls of WindowService never make the caller the driver either.
+// Requests of applications that only the driver may grant (WindowActivate and
+// WindowRestack from the session) go to the driver; while there is none the
+// session decides itself. Override-redirect windows, such as menus, are placed
+// by their application. WindowVisibility is per participant and accepted from
+// read-only participants.
+
+// A message from the participant.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // How the participant shows windows. The first message.
+    ClientHello client_hello = 1;
+    // The stacking order the driver shows.
+    WindowStacking stacking = 2;
+    // The user activated a window.
+    WindowActivate activate = 3;
+    // Moves or resizes a managed window.
+    WindowConfigure configure = 4;
+    // Asks the application to close a window.
+    WindowClose close = 5;
+    // Minimizes a window.
+    WindowMinimize minimize = 6;
+    // Changes the states of a window.
+    WindowStateChange state_change = 7;
+    // How much of a window this participant shows.
+    WindowVisibility visibility = 8;
+  }
+}
+
+// A message from the session.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // A window as it is now, in full: new when the participant does not know
+    // its window_id, otherwise replacing what the participant had.
+    Window window = 1;
+    // A window is gone.
+    WindowDestroy destroy = 2;
+    // The stacking order now in effect.
+    WindowStacking stacking = 3;
+    // An application asks to activate a window.
+    WindowActivate activate = 4;
+    // An application asks to restack a window.
+    WindowRestack restack = 5;
+    // An application started an interactive move or resize.
+    WindowInitiateMoveResize initiate_move_resize = 6;
+    // An application grabbed the pointer.
+    WindowGrab grab = 7;
+    // The grab ended.
+    WindowUngrab ungrab = 8;
+    // Ends the snapshot.
+    SnapshotEnd snapshot_end = 9;
+  }
+}
+
+// How the participant shows windows.
+message ClientHello {
+  // The participant shows every window as a window of its own desktop (see
+  // "Native windows"). Only in SESSION_MODE_SEAMLESS.
+  bool native_windows = 1;
+}
+
+// One window. Sent when it appears and whenever anything about it changes.
+message Window {
+  // The window.
+  uint64 window_id = 1;
+  // The client area in canvas coordinates. For a managed window, where the
+  // session placed it; for an override-redirect window, where its application
+  // put it.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
+  // Counts the size changes of the window; see WindowConfigure. It never
+  // decreases and stays the same on a pure move. A size change that applies a
+  // WindowConfigure takes that request's value; any other size change adds one.
+  // Frames drawn after a size change carry the new value, and the first of them
+  // for this window depends on nothing. A value smaller than the largest the
+  // participant has sent in a WindowConfigure confirms an older request: the
+  // participant keeps its newer layout but records the size for this value,
+  // because frames drawn for it use it.
+  uint64 resize_counter = 3;
+  // The window bypasses the window manager, such as a menu, a tooltip or the
+  // popup of a combo box (ICCCM override_redirect). Never changes.
+  bool override_redirect = 4;
+  // The window it is transient for, as the application declared it (ICCCM
+  // WM_TRANSIENT_FOR).
+  optional uint64 transient_for = 5;
+  // The leader of its group (ICCCM WM_HINTS window_group). The leader is often
+  // a window the participant never sees; equal values mean the same group.
+  optional uint64 window_group = 6;
+  // Its types, most preferred first (EWMH _NET_WM_WINDOW_TYPE). Never empty.
+  repeated WindowType window_types = 7;
+  // Its states (EWMH _NET_WM_STATE).
+  repeated WindowState states = 8;
+  // The operations the participant may offer (EWMH _NET_WM_ALLOWED_ACTIONS).
+  repeated WindowAction allowed_actions = 9;
+  // Its size limits (ICCCM WM_NORMAL_HINTS). Unset: none.
+  SizeHints size_hints = 10;
+  // The title (EWMH _NET_WM_NAME, else ICCCM WM_NAME). Plain text.
+  string title = 11;
+  // The instance part of WM_CLASS (ICCCM).
+  string res_name = 12;
+  // The class part of WM_CLASS (ICCCM).
+  string res_class = 13;
+  // WM_WINDOW_ROLE, which tells apart windows of one application that share
+  // WM_CLASS (ICCCM).
+  string window_role = 14;
+  // The desktop file ID of its application (freedesktop Desktop Entry
+  // Specification). Empty when unknown.
+  string desktop_file_id = 15;
+  // The startup notification ID that launched it (freedesktop Startup
+  // Notification Protocol). Empty when none.
+  string startup_id = 16;
+  // The process that owns it (EWMH _NET_WM_PID). 0 when unknown.
+  uint32 pid = 17;
+  // Whether the participant draws a title bar and borders around it. False for
+  // windows that draw their own. Unset: managed windows are decorated,
+  // override-redirect windows are not.
+  optional bool decorations = 18;
+  // The window has an alpha channel and is composited with transparency.
+  bool has_alpha = 19;
+  // Its icon (EWMH _NET_WM_ICON, else the icon of its desktop entry). Unset:
+  // none.
+  leaflow.fleet.virtualdesktop.display.v1.Icon icon = 20;
+}
+
+// The type of a window (EWMH _NET_WM_WINDOW_TYPE).
+enum WindowType {
+  WINDOW_TYPE_UNSPECIFIED = 0;
+  // A normal top-level window. The type of windows that declare none and have
+  // no transient_for.
+  WINDOW_TYPE_NORMAL = 1;
+  // A dialog. The type of windows that declare none and have transient_for.
+  WINDOW_TYPE_DIALOG = 2;
+  // A desktop background.
+  WINDOW_TYPE_DESKTOP = 3;
+  // A dock or panel.
+  WINDOW_TYPE_DOCK = 4;
+  // A torn-off toolbar.
+  WINDOW_TYPE_TOOLBAR = 5;
+  // A torn-off menu.
+  WINDOW_TYPE_MENU = 6;
+  // A small persistent window such as a palette.
+  WINDOW_TYPE_UTILITY = 7;
+  // A splash screen.
+  WINDOW_TYPE_SPLASH = 8;
+  // A menu opened from a menu bar.
+  WINDOW_TYPE_DROPDOWN_MENU = 9;
+  // A context menu.
+  WINDOW_TYPE_POPUP_MENU = 10;
+  // A tooltip.
+  WINDOW_TYPE_TOOLTIP = 11;
+  // A notification bubble.
+  WINDOW_TYPE_NOTIFICATION = 12;
+  // The popup of a combo box.
+  WINDOW_TYPE_COMBO = 13;
+  // An object being dragged.
+  WINDOW_TYPE_DND = 14;
+}
+
+// A state of a window (EWMH _NET_WM_STATE).
+enum WindowState {
+  WINDOW_STATE_UNSPECIFIED = 0;
+  // It blocks input to the window it is transient for, or to its group.
+  WINDOW_STATE_MODAL = 1;
+  // Shown on all virtual desktops.
+  WINDOW_STATE_STICKY = 2;
+  // Maximized vertically.
+  WINDOW_STATE_MAXIMIZED_VERT = 3;
+  // Maximized horizontally. A window with both MAXIMIZED states is maximized.
+  WINDOW_STATE_MAXIMIZED_HORZ = 4;
+  // Rolled up to its title bar.
+  WINDOW_STATE_SHADED = 5;
+  // Not listed in a taskbar.
+  WINDOW_STATE_SKIP_TASKBAR = 6;
+  // Not listed in a pager.
+  WINDOW_STATE_SKIP_PAGER = 7;
+  // Minimized. Set only by the session; use WindowMinimize and
+  // WindowActivate.
+  WINDOW_STATE_HIDDEN = 8;
+  // Covers the whole canvas without decorations.
+  WINDOW_STATE_FULLSCREEN = 9;
+  // Kept above normal windows.
+  WINDOW_STATE_ABOVE = 10;
+  // Kept below normal windows.
+  WINDOW_STATE_BELOW = 11;
+  // Its application wants the user's attention.
+  WINDOW_STATE_DEMANDS_ATTENTION = 12;
+  // It is the active window. Set only by the session.
+  WINDOW_STATE_FOCUSED = 13;
+}
+
+// An operation the window manager allows on a window (EWMH
+// _NET_WM_ALLOWED_ACTIONS).
+enum WindowAction {
+  WINDOW_ACTION_UNSPECIFIED = 0;
+  // Move it.
+  WINDOW_ACTION_MOVE = 1;
+  // Resize it.
+  WINDOW_ACTION_RESIZE = 2;
+  // Minimize it.
+  WINDOW_ACTION_MINIMIZE = 3;
+  // Shade it.
+  WINDOW_ACTION_SHADE = 4;
+  // Make it sticky.
+  WINDOW_ACTION_STICK = 5;
+  // Maximize it horizontally.
+  WINDOW_ACTION_MAXIMIZE_HORZ = 6;
+  // Maximize it vertically.
+  WINDOW_ACTION_MAXIMIZE_VERT = 7;
+  // Make it fullscreen.
+  WINDOW_ACTION_FULLSCREEN = 8;
+  // Move it to another virtual desktop.
+  WINDOW_ACTION_CHANGE_DESKTOP = 9;
+  // Close it.
+  WINDOW_ACTION_CLOSE = 10;
+  // Keep it above others.
+  WINDOW_ACTION_ABOVE = 11;
+  // Keep it below others.
+  WINDOW_ACTION_BELOW = 12;
+}
+
+// The size limits an application declared (ICCCM WM_SIZE_HINTS). In pixels;
+// 0 means not set.
+message SizeHints {
+  // The smallest width.
+  uint32 min_width = 1;
+  // The smallest height.
+  uint32 min_height = 2;
+  // The largest width.
+  uint32 max_width = 3;
+  // The largest height.
+  uint32 max_height = 4;
+  // The width the increments count from. 0: min_width.
+  uint32 base_width = 5;
+  // The height the increments count from. 0: min_height.
+  uint32 base_height = 6;
+  // Valid widths are base_width plus a multiple of it.
+  uint32 width_inc = 7;
+  // Valid heights are base_height plus a multiple of it.
+  uint32 height_inc = 8;
+}
+
+// A window is gone: unmapped, withdrawn or destroyed. Its window_id is never
+// used again; frames and messages that still name it are discarded.
+message WindowDestroy {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// The managed windows from the bottom of the stack to the top (EWMH
+// _NET_CLIENT_LIST_STACKING). From the driver, the order it shows; the
+// session restacks the windows, keeping transient windows right above their
+// owner. From the session, the order now in effect, so that other participants
+// follow the driver. Override-redirect windows are not listed: they stay on
+// top in the order they appeared.
+message WindowStacking {
+  // Unknown ids are ignored. Managed windows left out keep their order below
+  // the listed ones.
+  repeated uint64 window_ids = 1;
+}
+
+// From the participant, the user activated a window; 0 means focus left every
+// window of the session, such as for a terminal of the participant's own. The
+// session focuses it (ICCCM input focus), restores it when minimized and
+// clears DEMANDS_ATTENTION. Stacking follows separately in WindowStacking.
+// From the session, an application asks to activate a window (EWMH
+// _NET_ACTIVE_WINDOW); the driver answers with WindowActivate and
+// WindowStacking when it agrees.
+message WindowActivate {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// An application asks to restack a managed window (EWMH _NET_RESTACK_WINDOW).
+// The driver answers with WindowStacking when it agrees.
+message WindowRestack {
+  // The window.
+  uint64 window_id = 1;
+  // Where to put it.
+  StackMode stack_mode = 2;
+  // The window stack_mode is relative to. Unset: all windows.
+  optional uint64 sibling = 3;
+}
+
+// A restacking mode (X11 ConfigureWindow stack-mode).
+enum StackMode {
+  STACK_MODE_UNSPECIFIED = 0;
+  // Just above sibling, or on top.
+  STACK_MODE_ABOVE = 1;
+  // Just below sibling, or at the bottom.
+  STACK_MODE_BELOW = 2;
+  // On top if sibling covers it.
+  STACK_MODE_TOP_IF = 3;
+  // At the bottom if it covers sibling.
+  STACK_MODE_BOTTOM_IF = 4;
+  // TOP_IF or BOTTOM_IF, whichever applies.
+  STACK_MODE_OPPOSITE = 5;
+}
+
+// Moves or resizes a managed window, such as when the user finishes dragging
+// it. The session applies the size limits, keeps part of the window on the
+// canvas and answers with the window's new state. Ignored for
+// override-redirect windows and for the window of a desktop session; resize
+// the canvas with DisplayConfigure instead.
+message WindowConfigure {
+  // The window.
+  uint64 window_id = 1;
+  // The client area wanted, in canvas coordinates.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
+  // Let M be the largest resize_counter the participant has sent or received
+  // for the window. A request that changes the size carries M + 1, a pure move
+  // carries M. The session drops a size change whose value is not larger than
+  // its own counter, and a move whose value is smaller: the application or a
+  // newer request won, and the participant sees the outcome in Window.
+  uint64 resize_counter = 3;
+}
+
+// Asks the application to close a window (EWMH _NET_CLOSE_WINDOW, carried out
+// as ICCCM WM_DELETE_WINDOW). The application may refuse or ask the user
+// first; the window is gone only when WindowDestroy arrives.
+message WindowClose {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// Minimizes a window and its transient windows (ICCCM IconicState). Restore
+// it with WindowActivate.
+message WindowMinimize {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// Changes the states of a window (EWMH _NET_WM_STATE request), such as to
+// maximize it, make it fullscreen or keep it above. The session places a
+// maximized window in the work area and a fullscreen one over the canvas,
+// and restores the earlier geometry when the state is removed. HIDDEN,
+// FOCUSED and MODAL are ignored here.
+message WindowStateChange {
+  // The window.
+  uint64 window_id = 1;
+  // How to apply states.
+  WindowStateOperation operation = 2;
+  // The states. Maximizing lists both MAXIMIZED states.
+  repeated WindowState states = 3;
+}
+
+// How WindowStateChange applies its states (EWMH _NET_WM_STATE_REMOVE, _ADD
+// and _TOGGLE).
+enum WindowStateOperation {
+  WINDOW_STATE_OPERATION_UNSPECIFIED = 0;
+  // Unset them.
+  WINDOW_STATE_OPERATION_REMOVE = 1;
+  // Set them.
+  WINDOW_STATE_OPERATION_ADD = 2;
+  // Flip each.
+  WINDOW_STATE_OPERATION_TOGGLE = 3;
+}
+
+// How much of a window this participant shows, so that the session stops
+// sending frames of windows nobody sees. Only frames to this participant
+// change; the window itself does not. Damage piles up while it is fully
+// obscured and is sent at once when it shows again. Every window starts
+// unobscured.
+message WindowVisibility {
+  // The window.
+  uint64 window_id = 1;
+  // How much of it the participant shows.
+  VisibilityState visibility = 2;
+}
+
+// How much of a window is visible (X11 VisibilityNotify state).
+enum VisibilityState {
+  VISIBILITY_STATE_UNSPECIFIED = 0;
+  // All of it.
+  VISIBILITY_STATE_UNOBSCURED = 1;
+  // Part of it.
+  VISIBILITY_STATE_PARTIALLY_OBSCURED = 2;
+  // None of it, including when this participant minimized it in its own layout.
+  VISIBILITY_STATE_FULLY_OBSCURED = 3;
+}
+
+// An application started an interactive move or resize, usually because the
+// user dragged the title bar the window draws itself (EWMH _NET_WM_MOVERESIZE).
+// A pointer operation is sent only to the participant whose press the session
+// applied and can bind the request to; one it cannot bind to such a press is
+// dropped. A keyboard operation is sent to the driver. The participant runs the
+// drag with its own pointer until the button is released and ends it with
+// WindowConfigure; with CANCEL it stops the drag in progress.
+message WindowInitiateMoveResize {
+  // The window.
+  uint64 window_id = 1;
+  // The pointer position when it started, in canvas coordinates. Unused for
+  // keyboard operations.
+  sint32 x = 2;
+  // See x.
+  sint32 y = 3;
+  // Which edges move, or the whole window.
+  MoveResizeDirection direction = 4;
+  // The X button that started it, from 1. Unused for keyboard operations.
+  uint32 button = 5;
+  // PointerButton.input_seq of the participant's press that the application's
+  // request was bound to. The participant ignores the request when that press
+  // has already been released. 0 for keyboard operations.
+  uint64 press_input_seq = 6;
+  // Window.resize_counter at that press.
+  uint64 resize_counter = 7;
+}
+
+// What an interactive move or resize changes (EWMH _NET_WM_MOVERESIZE
+// directions).
+enum MoveResizeDirection {
+  MOVE_RESIZE_DIRECTION_UNSPECIFIED = 0;
+  // The top-left corner.
+  MOVE_RESIZE_DIRECTION_SIZE_TOPLEFT = 1;
+  // The top edge.
+  MOVE_RESIZE_DIRECTION_SIZE_TOP = 2;
+  // The top-right corner.
+  MOVE_RESIZE_DIRECTION_SIZE_TOPRIGHT = 3;
+  // The right edge.
+  MOVE_RESIZE_DIRECTION_SIZE_RIGHT = 4;
+  // The bottom-right corner.
+  MOVE_RESIZE_DIRECTION_SIZE_BOTTOMRIGHT = 5;
+  // The bottom edge.
+  MOVE_RESIZE_DIRECTION_SIZE_BOTTOM = 6;
+  // The bottom-left corner.
+  MOVE_RESIZE_DIRECTION_SIZE_BOTTOMLEFT = 7;
+  // The left edge.
+  MOVE_RESIZE_DIRECTION_SIZE_LEFT = 8;
+  // The whole window moves.
+  MOVE_RESIZE_DIRECTION_MOVE = 9;
+  // Resizing with the keyboard.
+  MOVE_RESIZE_DIRECTION_SIZE_KEYBOARD = 10;
+  // Moving with the keyboard.
+  MOVE_RESIZE_DIRECTION_MOVE_KEYBOARD = 11;
+  // Stops the operation in progress.
+  MOVE_RESIZE_DIRECTION_CANCEL = 12;
+}
+
+// An application grabbed the pointer, such as to run a popup menu (X11
+// GrabPointer). Until WindowUngrab the participant sends every pointer event to
+// this window, even outside it, so that a click outside the menu reaches the
+// application.
+message WindowGrab {
+  // The window holding the grab.
+  uint64 window_id = 1;
+}
+
+// The pointer grab ended.
+message WindowUngrab {
+  // The window that held it.
+  uint64 window_id = 1;
+}
+
+// Ends the snapshot.
+message SnapshotEnd {}
+
+// Operates windows through calls. Every call follows the rules for operation
+// calls (leaflow.fleet.virtualdesktop.lease.v1), never makes the caller the
+// driver, and returns the session revision at which it took effect. Besides
+// those rules, calls fail before anything happens with:
+//   - NOT_FOUND and reason WINDOW_NOT_FOUND for a window that is gone;
+//   - FAILED_PRECONDITION and reason WINDOW_NOT_MANAGED for a window the
+//     session does not place: an override-redirect window, which its
+//     application places itself, or any window of a desktop session, whose
+//     own window manager places it;
+//   - FAILED_PRECONDITION and reason WINDOW_HIDDEN for a minimized window
+//     in SetWindowGeometry and ChangeWindowState; ActivateWindow restores
+//     it.
+// After acting they fail with:
+//   - FAILED_PRECONDITION and reason WINDOW_NOT_ACTIVATED when the window did
+//     not get the focus within a second;
+//   - FAILED_PRECONDITION and reason WINDOW_NOT_MINIMIZED when the window
+//     manager kept the window shown, such as a dialog that stays with its
+//     owner;
+//   - UNAVAILABLE and reason WINDOW_SYSTEM_UNAVAILABLE when the window system
+//     did not answer in time.
+// Metadata "windowId" names the window.
+service WindowService {
+  // Activates a window as WindowActivate does: focuses and raises it and
+  // restores it when minimized.
+  rpc ActivateWindow(ActivateWindowRequest) returns (ActivateWindowResponse);
+  // Asks the application to close a window, as WindowClose does. The window
+  // is gone only when the window channel says so.
+  rpc CloseWindow(CloseWindowRequest) returns (CloseWindowResponse);
+  // Minimizes a window and its transient windows, as WindowMinimize does.
+  rpc MinimizeWindow(MinimizeWindowRequest) returns (MinimizeWindowResponse);
+  // Moves and resizes a window, within its size hints and the work area,
+  // and reads its geometry back.
+  rpc SetWindowGeometry(SetWindowGeometryRequest) returns (SetWindowGeometryResponse);
+  // Changes the states of a window, as WindowStateChange does, and reads them
+  // back.
+  rpc ChangeWindowState(ChangeWindowStateRequest) returns (ChangeWindowStateResponse);
+}
+
+// The request of ActivateWindow.
+message ActivateWindowRequest {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// The response of ActivateWindow.
+message ActivateWindowResponse {
+  // The session revision at which the window became active.
+  uint64 revision = 1;
+}
+
+// The request of CloseWindow.
+message CloseWindowRequest {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// The response of CloseWindow.
+message CloseWindowResponse {
+  // The session revision at which the application was asked.
+  uint64 revision = 1;
+}
+
+// The request of MinimizeWindow.
+message MinimizeWindowRequest {
+  // The window.
+  uint64 window_id = 1;
+}
+
+// The response of MinimizeWindow.
+message MinimizeWindowResponse {
+  // The session revision at which the window was minimized.
+  uint64 revision = 1;
+}
+
+// The request of SetWindowGeometry.
+message SetWindowGeometryRequest {
+  // The window.
+  uint64 window_id = 1;
+  // The client area wanted, in canvas coordinates.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
+}
+
+// The response of SetWindowGeometry.
+message SetWindowGeometryResponse {
+  // The client area the window got, read back from the X server; it may
+  // differ from the request because of size hints, the work area or the
+  // application.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 1;
+  // Window.resize_counter after the change.
+  uint64 resize_counter = 2;
+  // The session revision at which the geometry was read back.
+  uint64 revision = 3;
+}
+
+// The request of ChangeWindowState.
+message ChangeWindowStateRequest {
+  // The window.
+  uint64 window_id = 1;
+  // How to apply the states.
+  WindowStateOperation operation = 2;
+  // The states. HIDDEN, FOCUSED and MODAL are ignored.
+  repeated WindowState states = 3;
+}
+
+// The response of ChangeWindowState.
+message ChangeWindowStateResponse {
+  // The states the window has afterwards.
+  repeated WindowState states = 1;
+  // The client area the window has afterwards.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
+  // Window.resize_counter afterwards.
+  uint64 resize_counter = 3;
+  // The session revision at which they were read back.
+  uint64 revision = 4;
+}

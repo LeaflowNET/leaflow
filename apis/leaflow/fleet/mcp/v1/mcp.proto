@@ -1,0 +1,426 @@
+syntax = "proto3";
+
+package leaflow.fleet.mcp.v1;
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/mcp/v1;mcpv1";
+
+// Model Context Protocol servers reached through a machine: servers the
+// machine runs itself, and remote servers it connects to, as an account
+// configured them. The Agent is the MCP client; the platform lists, searches
+// and calls the tools of all of an account's servers through it, and edits
+// their configuration. The Agent offers each server the latest revision of
+// MCP it implements and accepts any revision it implements that the server
+// answers with, back to 2024-11-05.
+// Every call fails with the reasons of each method in a google.rpc.ErrorInfo
+// of the domain "fleet.leaflow.cloud".
+//
+// Accounts. Everything happens as the directory account of the platform user
+// who asked (leaflow.fleet.directory.v1), never as root and never as a local
+// account: the Agent reads and writes the account's configuration file as the
+// account, and starts the account's servers through the account and session
+// stacks of its PAM service, as it runs a command
+// (leaflow.fleet.command.v1). Whatever the account may not do, its servers
+// may not either, and they are refused whenever a login of the account would
+// be. When the account may no longer log in, such as when the directory
+// changes or the account expires, its servers stop at once, as its sessions
+// do.
+//
+// Configuration. Each account configures its servers in
+// ~/.local/share/leaflow/agent/mcp.json in its home directory, in the format
+// other MCP clients use:
+//
+//   {
+//     "mcpServers": {
+//       "memory": {
+//         "command": "npx",
+//         "args": ["-y", "@modelcontextprotocol/server-memory"],
+//         "env": {"API_KEY": "..."}
+//       },
+//       "docs": {
+//         "url": "https://mcp.example.com/mcp",
+//         "headers": {"Authorization": "Bearer ..."}
+//       }
+//     }
+//   }
+//
+// A member of mcpServers is a server, named by its key, which matches
+// ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ and holds no "__", since the tools of all
+// servers are named "<server>__<tool>" together. With "command" (and
+// "args", "env") the Agent starts it and speaks to it over its standard input
+// and output; with "url" (and "headers") it connects to it over Streamable
+// HTTP, or over HTTP with Server-Sent Events when "type" is "sse". "type" may
+// also be "stdio" or "http", the default for its form. "disabled": true keeps
+// a server configured but stopped. Members and fields the Agent does not know
+// are kept as they are. A server whose name or entry is not valid, such as
+// one with neither "command" nor "url", is reported as INVALID; the others
+// still work.
+//
+// The account edits the file by hand or through the platform, and the Agent
+// picks up every change by itself, without restarting: it starts what was
+// added, stops what was removed and restarts what changed when it is next
+// used. The file may be missing, which is no server at all. When it cannot be
+// read or is not a JSON object with an object "mcpServers", the Agent keeps
+// serving the configuration it last read in full and reports the file as
+// UNREADABLE or INVALID until it is fixed. Nothing about the file keeps the
+// Agent from starting to serve an account: a file that is not valid then is
+// set aside under a new name in the same directory
+// (McpConfigurationFile.set_aside) and replaced by an empty configuration,
+// and a file that cannot be read is left as it is and served as empty, since
+// whether it is valid cannot be told. The Agent writes the file
+// only when the platform asks it to, as a whole, through a new file that
+// replaces it at once, readable only by the account, and keeps the previous
+// version as mcp.json.bak next to it.
+//
+// Secrets. The values of "env" and "headers" often hold credentials. The
+// platform may write them, and then sees them in transit, but never reads
+// them back: every response names their keys only. Arguments and URLs are
+// shown in full, so they are no place for credentials. A remote server that
+// asks for authorization the headers do not give, such as through OAuth,
+// fails with UNAUTHORIZED.
+//
+// Servers. The Agent starts or connects to a server when it is first used,
+// and stops it when it has not been used for a while or when the Agent needs
+// room for others. It asks for no client capabilities: servers get no
+// sampling, elicitation or roots. What a server writes to standard error stays
+// on the machine.
+//
+// Feature "leaflow.fleet.mcp.v1" (leaflow.fleet.machine.v1 Feature):
+// AVAILABLE while leaflow.fleet.directory.v1 is, since servers run as
+// directory accounts.
+
+// The MCP servers of an account. Served by the daemon; the service calls it.
+//
+// Every method fails with:
+//   - INVALID_ARGUMENT and reason INVALID_REQUEST for a request that breaks
+//     the rules of its fields;
+//   - NOT_FOUND and reason USER_NOT_FOUND for an account the machine's copy
+//     of the directory does not hold for user_id;
+//   - PERMISSION_DENIED and reason USER_NOT_ALLOWED, ACCOUNT_EXPIRED or
+//     PAM_PERMISSION_DENIED, as for leaflow.fleet.command.v1 RunCommand.
+service McpService {
+  // Returns the account's configuration file and every server in it, with
+  // what it is doing now.
+  rpc ListMcpServers(ListMcpServersRequest) returns (ListMcpServersResponse);
+
+  // Adds a server to the account's configuration or replaces one, and
+  // returns the file as written.
+  //
+  // Fails with:
+  //   - FAILED_PRECONDITION and reason MCP_CONFIGURATION_CHANGED when the
+  //     file is no longer at expected_revision;
+  //   - FAILED_PRECONDITION and reason MCP_CONFIGURATION_INVALID when the
+  //     file cannot be read or is not valid: replace it whole first.
+  rpc PutMcpServer(PutMcpServerRequest) returns (PutMcpServerResponse);
+
+  // Removes a server from the account's configuration and stops it. Removing
+  // one that is not configured succeeds.
+  //
+  // Fails as PutMcpServer.
+  rpc DeleteMcpServer(DeleteMcpServerRequest) returns (DeleteMcpServerResponse);
+
+  // Replaces the account's configuration file as a whole, also one that
+  // cannot be read or is not valid.
+  //
+  // Fails with:
+  //   - FAILED_PRECONDITION and reason MCP_CONFIGURATION_CHANGED as for
+  //     PutMcpServer;
+  //   - INVALID_ARGUMENT and reason MCP_CONFIGURATION_INVALID when content is
+  //     not a JSON object with an object "mcpServers", with metadata "line"
+  //     and "column" of the first error.
+  rpc ReplaceMcpConfiguration(ReplaceMcpConfigurationRequest) returns (ReplaceMcpConfigurationResponse);
+
+  // Lists the tools of the account's servers, or of one of them, that match
+  // a query: every word of it, ignoring case, in the tool's name, title or
+  // description. Servers that are not running are started to learn their
+  // tools; one that cannot be is named in unavailable_servers, and the
+  // others are listed anyway. The call does not wait for slow servers: before
+  // its timeout passes it answers with those still starting named in
+  // unavailable_servers with TIMEOUT, and they go on starting, so that a
+  // later call lists their tools.
+  //
+  // Fails with NOT_FOUND and reason MCP_SERVER_NOT_FOUND for a server that is
+  // not configured.
+  rpc ListMcpTools(ListMcpToolsRequest) returns (ListMcpToolsResponse);
+
+  // Sends one JSON-RPC request of MCP to one of the account's servers, such
+  // as tools/call, resources/read or prompts/get, and returns its response.
+  // The Agent itself handles initialization and the session of the server,
+  // and passes the request on without checking it against a revision of MCP.
+  // When the call is cancelled or its timeout passes, the Agent cancels the
+  // request at the server (notifications/cancelled). A request the server
+  // makes of the client meanwhile, such as for sampling, is answered with the
+  // JSON-RPC error -32601, and its notifications, such as of progress, are
+  // dropped.
+  //
+  // Fails with:
+  //   - NOT_FOUND and reason MCP_SERVER_NOT_FOUND for a server that is not
+  //     configured;
+  //   - UNAVAILABLE and reason MCP_SERVER_UNAVAILABLE when the server could not
+  //     be started or reached, with metadata "failure", a McpServerFailure
+  //     name without its prefix in lower case, such as "unauthorized";
+  //   - INVALID_ARGUMENT and reason INVALID_REQUEST for a message that is not
+  //     one JSON-RPC request, such as a batch or a notification, or that is
+  //     one of initialization.
+  // A response with a JSON-RPC error is a successful call.
+  rpc SendMcpRequest(SendMcpRequestRequest) returns (SendMcpRequestResponse);
+}
+
+// The account a request acts as, as in leaflow.fleet.command.v1.
+message McpAccount {
+  // The platform user who asked.
+  string user_id = 1;
+  // The user's directory account (leaflow.fleet.directory.v1 Account), whose
+  // user_id is the one above.
+  string username = 2;
+}
+
+// The request of ListMcpServers.
+message ListMcpServersRequest {
+  McpAccount account = 1;
+}
+
+// The response of ListMcpServers.
+message ListMcpServersResponse {
+  McpConfigurationFile file = 1;
+  // The servers of the configuration the Agent serves, by name.
+  repeated McpServer servers = 2;
+}
+
+// The account's configuration file.
+message McpConfigurationFile {
+  McpConfigurationState state = 1;
+  // SHA-256 of the file's bytes in lower-case hex; empty while it is
+  // MISSING. Editing requests carry it to detect edits made in between.
+  string revision = 2;
+  // INVALID only: where the first error is, counted from 1.
+  uint32 invalid_line = 3;
+  uint32 invalid_column = 4;
+  // The name, in the same directory, under which the Agent set aside a file
+  // that was not valid when it started to serve the account; empty when it
+  // did not.
+  string set_aside = 5;
+}
+
+// The state of the configuration file.
+enum McpConfigurationState {
+  MCP_CONFIGURATION_STATE_UNSPECIFIED = 0;
+  // Read in full; the servers are the file's.
+  MCP_CONFIGURATION_STATE_OK = 1;
+  // There is no file: no server.
+  MCP_CONFIGURATION_STATE_MISSING = 2;
+  // The file cannot be read, such as for its permissions. The servers are
+  // those of the file last read in full, if any.
+  MCP_CONFIGURATION_STATE_UNREADABLE = 3;
+  // The file is not a JSON object with an object "mcpServers". The servers
+  // are those of the file last read in full, if any.
+  MCP_CONFIGURATION_STATE_INVALID = 4;
+}
+
+// A configured server, its secrets left out, and what it is doing now.
+message McpServer {
+  // Its key in "mcpServers".
+  string name = 1;
+  McpServerDefinition definition = 2;
+  McpServerState state = 3;
+  // FAILED and INVALID only: why.
+  McpServerFailure failure = 4;
+  // RUNNING only: what it said of itself when it was initialized.
+  McpImplementation implementation = 5;
+  // RUNNING only: how many tools it offers.
+  uint32 tool_count = 6;
+}
+
+// How to reach a server. In responses, env and headers hold the keys only,
+// with empty values.
+message McpServerDefinition {
+  // Unspecified in a request: STDIO with command, HTTP with url.
+  McpTransport transport = 1;
+  // STDIO only: the program, looked up in the account's PATH.
+  string command = 2;
+  // STDIO only.
+  repeated string args = 3;
+  // STDIO only: variables added to the account's environment. Secret.
+  map<string, string> env = 4;
+  // HTTP and SSE only: the endpoint.
+  string url = 5;
+  // HTTP and SSE only: headers sent with every request. Secret.
+  map<string, string> headers = 6;
+  // Configured but kept stopped.
+  bool disabled = 7;
+}
+
+// How the Agent speaks to a server.
+enum McpTransport {
+  MCP_TRANSPORT_UNSPECIFIED = 0;
+  // A program the Agent starts, over its standard input and output.
+  MCP_TRANSPORT_STDIO = 1;
+  // Streamable HTTP.
+  MCP_TRANSPORT_HTTP = 2;
+  // HTTP with Server-Sent Events, the transport of earlier revisions of MCP.
+  MCP_TRANSPORT_SSE = 3;
+}
+
+// What a server is doing.
+enum McpServerState {
+  MCP_SERVER_STATE_UNSPECIFIED = 0;
+  // Not started or connected, such as before its first use or after it was
+  // idle.
+  MCP_SERVER_STATE_STOPPED = 1;
+  // Being started or connected to.
+  MCP_SERVER_STATE_STARTING = 2;
+  // Initialized and serving.
+  MCP_SERVER_STATE_RUNNING = 3;
+  // It could not be started or reached, or it ended; it is tried again when
+  // next used.
+  MCP_SERVER_STATE_FAILED = 4;
+  // Its entry is configured with "disabled": true.
+  MCP_SERVER_STATE_DISABLED = 5;
+  // Its entry is not valid; failure is INVALID_DEFINITION.
+  MCP_SERVER_STATE_INVALID = 6;
+}
+
+// Why a server failed or is not valid.
+enum McpServerFailure {
+  MCP_SERVER_FAILURE_UNSPECIFIED = 0;
+  // Its name or entry is not valid, such as an entry with neither "command"
+  // nor "url".
+  MCP_SERVER_FAILURE_INVALID_DEFINITION = 1;
+  // Its program could not be started, such as when it is not installed.
+  MCP_SERVER_FAILURE_START_FAILED = 2;
+  // Its program ended.
+  MCP_SERVER_FAILURE_EXITED = 3;
+  // Its endpoint could not be reached.
+  MCP_SERVER_FAILURE_UNREACHABLE = 4;
+  // Its endpoint asked for authorization that the headers do not give.
+  MCP_SERVER_FAILURE_UNAUTHORIZED = 5;
+  // It did not speak MCP as expected, such as by failing initialization.
+  MCP_SERVER_FAILURE_PROTOCOL_ERROR = 6;
+  // It did not answer in time.
+  MCP_SERVER_FAILURE_TIMEOUT = 7;
+}
+
+// MCP Implementation: what a server says of itself.
+message McpImplementation {
+  string name = 1;
+  string version = 2;
+  string title = 3;
+}
+
+// The request of PutMcpServer.
+message PutMcpServerRequest {
+  McpAccount account = 1;
+  // The server's key in "mcpServers", by the rule of Configuration; any other
+  // fails the call with INVALID_REQUEST.
+  string name = 2;
+  McpServerDefinition definition = 3;
+  // Keys of the server's current env whose values stay as they are, when
+  // definition.env does not give them. The platform cannot read them back to
+  // send them again.
+  repeated string keep_env = 4;
+  // Keys of the server's current headers whose values stay, as keep_env.
+  repeated string keep_headers = 5;
+  // McpConfigurationFile.revision as last read, empty only for a file that
+  // was MISSING.
+  string expected_revision = 6;
+}
+
+// The response of PutMcpServer.
+message PutMcpServerResponse {
+  McpConfigurationFile file = 1;
+  McpServer server = 2;
+}
+
+// The request of DeleteMcpServer.
+message DeleteMcpServerRequest {
+  McpAccount account = 1;
+  string name = 2;
+  // McpConfigurationFile.revision as last read, empty only for a file that
+  // was MISSING.
+  string expected_revision = 3;
+}
+
+// The response of DeleteMcpServer.
+message DeleteMcpServerResponse {
+  McpConfigurationFile file = 1;
+}
+
+// The request of ReplaceMcpConfiguration.
+message ReplaceMcpConfigurationRequest {
+  McpAccount account = 1;
+  // The new file, a JSON object with an object "mcpServers", at most 1 MiB.
+  bytes content = 2;
+  // McpConfigurationFile.revision as last read; empty replaces whatever is
+  // there, such as a file that cannot be read.
+  string expected_revision = 3;
+}
+
+// The response of ReplaceMcpConfiguration.
+message ReplaceMcpConfigurationResponse {
+  McpConfigurationFile file = 1;
+}
+
+// The request of ListMcpTools.
+message ListMcpToolsRequest {
+  McpAccount account = 1;
+  // Only this server's tools; empty for every server's.
+  string server = 2;
+  // Words that each must occur in a tool's name, title or description,
+  // ignoring case; empty for every tool. At most 256 bytes.
+  string query = 3;
+  // At most this many tools, 1 to 500; unset: 100.
+  uint32 page_size = 4;
+  // next_page_token of the previous page, to continue it.
+  string page_token = 5;
+}
+
+// The response of ListMcpTools.
+message ListMcpToolsResponse {
+  // Ordered by server, then by tool name; fewer than page_size when more
+  // would make the response larger than 8 MiB.
+  repeated McpTool tools = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
+  // Servers whose tools are missing because they could not be started or
+  // reached.
+  repeated McpUnavailableServer unavailable_servers = 3;
+}
+
+// A tool of a server, as MCP tools/list gives it.
+message McpTool {
+  // The server that offers it.
+  string server = 1;
+  string name = 2;
+  string title = 3;
+  string description = 4;
+  // The JSON Schema of its arguments, as JSON.
+  bytes input_schema = 5;
+  // The JSON Schema of its structured result, as JSON; empty when it has
+  // none.
+  bytes output_schema = 6;
+  // Its MCP ToolAnnotations, such as readOnlyHint, as JSON; empty when it has
+  // none. Hints of the server, not guarantees.
+  bytes annotations = 7;
+}
+
+// A server whose tools could not be listed.
+message McpUnavailableServer {
+  string name = 1;
+  McpServerFailure failure = 2;
+}
+
+// The request of SendMcpRequest.
+message SendMcpRequestRequest {
+  McpAccount account = 1;
+  string server = 2;
+  // One JSON-RPC 2.0 request of MCP, at most 4 MiB. The Agent sends it to
+  // the server under an id of its own.
+  bytes request = 3;
+}
+
+// The response of SendMcpRequest.
+message SendMcpRequestResponse {
+  // The server's JSON-RPC 2.0 response, with the id of the request as the
+  // service sent it, at most 8 MiB; a larger one fails the call with
+  // RESOURCE_EXHAUSTED and reason RESULT_TOO_LARGE.
+  bytes response = 1;
+}

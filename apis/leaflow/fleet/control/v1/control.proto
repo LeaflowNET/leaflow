@@ -1,0 +1,672 @@
+syntax = "proto3";
+
+package leaflow.fleet.control.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "leaflow/fleet/rpc/v1/rpc.proto";
+import "leaflow/fleet/transport/v1/transport.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/control/v1;controlv1";
+
+// The control connection between an endpoint of a machine and the Fleet
+// service. The service authenticates endpoints, calls the features of machines
+// and passes to sessions the signaling that participants send through the
+// Fleet API. It carries no session data: that flows only between participant
+// and session (leaflow.fleet.transport.v1).
+//
+// Endpoints. Each of these processes holds its own control connection:
+//   - the Agent's daemon, one per machine, with the machine key, or while
+//     the machine enrolls, with the key it generated;
+//   - the session process, one per session, with a key the machine key
+//     delegated to it.
+// Every credential proves possession of an Ed25519 key (RFC 8032) by signing
+// the service's challenge; none is a bearer secret. Participants hold no
+// control connection: they signal through the Fleet API (see Participants).
+//
+// Carriage. A WebSocket (RFC 6455) to the URL the service gives out. The
+// endpoint offers the subprotocols of the versions it speaks, this one being
+// "leaflow.fleet.control.v1", and the service picks one (see Evolution). Each
+// binary message is exactly one ClientMessage from the endpoint or
+// ServerMessage from the service. A receiver ignores a message whose case it
+// does not know.
+//
+// Fragments. A message whose encoding is larger than 256 KiB travels as
+// Fragment messages: its encoding cut into consecutive pieces of at most
+// 256 KiB, in order, all with the same message_id and the last with final
+// set. The receiver joins the pieces and handles the result as the one
+// message it encodes, which is never a Fragment itself. Other messages, such
+// as Ping, Pong and the fragments of other messages, may come between the
+// fragments of a message, so that a large message holds up nothing else on
+// the connection. A joined message is at most 16 MiB: a receiver closes with
+// MESSAGE_TOO_BIG a connection that sends more, and a callee whose result
+// would be larger fails the call with RESOURCE_EXHAUSTED and reason
+// RESULT_TOO_LARGE instead.
+//
+// Handshake. The service sends ServerHello as soon as the WebSocket opens;
+// the endpoint answers with ClientHello; the service answers with Welcome or
+// Close. Before Welcome both sides close on any other message, and the service
+// sends nothing else on a connection until it sent Welcome. A service that
+// cannot take a connection now, such as under load, refuses the WebSocket
+// upgrade with HTTP status 503 and a Retry-After header (RFC 9110 §10.2.3); a
+// proxy in front of it that limits how fast an address connects may refuse it
+// with 429. The endpoint counts either as a failed attempt (see Reconnection)
+// and waits at least Retry-After when given. The service closes with
+// OVERLOADED, before Welcome, a connection of a machine's daemon or of a
+// session process that connects more often than the service allows; an
+// endpoint that follows Reconnection stays well below that.
+//
+// Calls. Both ends call methods of each other with leaflow.fleet.rpc.v1
+// frames. Each service says who serves it on which connections; a call of any
+// other method fails with PERMISSION_DENIED and reason METHOD_NOT_ALLOWED.
+// The features of a machine, such as its directory
+// (leaflow.fleet.directory.v1), remote commands (leaflow.fleet.command.v1),
+// MCP servers (leaflow.fleet.mcp.v1) and sessions (leaflow.fleet.host.v1),
+// travel on its daemon's connection; the service calls the methods of a
+// feature only while the machine reports it available
+// (leaflow.fleet.machine.v1), and on a new connection only after its first
+// ReportMachineStatus.
+//
+// Disconnection. A call the service made on a connection that drops goes on
+// once the endpoint received it: the endpoint finishes it and keeps its
+// CallResult for Welcome.resume_grace. On its next connection the same
+// process (ClientHello.instance_id) names in
+// ClientHello.received_request_ids every call it received on an earlier
+// connection and has not answered on an open one, and right after Welcome,
+// before anything else, sends the CallResults it holds for them with the
+// Call's resume_token. A result it wrote within idle_timeout before its
+// connection dropped counts as not answered, since it may have been lost.
+// The service then:
+//   - waits for the results of the named calls until their timeouts,
+//     whichever of its addresses the endpoint connects to, and ignores a
+//     result of a call that ended;
+//   - sends again, with a new request_id, a call it had sent that the list
+//     does not name: it never reached the endpoint;
+//   - when another process connects instead, ends the calls the earlier one
+//     received with UNAVAILABLE and reason CONNECTION_LOST: they may have run.
+// A call the service had not yet sent waits for the next connection like any
+// other. Each call thus runs at most once. The service's request_ids are
+// unique across all connections. It sends a CallCancel only on the connection
+// that carried the call; a call received on a connection that dropped ends
+// at its timeout. The calls an endpoint made to the service end with
+// UNAVAILABLE and reason CONNECTION_LOST, and the endpoint repeats them on its
+// next connection as Retries allows. While an endpoint connects again, within
+// its presence or its Welcome.resume_grace, the service's calls to it wait for
+// it until their timeout instead of failing.
+//
+// Concurrency. A callee may work on several calls of a connection at once and
+// answer them in any order; a caller that needs one call to take effect
+// before another waits for the first result. At most
+// ServerHello.max_concurrent_calls calls of an endpoint run on the service at
+// a time, and a further one fails with RESOURCE_EXHAUSTED and reason
+// TOO_MANY_CALLS. A Call without a timeout may run 30 seconds, unless its
+// method states another default.
+//
+// Retries. A method with idempotency_level IDEMPOTENT or NO_SIDE_EFFECTS may
+// be called again with the same request, to the same effect as one call; any
+// other method states what calling it again does. A caller repeats a call
+// only after it failed with UNAVAILABLE, DEADLINE_EXCEEDED or
+// RESOURCE_EXHAUSTED, and only a call it may repeat.
+//
+// Reports. The reports of a daemon (ReportMachineStatus, ReportSessions,
+// ReportSessionState and ReportDirectoryStatus) carry a sequence that orders
+// them by when the daemon observed what they report, so that the service
+// never lets an older report override a newer one, whatever order the calls
+// complete in. Only the newest daemon connection of a machine reports: the
+// service answers the reports of a connection that a newer one replaced with
+// FAILED_PRECONDITION and reason CONNECTION_REPLACED, and applies none of
+// them.
+//
+// Signaling. A participant signals through the Fleet API: the service passes
+// its offers, candidates, abandoned PeerConnections and migration steps to the
+// session process as transport.v1 Signal and Migration, and answers the
+// participant's request with what the session sends back for the same
+// participant and PeerConnection. The session process sends Signal and
+// Migration on its control connection. The service drops one that no request
+// of the participant waits for, such as a candidate that arrives after the
+// answer was returned. It closes with POLICY_VIOLATION a session process's
+// connection that names a participant never attached to its session, and a
+// daemon's connection that sends either.
+//
+// Participants. A participant is created and kept through the Fleet API
+// (leaflow/fleet/v1/openapi.yaml): creating it signs an Authorization for the
+// participant's key and attaches it to the session with AttachParticipant;
+// renewing it extends its lease and the leases of its PeerConnections, and
+// replaces the Authorization with UpdateParticipantAuthorization before it
+// expires; deleting it, or letting its lease run out, detaches it with
+// DetachParticipant. What a participant may do never changes: to change it,
+// the service detaches the participant, and its client creates another.
+//
+// Liveness. The endpoint sends Ping when it has sent nothing for
+// ServerHello.ping_interval. Either side may Ping, and the other answers at
+// once. Either side closes with PING_TIMEOUT when it has received nothing for
+// ServerHello.idle_timeout.
+//
+// Flow. Every WebSocket message an endpoint sends, Fragment, Ping and Pong
+// included, takes one token from a message bucket that holds
+// ServerHello.message_burst tokens and refills at
+// ServerHello.messages_per_second, and one token for each of its bytes from a
+// byte bucket that holds ServerHello.byte_burst and refills at
+// ServerHello.bytes_per_second. The service reads an endpoint's next message
+// only once both buckets hold enough, so an endpoint that sends faster is
+// slowed down by the transport rather than closed: its writes stall, and a
+// Ping it sends then waits behind what it sent before. An endpoint therefore
+// paces what it sends to the buckets. An endpoint reads what the service sends
+// as it arrives; the service closes with ENDPOINT_TOO_SLOW a connection whose
+// messages pile up unread.
+//
+// Reconnection. An endpoint whose connection ends connects again, for as
+// long as it takes, unless the close ends it (below): updates of the service
+// close every connection, and an outage may last long, such as while the
+// service is attacked. Before each attempt it waits a random time between
+// zero and the smaller of its cap and 1 second times 2 to the number of
+// attempts since its last connection that received Welcome and lasted 10
+// seconds, and at least the retry_delay of the Close it received. The cap is
+// 60 seconds for a daemon and 30 seconds for a session process, so that it
+// comes back within Welcome.resume_grace; the first attempt after a connection
+// that lasted therefore follows within a second. What ends it:
+//   - for a daemon, AUTHENTICATION_FAILED for its machine credential (the
+//     machine enrolls again), PERMISSION_DENIED (the machine was removed)
+//     and an enrollment DENIED (leaflow.fleet.machine.v1);
+//   - for a daemon closed with CONNECTION_REPLACED that holds no newer
+//     connection of its own, nothing: another process uses the machine's
+//     identity, such as on a copied disk. It connects again every 10
+//     minutes and logs it;
+//   - for a session process, SESSION_NOT_FOUND and SESSION_EXIT; the
+//     process leaves its session running, and the service ends it if it
+//     should no longer run (leaflow.fleet.host.v1).
+//
+// Disconnected. A machine keeps working while its daemon is not connected:
+// the Agent serves its copy of the directory (leaflow.fleet.directory.v1),
+// sessions go on under their SessionPolicy (leaflow.fleet.host.v1), and
+// privilege requests go only to the session's participants
+// (leaflow.fleet.privilege.v1). The service calls none of the machine's
+// features meanwhile. A participant that cannot reach the service cannot renew
+// the leases of its PeerConnections, which stop sending application data
+// once a lease runs out and go on once the participant renews it
+// (leaflow.fleet.transport.v1). After every connect the daemon reports the
+// machine, its sessions and its directory again.
+//
+// Resumption. When the control connection of a session process drops, or the
+// service closes it with SERVER_UPGRADE, the service keeps the session's
+// participants for Welcome.resume_grace. A session process that connects again
+// within it with the same session key keeps them; it may connect at any address
+// of the service, since nothing ties it to the one it used before. Nothing sent
+// before is replayed: a PeerConnection whose signaling was cut off is
+// abandoned, and the participant starts another one. When the grace passes, the
+// service ends the session's participants with SESSION_PROCESS_LOST.
+//
+// Session lifetime. A session process sends Close with SESSION_EXIT just
+// before its session ends, and the service then ends the session's
+// participants. While the session's process is not connected, the Fleet API
+// holds a participant's request for a while and answers it with
+// SESSION_UNAVAILABLE and a retry_delay if the process does not come back.
+//
+// Keys. The service signs with the Ed25519 keys of SigningKeys, which it
+// sends in Welcome and again on every connection whenever the set changes,
+// and which the Fleet API returns with what it signs for participants. It
+// adds a key at least 5 minutes before it signs with it, and removes one only
+// when nothing it signed with that key is still valid.
+//
+// Evolution. A change that endpoints already in use cannot follow gets a new
+// subprotocol, such as "leaflow.fleet.control.v2", and the service keeps
+// serving the versions endpoints still use. Within a version, messages and
+// methods only gain fields, oneof cases, enum values and methods, which a
+// receiver that does not know them ignores or refuses with UNIMPLEMENTED.
+
+// A message from an endpoint.
+message ClientMessage {
+  // The message.
+  oneof message {
+    // The endpoint's credential. The first message.
+    ClientHello client_hello = 1;
+    // Asks the service to answer with a Pong.
+    Ping ping = 2;
+    // Answers a Ping of the service.
+    Pong pong = 3;
+    // Starts a call of a method the service serves.
+    leaflow.fleet.rpc.v1.Call call = 4;
+    // Answers a call of the service.
+    leaflow.fleet.rpc.v1.CallResult call_result = 5;
+    // Cancels a call of the endpoint.
+    leaflow.fleet.rpc.v1.CallCancel call_cancel = 6;
+    // Signaling for a PeerConnection. Session processes only.
+    leaflow.fleet.transport.v1.Signal signal = 7;
+    // A step of a migration. Session processes only.
+    leaflow.fleet.transport.v1.Migration migration = 8;
+    // The endpoint closes the connection.
+    Close close = 9;
+    // A piece of a message too large to send whole.
+    Fragment fragment = 10;
+  }
+}
+
+// A message from the service.
+message ServerMessage {
+  // The message.
+  oneof message {
+    // The challenge and limits. The first message.
+    ServerHello server_hello = 1;
+    // The service accepted ClientHello.
+    Welcome welcome = 2;
+    // Asks the endpoint to answer with a Pong.
+    Ping ping = 3;
+    // Answers a Ping of the endpoint.
+    Pong pong = 4;
+    // Starts a call of a method the endpoint serves.
+    leaflow.fleet.rpc.v1.Call call = 5;
+    // Answers a call of the endpoint.
+    leaflow.fleet.rpc.v1.CallResult call_result = 6;
+    // Cancels a call of the service.
+    leaflow.fleet.rpc.v1.CallCancel call_cancel = 7;
+    // Signaling for a PeerConnection, from its participant through the Fleet
+    // API. To session processes only.
+    leaflow.fleet.transport.v1.Signal signal = 8;
+    // A step of a migration, from its participant through the Fleet API. To
+    // session processes only.
+    leaflow.fleet.transport.v1.Migration migration = 9;
+    // The keys the service signs with, after they changed.
+    SigningKeys signing_keys = 10;
+    // The service closes the connection.
+    Close close = 11;
+    // A piece of a message too large to send whole.
+    Fragment fragment = 12;
+  }
+}
+
+// The service's side of the handshake. Every field is set; an endpoint closes
+// with PROTOCOL_ERROR a ServerHello that lacks one.
+message ServerHello {
+  // The HTTPS origin (RFC 6454) that names the service, such as
+  // "https://fleet.leaflow.cloud": the issuer of everything it signs.
+  string issuer = 1;
+  // 32 random bytes, new for this connection, that the credential signs.
+  bytes challenge = 2;
+  // How long the endpoint may send nothing before it sends a Ping.
+  google.protobuf.Duration ping_interval = 3;
+  // How long either side waits without receiving anything before it closes
+  // the connection.
+  google.protobuf.Duration idle_timeout = 4;
+  // The largest WebSocket message, in bytes, either end may send. At least
+  // 512 KiB, so that a Fragment always fits.
+  uint32 max_message_size = 5;
+  // How many calls of the endpoint may run on the service at a time. At
+  // least 1.
+  uint32 max_concurrent_calls = 6;
+  // How fast the endpoint's message bucket refills, in messages a second
+  // (see Flow). At least 1.
+  uint32 messages_per_second = 7;
+  // How many tokens the endpoint's message bucket holds (see Flow). At
+  // least 1.
+  uint32 message_burst = 8;
+  // How fast the endpoint's byte bucket refills, in bytes a second (see
+  // Flow). At least 1.
+  uint32 bytes_per_second = 9;
+  // How many bytes the endpoint's byte bucket holds (see Flow). At least
+  // max_message_size, so that any message fits.
+  uint32 byte_burst = 10;
+}
+
+// The endpoint's side of the handshake.
+message ClientHello {
+  // Who the endpoint is. Its case decides what the connection may do.
+  oneof credential {
+    // The daemon of an enrolled machine.
+    MachineCredential machine = 1;
+    // The daemon of a machine that is enrolling.
+    EnrollmentCredential enrollment = 2;
+    // A session process.
+    SessionCredential session = 3;
+  }
+  // The endpoint software, such as "leaflow-fleet-agent/1.0.0". For
+  // diagnostics only. A machine reports its Agent's version with
+  // leaflow.fleet.machine.v1.
+  string user_agent = 5;
+  // 16 random bytes that the endpoint process chooses when it starts and keeps
+  // for all its connections. They tell a connection of the same process from
+  // one of a process that started anew, whose calls in flight were lost (see
+  // Disconnection).
+  bytes instance_id = 6;
+  // The request_ids of the calls the service made that this process received
+  // on an earlier connection and has not answered on an open one (see
+  // Disconnection). The process names each until the call's timeout has
+  // passed; at most 1024.
+  repeated string received_request_ids = 7;
+}
+
+// The daemon of an enrolled machine, with its machine key.
+message MachineCredential {
+  // The machine, as EnrollMachine returned it.
+  string machine_id = 1;
+  // The Ed25519 signature by the machine key over the ASCII bytes
+  // "leaflow.fleet.control.v1.MachineCredential", one zero byte and
+  // ServerHello.challenge.
+  bytes signature = 2;
+}
+
+// The daemon of a machine that is not enrolled yet, with the machine key it
+// generated. Any key that signs is admitted, but only to call EnrollMachine.
+message EnrollmentCredential {
+  // The Ed25519 public key, 32 bytes.
+  bytes public_key = 1;
+  // The signature by public_key over the ASCII bytes
+  // "leaflow.fleet.control.v1.EnrollmentCredential", one zero byte
+  // and ServerHello.challenge.
+  bytes signature = 2;
+}
+
+// A session process, with the key its machine delegated to it.
+message SessionCredential {
+  // A serialized SessionDelegation.
+  bytes delegation = 1;
+  // The Ed25519 signature by the machine key over the ASCII bytes
+  // "leaflow.fleet.control.v1.SessionDelegation", one zero byte and
+  // delegation.
+  bytes delegation_signature = 2;
+  // The signature by SessionDelegation.session_public_key over the ASCII
+  // bytes "leaflow.fleet.control.v1.SessionCredential", one zero
+  // byte and ServerHello.challenge.
+  bytes signature = 3;
+}
+
+// The daemon's statement that a key acts for one of its sessions. The daemon
+// signs it without asking the service; the service also checks that the
+// session belongs to the machine and has not ended, and otherwise closes with
+// SESSION_NOT_FOUND.
+message SessionDelegation {
+  // The machine that signs.
+  string machine_id = 1;
+  // The session the key acts for.
+  string session_id = 2;
+  // The session process's Ed25519 public key, 32 bytes. Its private half
+  // never leaves that process, and a process that starts again makes a new
+  // one.
+  bytes session_public_key = 3;
+  // When the daemon signed it. Refused when more than 5 minutes ahead of the
+  // service's clock.
+  google.protobuf.Timestamp issued_at = 4;
+  // At most 15 minutes after issued_at. Refused once this time and 5 more
+  // minutes have passed. It bounds the handshake only, not the connection.
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+// The service accepted ClientHello.
+message Welcome {
+  // The connection.
+  uint64 connection_id = 1;
+  // The machine. Empty while enrolling.
+  string machine_id = 2;
+  // The session. Session processes only.
+  string session_id = 3;
+  // The keys the service signs with.
+  SigningKeys signing_keys = 4;
+  // How long, after this connection drops, the endpoint keeps the results of
+  // the calls it received on it (see Disconnection) and, for a session
+  // process, the service keeps the session's participants (see Resumption).
+  google.protobuf.Duration resume_grace = 5;
+  // This connection follows one of the same process (ClientHello.instance_id);
+  // for a session process, also within resume_grace, so that the session kept
+  // its participants.
+  bool resumed = 6;
+}
+
+// The keys the service signs with, all of them. Replaces the previous set.
+message SigningKeys {
+  // At most 8.
+  repeated PublicKey keys = 1;
+}
+
+// A public key of the service.
+message PublicKey {
+  // The key_id that signed statements name.
+  string key_id = 1;
+  // The key.
+  oneof key {
+    // An Ed25519 public key (RFC 8032), 32 bytes.
+    bytes ed25519 = 2;
+  }
+}
+
+// The service's statement of what one participant may do in one session. The
+// session takes who the participant is and what it may do from here, never from
+// the participant.
+message Authorization {
+  // ServerHello.issuer of the service that signed it.
+  string issuer = 1;
+  // The machine of the session.
+  string machine_id = 2;
+  // The session.
+  string session_id = 3;
+  // The participant.
+  uint64 participant_id = 4;
+  // The platform user the participant acts for.
+  string user_id = 5;
+  // The user's name, plain text.
+  string display_name = 6;
+  // The name the client gave itself when it created the participant, such
+  // as "console" or "assistant", at most 64 bytes. Neither unique nor
+  // verified: it lets people tell participants apart and grants nothing.
+  string client_name = 7;
+  // The participant's Ed25519 public key, 32 bytes. The session accepts only
+  // a PeerConnection whose participant Hello is signed with it
+  // (leaflow.fleet.transport.v1).
+  bytes participant_public_key = 9;
+  // The participant may only watch, whatever policies say.
+  bool read_only = 11;
+  // The policies of the domains the participant may use, at most one of each
+  // type, such as a leaflow.fleet.filetransfer.v1.FileTransferPolicy.
+  // A domain whose policy is missing is denied. A type the session does not
+  // know is ignored.
+  repeated google.protobuf.Any policies = 12;
+  // When the service issued it. Refused when more than 5 minutes ahead of the
+  // session's clock.
+  google.protobuf.Timestamp issued_at = 13;
+  // When it ends. The session refuses it, and ends the participant's
+  // connection, once this time and 5 more minutes have passed.
+  google.protobuf.Timestamp expires_at = 14;
+}
+
+// An Authorization signed by the service.
+message SignedAuthorization {
+  // PublicKey.key_id of the key that signed it.
+  string key_id = 1;
+  // A serialized Authorization. Receivers decode it from these bytes only
+  // after the signature verified, and keep the bytes: others refer to their
+  // SHA-256.
+  bytes authorization = 2;
+  // The Ed25519 signature over the ASCII bytes
+  // "leaflow.fleet.control.v1.Authorization", one zero byte and
+  // authorization.
+  bytes signature = 3;
+}
+
+// Asks the peer to answer with a Pong at once (RFC 6455 §5.5.2).
+message Ping {
+  // A value of the sender's monotonic clock, in milliseconds. Only the
+  // sender interprets it.
+  uint64 monotonic_ms = 1;
+}
+
+// Answers a Ping (RFC 6455 §5.5.3).
+message Pong {
+  // Ping.monotonic_ms, unchanged.
+  uint64 monotonic_ms = 1;
+}
+
+// A piece of the encoding of a ClientMessage or ServerMessage larger than
+// 256 KiB (see Fragments).
+message Fragment {
+  // Names the message among the messages the sender is sending in fragments
+  // on the connection.
+  uint64 message_id = 1;
+  // The next bytes of the encoding, at most 256 KiB.
+  bytes data = 2;
+  // Set on the last fragment of the message.
+  bool final = 3;
+}
+
+// Ends the connection in order. The sender then closes the WebSocket with
+// code 4000 plus the reason's number (RFC 6455 §7.4.2), which stands for the
+// reason when this message is lost.
+message Close {
+  // Why the connection ends.
+  CloseReason reason = 1;
+  // Plain text for logs, at most 1024 bytes.
+  string reason_phrase = 2;
+  // How long to wait at least before connecting again (see Reconnection).
+  // Always set with OVERLOADED; set with SERVER_UPGRADE, spread over up to 10
+  // seconds across connections so that they do not all come back at once.
+  google.protobuf.Duration retry_delay = 3;
+}
+
+// Why a control connection ends.
+enum CloseReason {
+  CLOSE_REASON_UNSPECIFIED = 0;
+  // An ordinary close. Either side.
+  CLOSE_REASON_DONE = 1;
+  // The endpoint goes away. Endpoint only.
+  CLOSE_REASON_CLIENT_EXIT = 2;
+  // The service shuts down. Service only.
+  CLOSE_REASON_SERVER_SHUTDOWN = 3;
+  // The service restarts; connect again after retry_delay. Service only.
+  CLOSE_REASON_SERVER_UPGRADE = 4;
+  // Nothing arrived for idle_timeout. Either side.
+  CLOSE_REASON_PING_TIMEOUT = 5;
+  // ClientHello did not arrive in time. Service only.
+  CLOSE_REASON_HELLO_TIMEOUT = 6;
+  // A malformed or unexpected message. Either side.
+  CLOSE_REASON_PROTOCOL_ERROR = 7;
+  // A message larger than max_message_size, or one joined from fragments
+  // larger than 16 MiB. Either side.
+  CLOSE_REASON_MESSAGE_TOO_BIG = 8;
+  // The credential did not verify, or names an unknown machine or another
+  // key. For a machine credential it is final: the daemon stops and its
+  // machine must enroll again. Service only.
+  CLOSE_REASON_AUTHENTICATION_FAILED = 9;
+  // The endpoint is known but not allowed, such as the daemon of a removed
+  // machine. Service only.
+  CLOSE_REASON_PERMISSION_DENIED = 10;
+  // The session named by the credential does not exist or has ended.
+  // Service only.
+  CLOSE_REASON_SESSION_NOT_FOUND = 11;
+  // A newer connection with the same identity replaced this one, such as a
+  // daemon that connected again. Service only.
+  CLOSE_REASON_CONNECTION_REPLACED = 12;
+  // The session ends. Session process only, just before its session ends.
+  CLOSE_REASON_SESSION_EXIT = 13;
+  // A rule or a rate limit was broken. Either side.
+  CLOSE_REASON_POLICY_VIOLATION = 16;
+  // The sender failed. Either side.
+  CLOSE_REASON_INTERNAL_ERROR = 17;
+  // The service cannot serve the connection now, or the endpoint connected
+  // too often; connect again after retry_delay, which is always set. Service
+  // only.
+  CLOSE_REASON_OVERLOADED = 18;
+  // The endpoint did not read what the service sent as it arrived. Service
+  // only.
+  CLOSE_REASON_ENDPOINT_TOO_SLOW = 19;
+}
+
+// Admits participants to a session and ends them. Served by the session process
+// on its control connection; the service calls it when a participant
+// is created, renewed or ends through the Fleet API.
+service ParticipantService {
+  // Admits a participant, before any of its signaling. The session verifies
+  // the signature with a key of SigningKeys; that issuer, machine_id and
+  // session_id are its own; and the lifetime. It then accepts the
+  // PeerConnections of participant_id whose participant Hello is signed with
+  // participant_public_key. Attaching an attached participant again with the
+  // same authorization succeeds.
+  //
+  // Fails with PERMISSION_DENIED and reason AUTHORIZATION_INVALID when the
+  // authorization does not verify.
+  rpc AttachParticipant(AttachParticipantRequest) returns (AttachParticipantResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Replaces an attached participant's authorization with a renewed one,
+  // verified as in AttachParticipant. Replacing it with the one the participant
+  // holds already succeeds.
+  //
+  // Fails with:
+  //   - NOT_FOUND and reason PARTICIPANT_NOT_FOUND for a participant not
+  //     attached;
+  //   - PERMISSION_DENIED and reason AUTHORIZATION_INVALID when it does not
+  //     verify;
+  //   - FAILED_PRECONDITION and reason AUTHORIZATION_CHANGED when it differs
+  //     from the current one in more than later issued_at and expires_at.
+  rpc UpdateParticipantAuthorization(UpdateParticipantAuthorizationRequest) returns (UpdateParticipantAuthorizationResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+  // Ends a participant. The session closes its PeerConnections and releases
+  // what it held, such as pressed keys and the input lease, and answers once
+  // the participant can do nothing more in the session. Detaching a participant
+  // that is not attached succeeds.
+  rpc DetachParticipant(DetachParticipantRequest) returns (DetachParticipantResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+}
+
+// The request of AttachParticipant.
+message AttachParticipantRequest {
+  // The participant's authorization, the same one the Fleet API returned for
+  // the participant.
+  SignedAuthorization authorization = 1;
+}
+
+// The response of AttachParticipant.
+message AttachParticipantResponse {}
+
+// The request of UpdateParticipantAuthorization.
+message UpdateParticipantAuthorizationRequest {
+  // The renewed authorization.
+  SignedAuthorization authorization = 1;
+}
+
+// The response of UpdateParticipantAuthorization.
+message UpdateParticipantAuthorizationResponse {}
+
+// The request of DetachParticipant.
+message DetachParticipantRequest {
+  // The participant.
+  uint64 participant_id = 1;
+  // Why it ends.
+  ParticipantEndReason reason = 2;
+}
+
+// The response of DetachParticipant.
+message DetachParticipantResponse {}
+
+// Why a participant ends. The session learns it with DetachParticipant, and the
+// participant's user through the participant.ended event of the Fleet API.
+enum ParticipantEndReason {
+  PARTICIPANT_END_REASON_UNSPECIFIED = 0;
+  // Its user ended it.
+  PARTICIPANT_END_REASON_LEFT = 1;
+  // Someone else ended it, such as the owner of the session or an operator.
+  PARTICIPANT_END_REASON_REMOVED = 2;
+  // It was not renewed before its lease ran out.
+  PARTICIPANT_END_REASON_LEASE_EXPIRED = 3;
+  // Its session ended.
+  PARTICIPANT_END_REASON_SESSION_ENDED = 4;
+  // The session's process did not connect again within Welcome.resume_grace.
+  PARTICIPANT_END_REASON_SESSION_PROCESS_LOST = 5;
+  // A permission it was created with was revoked from its user: what the
+  // user is granted in the machine's project no longer covers what it may do.
+  PARTICIPANT_END_REASON_PERMISSION_REVOKED = 6;
+  // Its machine was removed from the project.
+  PARTICIPANT_END_REASON_MACHINE_REMOVED = 7;
+  // The key that signed its authorization was revoked.
+  PARTICIPANT_END_REASON_KEY_REVOKED = 8;
+  // Its first PeerConnection did not start, so it was never handed to its
+  // client.
+  PARTICIPANT_END_REASON_NOT_ADMITTED = 9;
+  // Its user is no longer a member of the machine's project: the user left
+  // or was removed.
+  PARTICIPANT_END_REASON_MEMBERSHIP_ENDED = 10;
+  // Its user's account is no longer active: it was suspended or banned, or
+  // its deletion was requested.
+  PARTICIPANT_END_REASON_USER_INACTIVE = 11;
+  // Deletion of the machine's project was requested.
+  PARTICIPANT_END_REASON_PROJECT_DELETION_REQUESTED = 12;
+}
