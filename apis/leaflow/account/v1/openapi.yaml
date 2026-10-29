@@ -17,6 +17,10 @@ info:
 
     A scoped token cannot be renewed. Repeat step 2 for a new one, and sign in again at auth.leaflow.net once the access token itself has expired.
 
+    ## SSH keys
+
+    The SSH keys of an account sign its holder in as themselves, in every project they belong to: Fleet machines accept them for the holder's directory account wherever `fleet:machines.login` allows it, and Compute installs them on the servers the holder creates or reinstalls. A key is active on one account at most. Keys shared by a project, such as one used by CI, belong to the project instead and are managed through the IAM API.
+
     ## Project slugs
 
     Every project carries a `slug`, the label naming it in its address. Until a custom slug is chosen the slug is the project's `id`, and the address under the `id` keeps working after a custom slug is chosen. `GET /account/v1/projects/by-slug/{slug}` finds the project named by either label.
@@ -346,6 +350,154 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IdentityVerificationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/me/ssh-keys:
+    get:
+      summary: List the SSH keys of the current account
+      description: Most recent first.
+      operationId: list-ssh-keys
+      tags:
+        - SSHKey
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: status
+          in: query
+          description: Both kinds are returned while this is absent
+          explode: false
+          schema:
+            description: Both kinds are returned while this is absent
+            type: string
+            enum:
+              - ACTIVE
+              - REVOKED
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageSSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Add an SSH key to the current account
+      description: |-
+        The key takes effect in every project the caller belongs to: Fleet machines accept it within about a minute, and Compute installs it on the servers the caller creates or reinstalls from then on.
+
+        Fails with 409 `SSH_KEY_ALREADY_EXISTS` while the same key is active on any account, this one included, and with 412 `SSH_KEY_QUOTA_EXCEEDED` while the account already holds 50 active keys.
+      operationId: create-ssh-key
+      tags:
+        - SSHKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSSHKeyRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/me/ssh-keys/{keyId}:
+    get:
+      summary: Get an SSH key of the current account
+      operationId: get-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Rename an SSH key of the current account
+      description: Only the name can change. The key, its type and its fingerprint are three statements about one thing, and changing one of them would leave the row describing a key that does not exist.
+      operationId: rename-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameSSHKeyRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Revoke an SSH key of the current account
+      description: |-
+        The row remains and its status becomes `REVOKED`, so it stays answerable afterwards which key was trusted at the time. Fleet machines stop accepting the key within about a minute. A server on which Compute installed the key keeps it until it is removed there.
+
+        The same key can then be added again, to this account or another.
+      operationId: revoke-ssh-key
+      tags:
+        - SSHKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSHKeyResource"
         default:
           description: Error
           content:
@@ -1084,6 +1236,92 @@ components:
       required:
         - real_name
         - id_number
+      additionalProperties: false
+    SSHKeyResource:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        fingerprint:
+          description: The SHA-256 fingerprint, as `ssh-keygen -l` prints it
+          type: string
+        id:
+          type: string
+          format: uuid
+        key_type:
+          description: The algorithm, such as `ssh-ed25519`
+          type: string
+        name:
+          type: string
+        public_key:
+          description: The key in OpenSSH format, without the comment it was added with
+          type: string
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - REVOKED
+      required:
+        - id
+        - name
+        - public_key
+        - fingerprint
+        - key_type
+        - status
+        - created_at
+      additionalProperties: false
+    LengthAwarePageSSHKeyResource:
+      type: object
+      properties:
+        items:
+          description: The items in this page
+          type: array
+          items:
+            $ref: "#/components/schemas/SSHKeyResource"
+        limit:
+          description: Maximum number of items in this page, echoing the request
+          type: integer
+          format: int64
+        offset:
+          description: Number of items skipped, echoing the request
+          type: integer
+          format: int64
+        total:
+          description: Total number of matches, not only this page
+          type: integer
+          format: int64
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      additionalProperties: false
+    CreateSSHKeyRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        public_key:
+          description: The public key in OpenSSH format. The type and the fingerprint are derived from it and cannot be changed. A certificate is refused, being a signature rather than a key
+          type: string
+          minLength: 1
+          maxLength: 16384
+      required:
+        - name
+        - public_key
+      additionalProperties: false
+    RenameSSHKeyRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - name
       additionalProperties: false
     InvitationPreviewResource:
       description: What an invitation states before it is accepted. It carries neither the invitation id nor the full recipient address; the invitations listed against the current account are returned by `list-my-invitations`

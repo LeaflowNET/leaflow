@@ -3,7 +3,7 @@ info:
   title: Leaflow IAM API
   version: 1.0.0
   description: |-
-    What happens inside a project: members, roles, invitations and SSH keys.
+    What happens inside a project: members, roles, invitations and the SSH keys the project shares.
 
     Every request carries a scoped token; see the `bearerAuth` security scheme. No path carries a
     `projectId`, and the current project is the one the token states. Tokens are obtained from the
@@ -686,7 +686,7 @@ paths:
   /api/v1/ssh-keys:
     get:
       summary: List the SSH keys of this project
-      description: Both the keys belonging to members and the keys belonging to the project are listed; the `owner_user_id` on each one tells them apart.
+      description: The keys the project shares. The keys of members are their own and belong to their accounts (`/account/v1/me/ssh-keys` on the account API), so they are not listed here.
       operationId: list-ssh-keys
       tags:
         - SSHKey
@@ -725,8 +725,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
     post:
-      summary: Add an SSH key
-      description: "`owner=me` adds a key of the caller's own, which any member may do. `owner=project` adds a key shared by the project, requires `iam:ssh_keys.manage`, and lands on every machine created in the project afterwards."
+      summary: Add an SSH key to this project
+      description: |-
+        Adds a key the project shares, such as one used by CI or a bastion. Compute installs it on every server created in the project afterwards. It belongs to no member, so it signs in as nobody on Fleet machines; a member adds a key of their own to their account (`POST /account/v1/me/ssh-keys` on the account API).
+
+        Requires `iam:ssh_keys.manage`.
       operationId: create-ssh-key
       tags:
         - SSHKey
@@ -777,7 +780,7 @@ paths:
                 $ref: "#/components/schemas/Error"
     patch:
       summary: Rename an SSH key
-      description: Only the name can change. The key, its type and its fingerprint are three statements about one thing, and changing one of them would leave the row describing a key that does not exist.
+      description: Only the name can change. The key, its type and its fingerprint are three statements about one thing, and changing one of them would leave the row describing a key that does not exist. Requires `iam:ssh_keys.manage`.
       operationId: rename-ssh-key
       tags:
         - SSHKey
@@ -809,7 +812,7 @@ paths:
                 $ref: "#/components/schemas/Error"
     delete:
       summary: Revoke an SSH key
-      description: The row remains and its status becomes `REVOKED`, so it stays answerable afterwards which key was trusted at the time.
+      description: The row remains and its status becomes `REVOKED`, so it stays answerable afterwards which key was trusted at the time. A server on which Compute installed the key keeps it until it is removed there. Requires `iam:ssh_keys.manage`.
       operationId: revoke-ssh-key
       tags:
         - SSHKey
@@ -1827,9 +1830,6 @@ components:
           type: string
         name:
           type: string
-        owner_user_id:
-          description: Who the key belongs to. Absent means it belongs to the project itself
-          type: string
         public_key:
           type: string
         purposes:
@@ -1888,13 +1888,6 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-        owner:
-          description: Who this key belongs to
-          type: string
-          enum:
-            - me
-            - project
-          default: me
         public_key:
           description: The public key in OpenSSH format. The type and the fingerprint are derived from it and cannot be changed
           type: string
