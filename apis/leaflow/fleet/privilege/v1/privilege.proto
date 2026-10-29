@@ -48,11 +48,10 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/privilege/v1;privil
 // request and shows them to the account's owner: at most the first 4 KiB of
 // command_line, and remote_host and tty.
 service PrivilegeService {
-  // Decides a request. While the account's owner has set the machine to
-  // approve their requests without asking, the request is approved at once.
-  // Otherwise the owner is asked on the platform, and the answer is their
-  // decision, or EXPIRED once expires_at passes without one. A call without
-  // a timeout runs until expires_at.
+  // Decides a request as the platform does, such as at once, after reviewing
+  // it, or by asking the account's owner. The answer is the decision, or
+  // EXPIRED once expires_at passes without one. A call without a timeout runs
+  // until expires_at.
   //
   // Asking again with the request_id of a request the machine asked about
   // before continues that request: after its connection dropped, the daemon
@@ -79,6 +78,10 @@ message DecidePrivilegeRequestRequest {
 message DecidePrivilegeRequestResponse {
   // APPROVED, DENIED or EXPIRED.
   PrivilegeOutcome outcome = 1;
+  // DENIED only: why, as the platform gives it, to show whoever asked. Plain
+  // text of at most 200 characters; empty when the platform gives none. The
+  // daemon shows it without control characters.
+  string reason = 2;
 }
 
 // A message from the participant.
@@ -212,6 +215,10 @@ message PrivilegeDecision {
   bool approved = 2;
   // When the person decided. Informational.
   google.protobuf.Timestamp decided_at = 3;
+  // Denied only: why, as the person gave it, to show whoever asked. Plain
+  // text of at most 200 characters; empty when they gave none. The daemon
+  // shows it without control characters.
+  string reason = 4;
 }
 
 // A request is no longer pending.

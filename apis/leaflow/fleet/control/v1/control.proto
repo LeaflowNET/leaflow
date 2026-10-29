@@ -27,10 +27,12 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/control/v1;controlv
 //
 // Carriage. A WebSocket (RFC 6455) to the URL the service gives out. The
 // endpoint offers the subprotocols of the versions it speaks, this one being
-// "leaflow.fleet.control.v1", and the service picks one (see Evolution). Each
-// binary message is exactly one ClientMessage from the endpoint or
-// ServerMessage from the service. A receiver ignores a message whose case it
-// does not know.
+// "leaflow.fleet.control.v1", and the service picks one (see Evolution). The
+// upgrade request names the endpoint's software and its version in the
+// User-Agent header (RFC 9110 §10.1.5), such as
+// "leaflow-fleet-agent/0.1.8". Each binary message is exactly one
+// ClientMessage from the endpoint or ServerMessage from the service. A
+// receiver ignores a message whose case it does not know.
 //
 // Fragments. A message whose encoding is larger than 256 KiB travels as
 // Fragment messages: its encoding cut into consecutive pieces of at most
@@ -52,7 +54,11 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/control/v1;controlv
 // upgrade with HTTP status 503 and a Retry-After header (RFC 9110 §10.2.3); a
 // proxy in front of it that limits how fast an address connects may refuse it
 // with 429. The endpoint counts either as a failed attempt (see Reconnection)
-// and waits at least Retry-After when given. The service closes with
+// and waits at least Retry-After when given. A service that no longer serves
+// the version the User-Agent names refuses the upgrade with HTTP status 426
+// (RFC 9110 §15.5.22): the endpoint installs a newer version of its software
+// before it connects again, and meanwhile keeps following Reconnection, so
+// that it comes back once updated. The service closes with
 // OVERLOADED, before Welcome, a connection of a machine's daemon or of a
 // session process that connects more often than the service allows; an
 // endpoint that follows Reconnection stays well below that.
