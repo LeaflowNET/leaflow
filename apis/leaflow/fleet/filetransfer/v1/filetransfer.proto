@@ -174,7 +174,8 @@ message FileContentEnd {
 
 // The files of the session's user, by absolute path. Paths are resolved as
 // that user; an empty path is the user's home directory. Nothing is removed
-// recursively and nothing is overwritten implicitly. Needs
+// recursively, a directory goes to the trash with its contents instead, and
+// nothing is overwritten implicitly. Needs
 // FileTransferPolicy.file_system_allowed.
 service FileSystemService {
   // Lists a directory of at most 4096 entries and 512 KiB, a page at a time.
@@ -189,6 +190,27 @@ service FileSystemService {
   rpc RenameFile(RenameFileRequest) returns (RenameFileResponse);
   // Removes a file or an empty directory.
   rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse);
+  // Copies a file, a symbolic link (as the link) or a directory with its
+  // contents, keeping permission bits and modification times, as file
+  // managers copy (GIO g_file_copy with G_FILE_COPY_NOFOLLOW_SYMLINKS). It
+  // fails with ALREADY_EXISTS when something is at the destination. The copy
+  // appears whole or not at all: it is made under a hidden name in the
+  // destination's directory and renamed into place, and a copy that fails or
+  // is cancelled (leaflow.fleet.rpc.v1 CallCancel) leaves nothing behind.
+  // Copying a directory into itself fails with INVALID_ARGUMENT and reason
+  // FILE_COPY_INTO_ITSELF; a FIFO, socket or device, on its own or inside a
+  // directory, with FAILED_PRECONDITION and reason FILE_TYPE_UNSUPPORTED.
+  rpc CopyFile(CopyFileRequest) returns (CopyFileResponse);
+  // Moves a file or a directory with its contents to the user's trash
+  // (freedesktop Trash Specification 1.0), where the person can restore it
+  // from: the home trash ($XDG_DATA_HOME/Trash) for files on the file system
+  // of the home directory, otherwise the trash of the file's mount,
+  // $topdir/.Trash/$uid or $topdir/.Trash-$uid, as GIO g_file_trash chooses.
+  // Fails with FAILED_PRECONDITION and reason FILE_TRASH_UNAVAILABLE where the
+  // file system has no trash, such as a tmpfs or another mount of the system's
+  // own; with PERMISSION_DENIED for a directory holding files the user could
+  // not remove from the trash again.
+  rpc TrashFile(TrashFileRequest) returns (TrashFileResponse);
   // Offers files of the user to the participant, which fetches them as for any
   // offer.
   rpc CreateFileOffer(CreateFileOfferRequest) returns (CreateFileOfferResponse);
@@ -226,6 +248,12 @@ message DirectoryEntry {
   google.protobuf.Timestamp modified_at = 4;
   // The POSIX permission bits. Informational only.
   uint32 mode = 5;
+  // Its media type (Shared MIME-info Database), as GIO's
+  // standard::content-type gives it: that of the target for a symbolic link,
+  // "inode/symlink" for one whose target is missing, "inode/directory" and the
+  // other inode types by kind, "application/x-zerosize" for an empty file,
+  // otherwise by name and, where the name leaves it open, by content.
+  string mime_type = 6;
 }
 
 // The request of CreateDirectory.
@@ -256,6 +284,26 @@ message RemoveFileRequest {
 
 // The response of RemoveFile.
 message RemoveFileResponse {}
+
+// The request of CopyFile.
+message CopyFileRequest {
+  // The file, symbolic link or directory.
+  string source_path = 1;
+  // The path of the copy. Its parent must exist.
+  string destination_path = 2;
+}
+
+// The response of CopyFile.
+message CopyFileResponse {}
+
+// The request of TrashFile.
+message TrashFileRequest {
+  // The file or directory.
+  string path = 1;
+}
+
+// The response of TrashFile.
+message TrashFileResponse {}
 
 // The request of CreateFileOffer.
 message CreateFileOfferRequest {
