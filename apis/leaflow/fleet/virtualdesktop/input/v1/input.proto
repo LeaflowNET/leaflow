@@ -52,15 +52,25 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/inpu
 // pasted; releases of keys and buttons pressed before are still applied.
 //
 // Text input. The participant's own input method composes text, as its person
-// knows it, and the session hands the result to the native input context of
-// the focused editor in the session (IBus or another input method
-// framework). The session reports the focused editor with TextInputState.
-// Plain text goes as InsertText. A composition in progress goes as
-// Composition messages, so that the application shows the preedit text, and
-// the real keys the input method consumes while composing go along as its
-// KEY phases. An editor is identified by window_id, input_context_id and
-// focus_serial; text bound to an editor that has since changed is cancelled,
-// never redirected to another one.
+// knows it, in every window of the session that has the keyboard focus, and
+// the session delivers the result there: through the native input context of
+// the focused editor (IBus, XIM), else its accessible text interface, else as
+// typed keys, as a keyboard with that character would type it. The session
+// reports the focused window and what it knows of its editor with
+// TextInputState. Where the editor shows preedit text itself
+// (composition_supported), a composition in progress goes as Composition
+// messages and the real keys the input method consumes while composing go
+// along as its KEY phases; elsewhere the participant shows the preedit itself,
+// at the caret, and sends the result as InsertText. Either way the candidate
+// window follows the caret the session reports. An editor is identified by
+// window_id, input_context_id and focus_serial; text bound to an editor that
+// has since changed is cancelled, never redirected to another one.
+//
+// Compositions carry state, as an input method engine's preedit does: each
+// UPDATE is the whole preedit and each COMMIT the whole result, so that no
+// step depends on an earlier one having reached the editor. The session shows
+// the latest preedit and may skip updates the editor has not caught up with;
+// a COMMIT inserts its text even then.
 //
 // Keys. A KeyEvent is a physical key the person pressed. Applications and the
 // native input method interpret it; missing caret geometry or an uncertain
@@ -200,11 +210,14 @@ message PointerWheel {
 // reports it. Sent when the input channel opens and whenever the focus, the
 // caret or the editor changes.
 message TextInputState {
-  // The window of the focused editor. 0 when no window has focus.
+  // The window that has the keyboard focus. 0 when no window has it.
   uint64 window_id = 1;
-  // An editable control or a terminal has focus and accepts text, whether
-  // or not its caret is known. The participant keeps a local text field focused
-  // while it is set, so that its own input method can start.
+  // The window takes typed text: an editor, a terminal, or any window that
+  // reads keys, whether or not the session knows its editor or caret. Unset
+  // while no window has the keyboard focus or an application grabbed the
+  // keyboard, as an open menu does. The participant keeps its own input
+  // method on while it is set, with a local text field focused where it needs
+  // one.
   bool enabled = 2;
   // The caret, relative to the window, for placing the input method's
   // candidate window. Unset when the application does not report it
@@ -217,7 +230,8 @@ message TextInputState {
   CursorSource cursor_source = 5;
   // Identifies the focused editor within the session, opaque. Different
   // editors of one window differ; moving the caret or resizing does not change
-  // it. Empty when nothing editable has focus or it cannot be verified.
+  // it. Empty when the session cannot tell which editor has the focus; text
+  // then goes where the keys go, as typed keys where nothing else takes it.
   string input_context_id = 6;
   // Grows whenever editing focus moves, is lost or comes back; not when the
   // caret moves. Compositions and composed text are bound to it.
@@ -227,10 +241,77 @@ message TextInputState {
   // anchor its candidate window there when cursor_rectangle is unset; it never
   // treats it as the caret.
   leaflow.fleet.virtualdesktop.display.v1.Rectangle control_rectangle = 8;
-  // The editor's native input context takes Composition messages: preedit
-  // text and the real keys consumed while composing. Otherwise the participant
-  // sends only InsertText.
+  // The editor shows preedit text itself: its native input context takes
+  // Composition messages, the preedit and the real keys consumed while
+  // composing, and the participant does not draw its input method's preedit.
+  // Otherwise the participant draws the preedit itself, at cursor_rectangle,
+  // else control_rectangle, else where the person last pressed in the window,
+  // and sends only InsertText.
   bool composition_supported = 9;
+  // What the editor is for, as its application declared it to its input
+  // method (IBus ContentType, GTK input-purpose). A participant switches its
+  // input method off for PASSWORD and PIN, as a native one does. UNSPECIFIED
+  // when it declared nothing.
+  InputPurpose purpose = 10;
+  // How the editor wants its text, as its application declared it (IBus
+  // ContentType, GTK input-hints).
+  repeated InputHint hints = 11;
+}
+
+// What an editor is for (IBus InputPurpose, GTK GtkInputPurpose).
+enum InputPurpose {
+  INPUT_PURPOSE_UNSPECIFIED = 0;
+  // Any text.
+  INPUT_PURPOSE_FREE_FORM = 1;
+  // Letters only.
+  INPUT_PURPOSE_ALPHA = 2;
+  // Digits only.
+  INPUT_PURPOSE_DIGITS = 3;
+  // A number.
+  INPUT_PURPOSE_NUMBER = 4;
+  // A phone number.
+  INPUT_PURPOSE_PHONE = 5;
+  // A URL.
+  INPUT_PURPOSE_URL = 6;
+  // An email address.
+  INPUT_PURPOSE_EMAIL = 7;
+  // The name of a person.
+  INPUT_PURPOSE_NAME = 8;
+  // A password: any text, hidden.
+  INPUT_PURPOSE_PASSWORD = 9;
+  // A PIN: digits, hidden.
+  INPUT_PURPOSE_PIN = 10;
+  // A terminal: any text and control keys.
+  INPUT_PURPOSE_TERMINAL = 11;
+}
+
+// How an editor wants its text (IBus InputHints, GTK GtkInputHints).
+enum InputHint {
+  INPUT_HINT_UNSPECIFIED = 0;
+  // Check for typos.
+  INPUT_HINT_SPELLCHECK = 1;
+  // Do not check for typos.
+  INPUT_HINT_NO_SPELLCHECK = 2;
+  // Offer word completion.
+  INPUT_HINT_WORD_COMPLETION = 3;
+  // Lowercase text.
+  INPUT_HINT_LOWERCASE = 4;
+  // Uppercase every character.
+  INPUT_HINT_UPPERCASE_CHARS = 5;
+  // Capitalize every word.
+  INPUT_HINT_UPPERCASE_WORDS = 6;
+  // Capitalize every sentence.
+  INPUT_HINT_UPPERCASE_SENTENCES = 7;
+  // Show no on-screen keyboard.
+  INPUT_HINT_INHIBIT_OSK = 8;
+  // The text runs vertically.
+  INPUT_HINT_VERTICAL_WRITING = 9;
+  // Offer emoji.
+  INPUT_HINT_EMOJI = 10;
+  // Offer no emoji.
+  INPUT_HINT_NO_EMOJI = 11;
+  // Keep no typing history of it.
+  INPUT_HINT_PRIVATE = 12;
 }
 
 // Where a caret rectangle came from.
@@ -252,13 +333,13 @@ message InsertText {
   uint64 input_seq = 1;
   // The text, UTF-8. Not empty.
   string text = 2;
-  // The window of the editor, from TextInputState. A window that is gone or
-  // no longer focused cancels the insertion; it is never activated for it.
+  // The window, from TextInputState. A window that is gone or no longer
+  // focused cancels the insertion; it is never activated for it.
   uint64 window_id = 3;
-  // TextInputState.input_context_id of the editor.
+  // TextInputState.input_context_id of the editor. Empty when it named none.
   string input_context_id = 4;
   // TextInputState.focus_serial when the composition began. Checked for
-  // INSERT_FROM_COMPOSITION only.
+  // INSERT_FROM_COMPOSITION with an input_context_id only.
   uint64 focus_serial = 5;
   // What the insertion is.
   InputType input_type = 6;
@@ -267,12 +348,13 @@ message InsertText {
 // What an insertion is (W3C Input Events inputType).
 enum InputType {
   INPUT_TYPE_UNSPECIFIED = 0;
-  // Ordinary text ("insertText"), such as from a virtual keyboard. It goes to
-  // the editor focused once the input before it has been applied.
+  // Ordinary text ("insertText"), such as from a virtual keyboard. It goes
+  // where the keys go once the input before it has been applied.
   INPUT_TYPE_INSERT_TEXT = 1;
-  // The result of a composition ("insertFromComposition"). It goes only to
-  // the editor the composition began in, and is cancelled when that editor
-  // lost focus since.
+  // The result of a composition ("insertFromComposition"). With an
+  // input_context_id it goes only to the editor the composition began in, and
+  // is cancelled when that editor lost focus since; without one, as
+  // INSERT_TEXT.
   INPUT_TYPE_INSERT_FROM_COMPOSITION = 2;
 }
 
@@ -291,12 +373,13 @@ message Composition {
   // Window.resize_counter when the composition began.
   uint64 resize_counter = 5;
   // Chosen by the participant at BEGIN, unique on the connection; the later
-  // phases repeat it.
+  // phases repeat it. A KEY release may name any composition, or none.
   uint64 composition_id = 6;
   // The step.
   CompositionPhase phase = 7;
-  // UPDATE and COMMIT: the preedit or committed text, UTF-8, at most 64 KiB.
-  // May be empty to end an empty composition. Empty for the other phases.
+  // UPDATE: the whole preedit text now. COMMIT: the whole result. UTF-8, at
+  // most 64 KiB. May be empty: an empty UPDATE hides the preedit, an empty
+  // COMMIT ends the composition without text. Empty for the other phases.
   string text = 8;
   // UPDATE and COMMIT: the start of the preedit selection, in UTF-16 code
   // units as EditContext counts them, on a code point boundary. 0 for the
@@ -308,24 +391,35 @@ message Composition {
   CompositionKey key = 11;
 }
 
-// A step of a composition.
+// A step of a composition. A composition ends with its COMMIT or CANCEL, or
+// when its editor loses the focus (a TextInputState with another
+// focus_serial); a step that did not reach the editor never ends it.
 enum CompositionPhase {
   COMPOSITION_PHASE_UNSPECIFIED = 0;
-  // A composition begins ("compositionstart").
+  // A composition begins ("compositionstart"), in the editor the
+  // TextInputState names. It shows nothing yet.
   COMPOSITION_PHASE_BEGIN = 1;
-  // The preedit text changed ("compositionupdate").
+  // The preedit text changed ("compositionupdate"). The session shows the
+  // latest UPDATE and may skip earlier ones the editor has not caught up
+  // with.
   COMPOSITION_PHASE_UPDATE = 2;
   // A real key the input method consumed while composing. The session hands
-  // it to the editor's native input context and waits until that context
-  // consumed it.
+  // it to the editor's native input context, which consumes it, so that the
+  // application sees the key but never as text. Its press or release never
+  // ends the composition.
   COMPOSITION_PHASE_KEY = 3;
-  // The composition ended with text ("compositionend").
+  // The composition ended with text ("compositionend"): the text is inserted
+  // and the preedit goes.
   COMPOSITION_PHASE_COMMIT = 4;
-  // The composition was abandoned.
+  // The composition was abandoned: the preedit goes.
   COMPOSITION_PHASE_CANCEL = 5;
 }
 
-// A real key consumed while composing. Never made up from text.
+// A real key consumed while composing. Never made up from text. The session
+// knows a key by the participant and its code, as a keyboard does: a release
+// lets go the key of that code the participant holds, whatever composition it
+// names, and a press of a key already held changes nothing. The key that ends
+// a composition is released after it; its release is still sent.
 message CompositionKey {
   // A press or a release.
   bool pressed = 1;
@@ -356,8 +450,9 @@ message InputError {
 //   TEXT_INPUT_NOT_DELIVERED      the text could not be handed over;
 //   TEXT_INPUT_UNCONFIRMED        the application did not confirm the text
 //                                 (see paused);
-//   NATIVE_COMPOSITION_CANCELLED  the native input context ended the
-//                                 composition.
+//   NATIVE_COMPOSITION_CANCELLED  the composition ended without its COMMIT,
+//                                 as when another participant typed into
+//                                 its editor.
 message TextInputError {
   // input_seq of the dropped input.
   uint64 input_seq = 1;
@@ -421,9 +516,9 @@ service InputService {
   // Presses keys in order and releases them in reverse, such as
   // ["Control_L", "s"].
   rpc PressKeys(PressKeysRequest) returns (PressKeysResponse);
-  // Types text into the focused editor the way a participant's InsertText goes:
-  // through its input method context when it has one, else its accessible
-  // text interface, and into a terminal as keys.
+  // Types text into the focused window the way a participant's InsertText
+  // goes: through its editor's input method context when it has one, else its
+  // accessible text interface, else as typed keys.
   rpc TypeText(TypeTextRequest) returns (TypeTextResponse);
   // Presses or releases a pointer button, for gestures the calls above do
   // not cover, such as a long press.

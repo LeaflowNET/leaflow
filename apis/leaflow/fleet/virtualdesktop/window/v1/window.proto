@@ -167,6 +167,28 @@ message Window {
   // Its icon (EWMH _NET_WM_ICON, else the icon of its desktop entry). Unset:
   // none.
   leaflow.fleet.virtualdesktop.display.v1.Icon icon = 20;
+  // The application chose where the window goes (ICCCM WM_NORMAL_HINTS
+  // USPosition or PPosition), as a floating toolbar over the selected text
+  // does. A participant that places windows itself (see "Native windows")
+  // then keeps it where geometry says, as a window manager does. Otherwise
+  // it places the window: a dialog centred over the window it is transient
+  // for, any other window where its desktop puts new windows.
+  bool position_requested = 21;
+  // How a frame goes around the requested position, as the application
+  // declared it (ICCCM WM_NORMAL_HINTS win_gravity). UNSPECIFIED: NORTH_WEST.
+  WindowGravity gravity = 22;
+  // How the window takes the keyboard focus (ICCCM WM_HINTS input and
+  // WM_TAKE_FOCUS). UNSPECIFIED: PASSIVE.
+  FocusModel focus_model = 23;
+  // Showing the window gives it the keyboard focus. False when its
+  // application shows it without taking the focus (EWMH _NET_WM_USER_TIME 0),
+  // as a toolbar that appears beside a selection does, or when its
+  // focus_model is NO_INPUT. Unset: true.
+  optional bool focus_on_map = 24;
+  // The window does not take WM_DELETE_WINDOW (ICCCM): WindowClose ends its
+  // application's connection to the display, and with it every window of the
+  // application. A participant may warn first.
+  bool close_kills = 25;
 }
 
 // The type of a window (EWMH _NET_WM_WINDOW_TYPE).
@@ -263,6 +285,50 @@ enum WindowAction {
   WINDOW_ACTION_ABOVE = 11;
   // Keep it below others.
   WINDOW_ACTION_BELOW = 12;
+}
+
+// How a window takes the keyboard focus (ICCCM §4.1.7).
+enum FocusModel {
+  FOCUS_MODEL_UNSPECIFIED = 0;
+  // It never takes the focus, such as an on-screen keyboard or a floating
+  // palette: showing or clicking it leaves the focus where it is.
+  FOCUS_MODEL_NO_INPUT = 1;
+  // It takes the focus when activated.
+  FOCUS_MODEL_PASSIVE = 2;
+  // It takes the focus when activated, and may move it among its own
+  // windows.
+  FOCUS_MODEL_LOCALLY_ACTIVE = 3;
+  // It is told when activated and decides itself whether to take the focus,
+  // as some Java windows do.
+  FOCUS_MODEL_GLOBALLY_ACTIVE = 4;
+}
+
+// How a participant that draws a frame around a window it shows where the
+// application asked (ICCCM win_gravity) places that frame: the named point of
+// the frame goes where the same point of the requested client area, geometry,
+// is. The client area then moves inside the frame, except for STATIC.
+enum WindowGravity {
+  WINDOW_GRAVITY_UNSPECIFIED = 0;
+  // The top-left corner.
+  WINDOW_GRAVITY_NORTH_WEST = 1;
+  // The middle of the top edge.
+  WINDOW_GRAVITY_NORTH = 2;
+  // The top-right corner.
+  WINDOW_GRAVITY_NORTH_EAST = 3;
+  // The middle of the left edge.
+  WINDOW_GRAVITY_WEST = 4;
+  // The centre.
+  WINDOW_GRAVITY_CENTER = 5;
+  // The middle of the right edge.
+  WINDOW_GRAVITY_EAST = 6;
+  // The bottom-left corner.
+  WINDOW_GRAVITY_SOUTH_WEST = 7;
+  // The middle of the bottom edge.
+  WINDOW_GRAVITY_SOUTH = 8;
+  // The bottom-right corner.
+  WINDOW_GRAVITY_SOUTH_EAST = 9;
+  // The client area stays where geometry is, and the frame goes around it.
+  WINDOW_GRAVITY_STATIC = 10;
 }
 
 // The size limits an application declared (ICCCM WM_SIZE_HINTS). In pixels;
