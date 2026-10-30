@@ -37,11 +37,25 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/terminal/v1;termina
 // running. When the shell exits, the session sends TerminalExit on every
 // channel, closes them and ends.
 //
-// Bytes. Input and output are raw bytes: keys, committed text, pastes,
-// terminal mouse reports and answers to terminal queries go in, in one
-// ordered stream; the participant's preedit text does not. Neither side buffers
-// lines, strips control or escape sequences, translates newlines or
-// re-encodes; message boundaries may split characters and escape sequences.
+// Bytes. Input and output are raw bytes: keys, committed text, pastes and
+// terminal mouse reports go in as TerminalInput, answers to terminal queries
+// as TerminalAnswer, in one ordered stream; the participant's preedit text
+// does not. Neither side buffers lines, strips control or escape sequences,
+// translates newlines or re-encodes; message boundaries may split characters
+// and escape sequences.
+//
+// Answers. A terminal emulator answers the terminal queries in the output
+// (ECMA-48 DSR, DA, OSC 10 and 11, DECRQM and the like) on its own. A
+// participant whose terminal does so sets TerminalAttach.answers_queries and
+// sends those answers as TerminalAnswer. A program reads every answer it gets
+// as its own, so each query is answered once: the session writes to the
+// terminal the answers of one participant, the answerer, and discards the
+// others'. Of the attached participants that answer queries, the answerer is
+// the one that last sent TerminalInput, or the earliest attached while none of
+// them has. Output from before a participant attached may hold queries whose
+// program has had its answer or has ended: the participant sends none of the
+// answers its terminal gives while it applies the output from
+// TerminalAttached.offset up to TerminalAttached.replay_end.
 //
 // Pacing. Several participants may attach to the terminal and all may type;
 // each sees what the others type as the shell echoes it. The session stops
@@ -64,6 +78,9 @@ message ClientMessage {
     // The participant's terminal changed size. The latest size of any
     // participant applies, and the shell gets SIGWINCH.
     TerminalSize resize = 3;
+    // Answers of the participant's terminal to terminal queries, written to
+    // the terminal only when the participant is the answerer.
+    TerminalAnswer answer = 4;
   }
 }
 
@@ -91,6 +108,9 @@ message ServerMessage {
 message TerminalAttach {
   // The output offset the participant has applied up to. 0: nothing yet.
   uint64 offset = 1;
+  // The participant's terminal answers terminal queries in the output, and
+  // the participant sends those answers as TerminalAnswer.
+  bool answers_queries = 2;
 }
 
 // Where the output that follows starts.
@@ -104,10 +124,20 @@ message TerminalAttached {
   bool reset = 2;
   // The size the terminal has now.
   TerminalSize size = 3;
+  // The end of the output when the participant attached: the output from
+  // offset up to here is replayed, what follows is new. Equal to offset when
+  // nothing is replayed.
+  uint64 replay_end = 4;
 }
 
 // Input for the terminal.
 message TerminalInput {
+  // The bytes, at most 64 KiB.
+  bytes data = 1;
+}
+
+// Answers of the participant's terminal to terminal queries in the output.
+message TerminalAnswer {
   // The bytes, at most 64 KiB.
   bytes data = 1;
 }

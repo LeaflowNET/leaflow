@@ -309,9 +309,12 @@ message Close {
 // a PeerConnection through the Fleet API, and receives the session's answer,
 // candidates and the PeerAuthorization in the answer of its request. The
 // service passes on the session's candidates that arrive until the session
-// sends end_of_candidates, and at most 10 seconds after the answer; the
-// session therefore sends end_of_candidates as soon as it gathered, and the
-// participant's request waits no longer than that.
+// sends end_of_candidates, or until 500 milliseconds after one candidate of
+// each type the session's ICE servers yield has arrived (srflx when the
+// configuration has STUN servers and the policy is not relay, relay when it
+// has TURN servers), and at most 10 seconds after the answer; later candidates
+// are dropped. The session therefore sends each candidate as soon as it has
+// it and end_of_candidates as soon as it gathered.
 //
 // The offer is the first signal of a PeerConnection: the service sends it
 // before any other signal of that PeerConnection. The participant's later
