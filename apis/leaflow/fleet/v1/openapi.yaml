@@ -202,9 +202,12 @@ info:
        one second has passed, so that the offer carries them.
     3. Join with `POST /api/v1/sessions/{sessionId}/participants`, sending the public key and the
        offer. The answer carries the participant's signed authorization, the keys the service
-       signs with, and the first PeerConnection: the session's SDP answer, its ICE candidates and
-       the signed PeerAuthorization. Pass candidates gathered later with
-       `POST …/participants/{participantId}/peer-connections/{peerConnectionId}/candidates`.
+       signs with, and the first PeerConnection: the session's SDP answer, the ICE candidates it
+       has passed so far and the signed PeerAuthorization. Pass candidates gathered later with
+       `POST …/participants/{participantId}/peer-connections/{peerConnectionId}/candidates`, and
+       read the session's later ones with
+       `GET …/participants/{participantId}/peer-connections/{peerConnectionId}` until
+       `candidates_complete`.
     4. Renew the participant with `POST …/participants/{participantId}:renew` well before
        `lease_expires_at`, every 15 seconds, presenting the PeerAuthorization of each
        PeerConnection; the answer renews them. A participant whose lease runs out ends, and its
@@ -1687,7 +1690,8 @@ paths:
         Admits one participant with the given public key to the session: signs its authorization,
         has the session accept it, and starts its first PeerConnection with the offer. The answer
         carries the participant, its authorization and the PeerConnection with the session's
-        answer. The participant lasts while it is renewed.
+        answer and the ICE candidates the session has passed so far; read its later candidates
+        with `get-peer-connection`. The participant lasts while it is renewed.
 
         Joining again with the public key of one of the caller's participants of the session that
         has not ended, with the same `client_name`, `read_only` and `permissions`, returns that
@@ -1894,8 +1898,9 @@ paths:
       summary: Start a PeerConnection
       description: |-
         Starts another PeerConnection of the participant with the offer, such as after a path
-        failed, and returns the session's answer, its ICE candidates and the signed
-        PeerAuthorization. Move the participant's connection to it with
+        failed, and returns the session's answer, the ICE candidates it has passed so far and the
+        signed PeerAuthorization; read its later candidates with `get-peer-connection`. Move the
+        participant's connection to it with
         `prepare-participant-migration` and `commit-participant-migration`.
 
         Only the participant's user may start one.
@@ -1934,6 +1939,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /api/v1/sessions/{sessionId}/participants/{participantId}/peer-connections/{peerConnectionId}:
+    get:
+      summary: Get a PeerConnection
+      description: |-
+        Returns the PeerConnection with the ICE candidates the session has passed so far. The
+        session passes its candidates as it gathers them (RFC 8838), so most arrive after the
+        PeerConnection started: read it until `candidates_complete`, and add the candidates that
+        are new since the last read to the PeerConnection. A client keeps those that arrive before
+        it has set the answer as the remote description, and adds them once it has.
+
+        With `known_candidates`, the request waits until the session has passed more candidates
+        than that or reported the end of its candidates, for at most 20 seconds, and then returns
+        the PeerConnection as it is.
+
+        A PeerConnection can be read for 5 minutes after it started. Only the participant's user
+        may read it.
+
+        Fails with:
+        - `PARTICIPANT_NOT_FOUND` when the participant has ended;
+        - `PEER_CONNECTION_NOT_FOUND` when the participant has no such PeerConnection, it was
+          abandoned, the session gave it up, or it started more than 5 minutes ago.
+      operationId: get-peer-connection
+      tags:
+        - Participant
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/ParticipantId"
+        - $ref: "#/components/parameters/PeerConnectionId"
+        - name: known_candidates
+          in: query
+          description: |-
+            The number of the session's candidates the caller already has. The request waits until
+            there are more or the session reported the end of its candidates, for at most 20
+            seconds. Without it, the request returns at once.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            maximum: 64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerConnection"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       summary: Abandon a PeerConnection
       description: |-
@@ -3674,6 +3730,7 @@ components:
         - id
         - answer
         - candidates
+        - candidates_complete
         - authorization
       properties:
         id:
@@ -3685,14 +3742,15 @@ components:
           type: string
         candidates:
           description: |-
-            The session's ICE candidates that arrived until it reported the end of its candidates, or
-            500 milliseconds after one candidate of each type its ICE servers yield had arrived
-            (server reflexive when the RTC configuration has STUN servers and the policy is not
-            `relay`, relayed when it has TURN servers), and at most until 10 seconds after its
-            answer. Candidates the session gathers later are not passed on.
+            The session's ICE candidates passed so far, at most 64, in the order the session sent
+            them. Later reads return the same ones first.
           type: array
+          maxItems: 64
           items:
             $ref: "#/components/schemas/IceCandidate"
+        candidates_complete:
+          description: The session reported that it has gathered all its candidates; no more follow
+          type: boolean
         authorization:
           description: The signed `PeerAuthorization` of the PeerConnection, the same one the session holds
           allOf:
