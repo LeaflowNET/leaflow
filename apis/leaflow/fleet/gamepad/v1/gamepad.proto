@@ -13,17 +13,21 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/gamepad/v1;gamepadv
 // participant, one per gamepad it provides, within GamepadLimits.max_devices,
 // after its person agreed and a gamepad is connected. The participant sends
 // GamepadClientMessage: the descriptor, then states; the session sends
-// GamepadServerMessage: the opening once the virtual device exists, a receipt
-// for every state it wrote, and the closing when it ends the device. Closing
+// GamepadServerMessage: the opening once the virtual device exists, receipts
+// for the states it wrote, and the closing when it ends the device. Closing
 // the channel, or the end of the connection, releases every button, returns
 // every axis to its neutral value and removes the device; nothing is replayed
 // or adopted by another connection.
 //
-// Until the device is open the participant keeps only the newest complete
-// state, and sends it first with its original time. It never drops a button
-// change it observed; it may merge changes of axes only, and drops states older
-// than GamepadLimits.max_queue_time. Messages are at most 16 KiB and strings at
-// most 512 bytes; every value is finite and within its range.
+// The participant sends a state whenever the gamepad changes, as often as it
+// reads it; nothing limits how often. Until the device is open it keeps only
+// the newest complete state, and sends it first with its original time. It
+// never drops a button change it observed; it may merge changes of axes only.
+// The session writes the states in order as they come. While it is behind, it
+// merges states that change only axes and how far buttons are pressed into the
+// newest of them, as Sunshine does; a press, a release, a touch or its end is
+// always written. Messages are at most 16 KiB and strings at most 512 bytes;
+// every value is finite and within its range.
 
 // A message from the participant.
 message GamepadClientMessage {
@@ -107,10 +111,11 @@ message GamepadButton {
   float value = 3;
 }
 
-// A state was written to the device and reported (SYN_REPORT), not merely
+// States were written to the device and reported (SYN_REPORT), not merely
 // received.
 message GamepadApplied {
-  // GamepadState.sequence.
+  // The newest state written (GamepadState.sequence). It covers every earlier
+  // state, those merged into it included.
   uint64 sequence = 1;
   // Why it could not be written. Unset on success.
   google.rpc.Status error = 2;
@@ -135,6 +140,6 @@ enum GamepadCloseReason {
   GAMEPAD_CLOSE_REASON_DEVICE_UNAVAILABLE = 3;
   // The participant broke the rules above.
   GAMEPAD_CLOSE_REASON_PROTOCOL_ERROR = 4;
-  // A limit of GamepadLimits was exceeded.
+  // The participant has as many gamepads as GamepadLimits allows.
   GAMEPAD_CLOSE_REASON_RESOURCE_EXHAUSTED = 5;
 }
