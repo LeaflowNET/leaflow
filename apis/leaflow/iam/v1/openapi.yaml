@@ -367,10 +367,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /api/v1/members/{userId}/permissions:
-    put:
-      summary: Set the permissions attached directly to a member
-      description: Replaces, in full, the permissions attached directly to the base policy. A direct permission grants one person something without creating a role only they hold, and it does not follow later changes to any role. Requires `iam:members.manage`.
-      operationId: set-member-permissions
+    get:
+      summary: List the permissions granted directly to a member
+      description: |-
+        Every row states one permission this person holds apart from their roles: project-wide when `resource_type` and `resource_id` are null, otherwise only on that resource. What a role grants is not listed here; the member's grant carries the roles and their compiled rules.
+
+        Visible to any member, on the same rule as the member list.
+      operationId: list-member-permissions
+      tags:
+        - Member
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPermissionListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Grant a permission to a member
+      description: |-
+        Creates one permission row. The same row twice answers 409; changing a grant means revoking the row and creating another, so that each row records when it was granted.
+
+        `OWNER` and `ADMIN` cannot be granted here, being facts on the membership. A permission that carries no resource dimension cannot be scoped: IAM refuses the row at grant time rather than storing a scope that would never hold.
+
+        Requires `iam:members.manage`.
+      operationId: create-member-permission
       tags:
         - Member
       parameters:
@@ -385,141 +419,35 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SetMemberPermissionsRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PolicyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/policies:
-    get:
-      summary: List the policies in this project
-      description: Visible to any member, on the same rule as the member list. What has been granted to whom is part of who is in the project.
-      operationId: list-policies
-      tags:
-        - Policy
-      parameters:
-        - name: userId
-          in: query
-          description: Restricts the result to one person. Omitting it covers the whole project
-          explode: false
-          schema:
-            description: Restricts the result to one person. Omitting it covers the whole project
-            type: string
-            maxLength: 255
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PolicyListResponseBody"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    post:
-      summary: Attach a policy
-      description: This creates an **additional** policy, which either carries a resource scope or has `deny` as its effect. An `allow` covering every resource is a base policy, of which each member holds exactly one, and it is changed with set-member-roles and set-member-permissions. `roles` cannot contain `OWNER` or `ADMIN`. Requires `iam:members.manage`.
-      operationId: attach-policy
-      tags:
-        - Policy
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AttachPolicyRequestBody"
+              $ref: "#/components/schemas/CreateMemberPermissionRequestBody"
       responses:
         "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PolicyResource"
+                $ref: "#/components/schemas/MemberPermissionResource"
         default:
           description: Error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/policies/{policyId}:
-    get:
-      summary: Get a policy
-      description: Visible to any member, on the same rule as list-policies; no further permission is required.
-      operationId: get-policy
-      tags:
-        - Policy
-      parameters:
-        - name: policyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PolicyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    put:
-      summary: Update a policy
-      description: Replaced in full rather than field by field — `resources`, `roles` and `permissions` are each overwritten, and an omitted one becomes empty. The **kind** of a policy cannot change — a base policy (an `allow` covering every resource) cannot take a resource scope, and a scoped policy cannot have its scope cleared. Delete and recreate to change the kind. Requires `iam:members.manage`.
-      operationId: update-policy
-      tags:
-        - Policy
-      parameters:
-        - name: policyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdatePolicyRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PolicyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+  /api/v1/members/{userId}/permissions/{permissionId}:
     delete:
-      summary: Detach a policy
-      description: A base policy cannot be detached; it is where a member's roles sit. Use remove-member to take someone out of the project. Requires `iam:members.manage`.
-      operationId: detach-policy
+      summary: Revoke a permission granted directly to a member
+      description: Removes that one row. Requires `iam:members.manage`.
+      operationId: delete-member-permission
       tags:
-        - Policy
+        - Member
       parameters:
-        - name: policyId
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+        - name: permissionId
           in: path
           required: true
           schema:
@@ -1110,7 +1038,7 @@ components:
           items:
             type: string
         rules:
-          description: "**The rules compiled from every policy that applies. Do not walk them to reach a decision.** They are here to render what a user may do; each request is decided by the service handling it"
+          description: "**The rules compiled from the roles and grants that apply. Do not walk them to reach a decision.** They are here to render what a user may do; each request is decided by the service handling it"
           type:
             - array
             - "null"
@@ -1454,6 +1382,13 @@ components:
           $ref: "#/components/schemas/GrantResource"
         last_name:
           type: string
+        permissions:
+          description: The permissions granted to this person directly, apart from their roles
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/MemberPermissionResource"
         user_id:
           type: string
       required:
@@ -1463,6 +1398,7 @@ components:
         - last_name
         - avatar_hash
         - grant
+        - permissions
         - created_by
         - created_at
       additionalProperties: false
@@ -1505,78 +1441,50 @@ components:
       required:
         - roles
       additionalProperties: false
-    SetMemberPermissionsRequestBody:
+    MemberPermissionResource:
       type: object
       properties:
-        permissions:
-          description: "**Every** permission name to be attached directly to this person, replaced in full. The permissions a role grants are neither listed here nor touched by this write"
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-      required:
-        - permissions
-      additionalProperties: false
-    PolicyResource:
-      type: object
-      properties:
-        base:
-          description: The base policy is the one whose effect is `allow` and which covers every resource. Each member holds exactly one, and it carries their ordinary roles. Change it with PUT /members/{userId}/roles and PUT /members/{userId}/permissions
-          type: boolean
-        created_at:
+        id:
+          description: The id of this grant, used to revoke it
           type: string
-          format: date-time
-        description:
-          description: Why it was granted, written for a reader
+          format: uuid
+        permission:
+          description: The code of the permission, such as compute:instance.delete
           type: string
+          maxLength: 128
         effect:
           type: string
           enum:
             - allow
             - deny
-        id:
+        resource_type:
+          description: The kind of resource this grant holds on, such as fleet:machine. Null with `resource_id` means it holds project-wide
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        resource_id:
+          description: The resource identifier, which may carry a glob. Null with `resource_type` means the grant holds project-wide
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        created_at:
           type: string
-          format: uuid
-        permissions:
-          description: Permission names attached directly to this person, without passing through a role
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-        resources:
-          description: Empty means the whole project
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "#/components/schemas/ResourceRefResource"
-        roles:
-          description: The role codes this policy carries
-          type:
-            - array
-            - "null"
-          items:
-            type: string
+          format: date-time
         updated_at:
           type: string
           format: date-time
-        user_id:
-          type: string
       required:
         - id
-        - user_id
+        - permission
         - effect
-        - resources
-        - roles
-        - permissions
-        - description
-        - base
+        - resource_type
+        - resource_id
         - created_at
         - updated_at
       additionalProperties: false
-    PolicyListResponseBody:
+    MemberPermissionListResponseBody:
       type: object
       properties:
         items:
@@ -1584,88 +1492,40 @@ components:
             - array
             - "null"
           items:
-            $ref: "#/components/schemas/PolicyResource"
+            $ref: "#/components/schemas/MemberPermissionResource"
       required:
         - items
       additionalProperties: false
-    AttachPolicyRequestBody:
+    CreateMemberPermissionRequestBody:
       type: object
       properties:
-        description:
-          description: Why it was granted, written for a reader
-          type: string
-          maxLength: 255
-        effect:
-          type: string
-          enum:
-            - allow
-            - deny
-        permissions:
-          description: Permission names attached directly, which avoids creating a role only one person holds
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-        resources:
-          description: The policy holds only on these resources. Leaving it empty makes sense only together with `deny`, since an `allow` covering every resource is the base policy, which already exists
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "#/components/schemas/ResourceRefResource"
-        roles:
-          description: Each must be a role already defined in this project. `OWNER` and `ADMIN` are not accepted, being rules rather than sets of permissions
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-        user_id:
-          description: Must already be a member of this project
+        permission:
+          description: The code of the permission to grant
           type: string
           minLength: 1
-          maxLength: 255
-      required:
-        - user_id
-        - effect
-      additionalProperties: false
-    UpdatePolicyRequestBody:
-      type: object
-      properties:
-        description:
-          description: Why it was granted, written for a reader. It is replaced together with the change, so that what remains does not explain an earlier version
-          type: string
-          maxLength: 255
+          maxLength: 128
         effect:
-          description: Must match the current effect of the policy. The effect itself cannot be changed; delete the policy and create another instead. It is still required in the request because the write replaces the policy in full, and omitting it would let a caller believe an effect had been changed while the field was ignored. A mismatch answers PROJECT_POLICY_EFFECT_IMMUTABLE
           type: string
           enum:
             - allow
             - deny
-        permissions:
-          description: Permission names attached directly, replaced in full. Anything not listed is withdrawn rather than kept
+        resource_type:
+          description: The kind of resource to hold on; give it together with `resource_id`. Both null grant the permission project-wide
           type:
-            - array
+            - string
             - "null"
-          items:
-            type: string
-        resources:
-          description: The resource scope of this policy, replaced in full. What the scope contains can change; whether the policy has one cannot. A base policy cannot take a scope, and a scoped policy cannot have its scope cleared
+          maxLength: 128
+        resource_id:
+          description: The resource identifier to hold on, which may carry a glob. Give it together with `resource_type`
           type:
-            - array
+            - string
             - "null"
-          items:
-            $ref: "#/components/schemas/ResourceRefResource"
-        roles:
-          description: Each must be a role already defined in this project, replaced in full. As when attaching, `OWNER` and `ADMIN` are not accepted
-          type:
-            - array
-            - "null"
-          items:
-            type: string
+          maxLength: 255
       required:
+        - permission
         - effect
+        - resource_type
+        - resource_id
       additionalProperties: false
     TransferOwnershipRequestBody:
       type: object
