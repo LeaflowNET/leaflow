@@ -20,10 +20,10 @@ paths:
   /api/v1/permissions:
     get:
       summary: List every permission the platform can grant
-      description: Each service registers its own catalogue with IAM at start-up, so this is the platform-wide list rather than the permissions of IAM alone. **IAM does not decide anything with it** — each service decides using the caller's grant together with its own catalogue, and this list only serves to render the choices. A service that has never started does not appear here.
+      description: Each service registers the permissions it enforces with IAM at start-up, so this is the platform-wide list rather than the permissions of IAM alone. **IAM does not decide anything with it** — each service decides using the caller's grant together with the permissions compiled into its own binary, and this list only serves to render the choices. A service that has never started does not appear here.
       operationId: list-permissions
       tags:
-        - Project
+        - Permission
       security: []
       responses:
         "200":
@@ -31,7 +31,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CatalogListResponseBody"
+                $ref: "#/components/schemas/PermissionListResponseBody"
         default:
           description: Error
           content:
@@ -141,7 +141,7 @@ paths:
   /api/v1/membership:
     get:
       summary: Get the caller's standing in this project
-      description: Facts rather than a conclusion. There is no `allowed` field here, because each service holds the catalogue mapping its operations to permissions and decides on its own.
+      description: Facts rather than a conclusion. There is no `allowed` field here, because each service holds the permissions its operations need and decides on its own.
       operationId: get-project-membership
       tags:
         - Project
@@ -183,7 +183,7 @@ paths:
     get:
       summary: List the invitations this project is still waiting on
       description: Visible to any member, on the same rule as the member list. Who has been invited is part of who is in the project.
-      operationId: list-project-invitations
+      operationId: list-invitations
       tags:
         - Invitation
       parameters:
@@ -1043,39 +1043,7 @@ components:
         - owner_only
         - resource_type
       additionalProperties: false
-    ResourceTypeResource:
-      type: object
-      properties:
-        name:
-          description: The code of the resource type, such as dns:zone. There is no display name here either; what it reads as is decided by the layer rendering it
-          type: string
-      required:
-        - name
-      additionalProperties: false
-    CatalogResource:
-      type: object
-      properties:
-        permissions:
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "#/components/schemas/PermissionResource"
-        resource_types:
-          description: The resource types this service declares. A scoped rule can only land on one of them
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "#/components/schemas/ResourceTypeResource"
-        service:
-          type: string
-      required:
-        - service
-        - resource_types
-        - permissions
-      additionalProperties: false
-    CatalogListResponseBody:
+    PermissionListResponseBody:
       type: object
       properties:
         items:
@@ -1083,7 +1051,7 @@ components:
             - array
             - "null"
           items:
-            $ref: "#/components/schemas/CatalogResource"
+            $ref: "#/components/schemas/PermissionResource"
       required:
         - items
       additionalProperties: false
