@@ -23,13 +23,26 @@ paths:
   /api/v1/billing-accounts:
     get:
       summary: List billing accounts
-      description: Billing accounts owned by the authenticated user.
+      description: Billing accounts owned by the authenticated user. Filter by status with `status`; omit it to list every status.
       operationId: list-billing-accounts
       tags:
       - accounts
       parameters:
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      - name: status
+        in: query
+        required: false
+        description: Only accounts in these statuses. Omit for all statuses. Comma-separated, for example `status=suspended,closed`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/BillingAccountStatus'
       responses:
         '200':
           description: OK
@@ -268,6 +281,13 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    BillingAccountStatus:
+      description: Whether the account is usable, suspended, or closed.
+      type: string
+      enum:
+      - active
+      - suspended
+      - closed
     BillingAccount:
       type: object
       properties:
@@ -287,11 +307,7 @@ components:
           description: Fixed when the account was opened.
           type: string
         status:
-          type: string
-          enum:
-          - active
-          - suspended
-          - closed
+          $ref: '#/components/schemas/BillingAccountStatus'
         suspended_by:
           description: 'Who suspended the account: `owner` (you), `operator` (Leaflow), or `none` while it is not suspended. Only a suspension by `owner` can be resumed by you.'
           type: string
