@@ -45,13 +45,119 @@ paths:
                 $ref: "#/components/schemas/UploadedResource"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+    query:
+      summary: Search attachments
+      description: |-
+        The caller's files in this project, most recently uploaded first. These are the files
+        uploaded while composing messages, plus uploads that no message has referenced yet.
+
+        A file with no message referencing it is a draft: `draftExpiresAt` says when it is cleared.
+        Sending a message with the id makes it permanent and that field becomes null.
+
+        Files removed from the library are not listed, but conversations that already use them keep
+        them and download-by-id still works.
+      operationId: search-attachments
+      tags:
+        - Attachment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchAttachmentsRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/attachments/{attachment}:
+    get:
+      summary: Get a file
+      description: |-
+        Metadata for one attachment. The bytes are at /api/v1/attachments/{attachment}:download.
+
+        Returns 404 when the attachment does not exist, does not belong to the current user, or was
+        removed from the library. Removed files stay readable through their conversations but are no
+        longer described here.
+      operationId: get-attachment
+      tags:
+        - Attachment
+      parameters:
+        - name: attachment
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentFileResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Rename a file
+      description: |-
+        Changes the name shown in the library and given to the assistant. The bytes and the attachment
+        id do not change; conversations that already use it see the new name from their next request
+        on.
+      operationId: update-attachment
+      tags:
+        - Attachment
+      parameters:
+        - name: attachment
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAttachmentRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentFileResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Remove a file from the library
+      description: |-
+        Hides the file from the library. Conversations that already use it keep it: the attachment
+        stays readable by id and keeps rendering in their history. Its bytes are released when the
+        project is deleted. A draft is cleared for good when its expiry passes. Idempotent.
+      operationId: delete-attachment
+      tags:
+        - Attachment
+      parameters:
+        - name: attachment
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/attachments/{attachment}:download:
     get:
       summary: Download a file
       description:
-        "Returns the original bytes for an attachment id. The response carries long-lived cache
-        headers because the content never changes. Returns 404 when the attachment does not exist or does
-        not belong to the current user.
+        "Returns the original bytes for an attachment id, including one removed from the library.
+        The response carries long-lived cache headers because the content never changes. Returns 404
+        when the attachment does not exist or does not belong to the current user.
 
 
         Only an attachment whose `type` is `image` comes back with its own image type and is usable as
@@ -298,6 +404,152 @@ paths:
               format: binary
 components:
   schemas:
+    AttachmentCountsResource:
+      description: Counts over everything the criteria match, ignoring `ids` and the cursor.
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        totalBytes:
+          type: integer
+          format: int64
+      required:
+        - total
+        - totalBytes
+      additionalProperties: false
+    AttachmentFileResource:
+      type: object
+      properties:
+        byteSize:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        draftExpiresAt:
+          description: |-
+            When this draft is cleared if no message ever references it. Null once a message uses it —
+            a file that belongs to a conversation is kept as long as the conversation is.
+          type:
+            - string
+            - "null"
+          format: date-time
+        filename:
+          type: string
+        height:
+          description: Null unless type is image.
+          type:
+            - integer
+            - "null"
+          format: int64
+        id:
+          type: string
+        mime:
+          description: Detected at intake, not the Content-Type the client sent.
+          type: string
+        type:
+          description: "How the assistant will see this file."
+          type: string
+          enum:
+            - image
+            - text
+            - binary
+        updatedAt:
+          type: string
+          format: date-time
+        width:
+          description: Null unless type is image.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - id
+        - type
+        - filename
+        - mime
+        - byteSize
+        - width
+        - height
+        - createdAt
+        - updatedAt
+        - draftExpiresAt
+      additionalProperties: false
+    AttachmentListResponseBody:
+      type: object
+      properties:
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentFileResource"
+        nextCursor:
+          description: Null on the last page.
+          type:
+            - string
+            - "null"
+        counts:
+          description: Null unless `include` asked for it.
+          anyOf:
+            - $ref: "#/components/schemas/AttachmentCountsResource"
+            - type: "null"
+      required:
+        - attachments
+        - nextCursor
+        - counts
+      additionalProperties: false
+    SearchAttachmentsRequestBody:
+      type: object
+      properties:
+        ids:
+          description: Read these attachments. Cannot be combined with cursor.
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: string
+        q:
+          description: Matches filenames, case-insensitively.
+          type: string
+          maxLength: 100
+        type:
+          description: How the assistant sees the file.
+          type: string
+          enum:
+            - image
+            - text
+            - binary
+        draft:
+          description: True for uploads no message references, false for the rest.
+          type: boolean
+        cursor:
+          type: string
+          maxLength: 1024
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+        include:
+          description: Optional parts of the response. `counts` adds `counts`.
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - counts
+      additionalProperties: false
+    UpdateAttachmentRequestBody:
+      type: object
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+        - filename
+      additionalProperties: false
     UploadedResource:
       type: object
       properties:
