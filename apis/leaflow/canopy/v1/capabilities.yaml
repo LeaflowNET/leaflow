@@ -226,11 +226,31 @@ components:
       - max_input_bytes
       - supports_stream
       additionalProperties: false
+    VideoDurationRange:
+      type: object
+      description: Accepted durations are min + n * step seconds, up to max. Independent of per-second pricing.
+      properties:
+        min:
+          type: integer
+          minimum: 1
+        max:
+          type: integer
+          minimum: 1
+        step:
+          type: integer
+          minimum: 1
+      required: [min, max, step]
+      additionalProperties: false
     VideoCapabilities:
       type: object
       description: The video parameters this endpoint accepts. Video is asynchronous on every endpoint that supports it.
         Create returns a task, and the task is polled separately.
       properties:
+        duration_range:
+          description: Continuous duration capability. Mutually exclusive with nonempty seconds.
+          anyOf:
+          - $ref: '#/components/schemas/VideoDurationRange'
+          - type: 'null'
         seconds:
           description: Durations the upstream accepts, in seconds. Null means unknown.
           type:
