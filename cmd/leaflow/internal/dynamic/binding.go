@@ -240,6 +240,9 @@ func commandUsageArgs(b *Binding) string {
 }
 
 func registerFlag(flags *pflag.FlagSet, name string, schema *openapi3.Schema, usage string) {
+	// pflag interprets backticks in usage as an argument placeholder, while
+	// contract descriptions use them to mark code.
+	usage = strings.ReplaceAll(usage, "`", "")
 	switch readPrimaryType(schema) {
 	case "boolean":
 		flags.Bool(name, false, usage)
