@@ -616,7 +616,7 @@ paths:
         Tool arguments, results and images traverse Fleet with hop-by-hop TLS and are visible to
         Fleet. Existing desktop streaming remains end-to-end encrypted. TOOL_LIST_CHANGED means
         restart listing from the first page, never replay a CallTool. At most 100 tools per page.
-      operationId: listTools
+      operationId: list-tools
       tags: [Tool]
       parameters:
         - $ref: "#/components/parameters/MachineId"
@@ -677,12 +677,12 @@ paths:
     post:
       summary: Call a live builtin or external MCP tool
       description: |-
-        Uses the same current permissions, directory account and graphical session as listTools.
+        Uses the same current permissions, directory account and graphical session as list-tools.
         Listing is not a precondition: callers may use a previously discovered ToolRef, and this
         operation never sends a discovery request or refreshes schemas before executing it.
         A removed tool or MCP server returns TOOL_NOT_FOUND, as does a direct builtin computer.*
         call while virtual desktop capability is unavailable. Actual permission errors remain
-        permission errors; a missing target window is not a missing tool. Use listTools only when
+        permission errors; a missing target window is not a missing tool. Use list-tools only when
         discovery or refresh is needed, and do not cache or reuse execution results.
         Source is explicit: MCP names never select or impersonate builtin tools. The arguments
         object is at most 256 KiB. The complete result is at most 8 MiB in the protobuf transport,
@@ -834,71 +834,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CallMcpToolResponse"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/machines/{machineId}/mcp-tools:
-    get:
-      summary: List the caller's MCP tools on a machine
-      description: |-
-        Lists the tools of the caller's servers on the machine, or of one of them, that match
-        `query`: every word of it, ignoring case, in the tool's name, title or description. They
-        are ordered by server, then by tool name. Servers that are not running are started to
-        learn their tools; one that cannot be is named in `unavailable_servers`, and the others are
-        listed anyway. Slow servers do not hold the request up: those still starting are named
-        with `timeout` and go on starting, so that a later request lists their tools. Requires
-        `fleet:machines.login` on the machine.
-
-        Fails with:
-        - `MCP_SERVER_NOT_FOUND` when `server` is not configured;
-        - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
-        - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
-          the machine refuses the account, as for opening a session;
-        - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
-        - `MACHINE_TIMEOUT` when the machine did not answer in time.
-      deprecated: true
-      operationId: list-mcp-tools
-      tags:
-        - MCP
-      parameters:
-        - $ref: "#/components/parameters/MachineId"
-        - name: server
-          in: query
-          description: Only this server's tools
-          schema:
-            type: string
-            maxLength: 64
-        - name: query
-          in: query
-          description: Words that each must occur in a tool's name, title or description
-          schema:
-            type: string
-            maxLength: 256
-        - name: page_size
-          in: query
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
-            maximum: 500
-            default: 100
-        - name: page_token
-          in: query
-          description: "`next_page_token` of the previous page"
-          schema:
-            type: string
-            maxLength: 1024
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/McpToolList"
         default:
           description: Error
           content:
@@ -3620,77 +3555,6 @@ components:
             The tool's MCP `CallToolResult`, with `content`, `structuredContent` and `isError`
           type: object
           additionalProperties: true
-      additionalProperties: false
-    McpToolResource:
-      type: object
-      required:
-        - server
-        - name
-        - title
-        - description
-        - input_schema
-        - output_schema
-        - annotations
-      properties:
-        server:
-          description: The server that offers it
-          type: string
-        name:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        input_schema:
-          description: The JSON Schema of its arguments
-          type: object
-          additionalProperties: true
-        output_schema:
-          description: The JSON Schema of its structured result; null when it has none
-          type:
-            - object
-            - "null"
-          additionalProperties: true
-        annotations:
-          description: |-
-            Its MCP `ToolAnnotations`, such as `readOnlyHint`; hints of the server, not guarantees
-          type:
-            - object
-            - "null"
-          additionalProperties: true
-      additionalProperties: false
-    McpUnavailableServer:
-      type: object
-      required:
-        - name
-        - failure
-      properties:
-        name:
-          type: string
-        failure:
-          $ref: "#/components/schemas/McpServerFailure"
-      additionalProperties: false
-    McpToolList:
-      type: object
-      required:
-        - items
-        - next_page_token
-        - unavailable_servers
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/McpToolResource"
-        next_page_token:
-          description: Null on the last page
-          type:
-            - string
-            - "null"
-        unavailable_servers:
-          description: Servers whose tools are missing because they could not be started or reached
-          type: array
-          items:
-            $ref: "#/components/schemas/McpUnavailableServer"
       additionalProperties: false
     UpdatePrivilegeAutoApprovalRequest:
       type: object
