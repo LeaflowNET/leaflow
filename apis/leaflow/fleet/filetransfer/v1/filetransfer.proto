@@ -14,22 +14,28 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/filetransfer/v1;fil
 // Channel types:
 //   - "leaflow.fleet.filetransfer.v1", lane "interactive": opened by
 //     the participant, one per connection. Both ends send FileTransferMessage.
-//   - "leaflow.fleet.filetransfer.v1.content", lane "bulk": opened by
-//     the receiver of a file, one per file, as many at a time as it reads, per
-//     connection. The opener sends one FileContentRequest; the source answers
-//     with FileContent messages, the last of them the end. The receiver
-//     closes the channel with NO_ERROR once it has verified, flushed and
-//     stored the file, or with CANCELLED to stop. Flow control is the
-//     channel's credit, which the receiver returns as it writes.
+//   - "leaflow.fleet.filetransfer.v1.content", lane "bulk": 接收方按需打开，
+//     每个文件或清单各用一个连接内通道。先发送一个 FileContentRequest，来源以
+//     FileContent 分段答复，最后发送 end。接收方校验、存储后以 NO_ERROR 关闭，
+//     或以 CANCELLED 中止；写入或消费数据后归还通道额度，不另设整包大小限制。
 //   - "leaflow.fleet.filetransfer.v1.FileSystemService", lane
 //     "interactive": opened by the participant to browse and change files.
 //
-// Transfers. The sender of files offers them with FileTransferOffer. The
-// receiver chooses with FileTransferRequest and the sender confirms with
-// FileTransferResponse before any content is requested; a content request
-// that arrives first waits up to five seconds for its confirmation, then
-// fails. The receiver fetches each regular file over a content channel and
-// reports with FileTransferResult. Bytes nobody asked for are never written.
+// 来源以 FileTransferOffer 声明文件；清单不嵌入控制消息，接收方先通过 content
+// 通道请求并校验清单，再用 FileTransferRequest 选择文件。来源以
+// FileTransferResponse 确认后才可请求文件正文；提前到达的正文请求最多等待五秒
+// 确认，随后失败。清单请求不需要文件选择确认，也不表示已接受复制。
+// 接收方按需读取每个普通文件，最终用 FileTransferResult 报告交付结果。
+// 未请求的文件正文不会写入。
+//
+// Request、Response、Result 的 file_ids 分片发送，每个 FileTransferMessage
+// 编码后最多 256 KiB。part_index 从 0 连续增加，仅最后一片的 last_part 为 true；
+// 一片即可容纳时也须发送 last_part=true。接收方只在最后一片到齐后执行整项操作，
+// 不把部分选择当作确认或终态。分片共享 transfer_id，Request/Response 还共享
+// request_id；Request 的 clipboard 必须一致。不同请求可交错，Cancel 可随时中止
+// 并丢弃相应的未完成集合；连接结束也丢弃它们。重复、乱序或相互冲突的分片以
+// INVALID_ARGUMENT 结束该传输，不结束会话。file_ids 总数只受声明清单和策略约束，
+// 不受单条消息的大小约束。
 //
 // An offer names files by opaque ids and plain names, never by paths of the
 // source. A name is one path component of at most 255 bytes: not empty, not
@@ -57,19 +63,23 @@ message FileTransferMessage {
   }
 }
 
-// Files the sender offers. At most FileTransferPolicy.max_entries entries and
-// 512 KiB.
+// 文件声明，不携带清单正文。清单通过 FileContentRequest.manifest 按需读取，
+// 剪贴板、拖拽、文件管理和直接传输都引用同一份连接内声明。
 message FileTransferOffer {
+  reserved 2;
+  reserved "entries";
+
   // Chosen by the sender, unique on the connection.
   string transfer_id = 1;
-  // The files and directories. A directory comes before its contents.
-  repeated FileEntry entries = 2;
   // The sum of the regular files' sizes.
   uint64 total_size_bytes = 3;
   // From the participant only: the directory of the session user to store the
   // files in, which needs FileTransferPolicy.file_system_allowed. Empty: the
   // user's private transfer directory. Existing files are never overwritten.
   string destination_directory = 4;
+  // 清单的准确条目数，包含目录，必须大于 0。只受 FileTransferPolicy.max_entries
+  // 约束；不能按一条控制消息可以容纳多少条目再缩减。
+  uint64 entry_count = 5;
 }
 
 // One file or directory of an offer.
@@ -110,6 +120,10 @@ message FileTransferRequest {
   // The files go to the receiver's clipboard once stored. Needs the matching
   // direction of the participant's ClipboardPolicy as well.
   bool clipboard = 4;
+  // 本请求的分片序号，从 0 连续增加。
+  uint64 part_index = 5;
+  // 本请求的最后一片。完整选择到齐后才能确认和读取正文。
+  bool last_part = 6;
 }
 
 // The sender confirms the files chosen.
@@ -120,8 +134,12 @@ message FileTransferResponse {
   string transfer_id = 2;
   // The files the receiver may fetch.
   repeated string file_ids = 3;
-  // Why the sender refused. Unset on success.
+  // 拒绝原因，仅最后一片可携带。成功时不设置；失败时此前分片不授权读取。
   google.rpc.Status error = 4;
+  // 本响应的分片序号，从 0 连续增加。
+  uint64 part_index = 5;
+  // 本响应的最后一片，收到后才生效。
+  bool last_part = 6;
 }
 
 // Stops a transfer. Either end; open content channels of it close with
@@ -131,27 +149,40 @@ message FileTransferCancel {
   string transfer_id = 1;
 }
 
-// What the receiver stored of an offer. Sent once, when it has fetched
-// everything it chose, or on failure.
+// 接收方交付的文件。选择的文件全部完成或发生失败时发送一个逻辑结果，可由多个
+// 分片组成。只有最后一片到齐后才能发布终态并释放整项传输的来源。
 message FileTransferResult {
   // The transfer.
   string transfer_id = 1;
   // The files verified and stored.
   repeated string file_ids = 2;
-  // Why the rest failed. Unset when nothing failed.
+  // 其余文件的失败原因，仅最后一片可携带。全部成功时不设置。
   google.rpc.Status error = 3;
+  // 本结果的分片序号，从 0 连续增加。
+  uint64 part_index = 4;
+  // 本结果的最后一片，收到后才生效。
+  bool last_part = 5;
 }
 
-// Asks for the content of one regular file the sender confirmed. The only
-// message the opener of a content channel sends.
+// 请求声明的清单或已确认的一个普通文件。这是 content 通道发起方发送的唯一消息。
 message FileContentRequest {
   // The transfer.
   string transfer_id = 1;
-  // The file.
-  string file_id = 2;
+  // 必须选择一项，不能以空文件 id 代指清单。
+  oneof content {
+    // 已确认的普通文件的 id。
+    string file_id = 2;
+    // 必须为 true。清单是逐条 FileEntry 的 protobuf 长度前缀编码：每条先发送
+    // protobuf varint 长度，再发送该 FileEntry 的编码字节；目录先于其内容。
+    // FileContent.data 可在任意字节处拆分，包括长度前缀和单个条目内部。
+    // 接收方递增校验条目 id、父目录、名称和类型，最后核对 entry_count、
+    // total_size_bytes 和 FileContentEnd.sha256。摘要覆盖全部长度前缀和条目字节。
+    // 清单读取成功仅确认元数据，不选择文件、不发送 FileTransferResult。
+    bool manifest = 3;
+  }
 }
 
-// Part of a file's content, from the source.
+// 来源发送的文件正文或清单字节。
 message FileContent {
   // The part.
   oneof part {
@@ -162,8 +193,8 @@ message FileContent {
   }
 }
 
-// The end of a file. The receiver checks the size and the digest before
-// storing it.
+// 文件正文或清单的结束。接收方校验摘要，并核对文件长度或清单条目及总大小，
+// 校验通过后才交付。
 message FileContentEnd {
   // SHA-256 of the whole content, 32 bytes. Empty with error.
   bytes sha256 = 1;
@@ -326,7 +357,7 @@ message FileTransferPolicy {
   bool download_allowed = 2;
   // The participant may use FileSystemService and choose where uploads go.
   bool file_system_allowed = 3;
-  // The most entries, directories included, of one offer. 0: as many as one
-  // offer holds.
+  // 一份声明最多可含的条目数，包含目录。0 表示不限制；不能再按控制消息大小设置
+  // 额外的条目数上限。清单通过受通道额度约束的 content 流读取。
   uint32 max_entries = 4;
 }
