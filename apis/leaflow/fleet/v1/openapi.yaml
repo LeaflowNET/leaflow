@@ -608,7 +608,9 @@ paths:
       summary: List live tools available to the caller on a machine
       description: |-
         Queries Agent's builtin tools and the caller's configured MCP servers live. No directory,
-        result or image is cached. Requires fleet:machines.login; builtin capabilities retain
+        result or image is cached. Each tool has one callable name: builtin tools are named
+        computer.*, MCP tools are named <server>__<tool>; source only filters the list and is not
+        part of a tool's identity. Requires fleet:machines.login; builtin capabilities retain
         their native policies and read-only restrictions. Ensures or reuses the caller's single
         open graphical session, without launching a desktop environment. The client instance is
         a UUID generated once per running client, not an authorization credential. Each request
@@ -623,27 +625,34 @@ paths:
         - name: client_instance_id
           in: query
           required: true
+          description: |-
+            A UUID generated once per running client and reused for its lifetime. It separates
+            concurrent callers of the same user and is not an authorization credential.
           schema:
             type: string
             format: uuid
         - name: source
           in: query
+          description: Return only tools of this source. A filter, not part of a tool's identity.
           schema:
             type: string
             enum: [all, builtin, mcp]
             default: all
         - name: mcp_server
           in: query
+          description: Return only this MCP server's tools.
           schema:
             type: string
             maxLength: 64
         - name: query
           in: query
+          description: Words that each must occur in a tool's name, title or description, ignoring case.
           schema:
             type: string
             maxLength: 256
         - name: read_only
           in: query
+          description: Sign the control authorization as read-only, so mutating tools are refused.
           schema:
             type: boolean
             default: false
@@ -678,18 +687,19 @@ paths:
       summary: Call a live builtin or external MCP tool
       description: |-
         Uses the same current permissions, directory account and graphical session as list-tools.
-        Listing is not a precondition: callers may use a previously discovered ToolRef, and this
+        Listing is not a precondition: callers may use a previously discovered tool name, and this
         operation never sends a discovery request or refreshes schemas before executing it.
         A removed tool or MCP server returns TOOL_NOT_FOUND, as does a direct builtin computer.*
         call while virtual desktop capability is unavailable. Actual permission errors remain
         permission errors; a missing target window is not a missing tool. Use list-tools only when
         discovery or refresh is needed, and do not cache or reuse execution results.
-        Source is explicit: MCP names never select or impersonate builtin tools. The arguments
-        object is at most 256 KiB. The complete result is at most 8 MiB in the protobuf transport,
-        with each encoded image at most 4 MiB; images are converted to base64 once at this JSON
-        boundary, without recompression or persistence. Cancellation is propagated. A timeout,
-        disconnect or failed response does not prove that side effects did not happen; do not
-        automatically replay. operation_id only correlates live activity, not idempotency.
+        The name selects exactly one tool: builtin tools are computer.*, MCP tools are
+        <server>__<tool>. The arguments object is at most 256 KiB. The complete result is at most
+        8 MiB in the protobuf transport, with each encoded image at most 4 MiB; images are converted
+        to base64 once at this JSON boundary, without recompression or persistence. Cancellation is
+        propagated. A timeout, disconnect or failed response does not prove that side effects did
+        not happen; do not automatically replay. operation_id only correlates live activity, not
+        idempotency.
       operationId: callTool
       tags: [Tool]
       parameters:
@@ -3362,31 +3372,21 @@ components:
           type: object
           additionalProperties: true
       additionalProperties: false
-    ToolRef:
-      type: object
-      additionalProperties: false
-      required: [source, name]
-      properties:
-        source:
-          type: string
-          enum: [builtin, mcp]
-        name:
-          type: string
-          minLength: 1
-          maxLength: 128
-        server:
-          type: string
-          minLength: 1
-          maxLength: 64
-          description: Required only for mcp; forbidden for builtin
     ToolDescriptor:
       type: object
-      required: [tool, name, title, description, input_schema]
+      required: [name, source, title, description, input_schema]
       properties:
-        tool:
-          $ref: "#/components/schemas/ToolRef"
         name:
+          description: |-
+            The name to call it by. Builtin tools are named computer.*; MCP tools are named
+            <server>__<tool>, so a name selects exactly one tool.
           type: string
+          minLength: 1
+          maxLength: 194
+        source:
+          description: Whether the tool is builtin or comes from an MCP server. For filtering only.
+          type: string
+          enum: [builtin, mcp]
         title:
           type: string
         description:
@@ -3438,7 +3438,12 @@ components:
           type: string
           format: uuid
         tool:
-          $ref: "#/components/schemas/ToolRef"
+          description: |-
+            The name from list-tools. Builtin tools are computer.*; MCP tools are
+            <server>__<tool>. The name selects the tool; source is not part of the call.
+          type: string
+          minLength: 1
+          maxLength: 194
         arguments:
           type: object
           additionalProperties: true
