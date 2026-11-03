@@ -1,0 +1,259 @@
+syntax = "proto3";
+
+package leaflow.fleet.tool.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "leaflow/fleet/control/v1/control.proto";
+import "leaflow/fleet/virtualdesktop/capture/v1/capture.proto";
+import "leaflow/fleet/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/tool/v1;toolv1";
+
+// 会话中的工具：Agent 内置能力，以及账号配置的 MCP server 提供的外部工具。
+// MCP 是外部工具的一种协议，不是内置工具的执行方式。工具身份由 Agent 的来源
+// 注册决定，不能由外部工具的名字、描述或 annotations 声称。
+//
+// ToolService 是会话服务。Fleet 可以经该会话的 control 连接转发工具调用、结果
+// 和图片，调用方不必另建 WebRTC；这条工具链路分段加密，Fleet 进程可见其内容。
+// 该例外不改变桌面直播与既有参与者数据通道的端到端加密语义。实现也可以在已授权
+// 参与者的数据连接提供同名可靠 bulk 服务通道，但不能把直连作为工具调用的前提。
+//
+// 只有显式 ListTools 才实时从内置实现和获准的 MCP server 发现工具。Agent/Fleet
+// 不建工具数据库，不缓存目录或调用结果；调用方可持有上一轮发现的工具描述用于
+// 后续调用，按需再次发现。CallTool 不要求先 ListTools，不为检查存在性另发发现
+// 请求；已不存在的工具直接返回 NOT_FOUND / TOOL_NOT_FOUND。
+// 协议连接、进程和正在执行的调用仍需要各自的生命周期管理；这些运行状态不是
+// 工具目录缓存。列表分页标识必须能对实时列表校验，不依赖保存旧目录。
+//
+// 内置虚拟桌面工具使用 computer.* 名字，不以 CUA 或 MCP server 名字暴露。
+// 只有虚拟桌面能力实际可用时才列出；不可用时直接按名字调用也返回 TOOL_NOT_FOUND，
+// 不能用旧目录绕过当前能力检查。无需用户先打开桌面，账号的轻量图形上下文由系统准备。
+//
+// 内置工具复用各能力原有的权限与操作仲裁：只读参与者可以观察，不能执行写操作；
+// 输入操作仍检查 lease、目标窗口、模态限制及窗口尺寸代际。经 control 转发时，
+// authorization 必须先按 control.v1 校验平台签名、issuer、machine/session、期限、
+// 身份与策略，建立真实的会话调用者；不要求其有 WebRTC Connection，也不伪造一个。
+// 直连时从通道取得真实调用者；若同时给 authorization，它必须与通道身份一致。
+// 工具 arguments 不能自报身份或改换账号/会话。调用取消、授权到期或调用者离开时，
+// 正在执行的调用被取消；已执行的副作用不自动重放。
+//
+// 外部 MCP 工具可以执行任意账号代码，不能根据工具自报的 readOnlyHint 认定安全。
+// 仅会话所属账号的非只读参与者，在授权中明确带有允许该 server 的 ToolPolicy 时
+// 可以启动、发现和调用该 server。本机 provider 通道仍须检查账号权限；不能把
+// 当前 machine McpService 的转发路径当作本服务的端到端实现。
+//
+// 工具结果是多模态内容，不要求 MCP 传输。图片以编码后的 bytes 传送；调用方在
+// 模型适配边界转换为模型要求的 image content。不得为此默认上传公开 URL，或把
+// 图片和工具调用内容写入日志。
+service ToolService {
+  // 列出本参与者可发现的工具。不能使用的来源在 unavailable_sources 中报告，
+  // 不阻止其他来源返回。内置工具可在没有配置任何 MCP server 时独立发现。
+  //
+  // query 的每个词忽略大小写匹配工具名、标题或描述。page_size 未设置时由 Agent
+  // 选择，最多 100。每个响应还受通道消息预算限制，可能少于 page_size。
+  // page_token 只属于本参与者和相同查询；列表已改变时返回 FAILED_PRECONDITION，
+  // reason TOOL_LIST_CHANGED，调用方从第一页重新列出，不重放任何 CallTool。
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+
+  // 调用一个明确来源的工具。arguments_json 是一个 JSON object，最多 256 KiB。
+  // schema 用于发现；内置实现还须独立验证参数，外部 MCP 使用 MCP tools/call。
+  //
+  // 每次调用都重新检查调用者授权与来源是否仍可用。权限拒绝、无效参数和不存在的
+  // 工具通过 RPC status 返回；工具执行得到的业务失败通过 is_error 返回。失败不
+  // 表示此前副作用必然没有发生，调用方不得因此盲目重试。
+  //
+  // 结果必须完整落在对端的消息上限内。无法容纳时返回 RESOURCE_EXHAUSTED，reason
+  // TOOL_RESULT_TOO_LARGE，不截断图片、伪造成功或改成未经授权的外部下载地址。
+  rpc CallTool(CallToolRequest) returns (CallToolResponse);
+}
+
+// 工具的真实来源和原始名字，不是模型可能使用的别名。
+message ToolRef {
+  oneof source {
+    // Agent 内置目录中的稳定名字，如 computer.get_desktop_state。
+    string builtin = 1;
+    // 账号配置的 MCP server 及其 tools/list 原始工具名。
+    McpToolRef mcp = 2;
+  }
+}
+
+// MCP 的名字只选择本会话所属账号的 server，不能选择其他账号。
+message McpToolRef {
+  string server = 1;
+  string name = 2;
+}
+
+// 发现时选择的来源；未选择表示所有获准的来源。
+enum ToolSourceKind {
+  TOOL_SOURCE_KIND_UNSPECIFIED = 0;
+  TOOL_SOURCE_KIND_BUILTIN = 1;
+  TOOL_SOURCE_KIND_MCP = 2;
+}
+
+// 工具的描述。外部来源的描述、schema 和 metadata 都是不可信内容，不授予权限。
+message ToolDescriptor {
+  ToolRef tool = 1;
+  // 建议的展示名字。模型有自己的长度和字符限制时，客户端可建立别名，但调用时
+  // 必须还原完整 ToolRef，不能通过解析或截断名字猜来源。
+  string name = 2;
+  string title = 3;
+  string description = 4;
+  // JSON Schema object，使用 JSON 文本保留 schema 的值和扩展字段。
+  string input_schema_json = 5;
+  // 未声明输出 schema 时为空。
+  string output_schema_json = 6;
+  // 可选 JSON object，如外部工具的 annotations；仅供显示与提示，不作为授权。
+  string metadata_json = 7;
+}
+
+message ListToolsRequest {
+  string query = 1;
+  ToolSourceKind source = 2;
+  // MCP 来源时可指定单个 server；空表示所有获准的 server。
+  string mcp_server = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+  // Fleet 经会话 control 转发时必填且 Authorization.control_only 为 true；
+  // 不是由工具参数提供的身份。直连参与者从其通道取得非 control_only 授权，
+  // 不允许借工具请求把两种承载互相升级或伪装。
+  leaflow.fleet.control.v1.SignedAuthorization authorization = 6;
+}
+
+message ListToolsResponse {
+  repeated ToolDescriptor tools = 1;
+  string next_page_token = 2;
+  repeated UnavailableToolSource unavailable_sources = 3;
+}
+
+// 来源不可用，不包含该来源的凭据、工具参数或结果。
+message UnavailableToolSource {
+  ToolSourceKind source = 1;
+  // 内置来源时为空。
+  string mcp_server = 2;
+  google.rpc.Status status = 3;
+}
+
+message CallToolRequest {
+  ToolRef tool = 1;
+  string arguments_json = 2;
+  // 同 ListToolsRequest.authorization，每次调用都检查当前有效授权。
+  leaflow.fleet.control.v1.SignedAuthorization authorization = 3;
+  // 用于实时操作位置事件的关联，不是结果缓存或重放的幂等键。由 Fleet 选择的
+  // 1–64 个 ASCII 字母、数字或 -，调用方不得因此自动重试有副作用的动作。
+  string operation_id = 4;
+}
+
+message CallToolResponse {
+  // 保留顺序，同一结果可以同时含文字、图片和其他结构化内容。
+  repeated ToolContent content = 1;
+  // 可选 JSON object。MCP 来源保留 structuredContent；内置工具遵循其输出 schema。
+  string structured_content_json = 2;
+  bool is_error = 3;
+  // 结果的额外 JSON object，例如 MCP _meta；不重复 content、structuredContent、
+  // isError 或图片 data。仅保留扩展信息，不授予权限。
+  string metadata_json = 4;
+}
+
+message ToolContent {
+  oneof content {
+    string text = 1;
+    ToolImage image = 2;
+    // 无专用表示的外部内容块，保留原 JSON object 及其 type；不是图片的文本替代，
+    // 不能执行其中的代码或自动下载其中的 URL。
+    string json = 3;
+  }
+  // 内容块的额外 JSON object，例如 annotations/_meta；不重复正文和图片数据，
+  // 不能被用于伪装来源、提升权限或自动访问外部资源。
+  string metadata_json = 4;
+}
+
+message ToolImage {
+  // PNG、JPEG 或 WebP 的编码图片，不是 JSON 中的 base64 字符串。
+  bytes data = 1;
+  string mime_type = 2;
+  // 编码图片的实际像素尺寸，必须与图片头一致。
+  leaflow.fleet.virtualdesktop.display.v1.Size size = 3;
+  // 内置截图附带其坐标上下文；外部图片没有可靠的本机会话坐标时不设置。
+  ScreenshotContext screenshot = 4;
+}
+
+// 图片像素与其所观察窗口的关联。图片缩放不改变这里的原始几何。
+message ScreenshotContext {
+  // 会话签发的非空、不透明、自包含映射引用，仅在原调用者和原图形上下文代际内
+  // 有效，不是授权凭据。实现验证完整性、生命周期和当前窗口状态，不依赖数据库、
+  // 图片缓存或保存旧映射。过期或失效返回 STALE_CAPTURE，不改用最新截图默默执行。
+  string reference = 1;
+  // 0 表示整个画布；否则为 CaptureScreenshot 的目标窗口。
+  uint64 window_id = 2;
+  // 原始截图区域：整个画布时为画布坐标，单窗口时相对该目标窗口。图片中的点先
+  // 按 ToolImage.size 缩放回此区域，再结合 windows 还原目标窗口局部坐标。
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle area = 3;
+  // 同 CaptureScreenshotResponse.windows，含每个窗口的几何和 resize_counter。
+  repeated leaflow.fleet.virtualdesktop.capture.v1.CapturedWindow windows = 4;
+  google.protobuf.Timestamp captured_at = 5;
+  // 观察到的 change revision，不自动等同于输入接口的窗口尺寸代际检查。
+  uint64 revision = 6;
+  bool quiet = 7;
+}
+
+// 参与者 authorization.policies 中的工具策略。内置工具继续使用各原有能力的策略，
+// 本策略不越过 read_only、lease、模态或窗口检查。
+message ToolPolicy {
+  // 明确允许账号的外部 MCP 工具；没有策略或 false 时不允许。仍不能越过
+  // read_only 或账号归属，工具自报的只读提示也不能放宽授权。
+  bool allow_mcp = 1;
+  // 可选的 server 精确名字限制；allow_mcp 为 true 且列表为空时允许该账号当前
+  // 配置的所有 server，因此新配置的工具可以实时出现，不需要缓存目录或改授权。
+  // 非空时只允许列出的名字，不支持通配符。
+  repeated string mcp_servers = 2;
+}
+
+// Agent 报告工具操作的显示提示，Fleet 实时转给获准观察本会话的前端，不建事件
+// 数据库、不缓存工具结果。只含操作类别、位置及阶段，不含输入文字、按键内容、
+// 剪贴板、图片或工具 arguments。事件丢失不影响动作执行，也不能触发动作重放。
+// 本服务由 Fleet 在会话的 control 连接提供；报告中的 session_id 必须等于该连接。
+service ToolActivityService {
+  rpc ReportToolActivity(ReportToolActivityRequest) returns (ReportToolActivityResponse);
+}
+
+message ReportToolActivityRequest {
+  // 至多 64 条、整个请求至多 32 KiB。高频位置可以合并；不伪造缺失的完成事件。
+  repeated ToolActivity events = 1;
+}
+
+message ReportToolActivityResponse {}
+
+message ToolActivity {
+  string session_id = 1;
+  uint64 participant_id = 2;
+  string operation_id = 3;
+  // 操作报告器的本次进程实例，重启后改变；sequence 只在同一实例中比较。
+  string instance_id = 4;
+  uint64 sequence = 5;
+  google.protobuf.Timestamp observed_at = 6;
+  ToolActivityPhase phase = 7;
+  // 固定操作名，如 computer.click，不是输入内容或用户命令。
+  string action = 8;
+  ToolActivityTarget target = 9;
+}
+
+message ToolActivityTarget {
+  // 0 时 position 为画布坐标；否则为该窗口客户区局部坐标。不是客户端 CSS、
+  // 物理屏幕或缩小截图坐标。没有位置的键盘操作可以仅指明 window_id。
+  uint64 window_id = 1;
+  leaflow.fleet.virtualdesktop.display.v1.Point position = 2;
+  uint64 resize_counter = 3;
+  uint64 shape_counter = 4;
+}
+
+enum ToolActivityPhase {
+  TOOL_ACTIVITY_PHASE_UNSPECIFIED = 0;
+  // 权限与目标检查已通过，准备执行；不是应用已经收到动作的证明。
+  TOOL_ACTIVITY_PHASE_TARGETED = 1;
+  // 原生输入接口已接受对应操作，不等同于应用内容或 GPU 已呈现。
+  TOOL_ACTIVITY_PHASE_APPLIED = 2;
+  TOOL_ACTIVITY_PHASE_FINISHED = 3;
+  TOOL_ACTIVITY_PHASE_CANCELLED = 4;
+  TOOL_ACTIVITY_PHASE_FAILED = 5;
+}

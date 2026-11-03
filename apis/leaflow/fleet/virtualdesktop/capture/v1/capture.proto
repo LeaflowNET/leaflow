@@ -54,6 +54,9 @@ message CaptureScreenshotRequest {
   uint32 max_height = 5;
   // The image format: "image/png" (W3C PNG), "image/jpeg" (ISO/IEC 10918-1)
   // or "image/webp" (RFC 9649). Empty: the session chooses.
+  // PNG/WebP 保留单窗口及弹层合成的透明度，包括 Shape 区域外的透明像素；
+  // 画布没有窗口的区域仍为不透明黑色。JPEG 仅适用于实际不透明的合成结果；
+  // 否则返回 INVALID_ARGUMENT / IMAGE_FORMAT_LOSES_TRANSPARENCY，不静默丢失 alpha。
   string mime_type = 6;
   // The quality of a lossy format, 1 to 100. 0: the session's default.
   uint32 quality = 7;
@@ -110,4 +113,10 @@ message CapturedWindow {
   leaflow.fleet.virtualdesktop.display.v1.Rectangle geometry = 2;
   // Its Window.resize_counter when captured.
   uint64 resize_counter = 3;
+  // 捕获时的 Window.shape_counter，供依赖截图的动作拒绝过期区域状态。
+  uint64 shape_counter = 4;
+  // 捕获时的窗口局部 X Shape 区域，presence 含义与 Window 相同；geometry 则仍在
+  // 整张截图的原始坐标空间。不能把相对窗口的区域直接当作画布或缩放后图像坐标。
+  leaflow.fleet.virtualdesktop.display.v1.Region bounding_region = 5;
+  leaflow.fleet.virtualdesktop.display.v1.Region input_region = 6;
 }

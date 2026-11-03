@@ -84,11 +84,15 @@ info:
       and remote ones it connects to;
     - `leaflow.fleet.host.v1`: terminal sessions, with programs, files, ports, sound, devices,
       printers and privilege approvals;
-    - `leaflow.fleet.virtualdesktop.host.v1`: sessions with a desktop.
+    - `leaflow.fleet.virtualdesktop.host.v1`: sessions with a graphical backend;
+    - `leaflow.fleet.tool.v1`: live session tools. Builtin `computer.*` tools are exposed only while
+      the virtual desktop capability is actually available; MCP is a separate source.
 
-    A machine installed without a desktop does not offer `leaflow.fleet.virtualdesktop.host.v1`. A
-    request that needs a feature the machine does not report available fails with
-    `FEATURE_UNAVAILABLE`, whose `metadata.feature` names the feature.
+    A graphical backend does not require a full desktop environment. Terminal logins, commands
+    and MCP server initialization prepare or reuse the account's lightweight graphical context,
+    in addition to their own session or job. Configuration reads and writes do not initialize a
+    server and do not require this preparation. A request that needs a feature the machine does
+    not report available fails with `FEATURE_UNAVAILABLE`, whose `metadata.feature` names it.
 
     ## Directory
 
@@ -252,6 +256,7 @@ tags:
   - name: Participant
   - name: Privilege
   - name: MCP
+  - name: Tool
 paths:
   /api/v1/machines:
     get:
@@ -395,19 +400,23 @@ paths:
         redirection and `&&` work; there is no terminal and no standard input. The machine admits
         the account through PAM as for a login. The account is created if the caller has none yet.
         A command that fails is still a successful request: its exit status is its result.
+        Before starting it, Fleet prepares or reuses the account's ready lightweight graphical
+        session, without starting a full desktop environment. The command has its own job scope;
+        its timeout or exit must not close the account's graphical context.
 
         Inside the command, `sudo` works without a prompt while the caller has
         `fleet:machines.admin` on the machine, and refuses otherwise.
 
-        The request is held until the command ends, at most `timeout_seconds` and a few seconds
-        more. Neither the command nor its output is hidden from the platform: do not put secrets
+        After graphical context preparation, the request is held until the command ends, at most
+        `timeout_seconds` and a few seconds more. Neither the command nor its output is hidden from the platform: do not put secrets
         into either.
 
         Requires `fleet:machines.login` on the machine.
 
         Fails with:
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.command.v1`;
+        - `FEATURE_UNAVAILABLE` when the command, session or graphical backend is unavailable;
+        - `SESSION_UNAVAILABLE` or `SESSION_CLOSED` when the account context is not ready or closing;
         - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
           the machine refuses the account, as for opening a session;
         - `COMMAND_START_FAILED` when the shell could not start; nothing ran;
@@ -594,6 +603,143 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/tools:
+    get:
+      summary: List live tools available to the caller on a machine
+      description: |-
+        Queries Agent's builtin tools and the caller's configured MCP servers live. No directory,
+        result or image is cached. Requires fleet:machines.login; builtin capabilities retain
+        their native policies and read-only restrictions. Ensures or reuses the caller's single
+        open graphical session, without launching a desktop environment. The client instance is
+        a UUID generated once per running client, not an authorization credential. Each request
+        checks current IAM permissions and signs a short-lived control-only authorization.
+        Tool arguments, results and images traverse Fleet with hop-by-hop TLS and are visible to
+        Fleet. Existing desktop streaming remains end-to-end encrypted. TOOL_LIST_CHANGED means
+        restart listing from the first page, never replay a CallTool. At most 100 tools per page.
+      operationId: listTools
+      tags: [Tool]
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - name: client_instance_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [all, builtin, mcp]
+            default: all
+        - name: mcp_server
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+        - name: query
+          in: query
+          schema:
+            type: string
+            maxLength: 256
+        - name: read_only
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: page_token
+          in: query
+          schema:
+            type: string
+            maxLength: 4096
+      responses:
+        "200":
+          description: Live tools
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/tools:call:
+    post:
+      summary: Call a live builtin or external MCP tool
+      description: |-
+        Uses the same current permissions, directory account and graphical session as listTools.
+        Listing is not a precondition: callers may use a previously discovered ToolRef, and this
+        operation never sends a discovery request or refreshes schemas before executing it.
+        A removed tool or MCP server returns TOOL_NOT_FOUND, as does a direct builtin computer.*
+        call while virtual desktop capability is unavailable. Actual permission errors remain
+        permission errors; a missing target window is not a missing tool. Use listTools only when
+        discovery or refresh is needed, and do not cache or reuse execution results.
+        Source is explicit: MCP names never select or impersonate builtin tools. The arguments
+        object is at most 256 KiB. The complete result is at most 8 MiB in the protobuf transport,
+        with each encoded image at most 4 MiB; images are converted to base64 once at this JSON
+        boundary, without recompression or persistence. Cancellation is propagated. A timeout,
+        disconnect or failed response does not prove that side effects did not happen; do not
+        automatically replay. operation_id only correlates live activity, not idempotency.
+      operationId: callTool
+      tags: [Tool]
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CallToolRequest"
+      responses:
+        "200":
+          description: Tool result, including business failures in is_error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallToolResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/sessions/{sessionId}/tool-activities:
+    get:
+      summary: Receive live tool activity for an authorized session
+      description: |-
+        Checks current session viewing permission for each request and again before returning
+        events. Subscribes only while this request is pending, returning on the first batch or
+        after at most 20 idle seconds. At most 64 events, no offline queue, event database, cursor
+        history or replay guarantee. Missing events never mean repeat an action. Coordinates
+        are window-client-local (window_id=0 means canvas), not CSS or image pixels. The frontend
+        applies its own zoom and DPI. Compare sequence only within the same instance_id.
+      operationId: pollToolActivities
+      tags: [Tool]
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Live events, possibly empty
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolActivityList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/machines/{machineId}/mcp-servers/{serverName}:send:
     post:
       summary: Send an MCP request to a server
@@ -601,7 +747,9 @@ paths:
         Sends one JSON-RPC request of MCP to one of the caller's servers on the machine, such as
         `tools/call`, `resources/read` or `prompts/get`, and returns the server's response. The
         machine starts or connects to the server if it is not running, and handles its
-        initialization itself; a request still running when `timeout_seconds` passes is cancelled
+        initialization itself. Before any such request, Fleet prepares or reuses the caller's
+        ready lightweight account graphical session, including for resources and prompts; no full
+        desktop environment is needed. A request still running when `timeout_seconds` passes is cancelled
         at the server. Requests the server makes of the client are answered as by a client that
         offers no sampling, elicitation or roots, and its notifications, such as of progress, are
         dropped. A response with a JSON-RPC error is a successful request. Neither the request nor
@@ -615,7 +763,8 @@ paths:
           is one of initialization;
         - `RESULT_TOO_LARGE` when the response is larger than 8 MiB;
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `FEATURE_UNAVAILABLE` when the MCP, session or graphical backend is unavailable;
+        - `SESSION_UNAVAILABLE` or `SESSION_CLOSED` when the account context is not ready or closing;
         - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
           the machine refuses the account, as for opening a session;
         - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
@@ -658,6 +807,7 @@ paths:
         Fails as sending a request does, and with `MCP_REQUEST_FAILED` when the server answers
         with a JSON-RPC error, such as for a tool it does not offer or arguments it does not
         accept, with the error's `metadata.code` and `metadata.message`.
+      deprecated: true
       operationId: call-mcp-tool
       tags:
         - MCP
@@ -710,6 +860,7 @@ paths:
           the machine refuses the account, as for opening a session;
         - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
         - `MACHINE_TIMEOUT` when the machine did not answer in time.
+      deprecated: true
       operationId: list-mcp-tools
       tags:
         - MCP
@@ -1524,12 +1675,19 @@ paths:
       summary: Open a session
       description: |-
         Opens a session for the caller on a machine, as the caller's account, and returns once it
-        is ready. With `desktop` the session has a desktop. Without, it is a terminal session: its
+        is ready. With `desktop` the session has a desktop. Without, Fleet first prepares or reuses
+        the account's separate ready lightweight graphical session, then creates a terminal session
+        with its own SID and lifetime; closing that terminal does not close the account context. Its
         one terminal runs the caller's login shell from the start, every participant attaches to
         that terminal, and the session ends when the shell exits; a caller who wants another
         terminal opens another session. Either kind also offers programs, files, ports, sound,
         devices, printers and privilege approvals. The account is created if the caller has none
         yet. Requires `fleet:machines.login` on the machine.
+        All newly created graphical account sessions, including desktop-first FullDesktop and
+        Seamless sessions, keep running when no viewer has joined or the last viewer disconnects.
+        Configured maximum lifetime, resource limits and explicit close/terminate still apply.
+        This create API has no client-selected idle policy; existing running policies are not
+        silently rewritten when tools, commands or terminals reuse the account context.
 
         On a machine an account has at most one session with a desktop and at most 8 sessions in
         all. Sessions without a desktop run side by side, such as one for a program and one for a
@@ -1537,8 +1695,8 @@ paths:
 
         Fails with:
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer sessions, or with `desktop`,
-          desktops;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer sessions or the graphical backend;
+        - `SESSION_UNAVAILABLE` or `SESSION_CLOSED` when its shared account context is not ready or closing;
         - `USER_HAS_DESKTOP_SESSION` with `desktop` when the account already has a session with a
           desktop on the machine, which `metadata.sessionId` names; connect to it instead;
         - `SESSION_LIMIT_REACHED` when the account already has 8 open sessions on the machine;
@@ -3269,6 +3427,174 @@ components:
           type: object
           additionalProperties: true
       additionalProperties: false
+    ToolRef:
+      type: object
+      additionalProperties: false
+      required: [source, name]
+      properties:
+        source:
+          type: string
+          enum: [builtin, mcp]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        server:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Required only for mcp; forbidden for builtin
+    ToolDescriptor:
+      type: object
+      required: [tool, name, title, description, input_schema]
+      properties:
+        tool:
+          $ref: "#/components/schemas/ToolRef"
+        name:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        input_schema:
+          type: object
+          additionalProperties: true
+        output_schema:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Untrusted display metadata; never grants authorization
+    ToolList:
+      type: object
+      required: [session_id, items, next_page_token, unavailable_sources]
+      properties:
+        session_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolDescriptor"
+        next_page_token:
+          type: string
+        unavailable_sources:
+          type: array
+          items:
+            type: object
+            required: [source, mcp_server, code, reason]
+            properties:
+              source:
+                type: string
+                enum: [builtin, mcp]
+              mcp_server:
+                type: string
+              code:
+                type: integer
+                format: int64
+              reason:
+                type: string
+    CallToolRequest:
+      type: object
+      additionalProperties: false
+      required: [client_instance_id, tool, arguments]
+      properties:
+        client_instance_id:
+          type: string
+          format: uuid
+        tool:
+          $ref: "#/components/schemas/ToolRef"
+        arguments:
+          type: object
+          additionalProperties: true
+          description: A JSON object, at most 256 KiB when encoded
+        read_only:
+          type: boolean
+          default: false
+        timeout_seconds:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 240
+          default: 60
+    ToolContent:
+      type: object
+      description: Exactly one of text, image or json is present
+      properties:
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Untrusted content extensions such as MCP annotations or _meta, without duplicated body or image data
+        text:
+          type: string
+        image:
+          $ref: "#/components/schemas/ToolImage"
+        json:
+          type: object
+          additionalProperties: true
+          description: An unrecognized external content block, preserved as data
+    ToolImage:
+      type: object
+      required: [data, mime_type, width, height]
+      properties:
+        data:
+          type: string
+          description: Base64 of Agent's original encoded image bytes, never a URL
+        mime_type:
+          type: string
+          enum: [image/png, image/jpeg, image/webp]
+        width:
+          type: integer
+          format: int64
+          minimum: 1
+        height:
+          type: integer
+          format: int64
+          minimum: 1
+        screenshot:
+          type: object
+          additionalProperties: true
+          description: |-
+            ScreenshotContext in protobuf JSON with original field names: reference, window_id,
+            area, windows (including resize_counter and shape_counter), captured_at, revision,
+            quiet. uint64 values are decimal strings to preserve precision. Images do not change
+            this original geometry. The opaque reference binds coordinate actions to this capture.
+    CallToolResponse:
+      type: object
+      required: [session_id, operation_id, content, is_error]
+      properties:
+        session_id:
+          type: string
+        operation_id:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolContent"
+        structured_content:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Untrusted result extensions such as MCP _meta, without duplicated content or images
+        is_error:
+          type: boolean
+    ToolActivityList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: true
+            description: |-
+              ToolActivity in protobuf JSON with original field names. Includes session_id,
+              participant_id, operation_id, instance_id, sequence, observed_at, phase, action and
+              optional target (window_id, position x/y, resize_counter, shape_counter). All uint64
+              values are decimal strings. No input text, key values, arguments or image data.
     CallMcpToolRequest:
       type: object
       properties:
