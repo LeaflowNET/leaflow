@@ -25,9 +25,11 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/appl
 //   - "leaflow.fleet.virtualdesktop.application.v1.ApplicationService", lane
 //     "interactive": opened by the participant to list, launch and open.
 //
-// Participants send only desktop file IDs and URIs, never command lines: the
-// session builds every command from the Exec key itself (Desktop Entry
-// Specification, "The Exec key"), so that a participant cannot inject commands.
+// Participants launch a desktop entry, or an absolute executable path with an
+// argument vector. Neither branch accepts a shell command line: the session
+// expands a desktop entry's Exec key itself (Desktop Entry Specification,
+// "The Exec key"), or executes the canonical path with arguments unchanged.
+// Launching uses the session user's credentials and graphical environment.
 // Names of applications, menus and launchers are localized for the language of
 // the session channel's ClientHello and are plain text. Icons are rendered at
 // the participant's device pixel ratio: 16 or 24 pixels in menus, 48 to 64 on
@@ -195,6 +197,10 @@ service ApplicationService {
   rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // Opens an absolute path, URI or desktop entry, as a desktop open action:
+  // programs execute directly, documents and folders use registered handlers.
+  // It never interprets a shell command line or changes the default handler.
+  rpc Open(OpenRequest) returns (OpenResponse);
   // Starts an application, or one of its actions, possibly with files or
   // URLs to open ("Open With"). It returns when the startup sequence ends
   // (freedesktop Startup Notification Protocol): a window of the launch
@@ -237,10 +243,70 @@ message ListApplicationsResponse {
   uint64 revision = 3;
 }
 
-// The request of LaunchApplication.
+// The request of Open. The session resolves one object; callers do not need
+// to choose an executable-versus-document mode. Permission and lease checks
+// are the same as for launching or opening through ApplicationService.
+message OpenRequest {
+  // One absolute local path, absolute URI, or installed desktop file ID.
+  // Paths are canonicalized; NUL, relative paths and parent-directory path
+  // components are invalid. Local paths are limited to 4096 UTF-8 bytes,
+  // desktop IDs to 1024 and the complete target to 8192.
+  // Executable programs, including AppImages and native binaries, are run
+  // directly; ordinary documents and folders open in their default handler.
+  // File classification uses the filesystem and MIME information, not an
+  // application-name or filename-extension allowlist. An executable bit on
+  // an otherwise ordinary document does not turn its content into code.
+  // Empty: OPEN_TARGET_REQUIRED. Invalid: OPEN_TARGET_INVALID. Missing local
+  // objects: FILE_NOT_FOUND. Unknown desktop IDs: APPLICATION_NOT_FOUND.
+  // Error details identify field=target and the concrete issue.
+  string target = 1;
+  // Program arguments after argv[0], passed unchanged without shell expansion,
+  // interpolation or joining. At most 256 arguments, each at most 8192 UTF-8
+  // bytes, and at most 65536 bytes together; NUL is invalid. A malformed vector
+  // fails with OPEN_ARGUMENTS_INVALID and identifies its index or size limit.
+  // Arguments on a document, directory, URI handler or desktop entry fail with
+  // OPEN_OPTIONS_NOT_APPLICABLE; they are never silently ignored.
+  repeated string arguments = 2;
+  // An action of a desktop entry. Not valid for other target kinds.
+  string action_id = 3;
+  // Files or URLs supplied to a desktop entry's Exec field codes. Not valid
+  // for other target kinds; document open uses target instead.
+  repeated string uris = 4;
+  // The same trust decision as OpenUri. Unspecified never approves an
+  // untrusted desktop launcher on behalf of the person.
+  LauncherConfirmation launcher_confirmation = 5;
+}
+
+// Open was accepted. The started application belongs to the session, not this
+// call: cancelling, timing out or disconnecting never terminates it. Session
+// lifetime and explicit termination still apply. Waiting for a matched window
+// is bounded (at most 30 seconds for StartupNotify, otherwise 5 seconds).
+// No matched window is a successful result, not a reason to repeat Open: an
+// application may still be starting, have no window, or reuse another process.
+// A registered alternative handler may be tried only when the previous handler
+// was definitely not started. Missing associations fail with
+// URI_HANDLER_NOT_FOUND and report the detected MIME and bounded candidate
+// desktop IDs when known. A spawn failure or nonzero startup exit fails with
+// APPLICATION_START_FAILED, with stage, started, pid and exit status when
+// known. Started or uncertain failures must not be automatically replayed.
+message OpenResponse {
+  // The startup notification ID, when one was used.
+  string startup_id = 1;
+  // The matched window; unset when none was observed or required.
+  optional uint64 window_id = 2;
+  // The session revision at which the request was accepted or wait ended.
+  uint64 revision = 3;
+  // The initial process actually spawned. Unset for activation of an existing
+  // handler without an observable spawn; never guessed from an unrelated
+  // window. This is not necessarily the eventual window-owning process.
+  optional uint32 pid = 4;
+}
+
+// The request of LaunchApplication, for a menu entry or its action.
+// Open accepts general paths and URIs.
 message LaunchApplicationRequest {
-  // The application. An unknown one, or one whose TryExec fails, fails with
-  // NOT_FOUND.
+  // The application. An unknown entry, or one whose TryExec fails, fails with
+  // NOT_FOUND and reason APPLICATION_NOT_FOUND.
   string desktop_file_id = 1;
   // An ApplicationAction.action_id to run instead of the application. Empty:
   // the application.
@@ -251,10 +317,16 @@ message LaunchApplicationRequest {
   repeated string uris = 3;
 }
 
-// The response of LaunchApplication. When the program exits with a failure
-// before showing a window the call fails with ABORTED; when no window appears
-// within 30 seconds (StartupNotify) or 5 seconds (otherwise) it fails with
-// DEADLINE_EXCEEDED, though the program may still be running.
+// The response of LaunchApplication. A spawned application belongs to the
+// session, not to this RPC: cancelling, timing out or disconnecting this call
+// never terminates the application. Session lifetime and explicit termination
+// still apply. A spawn failure, or a nonzero exit before a window appears,
+// fails with reason APPLICATION_START_FAILED; metadata distinguishes whether
+// a process was already started and its pid when known. Do not blindly retry.
+// When no window appears within the bounded startup wait (at most 30 seconds
+// for StartupNotify, otherwise 5 seconds), the call succeeds with no window_id;
+// this is not a failed launch and must not trigger another launch. The program
+// may still be starting, forward to an existing instance, or have no window.
 message LaunchApplicationResponse {
   // The startup notification ID given to the program (DESKTOP_STARTUP_ID).
   string startup_id = 1;
@@ -263,6 +335,11 @@ message LaunchApplicationResponse {
   optional uint64 window_id = 2;
   // The session revision at which the startup sequence ended.
   uint64 revision = 3;
+  // The initial process spawned for this launch. It may exit after forwarding
+  // to another process; it is not necessarily the process owning window_id.
+  // Unset when activation happened without an observable spawned process,
+  // such as D-Bus activation.
+  optional uint32 pid = 4;
 }
 
 // The request of OpenUri.
@@ -301,6 +378,9 @@ message OpenUriResponse {
   optional uint64 window_id = 2;
   // The session revision at which the startup sequence ended.
   uint64 revision = 3;
+  // The initial spawned process, when one was observable. Unset for a
+  // successful request handled by an existing application over D-Bus.
+  optional uint32 pid = 4;
 }
 
 // A process of the session.
