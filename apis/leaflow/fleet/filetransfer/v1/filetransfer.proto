@@ -149,19 +149,24 @@ message FileTransferCancel {
   string transfer_id = 1;
 }
 
-// 接收方交付的文件。选择的文件全部完成或发生失败时发送一个逻辑结果，可由多个
-// 分片组成。只有最后一片到齐后才能发布终态并释放整项传输的来源。
+// 接收方交付的文件。选择的条目均已保存或明确跳过，或发生失败时发送一个逻辑结果，
+// 可由多个分片组成。只有最后一片到齐后才能发布终态并释放整项传输的来源。
+// 无错误时，已保存与已跳过条目的并集必须等于已确认的选择；两者不能重复或相交。
+// 跳过不表示传输或校验成功，也不属于失败。
 message FileTransferResult {
   // The transfer.
   string transfer_id = 1;
   // The files verified and stored.
   repeated string file_ids = 2;
-  // 其余文件的失败原因，仅最后一片可携带。全部成功时不设置。
+  // 未完成条目的失败原因，仅最后一片可携带。正常结束（包括跳过）时不设置。
   google.rpc.Status error = 3;
   // 本结果的分片序号，从 0 连续增加。
   uint64 part_index = 4;
   // 本结果的最后一片，收到后才生效。
   bool last_part = 5;
+  // 接收端明确跳过的条目。只可包含已确认选择的 id；不计为已传输、已校验或已保存。
+  // 可在任意结果分片中携带，必须与 file_ids 一起等末片到齐后再结算。
+  repeated string skipped_file_ids = 6;
 }
 
 // 请求声明的清单或已确认的一个普通文件。这是 content 通道发起方发送的唯一消息。
