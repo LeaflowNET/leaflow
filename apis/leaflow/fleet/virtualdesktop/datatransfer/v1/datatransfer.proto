@@ -80,11 +80,17 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/data
 // source and target keep their native move semantics, and the session never
 // deletes source files on a guess. A connection has at most one drag at a
 // time and a session one drag from a native source of its own; competing ones
-// fail with RESOURCE_EXHAUSTED. A drag lasts at most DragPolicy.max_duration.
-// Cancellation, expiry, loss of the source or of the input lease, and the end
-// of the connection release everything a drag holds; while the channel lives
-// the target still sends a failed DragFinish, but nothing is replayed after a
-// disconnect.
+// fail with RESOURCE_EXHAUSTED.
+// DragPolicy.max_duration 与输入手势持有权约束 DragDrop 之前的物理手势。
+// 目标受理 DragDrop 后，原生确认、格式读取和文件交付属于已受理操作，不因原手势
+// 到期或按钮已释放而取消；仍受当前参与端的对应方向及文件权限约束。
+// 明确取消、来源丢失、参与端失权或连接结束仍释放相关读取期和来源；通道存活时
+// 目标仍发送失败的 DragFinish，断线后不重放。
+// COPY 的数据代理已持续持有全部声明格式后，可以先完成来源的原生拖放握手：
+// 原生格式按需取得并保留可重复读取的完整表示，文件引用由 filetransfer 持有。
+// 不得为了提前握手而丢弃未取得的格式或预先把文件计为已保存。原生握手结束不是
+// DragFinish 或 FileTransferResult；网络传送和文件保存仍分别等待其完整回执。
+// MOVE 不得使用这一步提前触发来源删除原文件。
 
 // Data of one format.
 message DataTransferItem {
@@ -594,7 +600,8 @@ message DragPolicy {
   // is true. Empty with all_mime_types_allowed false: none. Files travel only
   // as offers and still need the matching direction of FileTransferPolicy.
   repeated string allowed_mime_types = 3;
-  // The longest a drag may last, at most 5 minutes. Unset or 0: no drags.
+  // DragDrop 之前物理手势的最长时间，至多 5 分钟；未设置或 0 表示不能拖拽。
+  // 已受理的原生确认、格式读取及文件交付不受旧手势时限约束，不代表放宽当前权限。
   google.protobuf.Duration max_duration = 4;
   // The participant may drag any format the source offers, including private
   // application formats. Does not grant a direction or permission to files;
