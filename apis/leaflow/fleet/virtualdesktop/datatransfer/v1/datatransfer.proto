@@ -92,6 +92,18 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/data
 // DragFinish 或 FileTransferResult；网络传送和文件保存仍分别等待其完整回执。
 // MOVE 不得使用这一步提前触发来源删除原文件。
 
+// Windows 原生表示不能仅按格式名合并：同一格式的 aspect、index 和介质各自独立。
+// 无法用标准媒体类型完整表达的可序列化表示使用下列媒体类型（参数均为 ASCII）：
+// application/x-leaflow-windows-format;name=<utf16hex>;aspect=<u32>;index=<i32>;medium=<kind>
+// name 为格式名每个 UTF-16 单元的四位十六进制串，不含终止 NUL；接收端以名称重新
+// 注册格式，不得跨机复用来源的注册号。非注册格式改用 id=<1..49151>，不得同时带 name。
+// aspect、index、medium 必须显式存在，不得丢失、重复或以未知参数降级为其它格式。
+// medium=bytes 为 HGLOBAL/IStream 的可序列化字节，medium=storage 为完整 Compound File
+// Binary 表示；接收端重建介质，绝不把原生句柄、指针、COM 接口或源文件路径当正文。
+// CF_HDROP(id=15)、FileContents、FileGroupDescriptor、PIDL、FileName 等文件/路径格式及
+// 拖放控制格式仍归 filetransfer 或拖放适配，不得用此媒体类型绕过文件引用和权限。
+// 原生声明和取得流引用不能预读正文；各表示继续独立按需读取、校验和取消。
+//
 // Data of one format.
 message DataTransferItem {
   // The media type.
