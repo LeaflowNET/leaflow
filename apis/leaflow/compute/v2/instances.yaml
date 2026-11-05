@@ -658,6 +658,8 @@ paths:
 
         In rescue mode, everything only the instance's own system can take is refused with 409 `INSTANCE_UNRESCUE_REQUIRED`: starting, stopping, rebooting, rebuilding, resetting the password, changing `instance_type_id`, attaching or detaching volumes and network interfaces, capturing a private image and running commands. Leave rescue mode with `:unrescue` first. The console stays available, releasing the instance works as usual, and the instance is charged as when running. A suspension that begins in rescue mode takes the instance out of rescue before stopping it, and starting it again once the suspension ends boots its own system.
 
+        The rescue environment does not accept passwords. The remote console signs in as `login_username` automatically, and SSH accepts `login_username` with the public keys the instance was created or last rebuilt with.
+
         A rescue the compute service could not boot leaves the instance as it was, or in `error`; request it again or reboot the instance.
 
         The request does not name an image. The rescue image is the region's enabled rescue image for the architecture of the instance's boot volume. A region and architecture with no enabled rescue image is refused with `RESCUE_IMAGE_NOT_CONFIGURED` (409).
@@ -685,12 +687,6 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RescueInstanceRequestBody'
   /api/v2/instances/{instanceId}:unrescue:
     post:
       summary: Take an instance out of rescue mode
@@ -942,6 +938,24 @@ components:
           anyOf:
           - $ref: ./latest-operations.yaml#/components/schemas/LatestOperation
           - type: 'null'
+        join_fleet:
+          description: Whether the instance is configured to join Leaflow Fleet. The value is set at creation and
+            retained across rebuilds unless a rebuild specifies a new value.
+          type: boolean
+        supports_fleet:
+          description: Whether the operating system with which the instance was created or last rebuilt supports
+            Leaflow Fleet. The value reflects that specific image build; other builds of the same operating system
+            may differ.
+          type: boolean
+        fleet_machine_id:
+          description: The identifier of the Leaflow Fleet machine reserved for this instance. The instance
+            enrolls as this machine on its first boot after creation or a rebuild, and its enrollment status is
+            available from Fleet. Null if the instance is not configured to join Fleet, if its operating system
+            does not support Fleet, or if Fleet was unavailable when the instance was created or last rebuilt.
+          type:
+          - string
+          - 'null'
+          format: uuid
       required:
       - id
       - name
@@ -974,6 +988,9 @@ components:
       - access_state
       - failure_reason
       - latest_operation
+      - join_fleet
+      - supports_fleet
+      - fleet_machine_id
       additionalProperties: false
     InstanceListResponseBody:
       type: object
@@ -1045,6 +1062,12 @@ components:
           description: A free-text note about each instance. Do not put credentials here
           type: string
           maxLength: 4096
+        join_fleet:
+          description: |-
+            Whether each instance joins Leaflow Fleet. An instance that joins enrolls automatically on its first boot, without a pairing code, and project members can then access it through Fleet using their own accounts. If omitted, the value from the launch template is used; if the template does not specify one, each instance joins when its image supports Fleet (`supports_fleet`).
+
+            Setting the value to `true` for an image that does not support Fleet, or when booting from an existing volume, is rejected with 422 `INSTANCE_FLEET_UNSUPPORTED` before an order is placed. If Fleet is unavailable when an instance is created, the instance is still created and its `fleet_machine_id` is null.
+          type: boolean
         checkout:
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
       required:
@@ -1178,6 +1201,12 @@ components:
           description: The login account's password on the reinstalled system. Omitted, only SSH keys log in, those the
             project shares and those of the caller's account.
           $ref: '#/components/schemas/PasswordChoice'
+        join_fleet:
+          description: Whether the rebuilt instance joins Leaflow Fleet. If omitted, the instance's current value
+            is retained. Because a rebuild replaces the operating system, the instance enrolls as a new Fleet
+            machine and the previous machine is removed from Fleet. Setting the value to `true` for an image that
+            does not support Fleet is rejected with 422 `INSTANCE_FLEET_UNSUPPORTED`.
+          type: boolean
       required:
       - image_id
       additionalProperties: false
@@ -1579,18 +1608,6 @@ components:
       - checkout_session_id
       - order_id
       - instances
-      - password
-      additionalProperties: false
-    RescueInstanceRequestBody:
-      type: object
-      properties:
-        password:
-          description: Password for the rescue environment. Generate and retain a strong
-            password before calling.
-          type: string
-          minLength: 12
-          maxLength: 128
-      required:
       - password
       additionalProperties: false
     RescueInstanceResponseBody:
