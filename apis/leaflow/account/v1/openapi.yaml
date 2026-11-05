@@ -17,6 +17,18 @@ info:
 
     A scoped token cannot be renewed. Repeat step 2 for a new one, and sign in again at auth.leaflow.net once the access token itself has expired.
 
+    ## Applications
+
+    An application registered by a project signs its users in at auth.leaflow.net in the same manner as any other OAuth client. To call the Leaflow API on behalf of a user, the application requests the `iam` scope, and the user must then authorize the application for each project in which it is to act:
+
+    1. The application directs the user to the authorization page of the console, supplying its `client_id`, one of its registered redirect URIs as `redirect_uri`, and a `state`.
+    2. The user selects a project and confirms the authorization. The console calls `POST /account/v1/me/authorized-applications` and returns the user to the `redirect_uri` with the `project_id` and the `state`.
+    3. The application exchanges its access token for a scoped token at `POST /account/v1/projects/{projectId}/scoped-tokens`, as described in the preceding section.
+
+    Within an authorized project, the application holds exactly the permissions of the user in that project and none beyond them. The user may revoke an authorization at any time, and an authorization ends when the user leaves the project.
+
+    An access token issued to an application is accepted only by `create-scoped-token`, `list-authorized-applications` and `revoke-authorized-application`. Every other endpoint rejects it with 403 `APPLICATION_TOKEN_NOT_ACCEPTED`; consequently, an application cannot authorize itself.
+
     ## SSH keys
 
     The SSH keys of an account belong to its holder rather than to any project, and a key is active on one account at most. Keys shared by a project, such as one used by CI, belong to the project instead and are managed through the IAM API.
@@ -501,6 +513,125 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /account/v1/applications/{clientId}:
+    get:
+      summary: Get an application by its client ID
+      description: |-
+        Returns the application requesting authorization, so that the authorization page can identify the requester. Any authenticated account may read it, since the `client_id` is part of every authorization request.
+
+        A deleted application is reported as not found. A disabled application is returned with `status` `DISABLED` and cannot be authorized.
+
+        The authorization page returns the user only to a `redirect_uri` that exactly matches one of `redirect_uris`; if none matches, the user is not redirected.
+      operationId: get-application
+      tags:
+        - Application
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/me/authorized-applications:
+    get:
+      summary: List the applications the current account has authorized
+      description: |-
+        Returns one item for each application and project, most recent first. An authorization is omitted once it has been revoked, once the membership under which it was granted has ended, or once the application has been deleted.
+
+        When called with an access token issued to an application, only the authorizations of that application are returned.
+      operationId: list-authorized-applications
+      tags:
+        - Application
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageAuthorizedApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Authorize an application to act in a project
+      description: |-
+        Permits the application to exchange the access tokens of this account for scoped tokens of the project. Within the project, the application then holds exactly the permissions of this account and none beyond them.
+
+        The caller must be a member of the project. Repeating the request returns the existing authorization. Authorizing a disabled application fails with 412 `APPLICATION_DISABLED`.
+
+        An access token issued to an application is rejected, so that an application cannot authorize itself.
+      operationId: authorize-application
+      tags:
+        - Application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthorizeApplicationRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizedApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /account/v1/me/authorized-applications/{authorizationId}:
+    delete:
+      summary: Revoke an application's authorization
+      description: |-
+        After revocation, the application can no longer exchange tokens for the project. A scoped token already issued to it remains valid until it expires. Repeating the request returns the same authorization.
+
+        When called with an access token issued to an application, only the authorizations of that application can be revoked; this allows an application to disconnect itself.
+      operationId: revoke-authorized-application
+      tags:
+        - Application
+      parameters:
+        - name: authorizationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizedApplicationResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /account/v1/me/invitations:
     get:
       summary: List invitations addressed to the caller
@@ -824,6 +955,8 @@ paths:
         A scoped token states identity only — the user and the project — and **carries no permissions**. Permissions are evaluated on every request, so a change of role takes effect immediately rather than at the next expiry.
 
         A project that is suspended, banned or being deleted still issues tokens; those states restrict writes, and the project remains readable.
+
+        An access token issued to an application is exchanged only for a project for which the user has authorized that application. Otherwise, the exchange fails with 403 `APPLICATION_AUTHORIZATION_REQUIRED`, whose `meta` contains the `client_id` and the `project_id`; the application should then direct the user to the authorization page. For a disabled application the exchange fails with 412 `APPLICATION_DISABLED`, and for a deleted application with 404 `APPLICATION_NOT_FOUND`, even if its access token has not yet expired.
       operationId: create-scoped-token
       tags:
         - ScopedToken
@@ -1319,6 +1452,98 @@ components:
           maxLength: 128
       required:
         - name
+      additionalProperties: false
+    ApplicationResource:
+      description: An application, as presented to an account that is asked to authorize it
+      type: object
+      properties:
+        client_id:
+          type: string
+        name:
+          type: string
+        redirect_uris:
+          description: The URIs to which the user may be returned; a `redirect_uri` must match one of them exactly
+          type: array
+          items:
+            type: string
+        status:
+          description: '`ARCHIVED` appears only within an authorization, after the application has been deleted'
+          type: string
+          enum:
+            - ACTIVE
+            - DISABLED
+            - ARCHIVED
+      required:
+        - client_id
+        - name
+        - redirect_uris
+        - status
+      additionalProperties: false
+    AuthorizedApplicationResource:
+      description: An application that the account has authorized to act in one of its projects
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        application:
+          $ref: "#/components/schemas/ApplicationResource"
+        project:
+          $ref: "#/components/schemas/ProjectResource"
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - REVOKED
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - application
+        - project
+        - status
+        - created_at
+      additionalProperties: false
+    LengthAwarePageAuthorizedApplicationResource:
+      type: object
+      properties:
+        items:
+          description: The items in this page
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizedApplicationResource"
+        limit:
+          description: Maximum number of items in this page, echoing the request
+          type: integer
+          format: int64
+        offset:
+          description: Number of items skipped, echoing the request
+          type: integer
+          format: int64
+        total:
+          description: Total number of matches, not only this page
+          type: integer
+          format: int64
+      required:
+        - items
+        - total
+        - limit
+        - offset
+      additionalProperties: false
+    AuthorizeApplicationRequestBody:
+      type: object
+      properties:
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 255
+        project_id:
+          type: string
+          format: uuid
+      required:
+        - client_id
+        - project_id
       additionalProperties: false
     InvitationPreviewResource:
       description: What an invitation states before it is accepted. It carries neither the invitation id nor the full recipient address; the invitations listed against the current account are returned by `list-my-invitations`
