@@ -103,6 +103,21 @@ option go_package = "github.com/leaflowapis/leaflow-go/fleet/virtualdesktop/data
 // 普通 CF_ENHMETAFILE 的内容表示使用 image/emf；其它 aspect/index 保留显式选择器。
 // medium=metafile-picture 为 TYMED_MFPICT：先依次编码 mm、xExt、yExt 三个 i32 小端数，
 // 随后是完整 WMF 记录；不得发送 METAFILEPICT 的本机结构、对齐填充或 hMF 句柄。
+// medium=gdi 为 TYMED_GDI：先编码对象种类 u32 小端数，7 为位图，5 为调色板。
+// 位图随后为 40 字节 BITMAPINFOHEADER、BI_BITFIELDS 所需的三个颜色掩码、声明的
+// RGBQUAD 颜色表及 DWORD 对齐的完整像素行；仅使用 BI_RGB 或 BI_BITFIELDS，保留
+// 有效色深和像素，biSizeImage 精确等于像素长度，不含 BMP 文件头或本机指针。
+// 调色板随后为 LOGPALETTE：version=0x300、条目数两个 u16 小端数，再依次编码每个
+// PALETTEENTRY 的 red、green、blue、flags 四字节，接收端创建新的本机 GDI 对象。
+// FORMATETC 的非空 ptd 另以可选 device=<bytehex> 参数声明整个 DVTARGETDEVICE；
+// 每字节两个十六进制字符，包含 tdSize 指定的完整描述、DEVMODE 和驱动私有尾部。
+// 省略 device 表示空 ptd；长度和内部偏移必须有效，不得把畸形或重复参数降级为普通
+// 注册格式。设备描述也是表示身份，枚举、读取、缓存和重建不得合并不同 device。
+// 各次原生枚举交出独立、可由 COM 分配器释放的副本；不得预读正文来取得该声明。
+// 设备描述仅供保留和匹配，不得据此加载来源驱动或创建来源设备，也不进入日志。
+// 本机介质与以完整媒体类型名提供的原始 HGLOBAL/IStream 字节表示可同时存在；
+// 两者声明同一跨机格式时优先读取原始序列化字节，不得先经过本机 GDI 编组而改变
+// 像素、色表、掩码或其它记录。两种本机表示共用同一媒体类型、读取期和数据通道。
 // 接收端从记录重建介质，绝不把原生句柄、指针、COM 接口或源文件路径当正文。
 // CF_HDROP(id=15)、FileContents、FileGroupDescriptor、PIDL、FileName 等文件/路径格式及
 // 拖放控制格式仍归 filetransfer 或拖放适配，不得用此媒体类型绕过文件引用和权限。
