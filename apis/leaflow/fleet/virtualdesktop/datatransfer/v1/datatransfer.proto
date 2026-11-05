@@ -203,9 +203,10 @@ message ClipboardFormatList {
   // Data of small formats sent along, at most 64 KiB in total, so that a
   // paste of them needs no round trip.
   repeated DataTransferItem items = 4;
-  // Files copied. The receiver fetches them as for any offer, with
-  // FileTransferRequest.clipboard set, and puts verified local copies on its
-  // clipboard; paths of the source never travel.
+  // 文件复制的首个独立文件操作。接收方按需取得正文，设置
+  // FileTransferRequest.clipboard，并仅发布本机引用，不传来源机器的路径。
+  // 该操作的完成、跳过或取消不结束复制声明；同一有效 sequence 的后续
+  // 粘贴通过 DataRequest.files 取得新的操作，不复用已结算的 transfer_id。
   leaflow.fleet.filetransfer.v1.FileTransferOffer file_offer = 5;
 }
 
@@ -465,8 +466,12 @@ message DataRequest {
   oneof format {
     // The data of one of the formats offered.
     string mime_type = 3;
-    // The offer of the dragged files, of a drag that announced
-    // files_available. Must be true.
+    // 必须为 true。拖放读取已声明 files_available 的来源；剪贴板读取
+    // 原 ClipboardFormatList.file_offer 对应的同一复制声明。
+    // 剪贴板每次成功读取均返回新的 transfer_id，保留原清单的 file_id、
+    // parent_id、元数据与来源文件版本，不重新扫描目录或换用当前的新复制。
+    // 读取仍检查方向权限和连接代际；复制已被替换时返回 ABORTED。
+    // 已接受的文件引用可独立完成；本次文件操作不能撤销其它读取或复制声明。
     bool files = 4;
   }
 }
