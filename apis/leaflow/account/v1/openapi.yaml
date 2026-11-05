@@ -21,11 +21,17 @@ info:
 
     An application registered by a project signs its users in at auth.leaflow.net in the same manner as any other OAuth client. To call the Leaflow API on behalf of a user, the application requests the `iam` scope, and the user must then authorize the application for each project in which it is to act:
 
-    1. The application directs the user to the authorization page of the console, supplying its `client_id`, one of its registered redirect URIs as `redirect_uri`, and a `state`.
-    2. The user selects a project and confirms the authorization. The console calls `POST /account/v1/me/authorized-applications` and returns the user to the `redirect_uri` with the `project_id` and the `state`.
+    1. The application directs the user to the authorization page of the console:
+
+       ```
+       https://console.leaflow.net/applications/authorize?client_id=<client_id>&redirect_uri=<redirect_uri>&state=<state>
+       ```
+
+       All three parameters are required. The `redirect_uri` is URL-encoded and must exactly match one of the redirect URIs registered for the application; a custom scheme registered for a public application is accepted in the same way. If a parameter is missing, if the `redirect_uri` does not match, or if the application does not exist or is not active, the page reports the problem to the user and does not redirect. A user who is not signed in, or who has not yet completed registration and accepted the agreements, does so first and then returns to the page.
+    2. The user selects a project and confirms the authorization. The console calls `POST /account/v1/me/authorized-applications` and returns the user to the `redirect_uri` with the query parameters `project_id` and `state`. If the user declines, the console returns the user to the `redirect_uri` with `error=access_denied` and `state`. In both cases the existing query parameters of the `redirect_uri` are retained, and a parameter of the same name is replaced. The application must verify that `state` equals the value it supplied before it uses the response.
     3. The application exchanges its access token for a scoped token at `POST /account/v1/projects/{projectId}/scoped-tokens`, as described in the preceding section.
 
-    Within an authorized project, the application holds exactly the permissions of the user in that project and none beyond them. The user may revoke an authorization at any time, and an authorization ends when the user leaves the project.
+    Within an authorized project, the application holds exactly the permissions of the user in that project and none beyond them. The user may revoke an authorization at any time at https://console.leaflow.net/account/applications, and an authorization ends when the user leaves the project.
 
     An access token issued to an application is accepted only by `create-scoped-token`, `list-authorized-applications` and `revoke-authorized-application`. Every other endpoint rejects it with 403 `APPLICATION_TOKEN_NOT_ACCEPTED`; consequently, an application cannot authorize itself.
 
