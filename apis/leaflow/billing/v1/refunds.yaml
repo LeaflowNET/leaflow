@@ -24,6 +24,19 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: status
+        in: query
+        required: false
+        description: Only refunds in these statuses; omit for every status. Comma-separated, for example `status=pending,processing`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RefundStatus'
       responses:
         '200':
           description: OK
@@ -35,6 +48,24 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    RefundStatus:
+      description: |-
+        Summary of the parts in `transactions`.
+
+        - `pending`: nothing has been returned yet, and at least one part is in progress.
+        - `processing`: some parts have been returned, and at least one is still in progress.
+        - `succeeded`: every part has been returned.
+        - `failed`: no part is in progress and at least one has failed. What was returned is in
+          settled_amount.
+
+        Returns to the balance and to credit grants complete shortly after the refund is made; a
+        return to a payment method completes when the gateway confirms it.
+      type: string
+      enum:
+      - pending
+      - processing
+      - succeeded
+      - failed
     Refund:
       type: object
       properties:
@@ -96,23 +127,7 @@ components:
           - gateway
           deprecated: true
         status:
-          description: |-
-            Summary of the parts in `transactions`.
-
-            - `pending`: nothing has been returned yet, and at least one part is in progress.
-            - `processing`: some parts have been returned, and at least one is still in progress.
-            - `succeeded`: every part has been returned.
-            - `failed`: no part is in progress and at least one has failed. What was returned is in
-              settled_amount.
-
-            Returns to the balance and to credit grants complete shortly after the refund is made; a
-            return to a payment method completes when the gateway confirms it.
-          type: string
-          enum:
-          - pending
-          - processing
-          - succeeded
-          - failed
+          $ref: '#/components/schemas/RefundStatus'
         settled_at:
           description: When the last part was returned. Present with `succeeded`.
           type: string

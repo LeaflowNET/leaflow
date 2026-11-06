@@ -20,13 +20,16 @@ paths:
       - name: status
         in: query
         required: false
+        description: Only allowances in these statuses; omit for every status. Comma-separated, for example `status=active,depleted`.
+        style: form
+        explode: false
         schema:
-          type: string
-          enum:
-          - active
-          - depleted
-          - expired
-          - voided
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AllowanceStatus'
       - name: product_id
         in: query
         required: false
@@ -44,6 +47,13 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    AllowanceStatus:
+      type: string
+      enum:
+      - active
+      - depleted
+      - expired
+      - voided
     Allowance:
       type: object
       properties:
@@ -91,12 +101,7 @@ components:
           description: Lower values are consumed first; at equal priority, earlier expiry and then earlier issuance.
           type: integer
         status:
-          type: string
-          enum:
-          - active
-          - depleted
-          - expired
-          - voided
+          $ref: '#/components/schemas/AllowanceStatus'
         valid_from:
           type: string
           format: date-time

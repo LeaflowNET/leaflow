@@ -12,6 +12,32 @@ paths:
       - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
       - $ref: ./openapi.yaml#/components/parameters/From
       - $ref: ./openapi.yaml#/components/parameters/To
+      - name: type
+        in: query
+        required: false
+        description: Only transactions of these types; omit for every type. Comma-separated, for example `type=topup,refund`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/TransactionType'
+      - name: status
+        in: query
+        required: false
+        description: Only transactions in these statuses; omit for every status. Comma-separated, for example `status=pending,failed`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/TransactionStatus'
       responses:
         '200':
           description: OK
@@ -32,6 +58,14 @@ components:
       - refund
       - adjustment
       - fee
+    TransactionStatus:
+      description: '`failed`: the operation did not succeed; for a gateway payment, the gateway declined it. `canceled`: a gateway payment was withdrawn without collecting money. Either way, the invoice it was for stays open.'
+      type: string
+      enum:
+      - pending
+      - succeeded
+      - failed
+      - canceled
     Transaction:
       description: A funds movement with one source. Refunds name the original transaction. Unknown gateway results stay pending.
       type: object
@@ -59,13 +93,7 @@ components:
           - credit
           - gateway
         status:
-          description: '`failed`: the operation did not succeed; for a gateway payment, the gateway declined it. `canceled`: a gateway payment was withdrawn without collecting money. Either way, the invoice it was for stays open.'
-          type: string
-          enum:
-          - pending
-          - succeeded
-          - failed
-          - canceled
+          $ref: '#/components/schemas/TransactionStatus'
         cancellation_reason:
           $ref: ./payments.yaml#/components/schemas/PaymentCancellationReason
           description: Why the payment was withdrawn. Present with `canceled`.

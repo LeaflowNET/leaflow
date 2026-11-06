@@ -17,6 +17,19 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: status
+        in: query
+        required: false
+        description: Only credit notes in these statuses; omit for both. Comma-separated.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/CreditNoteStatus'
       responses:
         '200':
           description: OK
@@ -67,6 +80,11 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    CreditNoteStatus:
+      type: string
+      enum:
+      - issued
+      - void
     CreditNote:
       description: A reduction of an issued invoice; the original invoice amounts do not change. The credited amount is pre_payment_amount plus post_payment_amount. A paid part creates a refund, identified by refund_id, whose outcome may still be pending.
       type: object
@@ -83,10 +101,7 @@ components:
           type: string
           format: date-time
         status:
-          type: string
-          enum:
-          - issued
-          - void
+          $ref: '#/components/schemas/CreditNoteStatus'
         voided_at:
           description: When this note was voided; null while issued.
           type:

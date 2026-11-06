@@ -30,13 +30,16 @@ paths:
       - name: status
         in: query
         required: false
+        description: Only metering in these statuses; omit for every status. Comma-separated, for example `status=active,suspended`.
+        style: form
+        explode: false
         schema:
-          type: string
-          enum:
-          - active
-          - suspended
-          - closing
-          - closed
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ActiveResourceStatus'
       responses:
         '200':
           description: OK
@@ -48,6 +51,13 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    ActiveResourceStatus:
+      type: string
+      enum:
+      - active
+      - suspended
+      - closing
+      - closed
     ActiveResource:
       description: A resource charged continuously by the second.
       type: object
@@ -87,12 +97,7 @@ components:
           additionalProperties:
             type: string
         status:
-          type: string
-          enum:
-          - active
-          - suspended
-          - closing
-          - closed
+          $ref: '#/components/schemas/ActiveResourceStatus'
         started_at:
           type: string
           format: date-time

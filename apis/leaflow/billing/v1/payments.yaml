@@ -31,6 +31,19 @@ paths:
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: status
+        in: query
+        required: false
+        description: Only top-ups in these statuses; omit for every status. Comma-separated, for example `status=pending,succeeded`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/TopUpStatus'
       responses:
         '200':
           description: OK
@@ -132,6 +145,22 @@ paths:
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: status
+        in: query
+        required: false
+        description: Only payment methods in these statuses; omit for both. Removed payment methods are not listed. Comma-separated.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - active
+            - expired
       responses:
         '200':
           description: OK
@@ -338,6 +367,14 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    TopUpStatus:
+      description: '`pending` until the payment gateway reaches a result; the balance increases on `succeeded`. `failed`: the gateway declined the payment, which is withdrawn at the gateway; create a new top-up to pay another way. `canceled`: withdrawn without collecting money, for the reason in `cancellation_reason`. Unknown gateway outcomes stay `pending`; a browser redirect is not proof of payment. `failed` and `canceled` are final; a payment the gateway collects afterwards is credited as a separate `succeeded` top-up.'
+      type: string
+      enum:
+      - pending
+      - succeeded
+      - failed
+      - canceled
     TopUp:
       description: A top-up attempt and its outcome. A successful top-up adds to the balance; it is not a credit grant and has no invoice.
       type: object
@@ -361,13 +398,7 @@ components:
           allOf:
           - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         status:
-          description: '`pending` until the payment gateway reaches a result; the balance increases on `succeeded`. `failed`: the gateway declined the payment, which is withdrawn at the gateway; create a new top-up to pay another way. `canceled`: withdrawn without collecting money, for the reason in `cancellation_reason`. Unknown gateway outcomes stay `pending`; a browser redirect is not proof of payment. `failed` and `canceled` are final; a payment the gateway collects afterwards is credited as a separate `succeeded` top-up.'
-          type: string
-          enum:
-          - pending
-          - succeeded
-          - failed
-          - canceled
+          $ref: '#/components/schemas/TopUpStatus'
         cancellation_reason:
           $ref: '#/components/schemas/PaymentCancellationReason'
           description: Why the top-up was withdrawn. Present with `canceled`.

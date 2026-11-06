@@ -10,6 +10,19 @@ paths:
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+      - name: status
+        in: query
+        required: false
+        description: Only discounts in these statuses; omit for every status. Comma-separated, for example `status=scheduled,active`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/DiscountStatus'
       responses:
         '200':
           description: OK
@@ -21,6 +34,14 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    DiscountStatus:
+      description: '`scheduled` before valid_from, `active` within the validity, `expired` after valid_until, or `voided` once withdrawn.'
+      type: string
+      enum:
+      - scheduled
+      - active
+      - expired
+      - voided
     Discount:
       description: A coupon held by the account for a period, applying without a code to the purchases and metered usage it covers.
       type: object
@@ -37,13 +58,7 @@ components:
           type: string
           format: uuid
         status:
-          description: '`scheduled` before valid_from, `active` within the validity, `expired` after valid_until, or `voided` once withdrawn.'
-          type: string
-          enum:
-          - scheduled
-          - active
-          - expired
-          - voided
+          $ref: '#/components/schemas/DiscountStatus'
         voided_at:
           type: string
           format: date-time

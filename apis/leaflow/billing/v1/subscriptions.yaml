@@ -16,6 +16,19 @@ paths:
       - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
       - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+      - name: status
+        in: query
+        required: false
+        description: Only subscriptions in these statuses; omit for every status. Comma-separated, for example `status=active,suspended`.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SubscriptionStatus'
       responses:
         '200':
           description: OK
@@ -248,6 +261,16 @@ components:
       required:
       - items
       - pagination
+    SubscriptionStatus:
+      description: '`pending`: the order has not been accepted. `provisioning`: the owning service accepted the order and is delivering. `active`: delivery was confirmed; payment alone does not make a subscription active. `suspended`: service is stopped while a lien restricts its use. `canceled`: cancellation completed, or an undelivered purchase was canceled or failed. `terminated`: an operator or the owning service ended it immediately.'
+      type: string
+      enum:
+      - pending
+      - provisioning
+      - active
+      - suspended
+      - canceled
+      - terminated
     Subscription:
       description: |-
         A purchase that is billed, renewed and changed on its own, separate from the owning service's resource. A new
@@ -396,15 +419,7 @@ components:
           description: Whether a licensed subscription renews automatically. A metered subscription continues until it is canceled; for it this is true until a cancellation is requested, and cannot be set.
           type: boolean
         status:
-          description: '`pending`: the order has not been accepted. `provisioning`: the owning service accepted the order and is delivering. `active`: delivery was confirmed; payment alone does not make a subscription active. `suspended`: service is stopped while a lien restricts its use. `canceled`: cancellation completed, or an undelivered purchase was canceled or failed. `terminated`: an operator or the owning service ended it immediately.'
-          type: string
-          enum:
-          - pending
-          - provisioning
-          - active
-          - suspended
-          - canceled
-          - terminated
+          $ref: '#/components/schemas/SubscriptionStatus'
         started_at:
           description: When service started. Null until a new subscription becomes active, also after payment.
           type:
