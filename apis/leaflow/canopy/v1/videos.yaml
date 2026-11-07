@@ -1,0 +1,217 @@
+paths:
+  /v1/videos:
+    post:
+      operationId: create-video
+      summary: Create a video
+      tags: [Inference]
+      description: |-
+        Create an asynchronous video task in the verified project. Model and upstream support
+        determine the accepted duration, resolution and references. Poll the returned task id.
+        `reference_media` is a Canopy extension for ordered, typed image, video and audio URLs.
+        Existing `input_reference` remains a first frame.
+        The runtime also accepts OpenAI multipart uploads; send reference_media as a JSON text field.
+        No remote reference is downloaded or retained by Canopy during request preparation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoCreateRequest"
+      responses:
+        "200":
+          description: Video task accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoTask"
+        default:
+          $ref: "#/components/responses/VideoError"
+  /v1/videos/{video}:
+    get:
+      operationId: get-video
+      summary: Get a video task
+      tags: [Inference]
+      description: Read an existing task owned by the verified project; does not create another video.
+      parameters:
+        - $ref: "#/components/parameters/Video"
+      responses:
+        "200":
+          description: Current video task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoTask"
+        default:
+          $ref: "#/components/responses/VideoError"
+  /v1/videos/{video}/content:
+    get:
+      operationId: get-video-content
+      summary: Get generated video content
+      tags: [Inference]
+      description: Stream a completed video owned by the verified project. Supports HTTP Range.
+      parameters:
+        - $ref: "#/components/parameters/Video"
+        - name: Range
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Video bytes
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Requested byte range
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: "#/components/responses/VideoError"
+components:
+  parameters:
+    Video:
+      name: video
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    VideoError:
+      description: OpenAI error object
+      content:
+        application/json:
+          schema:
+            $ref: ./inference.yaml#/components/schemas/InferenceError
+  schemas:
+    VideoReferenceMedia:
+      type: object
+      description: |-
+        A typed reference asset. Order is preserved, including order within each media type.
+        Wan 3.0 accepts at most one first frame, one last frame, ten reference images,
+        five reference videos and five reference audio clips. A last frame needs a first frame.
+        First/last frames cannot be combined with reference_image, reference_video or reference_audio.
+        Reference images, videos and audio may be combined. Other models can accept fewer roles.
+        Images accept public HTTP(S) or base64 image data URLs. Video and audio accept public
+        HTTP(S) URLs only. Wan 3.0 limits reference videos and audio to 1-15 seconds each and
+        15 seconds total per media type; input video plus output duration must not exceed 30 seconds.
+        The upstream validates remote asset size, format and duration. Canopy does not fetch them.
+      properties:
+        type:
+          type: string
+          enum: [first_frame, last_frame, reference_image, reference_video, reference_audio]
+        url:
+          type: string
+          minLength: 1
+      required: [type, url]
+      additionalProperties: false
+    VideoCreateRequest:
+      type: object
+      description: Provide a prompt, reference media, or both. Extra fields depend on the selected model and adapter.
+      properties:
+        model:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+        seconds:
+          type: integer
+          minimum: 1
+        size:
+          type: string
+        resolution:
+          type: string
+        input_reference:
+          type: string
+          minLength: 1
+          description: Backward-compatible first-frame image URL. May be combined with a last_frame, not another first_frame.
+        reference_media:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/VideoReferenceMedia"
+        audio:
+          type: boolean
+          description: Whether the output has audio; separate from a reference_audio input.
+        prompt_extend:
+          type: boolean
+        watermark:
+          type: boolean
+        seed:
+          type: integer
+          format: int64
+        negative_prompt:
+          type: string
+      required: [model]
+      additionalProperties: true
+    VideoUsage:
+      type: object
+      description: Provider measurements on a task; only completed tasks are settled.
+      properties:
+        seconds:
+          type: number
+          format: double
+          minimum: 0
+          description: Output duration, kept for compatibility.
+        resolution:
+          type: string
+        input_seconds:
+          type: number
+          format: double
+          minimum: 0
+        output_seconds:
+          type: number
+          format: double
+          minimum: 0
+        billable_seconds:
+          type: number
+          format: double
+          minimum: 0
+          description: Total measured input and output video duration, not a monetary quote.
+      additionalProperties: true
+    VideoTask:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        status:
+          type: string
+          enum: [queued, in_progress, completed, failed]
+        model:
+          type: string
+        usage:
+          $ref: "#/components/schemas/VideoUsage"
+        seconds:
+          type: string
+          description: Output duration, not the duration of input references.
+        size:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+        completed_at:
+          type: integer
+          format: int64
+        expires_at:
+          type: integer
+          format: int64
+        progress:
+          type: integer
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          additionalProperties: true
+      required: [id, object, status]
+      additionalProperties: true

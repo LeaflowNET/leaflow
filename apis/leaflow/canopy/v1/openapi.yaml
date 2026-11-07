@@ -43,6 +43,12 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/videos:
+    $ref: ./videos.yaml#/paths/~1v1~1videos
+  /v1/videos/{video}:
+    $ref: ./videos.yaml#/paths/~1v1~1videos~1{video}
+  /v1/videos/{video}/content:
+    $ref: ./videos.yaml#/paths/~1v1~1videos~1{video}~1content
   /v1/responses:
     $ref: ./responses.yaml#/paths/~1v1~1responses
   /v1/responses/{response}:
@@ -1234,6 +1240,48 @@ components:
       required:
         - items
       additionalProperties: false
+    MediaUsageDetails:
+      type: object
+      description: |-
+        Per-request media measurements. Omitted values are unknown, not zero.
+        Reference counts are audit data, not an additional billable quantity.
+        video_quantity is the exact decimal quantity for the existing video_seconds
+        meter; video_seconds in the summary remains a rounded compatibility counter.
+        No monetary price or refund is calculated by Canopy.
+      properties:
+        input_video_seconds:
+          type: number
+          format: double
+          minimum: 0
+        output_video_seconds:
+          type: number
+          format: double
+          minimum: 0
+        input_audio_seconds:
+          type: number
+          format: double
+          minimum: 0
+        input_image_quantity:
+          type: string
+          pattern: "^[0-9]+$"
+          description: Recorded input quantity for the input_images meter, independent of its Billing price. Absent when unmeasured or not separately metered.
+        input_images:
+          type: integer
+          format: int64
+          minimum: 0
+        output_images:
+          type: integer
+          format: int64
+          minimum: 0
+        video_quantity:
+          type: string
+          pattern: "^[0-9]+([.][0-9]+)?$"
+        reference_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+      additionalProperties: false
     RequestResource:
       type: object
       properties:
@@ -1352,6 +1400,8 @@ components:
           anyOf:
             - $ref: "#/components/schemas/MediaUsage"
             - type: "null"
+        media_details:
+          $ref: "#/components/schemas/MediaUsageDetails"
       required:
         - id
         - model_id
