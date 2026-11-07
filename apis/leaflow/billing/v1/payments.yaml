@@ -1,23 +1,23 @@
 paths:
   /api/v1/billing-accounts/{accountId}/payment-options:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/AccountId
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: List payment options
       description: The payment gateways and methods currently accepting the account's currency, preferred gateway first. Top-ups and invoice payments must use one listed here. An empty result means online payment is unavailable for the account. Open to the owner of the account and to members of the projects it currently pays for.
       operationId: list-payment-options
       tags:
-      - payments
+        - payments
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentOptionList'
+                $ref: "#/components/schemas/PaymentOptionList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/top-ups:
@@ -26,31 +26,31 @@ paths:
       description: Your top-ups, including pending, failed and canceled attempts. Items carry no `action`; read a pending top-up with get-top-up to continue its payment.
       operationId: list-top-ups
       tags:
-      - payments
+        - payments
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: status
-        in: query
-        required: false
-        description: Only top-ups in these statuses; omit for every status. Comma-separated, for example `status=pending,succeeded`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 4
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/TopUpStatus'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: status
+          in: query
+          required: false
+          description: Only top-ups in these statuses; omit for every status. Comma-separated, for example `status=pending,succeeded`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 4
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/TopUpStatus"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopUpList'
+                $ref: "#/components/schemas/TopUpList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
@@ -58,53 +58,53 @@ paths:
       description: Creates a top-up for an account of the authenticated user and returns its payment information. The balance increases when the gateway confirms receipt. Keep the supplied ID to read the attempt after a lost response; creating it again conflicts.
       operationId: create-top-up
       tags:
-      - payments
+        - payments
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TopUpCreate'
+              $ref: "#/components/schemas/TopUpCreate"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopUp'
+                $ref: "#/components/schemas/TopUp"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/top-ups/{topUpId}:
     parameters:
-    - name: topUpId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: topUpId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
       summary: Get top up
       description: A top-up of the authenticated user, with its outcome and unspent amount. While it is pending, `action` carries the customer's next step as the gateway reports it, so an interrupted payment can be continued; when the gateway cannot be reached, `action` is omitted.
       operationId: get-top-up
       tags:
-      - payments
+        - payments
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopUp'
+                $ref: "#/components/schemas/TopUp"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/top-ups/{topUpId}:cancel:
     parameters:
-    - name: topUpId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: topUpId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     post:
       summary: Cancel top up
       description: |-
@@ -118,15 +118,15 @@ paths:
         later.
       operationId: cancel-top-up
       tags:
-      - payments
+        - payments
       responses:
-        '200':
-          description: 'The top-up after the request: canceled or succeeded.'
+        "200":
+          description: "The top-up after the request: canceled or succeeded."
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopUp'
-        '409':
+                $ref: "#/components/schemas/TopUp"
+        "409":
           description: The top-up already has another outcome or can no longer be withdrawn.
           content:
             application/json:
@@ -140,34 +140,34 @@ paths:
       description: Saved payment methods of your billing accounts, optionally for one billing_account_id. Removed methods are not listed.
       operationId: list-payment-methods
       tags:
-      - payments
+        - payments
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: status
-        in: query
-        required: false
-        description: Only payment methods in these statuses; omit for both. Removed payment methods are not listed. Comma-separated.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 2
-          uniqueItems: true
-          items:
-            type: string
-            enum:
-            - active
-            - expired
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: status
+          in: query
+          required: false
+          description: Only payment methods in these statuses; omit for both. Removed payment methods are not listed. Comma-separated.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 2
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+                - active
+                - expired
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentMethodList'
+                $ref: "#/components/schemas/PaymentMethodList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payment-methods/setup:
@@ -176,57 +176,57 @@ paths:
       description: Returns what the browser needs to open the payment gateway's card form. Nothing is charged; the method is listed once the gateway confirms it. Card numbers never reach this service.
       operationId: create-payment-method-setup
       tags:
-      - payments
+        - payments
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PaymentMethodSetup'
+              $ref: "#/components/schemas/PaymentMethodSetup"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentMethodSetupResult'
+                $ref: "#/components/schemas/PaymentMethodSetupResult"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payment-methods/{paymentMethodId}/default:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/PaymentMethodId
+      - $ref: ./openapi.yaml#/components/parameters/PaymentMethodId
     put:
       summary: Set default payment method
       description: Makes an active saved payment method the default for its billing account and returns it. Expired or removed methods cannot be selected; selecting the current default changes nothing.
       operationId: set-default-payment-method
       tags:
-      - payments
+        - payments
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentMethod'
+                $ref: "#/components/schemas/PaymentMethod"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payment-methods/{paymentMethodId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/PaymentMethodId
+      - $ref: ./openapi.yaml#/components/parameters/PaymentMethodId
     delete:
       summary: Delete payment method
       description: Refused when it is the only payment method of an account with metered resources.
       operationId: delete-payment-method
       tags:
-      - payments
+        - payments
       responses:
-        '204':
+        "204":
           description: Removed
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/invoices/{invoiceId}:pay:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/InvoiceId
+      - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     post:
       summary: Pay an invoice
       description: |-
@@ -254,25 +254,25 @@ paths:
         of the project. Only the owner can pay with a saved `payment_method_id`.
       operationId: pay-invoice
       tags:
-      - payments
+        - payments
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PayInvoiceRequest'
+              $ref: "#/components/schemas/PayInvoiceRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentResult'
+                $ref: "#/components/schemas/PaymentResult"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/invoices/{invoiceId}:previewPayment:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/InvoiceId
+      - $ref: ./openapi.yaml#/components/parameters/InvoiceId
     get:
       summary: Preview invoice payment
       description: |-
@@ -285,29 +285,29 @@ paths:
         they show as a `gateway_amount` above zero. Open to the same callers as paying.
       operationId: preview-invoice-payment
       tags:
-      - payments
+        - payments
       parameters:
-      - name: use_balance
-        in: query
-        required: false
-        description: As in paying. True when omitted.
-        schema:
-          type: boolean
-          default: true
-      - name: use_credits
-        in: query
-        required: false
-        description: As in paying. True when omitted.
-        schema:
-          type: boolean
-          default: true
+        - name: use_balance
+          in: query
+          required: false
+          description: As in paying. True when omitted.
+          schema:
+            type: boolean
+            default: true
+        - name: use_credits
+          in: query
+          required: false
+          description: As in paying. True when omitted.
+          schema:
+            type: boolean
+            default: true
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentPreview'
+                $ref: "#/components/schemas/PaymentPreview"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payments:
@@ -327,20 +327,20 @@ paths:
         being reclaimed or ended.
       operationId: pay-together
       tags:
-      - payments
+        - payments
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PayTogetherRequest'
+              $ref: "#/components/schemas/PayTogetherRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentResult'
+                $ref: "#/components/schemas/PaymentResult"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payments:preview:
@@ -349,32 +349,32 @@ paths:
       description: What paying these invoices together now would take from credit grants and from the balance, per invoice in payment order, calculated as paying together does. Nothing is charged, reserved or created. Refused with the same errors as paying together, except that insufficient funds show as a `gateway_amount` above zero instead of an error.
       operationId: preview-pay-together
       tags:
-      - payments
+        - payments
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PayTogetherRequest'
+              $ref: "#/components/schemas/PayTogetherRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaymentPreview'
+                $ref: "#/components/schemas/PaymentPreview"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
     TopUpStatus:
-      description: '`pending` until the payment gateway reaches a result; the balance increases on `succeeded`. `failed`: the gateway declined the payment, which is withdrawn at the gateway; create a new top-up to pay another way. `canceled`: withdrawn without collecting money, for the reason in `cancellation_reason`. Unknown gateway outcomes stay `pending`; a browser redirect is not proof of payment. `failed` and `canceled` are final; a payment the gateway collects afterwards is credited as a separate `succeeded` top-up.'
+      description: "`pending` until the payment gateway reaches a result; the balance increases on `succeeded`. `failed`: the gateway declined the payment, which is withdrawn at the gateway; create a new top-up to pay another way. `canceled`: withdrawn without collecting money, for the reason in `cancellation_reason`. Unknown gateway outcomes stay `pending`; a browser redirect is not proof of payment. `failed` and `canceled` are final; a payment the gateway collects afterwards is credited as a separate `succeeded` top-up."
       type: string
       enum:
-      - pending
-      - succeeded
-      - failed
-      - canceled
+        - pending
+        - succeeded
+        - failed
+        - canceled
     TopUp:
       description: A top-up attempt and its outcome. A successful top-up adds to the balance; it is not a credit grant and has no invoice.
       type: object
@@ -390,17 +390,17 @@ components:
         amount:
           description: What is credited to the account, in its currency.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         remaining_amount:
           description: The part of this top-up still in the balance. Pending refunds may hold part of it, so not all of it is necessarily withdrawable.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         status:
-          $ref: '#/components/schemas/TopUpStatus'
+          $ref: "#/components/schemas/TopUpStatus"
         cancellation_reason:
-          $ref: '#/components/schemas/PaymentCancellationReason'
+          $ref: "#/components/schemas/PaymentCancellationReason"
           description: Why the top-up was withdrawn. Present with `canceled`.
         payment_gateway:
           description: Which payment gateway collected it.
@@ -414,12 +414,12 @@ components:
         presentment_amount:
           description: The amount charged in `presentment_currency`, as shown on the customer's statement.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         failure_reason:
-          description: 'Why the gateway declined it; present with `failed`. The gateway''s code unchanged: the issuer''s decline code when there is one (Stripe decline_code, such as insufficient_funds), otherwise the gateway''s error code (Stripe code, such as card_declined). Treat an unknown value as a generic decline.'
+          description: "Why the gateway declined it; present with `failed`. The gateway's code unchanged: the issuer's decline code when there is one (Stripe decline_code, such as insufficient_funds), otherwise the gateway's error code (Stripe code, such as card_declined). Treat an unknown value as a generic decline."
           type: string
         action:
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
           description: The customer's next step while the top-up is `pending` and the gateway awaits them, as the gateway currently reports it. Returned by create-top-up and get-top-up, not by list-top-ups, and absent once the top-up has a result. Completing it is not confirmation of receipt.
         created_at:
           type: string
@@ -427,17 +427,17 @@ components:
         settled_at:
           description: When the funds arrived, possibly days after `created_at`. Absent until the payment completes.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
       required:
-      - id
-      - billing_account_id
-      - account
-      - amount
-      - currency
-      - status
-      - created_at
+        - id
+        - billing_account_id
+        - account
+        - amount
+        - currency
+        - status
+        - created_at
     TopUpCreate:
       type: object
       properties:
@@ -461,9 +461,9 @@ components:
         amount:
           description: In the account's currency, no finer than its smallest unit (two decimals for most currencies, none for JPY). An amount below the currency's minimum top-up is refused, and the minimum is returned with the error.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^(?:(?:[1-9][0-9]{0,14}|0(?:[1-9][0-9]{0,13}|0(?:[1-9][0-9]{0,12}|0(?:[1-9][0-9]{0,11}|0(?:[1-9][0-9]{0,10}|0(?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))))))([.][0-9]{1,10})?|0{1,15}[.](?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))$
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: string
+              pattern: ^(?:(?:[1-9][0-9]{0,14}|0(?:[1-9][0-9]{0,13}|0(?:[1-9][0-9]{0,12}|0(?:[1-9][0-9]{0,11}|0(?:[1-9][0-9]{0,10}|0(?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))))))([.][0-9]{1,10})?|0{1,15}[.](?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))$
         payment_method_id:
           description: Charge a saved payment method instead of opening a checkout page.
           type: string
@@ -472,11 +472,11 @@ components:
           description: Where to send the customer after checkout.
           type: string
       required:
-      - payment_gateway
-      - method_type
-      - id
-      - billing_account_id
-      - amount
+        - payment_gateway
+        - method_type
+        - id
+        - billing_account_id
+        - amount
       additionalProperties: false
     TopUpList:
       type: object
@@ -484,18 +484,18 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/TopUp'
+            $ref: "#/components/schemas/TopUp"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     PaymentCancellationReason:
-      description: 'Why a gateway payment was withdrawn: `abandoned` when the customer did not complete it in time, `requested_by_customer` when the customer canceled it.'
+      description: "Why a gateway payment was withdrawn: `abandoned` when the customer did not complete it in time, `requested_by_customer` when the customer canceled it."
       type: string
       enum:
-      - abandoned
-      - requested_by_customer
+        - abandoned
+        - requested_by_customer
     PaymentOption:
       description: A gateway accepting the account's currency, with its payment methods.
       type: object
@@ -506,10 +506,10 @@ components:
         methods:
           type: array
           items:
-            $ref: '#/components/schemas/PaymentOptionMethod'
+            $ref: "#/components/schemas/PaymentOptionMethod"
       required:
-      - payment_gateway
-      - methods
+        - payment_gateway
+        - methods
       additionalProperties: false
     PaymentOptionMethod:
       type: object
@@ -521,8 +521,8 @@ components:
           description: Whether this method type can be saved with create-payment-method-setup and charged later without the customer.
           type: boolean
       required:
-      - method_type
-      - reusable
+        - method_type
+        - reusable
       additionalProperties: false
     PaymentOptionList:
       type: object
@@ -530,12 +530,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/PaymentOption'
+            $ref: "#/components/schemas/PaymentOption"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     PaymentMethod:
       type: object
       properties:
@@ -553,38 +553,38 @@ components:
           type: string
         exp_month:
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
         exp_year:
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
         is_default:
           type: boolean
         status:
           type: string
           enum:
-          - active
-          - expired
-          - removed
+            - active
+            - expired
+            - removed
       required:
-      - id
-      - billing_account_id
-      - payment_gateway
-      - is_default
-      - status
+        - id
+        - billing_account_id
+        - payment_gateway
+        - is_default
+        - status
     PaymentMethodList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/PaymentMethod'
+            $ref: "#/components/schemas/PaymentMethod"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     PaymentMethodSetup:
       type: object
       properties:
@@ -597,8 +597,8 @@ components:
           type: integer
           format: int64
       required:
-      - payment_gateway
-      - billing_account_id
+        - payment_gateway
+        - billing_account_id
       additionalProperties: false
     PaymentMethodSetupResult:
       description: What the payment gateway's browser library needs to collect a card in the page; the card goes from the browser straight to the gateway.
@@ -610,12 +610,12 @@ components:
         payment_gateway:
           type: string
         action:
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
           description: Browser configuration for this card setup, including the gateway's public key; no secrets.
       required:
-      - setup_id
-      - payment_gateway
-      - action
+        - setup_id
+        - payment_gateway
+        - action
     PayInvoiceRequest:
       description: |-
         Applies eligible credit grants and the available balance as requested, then collects only the remainder
@@ -654,12 +654,12 @@ components:
       additionalProperties: false
       dependentRequired:
         payment_gateway:
-        - method_type
+          - method_type
         method_type:
-        - payment_gateway
+          - payment_gateway
         payment_method_id:
-        - payment_gateway
-        - method_type
+          - payment_gateway
+          - method_type
     PayTogetherRequest:
       description: Name at least one invoice or order. All must belong to one account in its currency.
       type: object
@@ -679,9 +679,9 @@ components:
         expected_amount:
           description: The amount due across all invoices, before credit grants or balance, as preview-pay-together gave it. A different amount fails with `BILLING_AMOUNT_CHANGED` and nothing is charged. Omit to skip the check.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: string
+              pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       additionalProperties: false
     PaymentAction:
       description: The customer's next step; the payment outcome is reported separately.
@@ -690,9 +690,9 @@ components:
         type:
           type: string
           enum:
-          - redirect
-          - qr_code
-          - sdk
+            - redirect
+            - qr_code
+            - sdk
         provider:
           description: The browser adapter for the action, for example stripe.
           type: string
@@ -708,16 +708,16 @@ components:
         public_key:
           type: string
       required:
-      - type
+        - type
       additionalProperties: false
     PaymentStatus:
-      description: '`succeeded`: paid. `processing`: confirmation is pending; poll the invoice or order instead of paying again. `requires_action`: the customer must complete the returned action. `failed`: the attempt did not succeed, for the reason in failure_reason; a declined gateway payment is withdrawn, and paying again starts a new payment.'
+      description: "`succeeded`: paid. `processing`: confirmation is pending; poll the invoice or order instead of paying again. `requires_action`: the customer must complete the returned action. `failed`: the attempt did not succeed, for the reason in failure_reason; a declined gateway payment is withdrawn, and paying again starts a new payment."
       type: string
       enum:
-      - succeeded
-      - processing
-      - requires_action
-      - failed
+        - succeeded
+        - processing
+        - requires_action
+        - failed
     AppliedCredit:
       description: A credit grant and what it would pay.
       type: object
@@ -730,9 +730,9 @@ components:
         amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - credit_grant_id
-      - name
-      - amount
+        - credit_grant_id
+        - name
+        - amount
     PaymentPreviewInvoice:
       type: object
       properties:
@@ -741,8 +741,8 @@ components:
           format: uuid
         order_id:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         amount_due:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -751,10 +751,10 @@ components:
         balance_applied:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - invoice_id
-      - amount_due
-      - credit_applied
-      - balance_applied
+        - invoice_id
+        - amount_due
+        - credit_applied
+        - balance_applied
     PaymentPreview:
       description: What paying would take, calculated as paying does. Nothing is charged or reserved.
       type: object
@@ -766,41 +766,41 @@ components:
         amount_due:
           description: What is outstanding before paying.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_applied:
           description: What credit grants would pay. Grants restricted to other purchases pay nothing here.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_grants:
           description: The credit grants that would pay, in the order used.
           type: array
           items:
-            $ref: '#/components/schemas/AppliedCredit'
+            $ref: "#/components/schemas/AppliedCredit"
         balance_applied:
           description: What the balance would pay.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         gateway_amount:
           description: What would remain to pay online. Paying without a gateway is refused with `BILLING_INSUFFICIENT_FUNDS` while this is above zero.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         balance_after:
           description: The available balance after paying.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         invoices:
-          description: 'Paying together only: each invoice, in payment order.'
+          description: "Paying together only: each invoice, in payment order."
           type: array
           items:
-            $ref: '#/components/schemas/PaymentPreviewInvoice'
+            $ref: "#/components/schemas/PaymentPreviewInvoice"
       required:
-      - currency
-      - amount_due
-      - credit_applied
-      - credit_grants
-      - balance_applied
-      - gateway_amount
-      - balance_after
+        - currency
+        - amount_due
+        - credit_applied
+        - credit_grants
+        - balance_applied
+        - gateway_amount
+        - balance_after
     PaymentResult:
       type: object
       properties:
@@ -813,13 +813,13 @@ components:
           type: string
           format: uuid
         status:
-          $ref: '#/components/schemas/PaymentStatus'
+          $ref: "#/components/schemas/PaymentStatus"
         amount_paid:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount_due:
-          description: 'What is still outstanding: zero once the payment succeeds, unchanged while `processing`.'
+          description: "What is still outstanding: zero once the payment succeeds, unchanged while `processing`."
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         credit_applied:
@@ -835,28 +835,28 @@ components:
         balance_applied:
           description: The amount already paid from balance toward this invoice; retrying the online remainder does not debit it again.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         action:
-          $ref: '#/components/schemas/PaymentAction'
+          $ref: "#/components/schemas/PaymentAction"
         retriable:
           description: Whether paying again can succeed. False for a refusal that will repeat, such as a closed account or an amount over a limit.
           type: boolean
         invoice_id:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         order_id:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         failure_reason:
-          description: 'Why the payment failed; present with `failed`. For a declined gateway payment, the gateway''s code unchanged: the issuer''s decline code when there is one (Stripe decline_code, such as insufficient_funds), otherwise the gateway''s error code (Stripe code, such as card_declined). Treat an unknown value as a generic decline.'
+          description: "Why the payment failed; present with `failed`. For a declined gateway payment, the gateway's code unchanged: the issuer's decline code when there is one (Stripe decline_code, such as insufficient_funds), otherwise the gateway's error code (Stripe code, such as card_declined). Treat an unknown value as a generic decline."
           type: string
       required:
-      - transactions
-      - status
-      - amount_paid
-      - amount_due
-      - currency
+        - transactions
+        - status
+        - amount_paid
+        - amount_due
+        - currency

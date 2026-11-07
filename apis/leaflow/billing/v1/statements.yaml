@@ -5,34 +5,34 @@ paths:
       description: Usage billing per UTC calendar month for your billing accounts, newest first. Each month combines its statements, the invoices they issued and how those were paid.
       operationId: list-monthly-statements
       tags:
-      - statements
+        - statements
       parameters:
-      - name: billing_account_id
-        in: query
-        schema:
-          type: integer
-          format: int64
-      - name: from
-        in: query
-        description: Earliest period start, inclusive.
-        schema:
-          type: string
-          format: date-time
-      - name: to
-        in: query
-        description: Latest period start, exclusive.
-        schema:
-          type: string
-          format: date-time
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: billing_account_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: from
+          in: query
+          description: Earliest period start, inclusive.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Latest period start, exclusive.
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MonthlyStatementList'
+                $ref: "#/components/schemas/MonthlyStatementList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/statements:
@@ -41,121 +41,121 @@ paths:
       description: Statements of your billing accounts, filtered by billing_account_id, open or closed and period start. A closed statement does not mean the month is complete.
       operationId: list-statements
       tags:
-      - statements
+        - statements
       parameters:
-      - name: billing_account_id
-        in: query
-        schema:
-          type: integer
-          format: int64
-      - name: status
-        in: query
-        required: false
-        description: Only statements in these statuses; omit for every status. Comma-separated.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 2
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/StatementStatus'
-      - name: from
-        in: query
-        schema:
-          type: string
-          format: date-time
-      - name: to
-        in: query
-        schema:
-          type: string
-          format: date-time
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: billing_account_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: status
+          in: query
+          required: false
+          description: Only statements in these statuses; omit for every status. Comma-separated.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 2
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/StatementStatus"
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatementList'
+                $ref: "#/components/schemas/StatementList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/statements/{statementId}:
     parameters:
-    - name: statementId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: statementId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
       summary: Get statement
       description: A statement of your billing account with its period, estimated or closed amounts and invoice. Returns 404 for a missing statement and 403 for another user's account.
       operationId: get-statement
       tags:
-      - statements
+        - statements
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Statement'
+                $ref: "#/components/schemas/Statement"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/statements/{statementId}/usage-summary:
     parameters:
-    - name: statementId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: statementId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
       summary: Get grouped consumption
       description: The statement's consumption, grouped by project, product or meter and filtered within the statement. Quantities are given only for meter groups; grouping by meter also splits by the meter's presentation dimensions. Open to the owner of the statement's account and to members with the project permission `billing:finance.manage` of each project in `project_ids`, which must then be given and currently assigned to that account.
       operationId: get-statement-usage
       tags:
-      - statements
+        - statements
       parameters:
-      - name: group_by
-        in: query
-        schema:
-          type: string
-          enum:
-          - project
-          - product
-          - meter
-          default: meter
-      - name: project_ids
-        in: query
-        schema:
-          type: array
-          maxItems: 100
-          items:
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum:
+              - project
+              - product
+              - meter
+            default: meter
+        - name: project_ids
+          in: query
+          schema:
+            type: array
+            maxItems: 100
+            items:
+              type: string
+              format: uuid
+        - name: product_id
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+        - name: meter_id
+          in: query
+          schema:
             type: string
             format: uuid
-      - name: product_id
-        in: query
-        schema:
-          type: string
-          maxLength: 64
-      - name: meter_id
-        in: query
-        schema:
-          type: string
-          format: uuid
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StatementSummary'
+                $ref: "#/components/schemas/StatementSummary"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -186,13 +186,13 @@ components:
           type: integer
           format: int32
         billed:
-          $ref: '#/components/schemas/StatementAmounts'
+          $ref: "#/components/schemas/StatementAmounts"
           description: The sum of the closed statements' invoiced amounts.
         credited_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Credit issued at closings against the period's earlier invoices, tax included; the period's net charge is the billed total less this.
         unbilled:
-          $ref: '#/components/schemas/StatementAmounts'
+          $ref: "#/components/schemas/StatementAmounts"
           description: The open statement's estimate for usage priced since the last closing. Absent without an open statement.
         credit_applied:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -207,30 +207,30 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Returned from the period's invoices after credit was issued against paid amounts.
       required:
-      - billing_account_id
-      - currency
-      - period_start
-      - period_end
-      - finalized
-      - statement_count
-      - billed
-      - credited_amount
-      - credit_applied
-      - amount_paid
-      - amount_due
-      - amount_refunded
+        - billing_account_id
+        - currency
+        - period_start
+        - period_end
+        - finalized
+        - statement_count
+        - billed
+        - credited_amount
+        - credit_applied
+        - amount_paid
+        - amount_due
+        - amount_refunded
     MonthlyStatementList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/MonthlyStatement'
+            $ref: "#/components/schemas/MonthlyStatement"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     StatementAmounts:
       type: object
       properties:
@@ -245,15 +245,15 @@ components:
         rounding_amount:
           description: Added to total to round the invoiced amount to the currency's minor unit. Zero for an open statement's estimate.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - subtotal
-      - discount_amount
-      - tax_amount
-      - total
-      - rounding_amount
+        - subtotal
+        - discount_amount
+        - tax_amount
+        - total
+        - rounding_amount
     Statement:
-      description: 'An account''s consumption for one billing period up to one closing. Usage is invoiced after every settlement run, about hourly: each closing issues an invoice for the usage priced since the previous one and collects it from credits and balance, and later usage goes into the next statement of the same period. A closed statement does not change. The period''s consumption is the sum of its statements.'
+      description: "An account's consumption for one billing period up to one closing. Usage is invoiced after every settlement run, about hourly: each closing issues an invoice for the usage priced since the previous one and collects it from credits and balance, and later usage goes into the next statement of the same period. A closed statement does not change. The period's consumption is the sum of its statements."
       type: object
       properties:
         id:
@@ -275,14 +275,14 @@ components:
           type: integer
           format: int32
         status:
-          $ref: '#/components/schemas/StatementStatus'
+          $ref: "#/components/schemas/StatementStatus"
         type:
-          $ref: '#/components/schemas/StatementType'
+          $ref: "#/components/schemas/StatementType"
         estimated:
           description: True while the statement is open. The estimate prices the period's usage so far at tier prices and adds tax for the current invoice contact. Minimum charges are added at the period's final closing, and a tier reduction larger than this statement's charges is credited to the period's earlier invoices at closing.
           type: boolean
         amounts:
-          $ref: '#/components/schemas/StatementAmounts'
+          $ref: "#/components/schemas/StatementAmounts"
           description: The current estimate while open, or the invoiced result when closed.
         closed_at:
           type: string
@@ -301,42 +301,42 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Credit issued at this closing against invoices already issued for the same period, including tax. Not part of `amounts`.
       required:
-      - id
-      - billing_account_id
-      - currency
-      - period_start
-      - period_end
-      - status
-      - estimated
-      - created_at
-      - amounts
-      - sequence
-      - type
-      - credited_amount
+        - id
+        - billing_account_id
+        - currency
+        - period_start
+        - period_end
+        - status
+        - estimated
+        - created_at
+        - amounts
+        - sequence
+        - type
+        - credited_amount
     StatementStatus:
       type: string
       enum:
-      - open
-      - closed
+        - open
+        - closed
     StatementType:
-      description: '`interim`: a closing before the period''s usage is final, without minimum charges. `final`: the first closing after the period ended and its late usage was settled, applying the period''s minimum charges. `supplement`: a closing after the final one, for usage priced late. An open statement is interim.'
+      description: "`interim`: a closing before the period's usage is final, without minimum charges. `final`: the first closing after the period ended and its late usage was settled, applying the period's minimum charges. `supplement`: a closing after the final one, for usage priced late. An open statement is interim."
       type: string
       enum:
-      - interim
-      - final
-      - supplement
+        - interim
+        - final
+        - supplement
     StatementList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Statement'
+            $ref: "#/components/schemas/Statement"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     StatementItem:
       type: object
       properties:
@@ -364,7 +364,7 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Priced amount before tax. Minimum charges added at closing are included; tier adjustments and tax appear only in the statement amounts.
       required:
-      - amount
+        - amount
     StatementSummary:
       type: object
       properties:
@@ -381,19 +381,19 @@ components:
         group_by:
           type: string
           enum:
-          - project
-          - product
-          - meter
+            - project
+            - product
+            - meter
         items:
           type: array
           items:
-            $ref: '#/components/schemas/StatementItem'
+            $ref: "#/components/schemas/StatementItem"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - statement_id
-      - currency
-      - estimated
-      - group_by
-      - items
-      - pagination
+        - statement_id
+        - currency
+        - estimated
+        - group_by
+        - items
+        - pagination

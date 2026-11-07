@@ -2,22 +2,23 @@ paths:
   /api/v1/currencies:
     get:
       summary: List currencies accounts can be opened in
-      description: Currencies a new billing account can be opened in, and prices and quotes without an account can be
+      description:
+        Currencies a new billing account can be opened in, and prices and quotes without an account can be
         given in, for anyone, signed in or not. Retired currencies are not listed.
       operationId: list-currencies
       tags:
-      - accounts
+        - accounts
       security: []
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CurrencyList'
+                $ref: "#/components/schemas/CurrencyList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts:
@@ -26,69 +27,69 @@ paths:
       description: Billing accounts owned by the authenticated user. Filter by status with `status`; omit it to list every status.
       operationId: list-billing-accounts
       tags:
-      - accounts
+        - accounts
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - name: status
-        in: query
-        required: false
-        description: Only accounts in these statuses. Omit for all statuses. Comma-separated, for example `status=suspended,closed`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 3
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/BillingAccountStatus'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: status
+          in: query
+          required: false
+          description: Only accounts in these statuses. Omit for all statuses. Comma-separated, for example `status=suspended,closed`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 3
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/BillingAccountStatus"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccountList'
+                $ref: "#/components/schemas/BillingAccountList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
       summary: Create billing account
-      description: 'Creates a billing account. Its currency is fixed: prices, orders, invoices and balance are all in it.'
+      description: "Creates a billing account. Its currency is fixed: prices, orders, invoices and balance are all in it."
       operationId: create-billing-account
       tags:
-      - accounts
+        - accounts
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BillingAccountCreate'
+              $ref: "#/components/schemas/BillingAccountCreate"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccount'
+                $ref: "#/components/schemas/BillingAccount"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts/{accountId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/AccountId
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: Get billing account
       description: A billing account with its currency, status and invoice contact, readable by its owner and by members of the projects it currently pays for. Returns 404 if it does not exist and 403 to anyone else.
       operationId: get-billing-account
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccount'
+                $ref: "#/components/schemas/BillingAccount"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     patch:
@@ -96,25 +97,25 @@ paths:
       description: Selects an active contact of this account for future invoices; its legal name, address and tax identifier are copied when an invoice is issued. Set invoice_contact_id to null to clear it. The currency cannot change.
       operationId: update-billing-account
       tags:
-      - accounts
+        - accounts
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BillingAccountUpdate'
+              $ref: "#/components/schemas/BillingAccountUpdate"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccount'
+                $ref: "#/components/schemas/BillingAccount"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts/{accountId}:suspend:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/AccountId
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
     post:
       summary: Suspend billing account
       description: |-
@@ -125,19 +126,19 @@ paths:
         resource.
       operationId: suspend-billing-account
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: The account after the request.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccount'
+                $ref: "#/components/schemas/BillingAccount"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts/{accountId}:resume:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/AccountId
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
     post:
       summary: Resume billing account
       description: |-
@@ -145,32 +146,32 @@ paths:
         suspended it. Does not create a resource.
       operationId: resume-billing-account
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: The account after the request.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BillingAccount'
+                $ref: "#/components/schemas/BillingAccount"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/billing-accounts/{accountId}/balance:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/AccountId
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
     get:
       summary: Get account balance
       description: The balance of an account, with credit groups, unpaid invoice amounts, unbilled estimates and pending returns, readable by its owner and by members of the projects it currently pays for. Returns 404 for a missing account and 403 to anyone else.
       operationId: get-account-balance
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AccountBalance'
+                $ref: "#/components/schemas/AccountBalance"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/account-deletion/readiness:
@@ -185,14 +186,14 @@ paths:
         period ends.
       operationId: get-account-deletion-readiness
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AccountDeletionReadiness'
+                $ref: "#/components/schemas/AccountDeletionReadiness"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/assignments:
@@ -201,42 +202,42 @@ paths:
       description: Current project assignments to your billing accounts, filtered by billing_account_id or project_ids. Past charges keep the account they were assigned to.
       operationId: list-project-assignments
       tags:
-      - accounts
+        - accounts
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - name: billing_account_id
-        in: query
-        required: false
-        schema:
-          type: integer
-          format: int64
-      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: billing_account_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectAssignmentList'
+                $ref: "#/components/schemas/ProjectAssignmentList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/assignments/{projectId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/ProjectId
+      - $ref: ./openapi.yaml#/components/parameters/ProjectId
     get:
       summary: Get project assignment
       description: The project's current assignment, readable by the owner of the assigned account and by members of the project. Returns 404 when no billing account is assigned; the project cannot create resources until one is.
       operationId: get-project-assignment
       tags:
-      - accounts
+        - accounts
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectAssignment'
+                $ref: "#/components/schemas/ProjectAssignment"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     put:
@@ -252,20 +253,20 @@ paths:
         Refused once the project no longer accepts purchases because it is being deleted.
       operationId: set-project-assignment
       tags:
-      - accounts
+        - accounts
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetProjectAssignmentRequest'
+              $ref: "#/components/schemas/SetProjectAssignmentRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectAssignment'
+                $ref: "#/components/schemas/ProjectAssignment"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
@@ -273,9 +274,9 @@ paths:
       description: Ends the project's current assignment; the assignment history is kept. You need to own the account and hold the project permission `billing:finance.manage`. Allowed only when the project has no metered resources, no subscriptions that have not ended and no orders in progress, including period-end changes, and the billing account has no unpaid invoices; invoices of orders awaiting payment do not count. Orders are not modified, so wait for them to complete. Charges already incurred stay with the billing account and are invoiced as usual. The project cannot make purchases until a billing account is linked again.
       operationId: unlink-project-billing-account
       tags:
-      - accounts
+        - accounts
       responses:
-        '204':
+        "204":
           description: Unlinked
         default:
           $ref: ./openapi.yaml#/components/responses/Error
@@ -285,17 +286,17 @@ components:
       description: Whether the account is usable, suspended, or closed.
       type: string
       enum:
-      - active
-      - suspended
-      - closed
+        - active
+        - suspended
+        - closed
     BillingAccount:
       type: object
       properties:
         invoice_contact_id:
           description: The active contact used for invoices, of this account; null clears it.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         id:
           type: integer
@@ -307,14 +308,14 @@ components:
           description: Fixed when the account was opened.
           type: string
         status:
-          $ref: '#/components/schemas/BillingAccountStatus'
+          $ref: "#/components/schemas/BillingAccountStatus"
         suspended_by:
-          description: 'Who suspended the account: `owner` (you), `operator` (Leaflow), or `none` while it is not suspended. Only a suspension by `owner` can be resumed by you.'
+          description: "Who suspended the account: `owner` (you), `operator` (Leaflow), or `none` while it is not suspended. Only a suspension by `owner` can be resumed by you."
           type: string
           enum:
-          - none
-          - owner
-          - operator
+            - none
+            - owner
+            - operator
         grace_amount:
           description: How far past the suspension threshold the account may go before its resources are suspended; `0` means none.
           type: string
@@ -325,19 +326,19 @@ components:
         closed_at:
           description: When the account was closed. Null if it is not closed or the time is unknown.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
           readOnly: true
         created_at:
           type: string
           format: date-time
       required:
-      - id
-      - currency
-      - status
-      - suspended_by
-      - created_at
+        - id
+        - currency
+        - status
+        - suspended_by
+        - created_at
     Currency:
       description: A currency a billing account can be opened in.
       type: object
@@ -361,10 +362,10 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: The smallest top-up accepted. Zero means no lower bound.
       required:
-      - code
-      - exponent
-      - name
-      - minimum_top_up
+        - code
+        - exponent
+        - name
+        - minimum_top_up
       additionalProperties: false
     CurrencyList:
       type: object
@@ -372,12 +373,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Currency'
+            $ref: "#/components/schemas/Currency"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
       additionalProperties: false
     BillingAccountCreate:
       type: object
@@ -390,7 +391,7 @@ components:
           type: string
           maxLength: 255
       required:
-      - currency
+        - currency
       additionalProperties: false
     BillingAccountUpdate:
       type: object
@@ -398,8 +399,8 @@ components:
         invoice_contact_id:
           description: The active contact used for invoices, of this account; null clears it.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         name:
           type: string
@@ -411,12 +412,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/BillingAccount'
+            $ref: "#/components/schemas/BillingAccount"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     AccountBalance:
       description: Balance, credits and unpaid charges, each reported separately.
       type: object
@@ -424,15 +425,15 @@ components:
         available_credit:
           description: Balance minus pending balance returns and the part of unbilled_amount and due that estimated_credit_applied does not cover. Negative only when the balance and applicable credit fall short of what the account owes.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         estimated_credit_applied:
           description: Credit expected to pay unbilled_amount and due, matching each charge to the grants whose scope, validity and conditions it meets, in the order credit is applied at payment. Nothing is deducted until an invoice is paid, so credits still includes this amount.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         unbilled_amount:
           description: Current estimate of priced usage that has not been invoiced. Final pricing and tax are fixed at issuance.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         billing_account_id:
           type: integer
           format: int64
@@ -441,15 +442,15 @@ components:
         balance:
           description: Topped-up funds in the account's currency, excluding credits. May be negative after a payment dispute. Amounts owed are reported in due; this is not a withdrawable amount.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credits:
           description: Remaining credit, including restricted grants; not withdrawable and not part of balance. credit_groups shows currently valid credit by permitted use; positive credits do not mean due is zero.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         restricted_credits:
           description: Currently valid credit restricted to certain products, operations or conditions; part of credits, not of balance.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_groups:
           description: Currently valid unspent credit grouped by permitted use. Each group covers only the charges its restrictions and validity allow, and the groups may differ from the recorded credits total.
           type: array
@@ -458,22 +459,22 @@ components:
         due:
           description: Amount still payable on issued invoices. The invoice of an order not yet accepted is excluded, here and from available_credit. Usage not yet invoiced is reported separately.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         pending_returns_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
           description: Balance held for pending top-up refunds and not spendable. Unbilled usage does not hold balance.
       required:
-      - billing_account_id
-      - currency
-      - balance
-      - credits
-      - restricted_credits
-      - credit_groups
-      - due
-      - available_credit
-      - estimated_credit_applied
-      - unbilled_amount
-      - pending_returns_amount
+        - billing_account_id
+        - currency
+        - balance
+        - credits
+        - restricted_credits
+        - credit_groups
+        - due
+        - available_credit
+        - estimated_credit_applied
+        - unbilled_amount
+        - pending_returns_amount
     AccountDeletionReadiness:
       type: object
       properties:
@@ -481,32 +482,32 @@ components:
           description: Every billing account you own that is not closed; empty when you own none.
           type: array
           items:
-            $ref: '#/components/schemas/AccountDeletionReadinessItem'
+            $ref: "#/components/schemas/AccountDeletionReadinessItem"
       required:
-      - accounts
+        - accounts
     AccountDeletionReadinessItem:
       type: object
       properties:
         account:
-          $ref: '#/components/schemas/BillingAccount'
+          $ref: "#/components/schemas/BillingAccount"
         balance:
           description: Topped-up funds, in the account's currency, forfeited when it closes. Negative means arrears.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credits:
           description: Remaining credit, in the account's currency, forfeited when it closes.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         objections:
           description: What stops this account from closing; empty when it can close.
           type: array
           items:
-            $ref: '#/components/schemas/AccountDeletionObjection'
+            $ref: "#/components/schemas/AccountDeletionObjection"
       required:
-      - account
-      - balance
-      - credits
-      - objections
+        - account
+        - balance
+        - credits
+        - objections
     AccountDeletionObjection:
       description: |-
         `ARREARS`: the balance is negative. `PROJECTS_ASSIGNED`: the account still pays for a project, yours or anyone
@@ -515,13 +516,13 @@ components:
         invoiced in the next billing run. `PENDING_TRANSACTION`: a top-up, refund or withdrawal is still pending.
       type: string
       enum:
-      - ARREARS
-      - PROJECTS_ASSIGNED
-      - ACTIVE_SUBSCRIPTION
-      - OPEN_ORDER
-      - UNPAID_INVOICE
-      - UNBILLED_USAGE
-      - PENDING_TRANSACTION
+        - ARREARS
+        - PROJECTS_ASSIGNED
+        - ACTIVE_SUBSCRIPTION
+        - OPEN_ORDER
+        - UNPAID_INVOICE
+        - UNBILLED_USAGE
+        - PENDING_TRANSACTION
     ProjectAssignment:
       description: A project's assignment to a billing account from effective_from until effective_to; an open assignment has no end.
       type: object
@@ -532,8 +533,8 @@ components:
         project:
           description: The project and its current name. Absent when the project cannot be read; `project_id` still identifies it.
           oneOf:
-          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-          - type: 'null'
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+            - type: "null"
         billing_account_id:
           type: integer
           format: int64
@@ -546,26 +547,26 @@ components:
           format: date-time
         effective_to:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
       required:
-      - project_id
-      - billing_account_id
-      - currency
-      - effective_from
+        - project_id
+        - billing_account_id
+        - currency
+        - effective_from
     ProjectAssignmentList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/ProjectAssignment'
+            $ref: "#/components/schemas/ProjectAssignment"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     SetProjectAssignmentRequest:
       type: object
       properties:
@@ -573,7 +574,7 @@ components:
           type: integer
           format: int64
       required:
-      - billing_account_id
+        - billing_account_id
       additionalProperties: false
     AccountIdentity:
       type: object
@@ -586,6 +587,6 @@ components:
         currency:
           type: string
       required:
-      - id
-      - name
-      - currency
+        - id
+        - name
+        - currency

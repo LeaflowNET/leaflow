@@ -5,57 +5,57 @@ paths:
       description: Orders of your billing accounts with their status and invoice amounts; members of a project list its orders with `project_ids`. A pending order is not yet accepted and can expire at expires_at; its invoice shows whether payment is needed. Accepted does not mean delivered.
       operationId: list-orders
       tags:
-      - orders
+        - orders
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: status
-        in: query
-        required: false
-        description: Only orders in these statuses; omit for every status. Comma-separated, for example `status=pending,accepted`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 6
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/OrderStatus'
-      - $ref: ./openapi.yaml#/components/parameters/From
-      - $ref: ./openapi.yaml#/components/parameters/To
-      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: status
+          in: query
+          required: false
+          description: Only orders in these statuses; omit for every status. Comma-separated, for example `status=pending,accepted`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 6
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/OrderStatus"
+        - $ref: ./openapi.yaml#/components/parameters/From
+        - $ref: ./openapi.yaml#/components/parameters/To
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderList'
+                $ref: "#/components/schemas/OrderList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/OrderId
+      - $ref: ./openapi.yaml#/components/parameters/OrderId
     get:
       summary: Get order
       description: An order of your billing account or of a project you are a member of, with its status and invoice. An unknown order returns 404; any other order returns 403.
       operationId: get-order
       tags:
-      - orders
+        - orders
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
+                $ref: "#/components/schemas/Order"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}:cancel:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/OrderId
+      - $ref: ./openapi.yaml#/components/parameters/OrderId
     post:
       summary: Cancel order
       description: |-
@@ -73,21 +73,21 @@ paths:
         Refunds are previewed with `preview-order-refund`. Open to the owner of the order's billing account and to members of its project.
       operationId: cancel-order
       tags:
-      - orders
+        - orders
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OrderCancel'
+              $ref: "#/components/schemas/OrderCancel"
       responses:
-        '200':
+        "200":
           description: The order after the request.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
-        '409':
+                $ref: "#/components/schemas/Order"
+        "409":
           description: The order is accepted, its payment outcome is unresolved, or the scheduled change must be called off by its owning service.
           content:
             application/json:
@@ -97,78 +97,78 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}:previewRefund:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/OrderId
+      - $ref: ./openapi.yaml#/components/parameters/OrderId
     get:
       summary: Preview an order refund
       description: What canceling the listed items, or the whole order, would refund to the original payment sources. Nothing is canceled or refunded. Open to the owner of the order's billing account and to members of its project.
       operationId: preview-order-refund
       tags:
-      - orders
+        - orders
       parameters:
-      - name: order_item_ids
-        in: query
-        required: false
-        description: Only these items of the order. Omit for the whole order.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 100
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
+        - name: order_item_ids
+          in: query
+          required: false
+          description: Only these items of the order. Omit for the whole order.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            uniqueItems: true
+            items:
+              type: string
+              format: uuid
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderRefundPreview'
+                $ref: "#/components/schemas/OrderRefundPreview"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/orders/{orderId}/items:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/OrderId
+      - $ref: ./openapi.yaml#/components/parameters/OrderId
     get:
       summary: List order items
       description: One entry per item bought, with the price charged and the period it covers. Readable by whoever can read the order.
       operationId: list-order-items
       tags:
-      - orders
+        - orders
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrderItemList'
+                $ref: "#/components/schemas/OrderItemList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
     OrderStatus:
-      description: 'Follows the items. `pending`: not yet accepted, paid or unpaid; its invoice shows whether payment is needed, and it can expire or be canceled. `accepted`: items are being set up. `completed`: every item was set up. `partially_completed`: some items were set up and the others failed or were canceled and refunded to their original payment sources. `failed`: no item was delivered and at least one failed; amounts collected for undelivered items are refunded. `canceled`: every item was withdrawn without delivery; collected amounts are returned to their original payment sources. No status by itself means the service was delivered.'
+      description: "Follows the items. `pending`: not yet accepted, paid or unpaid; its invoice shows whether payment is needed, and it can expire or be canceled. `accepted`: items are being set up. `completed`: every item was set up. `partially_completed`: some items were set up and the others failed or were canceled and refunded to their original payment sources. `failed`: no item was delivered and at least one failed; amounts collected for undelivered items are refunded. `canceled`: every item was withdrawn without delivery; collected amounts are returned to their original payment sources. No status by itself means the service was delivered."
       type: string
       enum:
-      - pending
-      - accepted
-      - completed
-      - partially_completed
-      - failed
-      - canceled
+        - pending
+        - accepted
+        - completed
+        - partially_completed
+        - failed
+        - canceled
     OrderItemStatus:
-      description: '`pending`: waiting to be set up. `completed`: set up, as confirmed by the service. `failed`: not set up; its amount was refunded to the original payment sources. `canceled`: withdrawn without delivery; any collected amount is returned. A completed item ends when its subscription is canceled.'
+      description: "`pending`: waiting to be set up. `completed`: set up, as confirmed by the service. `failed`: not set up; its amount was refunded to the original payment sources. `canceled`: withdrawn without delivery; any collected amount is returned. A completed item ends when its subscription is canceled."
       type: string
       enum:
-      - pending
-      - completed
-      - failed
-      - canceled
+        - pending
+        - completed
+        - failed
+        - canceled
     Order:
       description: A recorded purchase, created with its invoice issued when its Checkout Session completes or when Billing renews a subscription. A zero-total invoice, such as for a metered purchase, is paid at once. Coupon fields describe the discount applied then. Payment and acceptance do not mean the resources were delivered.
       type: object
@@ -193,7 +193,7 @@ components:
         paid_with:
           description: How the order was paid. Absent until it is paid.
           allOf:
-          - $ref: '#/components/schemas/PaidWith'
+            - $ref: "#/components/schemas/PaidWith"
         account:
           $ref: ./accounts.yaml#/components/schemas/AccountIdentity
         change_effective_at:
@@ -205,14 +205,14 @@ components:
         project_id:
           description: The project it was bought for. Absent for an account-level purchase, such as a membership.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         project:
           description: The project and its current name. Absent for an account-level purchase or when the project cannot be read; `project_id` still identifies it.
           oneOf:
-          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-          - type: 'null'
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+            - type: "null"
         billing_account_id:
           description: The billing account the order was placed with, unchanged when the project is later linked to another account. While it is suspended or closed, the order cannot be accepted, and a period-end change is called off when the current period ends; such requests fail with `BILLING_ACCOUNT_UNAVAILABLE`.
           type: integer
@@ -220,32 +220,32 @@ components:
         currency:
           type: string
         type:
-          description: '`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription''s configuration or billing terms.'
+          description: "`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription's configuration or billing terms."
           type: string
           enum:
-          - new
-          - renew
-          - modify
+            - new
+            - renew
+            - modify
         status:
-          $ref: '#/components/schemas/OrderStatus'
+          $ref: "#/components/schemas/OrderStatus"
         change_effective:
           description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced when the order is created and starts when the current paid period ends; if the invoice is unpaid by then, the order is canceled and the subscription renews or ends as usual.
           type: string
           enum:
-          - none
-          - immediate
-          - period_end
+            - none
+            - immediate
+            - period_end
         expires_at:
           description: Acceptance deadline; a pending order expires after it.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         checkout_session_id:
           description: The Checkout Session that created the order. Null for orders Billing creates itself, such as automatic renewals.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         created_at:
           type: string
@@ -254,28 +254,28 @@ components:
           description: What was bought.
           type: array
           items:
-            $ref: '#/components/schemas/OrderItem'
+            $ref: "#/components/schemas/OrderItem"
       required:
-      - id
-      - invoice_id
-      - invoice
-      - currency
-      - type
-      - status
-      - items
-      - created_at
+        - id
+        - invoice_id
+        - invoice
+        - currency
+        - type
+        - status
+        - items
+        - created_at
     OrderList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Order'
+            $ref: "#/components/schemas/Order"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     PaidWith:
       description: How it was paid. `payment_method_id` still names the payment method after it is removed.
       type: object
@@ -297,14 +297,14 @@ components:
         last4:
           type: string
       required:
-      - method_type
+        - method_type
     PurchaseOperation:
-      description: 'The purchase operation covered. `new`: every new purchase, including zero-charge ones; it does not mean the account''s first purchase, which `first_purchase_only` restricts. `renew`: renewals. `modify`: configuration or billing-term changes, whether they charge, refund or neither.'
+      description: "The purchase operation covered. `new`: every new purchase, including zero-charge ones; it does not mean the account's first purchase, which `first_purchase_only` restricts. `renew`: renewals. `modify`: configuration or billing-term changes, whether they charge, refund or neither."
       type: string
       enum:
-      - new
-      - renew
-      - modify
+        - new
+        - renew
+        - modify
     OrderItem:
       description: The purchase terms frozen at placement. Monetary fields come from the order's invoice lines and are zero without an immediate charge, such as for a metered purchase. Later catalog changes do not reprice the line. A new service purchase has its pending subscription from placement.
       type: object
@@ -325,16 +325,16 @@ components:
           type: object
           additionalProperties: true
         subscription_id:
-          description: 'The Billing subscription: the new pending subscription of a recurring purchase, or the existing one renewed or changed, which keeps its ID. Absent for a purchase without a subscription.'
+          description: "The Billing subscription: the new pending subscription of a recurring purchase, or the existing one renewed or changed, which keeps its ID. Absent for a purchase without a subscription."
           type: string
           format: uuid
         interval:
           type: string
           enum:
-          - none
-          - day
-          - month
-          - year
+            - none
+            - day
+            - month
+            - year
         interval_count:
           type: integer
           minimum: 1
@@ -343,20 +343,20 @@ components:
         refund_policy:
           $ref: ./prices.yaml#/components/schemas/RefundPolicy
         monthly_list_amount:
-          description: 'Recurring licensed items only: a month at list price for this item''s quantity, before tax and discounts, which values time under a refund or a downgrade. It is the monthly amount of the shortest period the plan sells, not longer than the one bought, at the item''s dimensions, fixed at purchase; a renewal at the agreed amount keeps the previous value. Null when time used is valued at the amount paid, as for a daily period.'
+          description: "Recurring licensed items only: a month at list price for this item's quantity, before tax and discounts, which values time under a refund or a downgrade. It is the monthly amount of the shortest period the plan sells, not longer than the one bought, at the item's dimensions, fixed at purchase; a renewal at the agreed amount keeps the previous value. Null when time used is valued at the amount paid, as for a daily period."
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         short_rate_multiplier:
           description: Refund policy `short_rate` only, as on the price when bought.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         short_rate_threshold_seconds:
           description: Refund policy `short_rate` only, as on the price when bought.
           type:
-          - integer
-          - 'null'
+            - integer
+            - "null"
           format: int64
         recurring_amount:
           type: string
@@ -403,7 +403,7 @@ components:
         unit_amount:
           description: The unit amount of the price the line is charged under. Absent for a tiered price, and for an immediate change, which is charged as `gross_amount` describes.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         gross_amount:
           description: |-
             Before discounts and setup fees: the price applied to the quantity, `unit_amount` times `quantity` for a per-
@@ -414,55 +414,55 @@ components:
             Under an inclusive tax rate it includes tax, shown in `tax_included_amount`, except for a renewal at agreed
             terms, whose amount excludes tax.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         discount_amount:
-          description: 'The reduction on this line, from the order''s coupon and, for a renewal at agreed terms, from the subscription''s carried discount. With a carried discount, `gross_amount` is `unit_amount` times `quantity`, except when the renewal order also uses an account coupon or the tax rate is inclusive: then `gross_amount` is the agreed amount, which already reflects the carried discount.'
+          description: "The reduction on this line, from the order's coupon and, for a renewal at agreed terms, from the subscription's carried discount. With a carried discount, `gross_amount` is `unit_amount` times `quantity`, except when the renewal order also uses an account coupon or the tax rate is inclusive: then `gross_amount` is the agreed amount, which already reflects the carried discount."
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         amount:
-          description: '`gross_amount` less `discount_amount`.'
+          description: "`gross_amount` less `discount_amount`."
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         period_start:
           description: The start of the service period this line paid for. Fixed at placement for renewals and period-end changes, and for a licensed line of a new purchase when its invoice is paid. Absent for metered and one-time lines.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         period_end:
           description: The end of that service period, exclusive.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         status:
-          $ref: '#/components/schemas/OrderItemStatus'
+          $ref: "#/components/schemas/OrderItemStatus"
       required:
-      - id
-      - price_id
-      - quantity
-      - currency
-      - plan_id
-      - plan_name
-      - type
-      - usage_type
-      - dimensions
-      - interval
-      - status
+        - id
+        - price_id
+        - quantity
+        - currency
+        - plan_id
+        - plan_name
+        - type
+        - usage_type
+        - dimensions
+        - interval
+        - status
     OrderItemList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/OrderItem'
+            $ref: "#/components/schemas/OrderItem"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     OrderCancel:
       type: object
       properties:
@@ -495,9 +495,9 @@ components:
         currency:
           type: string
       required:
-      - order_id
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - currency
+        - order_id
+        - refundable_amount
+        - refund_amount
+        - credit_amount
+        - currency
       additionalProperties: false

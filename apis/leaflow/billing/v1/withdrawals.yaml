@@ -5,35 +5,35 @@ paths:
       description: Withdrawals, newest first.
       operationId: list-withdrawals
       tags:
-      - withdrawals
+        - withdrawals
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - name: billing_account_id
-        in: query
-        schema:
-          type: integer
-          format: int64
-      - name: status
-        in: query
-        required: false
-        description: Only withdrawals in these statuses; omit for every status. Comma-separated, for example `status=pending,processing`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 6
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/WithdrawalStatus'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: billing_account_id
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - name: status
+          in: query
+          required: false
+          description: Only withdrawals in these statuses; omit for every status. Comma-separated, for example `status=pending,processing`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 6
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/WithdrawalStatus"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WithdrawalList'
+                $ref: "#/components/schemas/WithdrawalList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
@@ -41,20 +41,20 @@ paths:
       description: Withdraws the requested balance through the original top-ups, oldest first, with fees calculated per source. expected_items and expected_refund_amount must match the preview. Reusing the ID with different terms fails. Only successful items are charged a fee.
       operationId: create-withdrawal
       tags:
-      - withdrawals
+        - withdrawals
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WithdrawalCreate'
+              $ref: "#/components/schemas/WithdrawalCreate"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Withdrawal'
+                $ref: "#/components/schemas/Withdrawal"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/withdrawals:preview:
@@ -63,69 +63,69 @@ paths:
       description: Previews the balance deduction, fees and refund split by original top-up. Omit amount to preview all available balance. Nothing is created or reserved. Fails when a selected source has no refund route or its original processing cost is not yet known.
       operationId: preview-withdrawal
       tags:
-      - withdrawals
+        - withdrawals
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WithdrawalPreviewRequest'
+              $ref: "#/components/schemas/WithdrawalPreviewRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WithdrawalPreview'
+                $ref: "#/components/schemas/WithdrawalPreview"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/withdrawals/{withdrawalId}:
     parameters:
-    - name: withdrawalId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: withdrawalId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
       summary: Get withdrawal
       description: A withdrawal with its accepted amounts and overall outcome; list its items for each refund result.
       operationId: get-withdrawal
       tags:
-      - withdrawals
+        - withdrawals
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Withdrawal'
+                $ref: "#/components/schemas/Withdrawal"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/withdrawals/{withdrawalId}/items:
     parameters:
-    - name: withdrawalId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
+      - name: withdrawalId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     get:
       summary: List withdrawal items
       description: The withdrawal's items and their outcomes. A failed item does not undo refunds completed through other items.
       operationId: list-withdrawal-items
       tags:
-      - withdrawals
+        - withdrawals
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WithdrawalItemList'
+                $ref: "#/components/schemas/WithdrawalItemList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -146,13 +146,13 @@ components:
           type: string
           pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       required:
-      - source_transaction_id
-      - amount
-      - fee_amount
-      - refund_amount
+        - source_transaction_id
+        - amount
+        - fee_amount
+        - refund_amount
       additionalProperties: false
     WithdrawalItem:
-      description: 'For one original top-up: the principal deducted, the withdrawal fee and the amount refunded, through its own refund. payment_gateway and method_type identify the original route.'
+      description: "For one original top-up: the principal deducted, the withdrawal fee and the amount refunded, through its own refund. payment_gateway and method_type identify the original route."
       type: object
       properties:
         source_transaction_id:
@@ -189,10 +189,10 @@ components:
         status:
           type: string
           enum:
-          - pending
-          - succeeded
-          - failed
-          - reversed
+            - pending
+            - succeeded
+            - failed
+            - reversed
         completed_at:
           type: string
           format: date-time
@@ -201,34 +201,34 @@ components:
         method_type:
           type: string
         source:
-          $ref: '#/components/schemas/WithdrawalSource'
+          $ref: "#/components/schemas/WithdrawalSource"
         failure_code:
           description: The gateway's failure code when a refund failed, or `refund_reversed` when a completed refund was reversed. Absent while pending or successful.
           type: string
       required:
-      - source_transaction_id
-      - amount
-      - fee_amount
-      - refund_amount
-      - id
-      - withdrawal_id
-      - billing_account_id
-      - currency
-      - refund_id
-      - status
-      - payment_gateway
-      - method_type
-      - source
+        - source_transaction_id
+        - amount
+        - fee_amount
+        - refund_amount
+        - id
+        - withdrawal_id
+        - billing_account_id
+        - currency
+        - refund_id
+        - status
+        - payment_gateway
+        - method_type
+        - source
       additionalProperties: false
     WithdrawalStatus:
       type: string
       enum:
-      - pending
-      - processing
-      - succeeded
-      - partially_completed
-      - failed
-      - reversed
+        - pending
+        - processing
+        - succeeded
+        - partially_completed
+        - failed
+        - reversed
     Withdrawal:
       description: A withdrawal of account balance to the original payment methods of its unused top-ups. Accepted amounts are fixed. deducted_amount, settled_amount and charged_fee_amount cover completed items. A failed item releases its principal and fee; successful items stand when another item fails.
       type: object
@@ -262,7 +262,7 @@ components:
           type: string
           pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
         status:
-          $ref: '#/components/schemas/WithdrawalStatus'
+          $ref: "#/components/schemas/WithdrawalStatus"
         created_at:
           type: string
           format: date-time
@@ -273,17 +273,17 @@ components:
           description: Who submitted the withdrawal; may differ from the account owner.
           type: string
       required:
-      - id
-      - billing_account_id
-      - currency
-      - amount
-      - fee_amount
-      - refund_amount
-      - deducted_amount
-      - settled_amount
-      - charged_fee_amount
-      - status
-      - created_at
+        - id
+        - billing_account_id
+        - currency
+        - amount
+        - fee_amount
+        - refund_amount
+        - deducted_amount
+        - settled_amount
+        - charged_fee_amount
+        - status
+        - created_at
       additionalProperties: false
     WithdrawalPreview:
       type: object
@@ -311,15 +311,15 @@ components:
           type: array
           maxItems: 200
           items:
-            $ref: '#/components/schemas/WithdrawalPreviewItem'
+            $ref: "#/components/schemas/WithdrawalPreviewItem"
       required:
-      - billing_account_id
-      - currency
-      - available_amount
-      - amount
-      - fee_amount
-      - refund_amount
-      - items
+        - billing_account_id
+        - currency
+        - available_amount
+        - amount
+        - fee_amount
+        - refund_amount
+        - items
       additionalProperties: false
     WithdrawalPreviewRequest:
       type: object
@@ -331,7 +331,7 @@ components:
           type: string
           pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
       required:
-      - billing_account_id
+        - billing_account_id
       additionalProperties: false
     WithdrawalCreate:
       type: object
@@ -353,13 +353,13 @@ components:
           minItems: 1
           maxItems: 200
           items:
-            $ref: '#/components/schemas/WithdrawalAllocation'
+            $ref: "#/components/schemas/WithdrawalAllocation"
       required:
-      - id
-      - billing_account_id
-      - amount
-      - expected_refund_amount
-      - expected_items
+        - id
+        - billing_account_id
+        - amount
+        - expected_refund_amount
+        - expected_items
       additionalProperties: false
     WithdrawalList:
       type: object
@@ -367,12 +367,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Withdrawal'
+            $ref: "#/components/schemas/Withdrawal"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
       additionalProperties: false
     WithdrawalItemList:
       type: object
@@ -380,12 +380,12 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/WithdrawalItem'
+            $ref: "#/components/schemas/WithdrawalItem"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
       additionalProperties: false
     WithdrawalSource:
       description: The original top-up and where its refund goes. Card details are included when the original payment method was saved.
@@ -411,11 +411,11 @@ components:
           type: string
           pattern: ^[0-9]{4}$
       required:
-      - amount
-      - currency
-      - received_at
-      - payment_gateway
-      - method_type
+        - amount
+        - currency
+        - received_at
+        - payment_gateway
+        - method_type
       additionalProperties: false
     WithdrawalPreviewItem:
       type: object
@@ -433,11 +433,11 @@ components:
           type: string
           pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
         source:
-          $ref: '#/components/schemas/WithdrawalSource'
+          $ref: "#/components/schemas/WithdrawalSource"
       required:
-      - source_transaction_id
-      - amount
-      - fee_amount
-      - refund_amount
-      - source
+        - source_transaction_id
+        - amount
+        - fee_amount
+        - refund_amount
+        - source
       additionalProperties: false

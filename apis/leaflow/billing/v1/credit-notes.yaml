@@ -5,77 +5,77 @@ paths:
       description: Credit notes, newest first. Filters apply within the billing accounts you are authorized for.
       operationId: list-credit-notes
       tags:
-      - credit-notes
+        - credit-notes
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: invoice_id
-        in: query
-        required: false
-        description: Only the notes for this invoice.
-        schema:
-          type: string
-          format: uuid
-      - name: status
-        in: query
-        required: false
-        description: Only credit notes in these statuses; omit for both. Comma-separated.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 2
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/CreditNoteStatus'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: invoice_id
+          in: query
+          required: false
+          description: Only the notes for this invoice.
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Only credit notes in these statuses; omit for both. Comma-separated.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 2
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/CreditNoteStatus"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreditNoteList'
+                $ref: "#/components/schemas/CreditNoteList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/credit-notes/{creditNoteId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
+      - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
     get:
       summary: Get credit note
       description: Requires authorization for the invoice's billing account.
       operationId: get-credit-note
       tags:
-      - credit-notes
+        - credit-notes
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreditNote'
+                $ref: "#/components/schemas/CreditNote"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/credit-notes/{creditNoteId}/items:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
+      - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
     get:
       summary: List credit note items
       description: The invoice lines this credit note reduced.
       operationId: list-credit-note-items
       tags:
-      - credit-notes
+        - credit-notes
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreditNoteItemList'
+                $ref: "#/components/schemas/CreditNoteItemList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -83,8 +83,8 @@ components:
     CreditNoteStatus:
       type: string
       enum:
-      - issued
-      - void
+        - issued
+        - void
     CreditNote:
       description: A reduction of an issued invoice; the original invoice amounts do not change. The credited amount is pre_payment_amount plus post_payment_amount. A paid part creates a refund, identified by refund_id, whose outcome may still be pending.
       type: object
@@ -101,50 +101,50 @@ components:
           type: string
           format: date-time
         status:
-          $ref: '#/components/schemas/CreditNoteStatus'
+          $ref: "#/components/schemas/CreditNoteStatus"
         voided_at:
           description: When this note was voided; null while issued.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         pre_payment_amount:
           description: The reduction of unpaid receivables. A void note no longer reduces what is due.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         post_payment_amount:
           description: The credited part of payments already received; its refund may not have completed.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         refund_id:
           description: The refund to the original payment sources; null when no paid amount was credited.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         reason:
           description: Why the note was issued. Notes for canceled, expired or failed orders carry the order's reason; `usage_true_up` returns a tier price reduction settled after the original invoice; `operator` was issued on request.
           type: string
           enum:
-          - provisioning_failed
-          - order_expired
-          - order_canceled
-          - change_canceled
-          - change_expired
-          - subscription_canceled
-          - usage_true_up
-          - operator
+            - provisioning_failed
+            - order_expired
+            - order_canceled
+            - change_canceled
+            - change_expired
+            - subscription_canceled
+            - usage_true_up
+            - operator
       required:
-      - id
-      - invoice_id
-      - currency
-      - issued_at
-      - status
-      - voided_at
-      - pre_payment_amount
-      - post_payment_amount
-      - refund_id
-      - reason
+        - id
+        - invoice_id
+        - currency
+        - issued_at
+        - status
+        - voided_at
+        - pre_payment_amount
+        - post_payment_amount
+        - refund_id
+        - reason
     CreditNoteItem:
       type: object
       properties:
@@ -162,32 +162,32 @@ components:
         post_payment_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - id
-      - credit_note_id
-      - invoice_item_id
-      - pre_payment_amount
-      - post_payment_amount
+        - id
+        - credit_note_id
+        - invoice_item_id
+        - pre_payment_amount
+        - post_payment_amount
     CreditNoteList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CreditNote'
+            $ref: "#/components/schemas/CreditNote"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     CreditNoteItemList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CreditNoteItem'
+            $ref: "#/components/schemas/CreditNoteItem"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination

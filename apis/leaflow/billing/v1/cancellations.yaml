@@ -5,47 +5,47 @@ paths:
       description: Newest first; members of a project list its cancellations with `project_ids`. Filter by `subscription_id` and `status=open` to find a subscription's cancellation in progress.
       operationId: list-cancellations
       tags:
-      - cancellations
+        - cancellations
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: subscription_id
-        in: query
-        required: false
-        description: Only cancellations that include this subscription.
-        schema:
-          type: string
-          format: uuid
-      - name: status
-        in: query
-        required: false
-        description: Only cancellations in these statuses; omit for every status. `open` means requested, scheduled or releasing. Comma-separated, for example `status=open,failed`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 7
-          uniqueItems: true
-          items:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: subscription_id
+          in: query
+          required: false
+          description: Only cancellations that include this subscription.
+          schema:
             type: string
-            enum:
-            - open
-            - requested
-            - scheduled
-            - releasing
-            - completed
-            - canceled
-            - failed
-      - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Only cancellations in these statuses; omit for every status. `open` means requested, scheduled or releasing. Comma-separated, for example `status=open,failed`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 7
+            uniqueItems: true
+            items:
+              type: string
+              enum:
+                - open
+                - requested
+                - scheduled
+                - releasing
+                - completed
+                - canceled
+                - failed
+        - $ref: ./openapi.yaml#/components/parameters/ProjectIdsQuery
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CancellationList'
+                $ref: "#/components/schemas/CancellationList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
@@ -85,26 +85,26 @@ paths:
         subscription.
       operationId: create-cancellation
       tags:
-      - cancellations
+        - cancellations
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancellationCreate'
+              $ref: "#/components/schemas/CancellationCreate"
       responses:
-        '201':
+        "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
-        '200':
+                $ref: "#/components/schemas/Cancellation"
+        "200":
           description: The same cancellation, already open
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/cancellations:preview:
@@ -113,38 +113,38 @@ paths:
       description: What creating the cancellation now would return, per subscription and in total. Nothing is canceled, ended or refunded. Open to the owner of the subscriptions' current billing account and to members of their project; refused for the same states as creating it.
       operationId: preview-cancellation
       tags:
-      - cancellations
+        - cancellations
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CancellationPreviewRequest'
+              $ref: "#/components/schemas/CancellationPreviewRequest"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CancellationPreview'
+                $ref: "#/components/schemas/CancellationPreview"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/cancellations/{cancellationId}:
     parameters:
-    - $ref: ./openapi.yaml#/components/parameters/CancellationId
+      - $ref: ./openapi.yaml#/components/parameters/CancellationId
     get:
       summary: Get a cancellation
       description: A cancellation paid by your billing account or of a project you are a member of, with its schedule, expected refundable amount and the outcome for each subscription, including partial success.
       operationId: get-cancellation
       tags:
-      - cancellations
+        - cancellations
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
@@ -152,14 +152,14 @@ paths:
       description: Withdraws the whole cancellation, which stays with status `canceled`, while no resource has begun to be released; afterwards it is refused with 409 `BILLING_CANCELLATION_CONFLICT`. The subscriptions continue, but automatic renewal, turned off when the cancellation was created, stays off until it is turned on again. Withdrawing a withdrawn cancellation returns it unchanged. Open to the owner of the subscriptions' current billing account and to members of their project with the project permission `billing:finance.manage`.
       operationId: withdraw-cancellation
       tags:
-      - cancellations
+        - cancellations
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Cancellation'
+                $ref: "#/components/schemas/Cancellation"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -179,23 +179,23 @@ components:
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
         proration_date:
-          description: 'For `immediate`, the preview''s `proration_date`: a whole second, not in the future and at most ten minutes old; the refund is computed as of it. Now when omitted.'
+          description: "For `immediate`, the preview's `proration_date`: a whole second, not in the future and at most ten minutes old; the refund is computed as of it. Now when omitted."
           type: string
           format: date-time
         expected_refundable_amount:
           description: The preview's `refundable_amount`; the cancellation is refused when the refund differs.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          - type: string
-            pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: string
+              pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
         reason:
           description: A note from the account holder, kept with the cancellation.
           type: string
           maxLength: 1024
       required:
-      - subscription_ids
-      - mode
-      - expected_refundable_amount
+        - subscription_ids
+        - mode
+        - expected_refundable_amount
       additionalProperties: false
     Cancellation:
       description: |-
@@ -216,12 +216,12 @@ components:
         status:
           type: string
           enum:
-          - requested
-          - scheduled
-          - releasing
-          - completed
-          - canceled
-          - failed
+            - requested
+            - scheduled
+            - releasing
+            - completed
+            - canceled
+            - failed
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
         scheduled_at:
@@ -235,11 +235,11 @@ components:
           description: Who requested it; `project_deletion` means the project was deleted.
           type: string
           enum:
-          - customer
-          - operator
-          - project_deletion
+            - customer
+            - operator
+            - project_deletion
         billing_account_id:
-          description: 'The billing account paying for these subscriptions when the cancellation was created: the purchasing account of an account-level purchase, or the project''s linked account.'
+          description: "The billing account paying for these subscriptions when the cancellation was created: the purchasing account of an account-level purchase, or the project's linked account."
           type: integer
           format: int64
         currency:
@@ -247,9 +247,9 @@ components:
         expected_refundable_amount:
           description: The refund confirmed when the cancellation was created. Absent when the platform created it.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         failure_code:
-          description: 'Present with `failed`: the owning service''s code, such as for a disk that can only be released with its server.'
+          description: "Present with `failed`: the owning service's code, such as for a disk that can only be released with its server."
           type: string
         requested_at:
           type: string
@@ -263,16 +263,16 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CancellationItem'
+            $ref: "#/components/schemas/CancellationItem"
       required:
-      - id
-      - status
-      - mode
-      - origin
-      - billing_account_id
-      - currency
-      - requested_at
-      - items
+        - id
+        - status
+        - mode
+        - origin
+        - billing_account_id
+        - currency
+        - requested_at
+        - items
     CancellationItem:
       description: One subscription of the cancellation.
       type: object
@@ -296,16 +296,16 @@ components:
             Creating the cancellation turned automatic renewal off; withdrawing it turns renewal back on
             for a `metered` subscription and leaves it off for a `licensed` one.
           allOf:
-          - $ref: ./prices.yaml#/components/schemas/UsageType
+            - $ref: ./prices.yaml#/components/schemas/UsageType
         status:
           type: string
           enum:
-          - requested
-          - scheduled
-          - releasing
-          - completed
-          - canceled
-          - failed
+            - requested
+            - scheduled
+            - releasing
+            - completed
+            - canceled
+            - failed
         failure_code:
           description: The release stopped or its result is unknown; present while the release needs resolution.
           type: string
@@ -319,37 +319,37 @@ components:
         balance_amount:
           description: Present with `completed`. The part of the refund returned to the account balance.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_amount:
           description: Present with `completed`. The part restored to the credit grants that paid.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         gateway_amount:
           description: Present with `completed`. The part returned to the payment method it was paid with.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - id
-      - subscription_id
-      - plan_id
-      - plan_name
-      - type
-      - usage_type
-      - status
+        - id
+        - subscription_id
+        - plan_id
+        - plan_name
+        - type
+        - usage_type
+        - status
     CancellationList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Cancellation'
+            $ref: "#/components/schemas/Cancellation"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
     SubscriptionCancellation:
-      description: 'The latest cancellation including the subscription, with this subscription''s item: `id` is the item and `cancellation_id` the cancellation. scheduled_at is the intended time and effective_at the confirmed end of service.'
+      description: "The latest cancellation including the subscription, with this subscription's item: `id` is the item and `cancellation_id` the cancellation. scheduled_at is the intended time and effective_at the confirmed end of service."
       type: object
       properties:
         reason:
@@ -367,12 +367,12 @@ components:
         status:
           type: string
           enum:
-          - requested
-          - scheduled
-          - releasing
-          - failed
-          - completed
-          - canceled
+            - requested
+            - scheduled
+            - releasing
+            - failed
+            - completed
+            - canceled
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
         requested_at:
@@ -400,14 +400,14 @@ components:
         failure_reason:
           type: string
       required:
-      - id
-      - subscription_id
-      - status
-      - mode
-      - requested_at
-      - forfeit_remaining_value
+        - id
+        - subscription_id
+        - status
+        - mode
+        - requested_at
+        - forfeit_remaining_value
     CancellationPreviewRequest:
-      description: 'What ending these subscriptions together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`), is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`).'
+      description: "What ending these subscriptions together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`), is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`)."
       type: object
       properties:
         billing_account_id:
@@ -427,9 +427,9 @@ components:
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
       required:
-      - billing_account_id
-      - subscription_ids
-      - mode
+        - billing_account_id
+        - subscription_ids
+        - mode
       additionalProperties: false
     CancellationPreview:
       description: |-
@@ -478,18 +478,18 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/CancellationPreviewItem'
+            $ref: "#/components/schemas/CancellationPreviewItem"
       required:
-      - mode
-      - currency
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
-      - items
+        - mode
+        - currency
+        - unused_amount
+        - short_rate_surcharge_amount
+        - refundable_amount
+        - refund_amount
+        - credit_amount
+        - tax_amount
+        - forfeited_amount
+        - items
     CancellationPreviewItem:
       description: One subscription of the previewed cancellation.
       type: object
@@ -505,8 +505,8 @@ components:
         project:
           description: The project and its current name. Absent for an account-level purchase or when the project cannot be read.
           oneOf:
-          - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
-          - type: 'null'
+            - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
+            - type: "null"
         type:
           $ref: ./prices.yaml#/components/schemas/PriceType
         usage_type:
@@ -529,16 +529,16 @@ components:
         forfeited_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
-      - subscription_id
-      - plan_id
-      - plan_name
-      - type
-      - usage_type
-      - auto_renew
-      - unused_amount
-      - short_rate_surcharge_amount
-      - refundable_amount
-      - refund_amount
-      - credit_amount
-      - tax_amount
-      - forfeited_amount
+        - subscription_id
+        - plan_id
+        - plan_name
+        - type
+        - usage_type
+        - auto_renew
+        - unused_amount
+        - short_rate_surcharge_amount
+        - refundable_amount
+        - refund_amount
+        - credit_amount
+        - tax_amount
+        - forfeited_amount

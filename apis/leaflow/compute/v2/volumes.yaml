@@ -2,33 +2,34 @@ paths:
   /api/v2/volumes:
     get:
       summary: List volumes
-      description: When both `region_id` and `availability_zone_id` are supplied, only volumes attachable to an instance
-         at that location are returned.
+      description:
+        When both `region_id` and `availability_zone_id` are supplied, only volumes attachable to an instance
+        at that location are returned.
       operationId: list-volumes
       tags:
-      - volumes
+        - volumes
       parameters:
-      - name: region_id
-        in: query
-        required: false
-        explode: false
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
-      - name: availability_zone_id
-        in: query
-        description: Supplied together with `region_id` to filter attachable volumes
-        explode: false
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: region_id
+          in: query
+          required: false
+          explode: false
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/RegionID
+        - name: availability_zone_id
+          in: query
+          description: Supplied together with `region_id` to filter attachable volumes
+          explode: false
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VolumeListResponseBody'
+                $ref: "#/components/schemas/VolumeListResponseBody"
         default:
           description: Error
           content:
@@ -54,21 +55,21 @@ paths:
         The volume is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-volume
       tags:
-      - volumes
+        - volumes
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateVolumeRequestBody'
+              $ref: "#/components/schemas/CreateVolumeRequestBody"
       responses:
-        '202':
+        "202":
           description: The volume and its Checkout Session were created; the volume does not exist in the cloud yet.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateVolumeResponseBody'
-        '409':
+                $ref: "#/components/schemas/CreateVolumeResponseBody"
+        "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         default:
           description: Error
@@ -82,20 +83,20 @@ paths:
       description: Returns the stored state of the volume; it does not query the cloud.
       operationId: get-volume
       tags:
-      - volumes
+        - volumes
       parameters:
-      - name: volumeId
-        in: path
-        required: true
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        - name: volumeId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VolumeID
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VolumeResource'
+                $ref: "#/components/schemas/VolumeResource"
         default:
           description: Error
           content:
@@ -118,33 +119,33 @@ paths:
         An attached volume, including a boot volume, can be resized. The capacity is usable at once, and the volume's `performance` shows what its type gives the new size. **That performance applies from the volume's next attachment, or the next start of its stopped instance**: the storage reads a volume's limits only while connecting it. Until then the attachment's `performance` shows what is in effect.
       operationId: update-volume
       tags:
-      - volumes
+        - volumes
       parameters:
-      - name: volumeId
-        in: path
-        required: true
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        - name: volumeId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VolumeID
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateVolumeRequestBody'
+              $ref: "#/components/schemas/UpdateVolumeRequestBody"
       responses:
-        '200':
+        "200":
           description: Only descriptive fields changed; no operation started. `checkout_session_id` and `order_id` are null.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpdateVolumeResponseBody'
-        '202':
+                $ref: "#/components/schemas/UpdateVolumeResponseBody"
+        "202":
           description: The volume and the Checkout Session for the resize; the new size is not yet in effect.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UpdateVolumeResponseBody'
-        '409':
+                $ref: "#/components/schemas/UpdateVolumeResponseBody"
+        "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         default:
           description: Error
@@ -162,23 +163,23 @@ paths:
         While subscriptions pay for the volume (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the volume working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
       operationId: delete-volume
       tags:
-      - volumes
+        - volumes
       parameters:
-      - name: volumeId
-        in: path
-        required: true
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
-      - $ref: ./openapi.yaml#/components/parameters/CancellationMode
+        - name: volumeId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
-        '409':
+        "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
-        '202':
+        "202":
           description: Deletion was accepted. Without a subscription the volume is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeleteVolumeResponseBody'
+                $ref: "#/components/schemas/DeleteVolumeResponseBody"
         default:
           description: Error
           content:
@@ -196,27 +197,27 @@ paths:
         The revert is a request of its own rather than a state of the volume: the response is the volume, which is `reverting` until the revert is complete.
       operationId: revert-volume
       tags:
-      - volumes
+        - volumes
       parameters:
-      - name: volumeId
-        in: path
-        required: true
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+        - name: volumeId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VolumeID
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RevertVolumeRequestBody'
+              $ref: "#/components/schemas/RevertVolumeRequestBody"
       responses:
-        '202':
+        "202":
           description: The revert was accepted.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VolumeResource'
-        '409':
+                $ref: "#/components/schemas/VolumeResource"
+        "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         default:
           description: Error
@@ -227,26 +228,28 @@ paths:
 components:
   schemas:
     DeleteVolumeResponseBody:
-      description: The volume as it is when the deletion is accepted, and the Billing cancellation that releases it when
+      description:
+        The volume as it is when the deletion is accepted, and the Billing cancellation that releases it when
         subscriptions pay for it.
       type: object
       properties:
         volume:
-          $ref: '#/components/schemas/VolumeResource'
+          $ref: "#/components/schemas/VolumeResource"
         cancellation:
           description: The cancellation Compute created for the volume's subscriptions; null when none pays for it.
           oneOf:
-          - type: 'null'
-          - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
+            - type: "null"
+            - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
       required:
-      - volume
-      - cancellation
+        - volume
+        - cancellation
       additionalProperties: false
     VolumeResource:
       type: object
       properties:
         availability_zone_id:
-          description: Availability zone the volume actually resides in. An instance must be in the same zone
+          description:
+            Availability zone the volume actually resides in. An instance must be in the same zone
             to attach it
           $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
         created_at:
@@ -264,156 +267,164 @@ components:
           type: integer
           format: int64
         performance:
-          $ref: '#/components/schemas/VolumePerformance'
+          $ref: "#/components/schemas/VolumePerformance"
         status:
-          description: '`pending` until the volume is created, with no storage allocated before the order is accepted;
+          description:
+            "`pending` until the volume is created, with no storage allocated before the order is accepted;
             then `available`, or `in_use` once attached. `failed` means the volume was not created; `failure_reason`
             states why. `error` means the cloud reports the volume broken. A value naming an operation in progress
             (`resizing`, `retyping`, `reverting`, `attaching`, `detaching`, `suspending`, `resuming`, `deleting`) is
-            shown while that operation runs; the volume refuses another operation until it ends.'
+            shown while that operation runs; the volume refuses another operation until it ends."
           type: string
           enum:
-          - pending
-          - available
-          - in_use
-          - deleted
-          - failed
-          - error
-          - resizing
-          - retyping
-          - reverting
-          - attaching
-          - detaching
-          - suspending
-          - resuming
-          - deleting
+            - pending
+            - available
+            - in_use
+            - deleted
+            - failed
+            - error
+            - resizing
+            - retyping
+            - reverting
+            - attaching
+            - detaching
+            - suspending
+            - resuming
+            - deleting
         checkout_session_id:
-          description: The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
+          description:
+            The Billing Checkout Session that bought this resource; `order_id` and `order_item_id` stay null
             until its checkout completes. Null when the resource was not bought through one.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
           readOnly: true
         order_id:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         order_item_id:
           description: The Billing order item for this resource.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         subscription_id:
           description: |-
             The Billing subscription associated with this resource. It may still be pending; its
             presence does not imply delivery or metering. Null when no subscription is associated.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         release_set:
-          description: 'The subscriptions a cancellation through Billing has to cover to release this volume: its
+          description:
+            "The subscriptions a cancellation through Billing has to cover to release this volume: its
             own, each with the resource it pays for, so that each line of a cancellation can name what it releases.
             Snapshots have no individual subscriptions. A boot volume is released only with its instance,
             so for a boot volume the set is that of the instance. Subscriptions that have ended are not
-            listed, and the set is empty when no subscription pays for any of them.'
+            listed, and the set is empty when no subscription pays for any of them."
           type: array
           items:
             $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
         access_state:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           enum:
-          - pending
-          - enabled
-          - suspended
-          - reclaimed
-          - null
+            - pending
+            - enabled
+            - suspended
+            - reclaimed
+            - null
         failure_reason:
-          description: Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
+          description:
+            Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
             not completed before its Checkout Session expired. `provisioning_failed` means creation failed after the
             order was accepted, and the charge for this volume is refunded.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           enum:
-          - order_declined
-          - order_canceled
-          - order_expired
-          - checkout_expired
-          - provisioning_failed
-          - null
+            - order_declined
+            - order_canceled
+            - order_expired
+            - checkout_expired
+            - provisioning_failed
+            - null
         attachment:
           anyOf:
-          - $ref: '#/components/schemas/VolumeAttachment'
-          - type: 'null'
+            - $ref: "#/components/schemas/VolumeAttachment"
+            - type: "null"
         latest_operation:
           description: The most recent operation started on the volume; null when none has been recorded.
           anyOf:
-          - $ref: ./latest-operations.yaml#/components/schemas/LatestOperation
-          - type: 'null'
+            - $ref: ./latest-operations.yaml#/components/schemas/LatestOperation
+            - type: "null"
       required:
-      - id
-      - name
-      - region_id
-      - availability_zone_id
-      - volume_type_id
-      - size_gib
-      - performance
-      - status
-      - created_at
-      - checkout_session_id
-      - order_id
-      - order_item_id
-      - subscription_id
-      - release_set
-      - access_state
-      - failure_reason
-      - attachment
-      - latest_operation
+        - id
+        - name
+        - region_id
+        - availability_zone_id
+        - volume_type_id
+        - size_gib
+        - performance
+        - status
+        - created_at
+        - checkout_session_id
+        - order_id
+        - order_item_id
+        - subscription_id
+        - release_set
+        - access_state
+        - failure_reason
+        - attachment
+        - latest_operation
       additionalProperties: false
     VolumeListResponseBody:
       type: object
       properties:
         items:
           type:
-          - array
-          - 'null'
+            - array
+            - "null"
           items:
-            $ref: '#/components/schemas/VolumeResource'
+            $ref: "#/components/schemas/VolumeResource"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
       additionalProperties: false
     CreateVolumeRequestBody:
       type: object
       properties:
         volume_type_id:
-          description: A volume type currently on sale; the volume is created in its availability zone, and only an instance
-             of that zone can attach it. A withdrawn one is rejected even though its identifier still resolves
+          description:
+            A volume type currently on sale; the volume is created in its availability zone, and only an instance
+            of that zone can attach it. A withdrawn one is rejected even though its identifier still resolves
           $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
         name:
           type: string
           minLength: 1
           maxLength: 128
         size_gib:
-          description: Required unless `volume_backup_id` is given. With `volume_snapshot_id` it need only be no smaller than the
+          description:
+            Required unless `volume_backup_id` is given. With `volume_snapshot_id` it need only be no smaller than the
             snapshot; with `volume_backup_id` it defaults to the size of the backup and must not be smaller than it
           type: integer
           format: int64
           minimum: 1
         volume_snapshot_id:
-          description: Restore from this snapshot, into a volume type of the snapshot's availability zone. Mutually
+          description:
+            Restore from this snapshot, into a volume type of the snapshot's availability zone. Mutually
             exclusive with `volume_backup_id`, otherwise refused with 422 `VOLUME_SOURCE_CONFLICT`
           $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
         volume_backup_id:
-          description: Restore from this volume backup, which need not still have its source volume, into a volume type of any
+          description:
+            Restore from this volume backup, which need not still have its source volume, into a volume type of any
             zone of the backup's region. Mutually exclusive with `volume_snapshot_id`, otherwise refused with 422
             `VOLUME_SOURCE_CONFLICT`
           $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
@@ -422,12 +433,13 @@ components:
         checkout:
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
       required:
-      - volume_type_id
-      - name
-      - billing
+        - volume_type_id
+        - name
+        - billing
       additionalProperties: false
     UpdateVolumeRequestBody:
-      description: The mutable fields of a volume, all optional, at least one required. `size_gib` and `volume_type_id` are
+      description:
+        The mutable fields of a volume, all optional, at least one required. `size_gib` and `volume_type_id` are
         operational fields and cannot be combined with each other or with `name`; such a request is refused with 422
         `UPDATE_FIELDS_COMBINED`.
       type: object
@@ -445,7 +457,8 @@ components:
           description: The volume type to move the detached volume to, at its current capacity
           $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
         proration_date:
-          description: The `proration_date` of the Billing quote for this change, so that the order is priced from
+          description:
+            The `proration_date` of the Billing quote for this change, so that the order is priced from
             the same instant. Only with `size_gib` or `volume_type_id`, and only for automatic checkout; deferred checkout is priced when
             the customer completes it. Defaults to the time of the request; it must be a whole second, not in the
             future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
@@ -463,7 +476,7 @@ components:
           description: Must be the most recent snapshot of the volume
           $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
       required:
-      - volume_snapshot_id
+        - volume_snapshot_id
       additionalProperties: false
     AttachVolumeRequestBody:
       type: object
@@ -471,7 +484,7 @@ components:
         volume_id:
           $ref: ./identifiers.yaml#/components/schemas/VolumeID
       required:
-      - volume_id
+        - volume_id
       additionalProperties: false
     CreateVolumeResponseBody:
       description: |-
@@ -480,49 +493,53 @@ components:
       type: object
       properties:
         volume:
-          $ref: '#/components/schemas/VolumeResource'
+          $ref: "#/components/schemas/VolumeResource"
         checkout_session_id:
-          description: The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it
+          description:
+            The Billing Checkout Session of this purchase. With deferred checkout, the customer completes it
             in Billing.
           type: string
           format: uuid
         order_id:
           description: The order created when checkout completes, at once for automatic checkout; null until then.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
       required:
-      - volume
-      - checkout_session_id
-      - order_id
+        - volume
+        - checkout_session_id
+        - order_id
       additionalProperties: false
     UpdateVolumeResponseBody:
-      description: The volume and, when the update placed a Billing order, the Checkout Session for it. After a resize the
+      description:
+        The volume and, when the update placed a Billing order, the Checkout Session for it. After a resize the
         volume is still at its current size until the change is applied. Returned with 200 when only descriptive fields
         changed and with 202 when an operation started.
       type: object
       properties:
         volume:
-          $ref: '#/components/schemas/VolumeResource'
+          $ref: "#/components/schemas/VolumeResource"
         checkout_session_id:
-          description: The Billing Checkout Session of the purchase; null when the update placed no order. With deferred
+          description:
+            The Billing Checkout Session of the purchase; null when the update placed no order. With deferred
             checkout, the customer completes it in Billing.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         order_id:
-          description: The order created when checkout completes, at once for automatic checkout; null until then and
+          description:
+            The order created when checkout completes, at once for automatic checkout; null until then and
             when the update placed no order.
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
       required:
-      - volume
-      - checkout_session_id
-      - order_id
+        - volume
+        - checkout_session_id
+        - order_id
       additionalProperties: false
     VolumeAttachment:
       type: object
@@ -536,60 +553,62 @@ components:
         role:
           type: string
           enum:
-          - boot
-          - data
+            - boot
+            - data
         on_instance_release:
-          description: What releasing the instance does to this volume. `delete` deletes it together with the
+          description:
+            What releasing the instance does to this volume. `delete` deletes it together with the
             instance; `detach` detaches it and leaves it to you. A volume you attached, or booted the instance
-             from, is `detach`; a volume bought with the instance follows the choice made when it was
+            from, is `detach`; a volume bought with the instance follows the choice made when it was
             bought.
           type: string
           enum:
-          - delete
-          - detach
+            - delete
+            - detach
         state:
           type: string
           enum:
-          - reserved
-          - attached
-          - released
+            - reserved
+            - attached
+            - released
         attached_at:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         detached_at:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         released_at:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: date-time
         device:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
         performance:
-          description: The volume's performance in effect on this attachment, as it was when the attachment was made.
+          description:
+            The volume's performance in effect on this attachment, as it was when the attachment was made.
             Null until the attachment is made.
           anyOf:
-          - $ref: '#/components/schemas/VolumePerformance'
-          - type: 'null'
+            - $ref: "#/components/schemas/VolumePerformance"
+            - type: "null"
       required:
-      - id
-      - instance_id
-      - volume_id
-      - role
-      - on_instance_release
-      - state
-      - attached_at
-      - detached_at
-      - released_at
-      - device
-      - performance
+        - id
+        - instance_id
+        - volume_id
+        - role
+        - on_instance_release
+        - state
+        - attached_at
+        - detached_at
+        - released_at
+        - device
+        - performance
       additionalProperties: false
     VolumePerformance:
       description: A volume's limits.
@@ -602,8 +621,8 @@ components:
           type: integer
           format: int64
       required:
-      - iops
-      - throughput_bytes_per_second
+        - iops
+        - throughput_bytes_per_second
       additionalProperties: false
     VolumeAttachmentList:
       type: object
@@ -611,10 +630,10 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/VolumeAttachment'
+            $ref: "#/components/schemas/VolumeAttachment"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
       additionalProperties: false

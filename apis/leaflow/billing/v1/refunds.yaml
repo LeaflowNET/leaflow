@@ -5,45 +5,45 @@ paths:
       description: Newest first.
       operationId: list-refunds
       tags:
-      - refunds
+        - refunds
       parameters:
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-      - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
-      - name: invoice_id
-        in: query
-        required: false
-        description: Only the refunds of this invoice.
-        schema:
-          type: string
-          format: uuid
-      - name: order_id
-        in: query
-        required: false
-        description: 'Refunds of this order: those of its invoice, such as for an undeliverable purchase, and those it caused on an earlier invoice, such as a downgrade difference.'
-        schema:
-          type: string
-          format: uuid
-      - name: status
-        in: query
-        required: false
-        description: Only refunds in these statuses; omit for every status. Comma-separated, for example `status=pending,processing`.
-        style: form
-        explode: false
-        schema:
-          type: array
-          minItems: 1
-          maxItems: 4
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/RefundStatus'
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: invoice_id
+          in: query
+          required: false
+          description: Only the refunds of this invoice.
+          schema:
+            type: string
+            format: uuid
+        - name: order_id
+          in: query
+          required: false
+          description: "Refunds of this order: those of its invoice, such as for an undeliverable purchase, and those it caused on an earlier invoice, such as a downgrade difference."
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Only refunds in these statuses; omit for every status. Comma-separated, for example `status=pending,processing`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 4
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/RefundStatus"
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RefundList'
+                $ref: "#/components/schemas/RefundList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
 components:
@@ -62,10 +62,10 @@ components:
         return to a payment method completes when the gateway confirms it.
       type: string
       enum:
-      - pending
-      - processing
-      - succeeded
-      - failed
+        - pending
+        - processing
+        - succeeded
+        - failed
     Refund:
       type: object
       properties:
@@ -88,66 +88,66 @@ components:
           format: int64
         invoice_id:
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         order_id:
-          description: 'The order the refund belongs to: the order that caused it, such as a downgrade, otherwise the order of the refunded invoice. Null for refunds of top-ups and usage invoices.'
+          description: "The order the refund belongs to: the order that caused it, such as a downgrade, otherwise the order of the refunded invoice. Null for refunds of top-ups and usage invoices."
           type:
-          - string
-          - 'null'
+            - string
+            - "null"
           format: uuid
         amount:
           description: The whole refund. Equals balance_amount plus credit_amount plus gateway_amount.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         balance_amount:
           description: The part returned to the account balance.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_amount:
           description: The part restored to the credit grants that paid for it.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         gateway_amount:
           description: The part returned to the payment method it was paid with.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         settled_amount:
           description: What has actually been returned.
           allOf:
-          - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         currency:
           type: string
         destination:
           description: Use balance_amount, credit_amount and gateway_amount, which also show a refund split between destinations.
           type: string
           enum:
-          - balance
-          - gateway
+            - balance
+            - gateway
           deprecated: true
         status:
-          $ref: '#/components/schemas/RefundStatus'
+          $ref: "#/components/schemas/RefundStatus"
         settled_at:
           description: When the last part was returned. Present with `succeeded`.
           type: string
           format: date-time
         reason:
-          $ref: '#/components/schemas/RefundReason'
+          $ref: "#/components/schemas/RefundReason"
         created_at:
           type: string
           format: date-time
       required:
-      - id
-      - currency
-      - status
-      - reason
-      - created_at
-      - amount
-      - balance_amount
-      - credit_amount
-      - gateway_amount
-      - transactions
+        - id
+        - currency
+        - status
+        - reason
+        - created_at
+        - amount
+        - balance_amount
+        - credit_amount
+        - gateway_amount
+        - transactions
     RefundReason:
       description: |-
         Why the refund was made. New codes may be added; treat an unknown code as unspecified.
@@ -169,26 +169,26 @@ components:
         - `operator`: made by the platform operator.
       type: string
       enum:
-      - provisioning_failed
-      - order_expired
-      - order_canceled
-      - change_canceled
-      - change_expired
-      - subscription_canceled
-      - future_period_canceled
-      - downgrade_difference
-      - usage_true_up
-      - payment_not_applied
-      - operator
+        - provisioning_failed
+        - order_expired
+        - order_canceled
+        - change_canceled
+        - change_expired
+        - subscription_canceled
+        - future_period_canceled
+        - downgrade_difference
+        - usage_true_up
+        - payment_not_applied
+        - operator
     RefundList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Refund'
+            $ref: "#/components/schemas/Refund"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
-      - items
-      - pagination
+        - items
+        - pagination
