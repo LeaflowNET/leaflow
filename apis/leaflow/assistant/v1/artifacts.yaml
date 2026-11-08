@@ -1,0 +1,311 @@
+paths:
+  /api/v1/artifacts:
+    get:
+      summary: List artifacts
+      description: |-
+        The caller's artifacts in this project, most recently updated first. An artifact is a file the
+        assistant handed over, kept under one title across its versions: a later version replaces what
+        the person sees, and earlier versions stay readable.
+
+        With `thread`, only artifacts that have a version created in that conversation are listed.
+      operationId: list-artifacts
+      tags:
+        - Artifact
+      parameters:
+        - name: thread
+          in: query
+          description: Only artifacts with a version created in this conversation.
+          schema:
+            type: string
+            maxLength: 64
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create an artifact
+      description: |-
+        Makes a file the first version of a new artifact. The file must belong to the caller in this
+        project. Fails with 404 and code FILE_NOT_FOUND when it does not.
+      operationId: create-artifact
+      tags:
+        - Artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateArtifactRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/artifacts/{artifact}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ArtifactId
+    get:
+      summary: Get an artifact
+      operationId: get-artifact
+      tags:
+        - Artifact
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Rename an artifact
+      description: Changes the title shown for every version. The versions and their files do not change.
+      operationId: update-artifact
+      tags:
+        - Artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateArtifactRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Delete an artifact
+      description: |-
+        Removes the artifact and its versions from lists, and the assistant can no longer add versions
+        to it. Conversations that showed a version keep showing it, and its file stays downloadable.
+        Idempotent.
+      operationId: delete-artifact
+      tags:
+        - Artifact
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/artifacts/{artifact}/versions:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ArtifactId
+    get:
+      summary: List artifact versions
+      description: The versions of an artifact, newest first.
+      operationId: list-artifact-versions
+      tags:
+        - Artifact
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactVersionListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Add a version
+      description: |-
+        Makes a file the newest version of the artifact. The file must belong to the caller in this
+        project. Fails with 404 and code FILE_NOT_FOUND when it does not.
+      operationId: create-artifact-version
+      tags:
+        - Artifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateArtifactVersionRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactVersionResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/artifacts/{artifact}/versions/{version}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ArtifactId
+      - $ref: ./openapi.yaml#/components/parameters/ArtifactVersionId
+    get:
+      summary: Get an artifact version
+      operationId: get-artifact-version
+      tags:
+        - Artifact
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactVersionResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ArtifactResource:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        latestVersion:
+          $ref: "#/components/schemas/ArtifactVersionResource"
+        versionCount:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          description: When the title last changed or the latest version was added.
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - latestVersion
+        - versionCount
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    ArtifactVersionResource:
+      type: object
+      properties:
+        id:
+          type: string
+        artifactId:
+          type: string
+        title:
+          description: The artifact's current title.
+          type: string
+        version:
+          description: The position among the artifact's versions, from 1.
+          type: integer
+          format: int64
+          minimum: 1
+        file:
+          $ref: ./files.yaml#/components/schemas/FileResource
+        threadId:
+          description: The conversation whose tool call created this version. Null for a version added through the API.
+          type:
+            - string
+            - "null"
+        turnId:
+          description: The turn whose tool call created this version. Null for a version added through the API.
+          type:
+            - string
+            - "null"
+        itemId:
+          description: The tool call that created this version. Null for a version added through the API.
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - artifactId
+        - title
+        - version
+        - file
+        - threadId
+        - turnId
+        - itemId
+        - createdAt
+      additionalProperties: false
+    ArtifactListResponseBody:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactResource"
+        nextCursor:
+          description: Null on the last page.
+          type:
+            - string
+            - "null"
+      required:
+        - artifacts
+        - nextCursor
+      additionalProperties: false
+    ArtifactVersionListResponseBody:
+      type: object
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactVersionResource"
+        nextCursor:
+          description: Null on the last page.
+          type:
+            - string
+            - "null"
+      required:
+        - versions
+        - nextCursor
+      additionalProperties: false
+    CreateArtifactRequestBody:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        fileId:
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+        - title
+        - fileId
+      additionalProperties: false
+    UpdateArtifactRequestBody:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+        - title
+      additionalProperties: false
+    CreateArtifactVersionRequestBody:
+      type: object
+      properties:
+        fileId:
+          type: string
+          minLength: 1
+          maxLength: 64
+      required:
+        - fileId
+      additionalProperties: false

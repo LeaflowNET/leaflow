@@ -36,12 +36,14 @@ info:
 
     Upload large files with /api/v1/uploads: read /api/v1/upload-configuration first, send exact-sized
 
-    parts, then complete the upload and send its attachment id in a message.
+    parts, then complete the upload and send its file id in a message.
 
 
-    Files uploaded that way are listed by search-attachments. Renaming or removing one does not change
+    Files the person attached are listed by search-files. Renaming or removing one does not change
 
-    the conversations that already use it; downloading keeps working."
+    the conversations that already use it; downloading keeps working. Files the assistant hands over
+
+    are artifacts: they appear on the tool call that created them and are listed by list-artifacts."
 servers:
   - url: https://assistant.leaflow.cloud
     description: Threads, messages and tool calls
@@ -54,8 +56,9 @@ tags:
   - name: Folder
   - name: Task
   - name: Setting
-  - name: Attachment
+  - name: File
   - name: Upload
+  - name: Artifact
   - name: Memory
   - name: Skill
   - name: Channel
@@ -114,24 +117,32 @@ paths:
     $ref: ./tasks.yaml#/paths/~1api~1v1~1tasks~1{task}~1runs~1{run}
   /api/v1/settings:
     $ref: ./settings.yaml#/paths/~1api~1v1~1settings
-  /api/v1/attachments:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1attachments
-  /api/v1/attachments/{attachment}:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1attachments~1{attachment}
-  /api/v1/attachments/{attachment}:download:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1attachments~1{attachment}:download
+  /api/v1/files:
+    $ref: ./files.yaml#/paths/~1api~1v1~1files
+  /api/v1/files/{file}:
+    $ref: ./files.yaml#/paths/~1api~1v1~1files~1{file}
+  /api/v1/files/{file}:download:
+    $ref: ./files.yaml#/paths/~1api~1v1~1files~1{file}:download
   /api/v1/upload-configuration:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1upload-configuration
+    $ref: ./files.yaml#/paths/~1api~1v1~1upload-configuration
   /api/v1/uploads:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1uploads
+    $ref: ./files.yaml#/paths/~1api~1v1~1uploads
   /api/v1/uploads/{upload}:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1uploads~1{upload}
+    $ref: ./files.yaml#/paths/~1api~1v1~1uploads~1{upload}
   /api/v1/uploads/{upload}:cancel:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1uploads~1{upload}:cancel
+    $ref: ./files.yaml#/paths/~1api~1v1~1uploads~1{upload}:cancel
   /api/v1/uploads/{upload}:complete:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1uploads~1{upload}:complete
+    $ref: ./files.yaml#/paths/~1api~1v1~1uploads~1{upload}:complete
   /api/v1/uploads/{upload}/parts/{part}:
-    $ref: ./attachments.yaml#/paths/~1api~1v1~1uploads~1{upload}~1parts~1{part}
+    $ref: ./files.yaml#/paths/~1api~1v1~1uploads~1{upload}~1parts~1{part}
+  /api/v1/artifacts:
+    $ref: ./artifacts.yaml#/paths/~1api~1v1~1artifacts
+  /api/v1/artifacts/{artifact}:
+    $ref: ./artifacts.yaml#/paths/~1api~1v1~1artifacts~1{artifact}
+  /api/v1/artifacts/{artifact}/versions:
+    $ref: ./artifacts.yaml#/paths/~1api~1v1~1artifacts~1{artifact}~1versions
+  /api/v1/artifacts/{artifact}/versions/{version}:
+    $ref: ./artifacts.yaml#/paths/~1api~1v1~1artifacts~1{artifact}~1versions~1{version}
   /api/v1/memories:
     $ref: ./memories.yaml#/paths/~1api~1v1~1memories
   /api/v1/memories/{memory}:
@@ -214,6 +225,22 @@ components:
       in: path
       required: true
       description: A task id.
+      schema:
+        type: string
+        maxLength: 64
+    ArtifactId:
+      name: artifact
+      in: path
+      required: true
+      description: An artifact id.
+      schema:
+        type: string
+        maxLength: 64
+    ArtifactVersionId:
+      name: version
+      in: path
+      required: true
+      description: An artifact version id.
       schema:
         type: string
         maxLength: 64

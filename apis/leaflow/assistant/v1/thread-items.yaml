@@ -277,15 +277,11 @@ components:
         parts:
           description: |-
             The content, in the order it was written. Text arrives as `append` frames on the realtime
-            stream. An attachment belongs where it was written, so render parts in order. Empty for
-            tool calls; their outcome is in `toolCall.detail` and `toolCall.presentation`.
+            stream. A file the person attached belongs where it was written, so render parts in order.
+            Empty for tool calls; their outcome is in `toolCall`.
           type: array
           items:
             $ref: "#/components/schemas/PartResource"
-        attachments:
-          type: array
-          items:
-            $ref: "#/components/schemas/AttachmentResource"
         clientContext:
           description: |-
             The `data-*` blocks the client attached to a user message. They are not part of what the
@@ -323,7 +319,6 @@ components:
         - modelId
         - durationMs
         - parts
-        - attachments
         - clientContext
         - toolCall
         - messageIndex
@@ -484,6 +479,21 @@ components:
             - integer
             - "null"
           format: int64
+        contentFiles:
+          description: |-
+            Files the call returned to the assistant as part of its result, such as a screenshot it
+            looks at. They are working material rather than something handed to the person.
+          type: array
+          items:
+            $ref: ./files.yaml#/components/schemas/FileResource
+        artifacts:
+          description: |-
+            The artifact versions this call handed to the person, such as a QR code to scan or an
+            exported report. Show them where the call appears; the latest version of each artifact is
+            also what the turn handed over.
+          type: array
+          items:
+            $ref: ./artifacts.yaml#/components/schemas/ArtifactVersionResource
       required:
         - namespace
         - tool
@@ -498,6 +508,8 @@ components:
         - questions
         - answers
         - autoAnswerMs
+        - contentFiles
+        - artifacts
       additionalProperties: false
     PartResource:
       type: object
@@ -517,53 +529,16 @@ components:
           type:
             - string
             - "null"
-        attachmentId:
-          description: For `file` parts. Points at one of the item's `attachments`.
-          type:
-            - string
-            - "null"
+        file:
+          description: For `file` parts. A file the person attached.
+          anyOf:
+            - $ref: ./files.yaml#/components/schemas/FileResource
+            - type: "null"
       required:
         - id
         - type
         - text
-        - attachmentId
-      additionalProperties: false
-    AttachmentResource:
-      type: object
-      properties:
-        id:
-          type: string
-        type:
-          description: A client renders an image in place and everything else as a file to download.
-          type: string
-          enum:
-            - image
-            - text
-            - binary
-        filename:
-          type: string
-        byteSize:
-          type: integer
-          format: int64
-        width:
-          description: Null unless type is image. Lets a client hold the space before the image loads.
-          type:
-            - integer
-            - "null"
-          format: int64
-        height:
-          description: Null unless type is image.
-          type:
-            - integer
-            - "null"
-          format: int64
-      required:
-        - id
-        - type
-        - filename
-        - byteSize
-        - width
-        - height
+        - file
       additionalProperties: false
     PresentationResource:
       description: Structured detail produced by a tool call, in addition to the one-line `detail`.
@@ -728,7 +703,7 @@ components:
         One piece of a message. `type` says which field carries it:
 
         - `text` — the words, in `text`
-        - `file` — an attachment uploaded earlier, by id in `attachmentId`
+        - `file` — a file uploaded earlier, by id in `fileId`
         - `data-<name>` — context from the client, in `data`. The name is shown to the assistant so it
           can tell one block from another.
       type: object
@@ -741,8 +716,8 @@ components:
           type:
             - string
             - "null"
-        attachmentId:
-          description: The attachment must have been uploaded and not yet sent with another message.
+        fileId:
+          description: The file must have been uploaded and not yet sent with another message.
           type:
             - string
             - "null"
