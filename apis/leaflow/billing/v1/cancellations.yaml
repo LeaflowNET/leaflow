@@ -2,7 +2,7 @@ paths:
   /api/v1/cancellations:
     get:
       summary: List cancellations
-      description: Newest first; members of a project list its cancellations with `project_ids`. Filter by `subscription_id` and `status=open` to find a subscription's cancellation in progress.
+      description: Newest first; members of a project list its cancellations with `project_ids`. Filter by `subscription_item_id` and `status=open` to find an item's cancellation in progress, or by `subscription_id` for every item of a subscription.
       operationId: list-cancellations
       tags:
         - cancellations
@@ -13,7 +13,14 @@ paths:
         - name: subscription_id
           in: query
           required: false
-          description: Only cancellations that include this subscription.
+          description: Only cancellations that include an item of this subscription.
+          schema:
+            type: string
+            format: uuid
+        - name: subscription_item_id
+          in: query
+          required: false
+          description: Only cancellations that include this subscription item.
           schema:
             type: string
             format: uuid
@@ -49,40 +56,42 @@ paths:
         default:
           $ref: ./openapi.yaml#/components/responses/Error
     post:
-      summary: Cancel subscriptions
+      summary: Cancel subscription items
       description: |-
-        Ends subscriptions of one service together. Deleting a resource is an `immediate` cancellation of every
-        subscription released with it, such as a server with its disks or an address with its bandwidth. Open to the
-        owner of the subscriptions' current billing account and to members of their project with the project
-        permission `billing:finance.manage`.
+        Ends subscription items of one service together, from one subscription or several. Deleting a resource is an
+        `immediate` cancellation of every item released with it, such as a server with its disks or an address with
+        its bandwidth. Open to the owner of the items' current billing account and to members of their project with
+        the project permission `billing:finance.manage`.
 
-        The owning service releases the resources at once for `immediate`, or at `scheduled_at`, the end of the paid
-        term, for `period_end`. When release is confirmed, the unused value is returned to the original payment
-        sources under each subscription's refund terms. For `immediate` the refund is computed as of `proration_date`
-        and is not reduced by service used during release. Metered usage is charged until release.
+        The owning service releases the resources at once for `immediate`, or at `scheduled_at`, the end of the
+        subscription's current term, for `period_end`; until then the items are left out of renewals. When release is
+        confirmed, the unused value is returned to the original payment sources under each item's refund terms. For
+        `immediate` the refund is computed as of `proration_date` and is not reduced by service used during release.
+        Metered usage is charged until release. A subscription whose continuing items all end is canceled.
 
-        `mode` must be allowed for every subscription. Metered and one-time subscriptions end only `immediate`. A
-        licensed subscription ends `period_end` while its paid term lasts, and `immediate` unless its terms allow only
-        the end of the paid term and that term has not ended. For `period_end` all paid terms must end at the same
+        `mode` must be allowed for every item. Metered and one-time items end only `immediate`. A licensed item ends
+        `period_end` while its subscription's paid term lasts, and `immediate` unless its terms allow only the end of
+        the paid term and that term has not ended. For `period_end` the paid terms of all items must end at the same
         time.
 
         Refused with:
 
-        - 400 `BILLING_CANCELLATION_INVALID` when `subscription_ids` or `proration_date` is invalid (`meta.field`), or
-          the subscriptions do not share one service, project, account and currency;
-        - 409 `BILLING_CANCELLATION_CONFLICT` when a subscription has not started or has ended;
+        - 400 `BILLING_CANCELLATION_INVALID` when `items` or `proration_date` is invalid (`meta.field`), or the items
+          do not share one service, project, account and currency;
+        - 409 `BILLING_CANCELLATION_CONFLICT` when an item has not started or has ended;
         - 422 `BILLING_CANCELLATION_MODE_FIXED` when `mode` is not allowed, and `BILLING_CANCELLATION_TERMS_UNSET`
-          when a licensed subscription has no cancellation terms, both with `meta.subscription_id`;
+          when a licensed item has no cancellation terms, both with `meta.subscription_item_id`;
         - 409 `BILLING_CANCELLATION_SCHEDULES_DIFFER` when, for `period_end`, the paid terms end at different times;
-        - 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled
-          (`meta.cancellation_id`) or reclaimed (`meta.reason` `reclaim_requested`), or has a paid change waiting to
-          switch (`meta.order_id`);
-        - 409 `BILLING_ORDER_PAYMENT_IN_FLIGHT` while an online renewal payment for one of them is in progress;
+        - 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when an item is already being canceled
+          (`meta.cancellation_id`), its subscription is being reclaimed (`meta.reason` `reclaim_requested`), or the
+          item has a paid change waiting to switch (`meta.order_id`);
+        - 409 `BILLING_ORDER_PAYMENT_IN_FLIGHT` while an online renewal payment for one of their subscriptions is in
+          progress;
         - 409 `BILLING_CANCELLATION_REFUND_CHANGED` when the refund no longer equals `expected_refundable_amount`.
 
-        Repeating the request for the same subscriptions, mode and amount while the cancellation is open returns it
-        with 200. Unpaid renewal orders are canceled with it, and automatic renewal is turned off for every
-        subscription.
+        Repeating the request for the same items, mode and amount while the cancellation is open returns it with 200.
+        When it covers every continuing item of a subscription, unpaid renewal orders of that subscription are
+        canceled with it and its automatic renewal is turned off.
       operationId: create-cancellation
       tags:
         - cancellations
@@ -110,7 +119,7 @@ paths:
   /api/v1/cancellations:preview:
     query:
       summary: Preview a cancellation
-      description: What creating the cancellation now would return, per subscription and in total. Nothing is canceled, ended or refunded. Open to the owner of the subscriptions' current billing account and to members of their project; refused for the same states as creating it.
+      description: What creating the cancellation now would return, per item and in total. Nothing is canceled, ended or refunded. Open to the owner of the items' current billing account and to members of their project; refused for the same states as creating it.
       operationId: preview-cancellation
       tags:
         - cancellations
@@ -134,7 +143,7 @@ paths:
       - $ref: ./openapi.yaml#/components/parameters/CancellationId
     get:
       summary: Get a cancellation
-      description: A cancellation paid by your billing account or of a project you are a member of, with its schedule, expected refundable amount and the outcome for each subscription, including partial success.
+      description: A cancellation paid by your billing account or of a project you are a member of, with its schedule, expected refundable amount and the outcome for each item, including partial success.
       operationId: get-cancellation
       tags:
         - cancellations
@@ -149,8 +158,8 @@ paths:
           $ref: ./openapi.yaml#/components/responses/Error
     delete:
       summary: Withdraw a cancellation
-      description: Withdraws the whole cancellation, which stays with status `canceled`, while no resource has begun to be released; afterwards it is refused with 409 `BILLING_CANCELLATION_CONFLICT`. The subscriptions continue, but automatic renewal, turned off when the cancellation was created, stays off until it is turned on again. Withdrawing a withdrawn cancellation returns it unchanged. Open to the owner of the subscriptions' current billing account and to members of their project with the project permission `billing:finance.manage`.
-      operationId: withdraw-cancellation
+      description: Withdraws the whole cancellation, which stays with status `canceled`, while no resource has begun to be released; afterwards it is refused with 409 `BILLING_CANCELLATION_CONFLICT`. The items continue and renew with their subscriptions again; a subscription's automatic renewal, turned off when the cancellation covered all of its continuing items, stays off until it is turned on again. Withdrawing a withdrawn cancellation returns it unchanged. Open to the owner of the items' current billing account and to members of their project with the project permission `billing:finance.manage`.
+      operationId: delete-cancellation
       tags:
         - cancellations
       responses:
@@ -167,15 +176,13 @@ components:
     CancellationCreate:
       type: object
       properties:
-        subscription_ids:
+        items:
           description: As in the preview.
           type: array
           minItems: 1
           maxItems: 50
-          uniqueItems: true
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/CancellationItemInput"
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
         proration_date:
@@ -193,21 +200,31 @@ components:
           type: string
           maxLength: 1024
       required:
-        - subscription_ids
+        - items
         - mode
         - expected_refundable_amount
       additionalProperties: false
+    CancellationItemInput:
+      description: One subscription item to end, each at most once.
+      type: object
+      properties:
+        subscription_item_id:
+          type: string
+          format: uuid
+      required:
+        - subscription_item_id
+      additionalProperties: false
     Cancellation:
       description: |-
-        One cancellation of a set of subscriptions of one service, released together at one time.
+        One cancellation of a set of subscription items of one service, released together at one time.
 
         - `requested`: `immediate`, release has not begun.
         - `scheduled`: `period_end`, waiting for `scheduled_at`.
         - `releasing`: release has begun; it can no longer be withdrawn.
-        - `completed`: every subscription has ended and its refund has been made.
-        - `canceled`: withdrawn before release began; the subscriptions continue.
+        - `completed`: every item has ended and its refund has been made.
+        - `canceled`: withdrawn before release began; the items continue.
         - `failed`: the service could not carry it out, for the reason in `failure_code`; the
-          subscriptions continue and can be canceled again.
+          items continue and can be canceled again.
       type: object
       properties:
         id:
@@ -239,7 +256,7 @@ components:
             - operator
             - project_deletion
         billing_account_id:
-          description: "The billing account paying for these subscriptions when the cancellation was created: the purchasing account of an account-level purchase, or the project's linked account."
+          description: "The billing account paying for these items when the cancellation was created: the purchasing account of an account-level purchase, or the project's linked account."
           type: integer
           format: int64
         currency:
@@ -274,14 +291,18 @@ components:
         - requested_at
         - items
     CancellationItem:
-      description: One subscription of the cancellation.
+      description: One subscription item of the cancellation.
       type: object
       properties:
         id:
-          description: The subscription's cancellation item, the same as `Subscription.cancellation.id`.
+          description: The item's entry in the cancellation, the same as `SubscriptionItem.cancellation.id`.
+          type: string
+          format: uuid
+        subscription_item_id:
           type: string
           format: uuid
         subscription_id:
+          description: The subscription the item belongs to.
           type: string
           format: uuid
         plan_id:
@@ -293,8 +314,9 @@ components:
           $ref: ./prices.yaml#/components/schemas/PriceType
         usage_type:
           description: |-
-            Creating the cancellation turned automatic renewal off; withdrawing it turns renewal back on
-            for a `metered` subscription and leaves it off for a `licensed` one.
+            When the cancellation covers every continuing item of a subscription, creating it turned the
+            subscription's automatic renewal off; withdrawing it turns renewal back on for a subscription with
+            only `metered` items and leaves it off for one with `licensed` items.
           allOf:
             - $ref: ./prices.yaml#/components/schemas/UsageType
         status:
@@ -330,6 +352,7 @@ components:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
         - id
+        - subscription_item_id
         - subscription_id
         - plan_id
         - plan_name
@@ -348,20 +371,20 @@ components:
       required:
         - items
         - pagination
-    SubscriptionCancellation:
-      description: "The latest cancellation including the subscription, with this subscription's item: `id` is the item and `cancellation_id` the cancellation. scheduled_at is the intended time and effective_at the confirmed end of service."
+    SubscriptionItemCancellation:
+      description: "The latest cancellation including the subscription item, with this item's entry: `id` is the entry and `cancellation_id` the cancellation. scheduled_at is the intended time and effective_at the confirmed end of service."
       type: object
       properties:
         reason:
           type: string
         cancellation_id:
-          description: The cancellation this item belongs to, with the other subscriptions released together.
+          description: The cancellation this entry belongs to, with the other items released together.
           type: string
           format: uuid
         id:
           type: string
           format: uuid
-        subscription_id:
+        subscription_item_id:
           type: string
           format: uuid
         status:
@@ -401,39 +424,37 @@ components:
           type: string
       required:
         - id
-        - subscription_id
+        - subscription_item_id
         - status
         - mode
         - requested_at
         - forfeit_remaining_value
     CancellationPreviewRequest:
-      description: "What ending these subscriptions together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when a subscription is already being canceled (`meta.cancellation_id`), is being reclaimed (`meta.reason` `reclaim_requested`) or has a paid change waiting to switch (`meta.order_id`)."
+      description: "What ending these items together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when an item is already being canceled (`meta.cancellation_id`), its subscription is being reclaimed (`meta.reason` `reclaim_requested`) or the item has a paid change waiting to switch (`meta.order_id`)."
       type: object
       properties:
         billing_account_id:
-          description: A billing account you own that currently pays for every subscription.
+          description: A billing account you own that currently pays for every item.
           type: integer
           format: int64
           minimum: 1
-        subscription_ids:
-          description: The subscriptions to end together, all of one service, including every subscription released with a resource.
+        items:
+          description: The items to end together, all of one service, including every item released with a resource.
           type: array
           minItems: 1
           maxItems: 50
-          uniqueItems: true
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/CancellationItemInput"
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
       required:
         - billing_account_id
-        - subscription_ids
+        - items
         - mode
       additionalProperties: false
     CancellationPreview:
       description: |-
-        What the cancellation would return, per subscription and in total, as of now. Give `proration_date` and
+        What the cancellation would return, per item and in total, as of now. Give `proration_date` and
         `refundable_amount` when creating the cancellation.
 
         - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
@@ -446,13 +467,13 @@ components:
         - `tax_amount`: the tax included in `refundable_amount`.
         - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
 
-        Metered and one-time subscriptions show zero; their usage until release is charged as usual.
+        Metered and one-time items show zero; their usage until release is charged as usual.
       type: object
       properties:
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
         scheduled_at:
-          description: For `period_end`, when release begins, the end of the paid terms.
+          description: For `period_end`, when release begins, the end of the subscriptions' current terms.
           type: string
           format: date-time
         proration_date:
@@ -491,10 +512,14 @@ components:
         - forfeited_amount
         - items
     CancellationPreviewItem:
-      description: One subscription of the previewed cancellation.
+      description: One subscription item of the previewed cancellation.
       type: object
       properties:
+        subscription_item_id:
+          type: string
+          format: uuid
         subscription_id:
+          description: The subscription the item belongs to.
           type: string
           format: uuid
         plan_id:
@@ -512,7 +537,7 @@ components:
         usage_type:
           $ref: ./prices.yaml#/components/schemas/UsageType
         auto_renew:
-          description: Whether automatic renewal is on now. Creating the cancellation turns it off; withdrawing it turns it back on for a metered subscription but not for a licensed one.
+          description: Whether the item's subscription renews automatically now. Creating a cancellation of every continuing item of the subscription turns it off; withdrawing it turns it back on for a subscription with only metered items but not for one with licensed items.
           type: boolean
         unused_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
@@ -529,6 +554,7 @@ components:
         forfeited_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
       required:
+        - subscription_item_id
         - subscription_id
         - plan_id
         - plan_name

@@ -60,7 +60,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       responses:
         "200":
           description: OK
@@ -77,10 +77,7 @@ paths:
     patch:
       summary: Update a network interface
       description: |-
-        Changes the name, or replaces the security groups. The two are never combined (422 `UPDATE_FIELDS_COMBINED`).
-
-        - `name` is not an operation, is accepted at any time and answers 200.
-        - `security_group_ids` is the complete new set, one to five groups of the network interface's virtual private cloud; groups left out are removed. It applies to traffic of the running instance as soon as it is in place, and answers 202 with the network interface `updating_security_groups` until then.
+        Changes the name. It is not an operation and is accepted at any time. Replacing the security groups is `:replaceSecurityGroups`.
 
         Secondary IPv4 addresses are added and removed under `/network-interfaces/{networkInterfaceId}/addresses`.
       operationId: update-network-interface
@@ -91,7 +88,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       requestBody:
         required: true
         content:
@@ -101,12 +98,6 @@ paths:
       responses:
         "200":
           description: The name was changed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NetworkInterface"
-        "202":
-          description: The replacement of the security groups was accepted.
           content:
             application/json:
               schema:
@@ -130,10 +121,44 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       responses:
         "202":
           description: Deletion was accepted. The network interface is `deleting` until it is deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkInterface"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/network-interfaces/{networkInterfaceId}:replaceSecurityGroups:
+    parameters:
+      - name: networkInterfaceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
+    post:
+      summary: Replace the security groups of a network interface
+      description: "`security_group_ids` is the complete new set, one to five groups of the network interface's virtual private cloud; groups left out are removed. It applies to traffic of the running instance as soon as it is in place, and the network interface is `updating_security_groups` until then."
+      operationId: replace-network-interface-security-groups
+      tags:
+        - network-interfaces
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceNetworkInterfaceSecurityGroupsRequestBody"
+      responses:
+        "202":
+          description: The replacement of the security groups was accepted.
           content:
             application/json:
               schema:
@@ -163,7 +188,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       requestBody:
         required: true
         content:
@@ -199,12 +224,12 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
         - name: addressId
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressId
       responses:
         "202":
           description: Accepted
@@ -224,7 +249,7 @@ components:
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
         mac_address:
           type:
             - string
@@ -232,7 +257,7 @@ components:
         name:
           type: string
         virtual_private_cloud_id:
-          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
         elastic_ip_addresses:
           description: Elastic IPv4 addresses associated with this network interface; an empty array when none are associated
           type:
@@ -244,7 +269,7 @@ components:
           description: The security groups the network interface holds.
           type: array
           items:
-            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupId
         addresses:
           type: array
           items:
@@ -307,7 +332,7 @@ components:
       type: object
       properties:
         network_interface_id:
-          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       required:
         - network_interface_id
       additionalProperties: false
@@ -324,9 +349,9 @@ components:
             - "null"
           minItems: 1
           items:
-            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupId
         subnet_id:
-          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+          $ref: ./identifiers.yaml#/components/schemas/SubnetId
         address:
           description: The private address to assign. Allocated automatically when omitted
           type: string
@@ -336,20 +361,26 @@ components:
         - security_group_ids
       additionalProperties: false
     UpdateNetworkInterfaceRequestBody:
-      description: The mutable fields of a network interface, all optional, at least one required.
+      description: The descriptive fields of a network interface, all optional, at least one required.
       type: object
       properties:
         name:
           type: string
           maxLength: 128
+      minProperties: 1
+      additionalProperties: false
+    ReplaceNetworkInterfaceSecurityGroupsRequestBody:
+      type: object
+      properties:
         security_group_ids:
           description: The complete new set of security groups, of the network interface's virtual private cloud.
           type: array
           minItems: 1
           maxItems: 5
           items:
-            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
-      minProperties: 1
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupId
+      required:
+        - security_group_ids
       additionalProperties: false
     CreateNetworkInterfaceAddressRequestBody:
       type: object
@@ -363,9 +394,9 @@ components:
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressID
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceAddressId
         subnet_id:
-          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+          $ref: ./identifiers.yaml#/components/schemas/SubnetId
         address:
           type: string
           minLength: 1
@@ -405,11 +436,11 @@ components:
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceNetworkInterfaceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceNetworkInterfaceId
         instance_id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
         network_interface_id:
-          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
         role:
           type: string
           enum:

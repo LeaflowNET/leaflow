@@ -14,13 +14,13 @@ paths:
           required: false
           explode: false
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/RegionID
+            $ref: ./identifiers.yaml#/components/schemas/RegionId
         - name: availability_zone_id
           in: query
           description: Supplied together with `region_id` to filter attachable volumes
           explode: false
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+            $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -50,7 +50,9 @@ paths:
 
         A volume type that is off sale is rejected with `VOLUME_TYPE_OFF_SALE`, even though its identifier still resolves. Types that are off sale do not appear in the volume type listing; volumes already bought on one keep working and can still be resized.
 
-        A volume bought on its own is licensed: `billing.usage_type` `metered` is refused with `VOLUME_USAGE_TYPE_UNAVAILABLE`. A volume created with an instance follows the machine's terms instead and may be metered.
+        A volume bought on its own is licensed, with a Billing subscription of its own: `billing.usage_type` `metered` is refused with `VOLUME_USAGE_TYPE_UNAVAILABLE`. A volume created with an instance follows the machine's terms instead and may be metered.
+
+        **Buying for an instance.** With `instance_id`, the volume is attached to that instance of the project once created, and becomes an item of the instance's Billing subscription: it is charged up to the instance's term end, the rest of the current period in proportion to the time left, and from then on renews, renews automatically and expires with the instance. Its volume type has to be of the instance's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). `billing` may be omitted to take the instance's terms; given, its usage type and period must be the instance's (422 `VOLUME_BILLING_TERMS_MISMATCH`), while its termination policy may differ. An instance with no room for another volume is refused before anything is ordered, as attaching would be.
 
         The volume is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-volume
@@ -89,7 +91,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
       responses:
         "200":
           description: OK
@@ -105,18 +107,7 @@ paths:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
     patch:
       summary: Update a volume
-      description: |-
-        Changes the name, the capacity or the volume type. The availability zone is immutable.
-
-        `size_gib` and `volume_type_id` are operational fields: each starts a change and cannot be combined with any other field in the same request, including the other one. Such a request is refused with 422 `UPDATE_FIELDS_COMBINED`, because a rename that committed beside a change that was then refused would leave the request half applied. `checkout` and `proration_date` belong to the purchase of the change and are accepted only together with one of them.
-
-        **Renaming** is not an operation and is accepted at any time. It returns 200 with `checkout_session_id` and `order_id` null.
-
-        **Resizing** accepts only an increase; a smaller `size_gib` is refused with `VOLUME_CANNOT_SHRINK` (422), since a file system cannot be shrunk from outside the instance. It returns 202 with the volume and the Checkout Session for the resize, which keeps the volume's usage type and period. The volume is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The volume keeps its current size until the resize is applied; once `size_gib` shows the new size, extend the file system inside the instance. If checkout is not completed, the order is not accepted or the resize fails, the volume keeps its size and Billing shows the outcome.
-
-        **Changing the type** moves the volume to another volume type at the same capacity, priced as that type, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume is `retyping` until the change is applied, its Checkout Session expires or its order is canceled. A target on the same storage backend takes effect at once; one on another backend copies the volume's data there first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded.
-
-        An attached volume, including a boot volume, can be resized. The capacity is usable at once, and the volume's `performance` shows what its type gives the new size. **That performance applies from the volume's next attachment, or the next start of its stopped instance**: the storage reads a volume's limits only while connecting it. Until then the attachment's `performance` shows what is in effect.
+      description: Changes the name. It is not an operation and is accepted at any time. Growing the volume is `:resize` and moving it to another type is `:retype`.
       operationId: update-volume
       tags:
         - volumes
@@ -125,7 +116,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
       requestBody:
         required: true
         content:
@@ -134,19 +125,11 @@ paths:
               $ref: "#/components/schemas/UpdateVolumeRequestBody"
       responses:
         "200":
-          description: Only descriptive fields changed; no operation started. `checkout_session_id` and `order_id` are null.
+          description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UpdateVolumeResponseBody"
-        "202":
-          description: The volume and the Checkout Session for the resize; the new size is not yet in effect.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UpdateVolumeResponseBody"
-        "409":
-          $ref: ./openapi.yaml#/components/responses/Conflict
+                $ref: "#/components/schemas/VolumeResource"
         default:
           description: Error
           content:
@@ -160,7 +143,7 @@ paths:
 
         Refused with `COMPUTE_PURCHASE_PENDING` while the purchase that created it still awaits checkout or payment; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead.
 
-        While subscriptions pay for the volume (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the volume working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
+        While subscription items pay for the volume (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under its terms, and `period_end` keeps the volume working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
       operationId: delete-volume
       tags:
         - volumes
@@ -169,17 +152,89 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
         - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
         "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         "202":
-          description: Deletion was accepted. Without a subscription the volume is `deleting` until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription item the volume is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteVolumeResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/volumes/{volumeId}:resize:
+    parameters:
+      - name: volumeId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
+    post:
+      summary: Resize a volume
+      description: |-
+        Grows the volume through a change of its subscription item purchased in Billing. Only an increase is accepted; a smaller `size_gib` is refused with `VOLUME_CANNOT_SHRINK` (422), since a file system cannot be shrunk from outside the instance. It returns 202 with the volume and the Checkout Session for the resize, which keeps the volume's usage type and period. The volume is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. The volume keeps its current size until the resize is applied; once `size_gib` shows the new size, extend the file system inside the instance. If checkout is not completed, the order is not accepted or the resize fails, the volume keeps its size and Billing shows the outcome.
+
+        An attached volume, including a boot volume, can be resized. The capacity is usable at once, and the volume's `performance` shows what its type gives the new size. **That performance applies from the volume's next attachment, or the next start of its stopped instance**: the storage reads a volume's limits only while connecting it. Until then the attachment's `performance` shows what is in effect.
+      operationId: resize-volume
+      tags:
+        - volumes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResizeVolumeRequestBody"
+      responses:
+        "202":
+          description: The volume and the Checkout Session for the resize; the new size is not yet in effect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolumeChangeResponseBody"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/volumes/{volumeId}:retype:
+    parameters:
+      - name: volumeId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
+    post:
+      summary: Change the type of a volume
+      description: |-
+        Moves the volume to another volume type at the same capacity, priced as that type, through a change of its subscription item purchased in Billing, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume is `retyping` until the change is applied, its Checkout Session expires or its order is canceled. A target on the same storage backend takes effect at once; one on another backend copies the volume's data there first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded.
+      operationId: retype-volume
+      tags:
+        - volumes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetypeVolumeRequestBody"
+      responses:
+        "202":
+          description: The volume and the Checkout Session for the change; the new type is not yet in effect.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolumeChangeResponseBody"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
         default:
           description: Error
           content:
@@ -203,7 +258,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
       requestBody:
         required: true
         content:
@@ -230,13 +285,13 @@ components:
     DeleteVolumeResponseBody:
       description:
         The volume as it is when the deletion is accepted, and the Billing cancellation that releases it when
-        subscriptions pay for it.
+        subscription items pay for it.
       type: object
       properties:
         volume:
           $ref: "#/components/schemas/VolumeResource"
         cancellation:
-          description: The cancellation Compute created for the volume's subscriptions; null when none pays for it.
+          description: The cancellation Compute created for the volume's subscription items; null when none pays for it.
           oneOf:
             - type: "null"
             - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
@@ -251,18 +306,18 @@ components:
           description:
             Availability zone the volume actually resides in. An instance must be in the same zone
             to attach it
-          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         created_at:
           type: string
           format: date-time
         volume_type_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeId
         id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         name:
           type: string
         region_id:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         size_gib:
           type: integer
           format: int64
@@ -313,19 +368,26 @@ components:
           format: uuid
         subscription_id:
           description: |-
-            The Billing subscription associated with this resource. It may still be pending; its
+            The Billing subscription the resource renews under: its own, or the instance's when it was bought with or
+            for one. Read it in Billing for the term end, automatic renewal and renewal. It may still be pending; its
             presence does not imply delivery or metering. Null when no subscription is associated.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_item_id:
+          description: The resource's item of that subscription. Null when no subscription is associated.
           type:
             - string
             - "null"
           format: uuid
         release_set:
           description:
-            "The subscriptions a cancellation through Billing has to cover to release this volume: its
+            "The subscription items a cancellation through Billing has to cover to release this volume: its
             own, each with the resource it pays for, so that each line of a cancellation can name what it releases.
-            Snapshots have no individual subscriptions. A boot volume is released only with its instance,
-            so for a boot volume the set is that of the instance. Subscriptions that have ended are not
-            listed, and the set is empty when no subscription pays for any of them."
+            Snapshots have no individual items. A boot volume is released only with its instance,
+            so for a boot volume the set is that of the instance. Items that have ended are not
+            listed, and the set is empty when no item pays for any of them."
           type: array
           items:
             $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
@@ -377,6 +439,7 @@ components:
         - order_id
         - order_item_id
         - subscription_id
+        - subscription_item_id
         - release_set
         - access_state
         - failure_reason
@@ -405,7 +468,7 @@ components:
           description:
             A volume type currently on sale; the volume is created in its availability zone, and only an instance
             of that zone can attach it. A withdrawn one is rejected even though its identifier still resolves
-          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeId
         name:
           type: string
           minLength: 1
@@ -421,60 +484,83 @@ components:
           description:
             Restore from this snapshot, into a volume type of the snapshot's availability zone. Mutually
             exclusive with `volume_backup_id`, otherwise refused with 422 `VOLUME_SOURCE_CONFLICT`
-          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
         volume_backup_id:
           description:
             Restore from this volume backup, which need not still have its source volume, into a volume type of any
             zone of the backup's region. Mutually exclusive with `volume_snapshot_id`, otherwise refused with 422
             `VOLUME_SOURCE_CONFLICT`
-          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
         billing:
+          description: Required unless `instance_id` is given, which takes the instance's terms when this is omitted.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
         checkout:
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+        instance_id:
+          description: Buy the volume for this instance of the project; see the operation.
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
       required:
         - volume_type_id
         - name
-        - billing
       additionalProperties: false
     UpdateVolumeRequestBody:
-      description:
-        The mutable fields of a volume, all optional, at least one required. `size_gib` and `volume_type_id` are
-        operational fields and cannot be combined with each other or with `name`; such a request is refused with 422
-        `UPDATE_FIELDS_COMBINED`.
+      description: The descriptive fields of a volume, all optional, at least one required.
       type: object
       properties:
         name:
           type: string
           minLength: 1
           maxLength: 128
+      minProperties: 1
+      additionalProperties: false
+    ResizeVolumeRequestBody:
+      type: object
+      properties:
         size_gib:
           description: The new capacity. Must be larger than the current capacity
           type: integer
           format: int64
           minimum: 1
-        volume_type_id:
-          description: The volume type to move the detached volume to, at its current capacity
-          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
         proration_date:
           description:
             The `proration_date` of the Billing quote for this change, so that the order is priced from
-            the same instant. Only with `size_gib` or `volume_type_id`, and only for automatic checkout; deferred checkout is priced when
+            the same instant. Only for automatic checkout; deferred checkout is priced when
             the customer completes it. Defaults to the time of the request; it must be a whole second, not in the
             future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
         checkout:
-          description: How the purchase of the `size_gib` or `volume_type_id` change is checked out. Only with one of them.
+          description: How the purchase of the change is checked out.
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
-      minProperties: 1
+      required:
+        - size_gib
+      additionalProperties: false
+    RetypeVolumeRequestBody:
+      type: object
+      properties:
+        volume_type_id:
+          description: The volume type to move the detached volume to, at its current capacity
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeId
+        proration_date:
+          description:
+            The `proration_date` of the Billing quote for this change, so that the order is priced from
+            the same instant. Only for automatic checkout; deferred checkout is priced when
+            the customer completes it. Defaults to the time of the request; it must be a whole second, not in the
+            future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
+          type: string
+          format: date-time
+        checkout:
+          description: How the purchase of the change is checked out.
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      required:
+        - volume_type_id
       additionalProperties: false
     RevertVolumeRequestBody:
       type: object
       properties:
         volume_snapshot_id:
           description: Must be the most recent snapshot of the volume
-          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
       required:
         - volume_snapshot_id
       additionalProperties: false
@@ -482,7 +568,7 @@ components:
       type: object
       properties:
         volume_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
       required:
         - volume_id
       additionalProperties: false
@@ -511,27 +597,20 @@ components:
         - checkout_session_id
         - order_id
       additionalProperties: false
-    UpdateVolumeResponseBody:
+    VolumeChangeResponseBody:
       description:
-        The volume and, when the update placed a Billing order, the Checkout Session for it. After a resize the
-        volume is still at its current size until the change is applied. Returned with 200 when only descriptive fields
-        changed and with 202 when an operation started.
+        The volume and the Checkout Session for its resize or type change. The volume keeps its current size and type
+        until the change is applied.
       type: object
       properties:
         volume:
           $ref: "#/components/schemas/VolumeResource"
         checkout_session_id:
-          description:
-            The Billing Checkout Session of the purchase; null when the update placed no order. With deferred
-            checkout, the customer completes it in Billing.
-          type:
-            - string
-            - "null"
+          description: The Billing Checkout Session of the purchase. With deferred checkout, the customer completes it in Billing.
+          type: string
           format: uuid
         order_id:
-          description:
-            The order created when checkout completes, at once for automatic checkout; null until then and
-            when the update placed no order.
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
           type:
             - string
             - "null"
@@ -545,11 +624,11 @@ components:
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceVolumeID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceVolumeId
         instance_id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
         volume_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         role:
           type: string
           enum:

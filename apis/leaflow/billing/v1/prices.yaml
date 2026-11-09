@@ -26,32 +26,6 @@ paths:
                 $ref: "#/components/schemas/UsageEstimate"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
-  /api/v1/subscriptions/{subscriptionId}/renewal-prices:
-    parameters:
-      - name: subscriptionId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      summary: List the terms this item can be renewed for
-      description: Lists the current renewal agreement and available intervals. The current option preserves recurring_amount; other options use current prices. Amounts cover the whole subscription quantity and exclude tax. Open to the owner of the subscription's current billing account and to members of its project.
-      operationId: list-renewal-prices
-      tags:
-        - prices
-      parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RenewalPriceList"
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/prices:
     get:
       summary: List what is on sale, with prices
@@ -76,7 +50,7 @@ paths:
           in: query
           required: false
           schema:
-            $ref: ./products.yaml#/components/schemas/ProductID
+            $ref: ./products.yaml#/components/schemas/ProductId
         - name: type
           in: query
           required: false
@@ -241,7 +215,7 @@ components:
             type: string
             format: uuid
         product_id:
-          $ref: ./products.yaml#/components/schemas/ProductID
+          $ref: ./products.yaml#/components/schemas/ProductId
         type:
           description: Narrows to one price type.
           allOf:
@@ -325,58 +299,6 @@ components:
         - none
         - prorated
         - short_rate
-    RenewalPrice:
-      type: object
-      properties:
-        cancellation_policy:
-          $ref: "#/components/schemas/CancellationPolicy"
-        refund_policy:
-          $ref: "#/components/schemas/RefundPolicy"
-        short_rate_multiplier:
-          description: Refund policy `short_rate` only.
-          type: string
-        short_rate_threshold_seconds:
-          description: Refund policy `short_rate` only.
-          type: integer
-          format: int64
-        price_id:
-          type: string
-          format: uuid
-        interval_count:
-          description: How many periods one renewal covers.
-          type: integer
-        interval:
-          type: string
-          enum:
-            - day
-            - month
-            - year
-        amount:
-          description: What renewing for this term costs, for the quantity held.
-          allOf:
-            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        currency:
-          type: string
-        current:
-          description: The term the subscription renews at now; renewing for it keeps the agreed price.
-          type: boolean
-      required:
-        - price_id
-        - interval_count
-        - interval
-        - current
-    RenewalPriceList:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/RenewalPrice"
-        pagination:
-          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
-      required:
-        - items
-        - pagination
     PriceOption:
       description: A price's display terms, including archived prices referenced by an applicability.
       type: object
@@ -469,7 +391,7 @@ components:
           type: integer
           format: int64
         product_id:
-          $ref: ./products.yaml#/components/schemas/ProductID
+          $ref: ./products.yaml#/components/schemas/ProductId
         id:
           type: string
           format: uuid
@@ -654,7 +576,7 @@ components:
       type: object
       properties:
         product_id:
-          $ref: ./products.yaml#/components/schemas/ProductID
+          $ref: ./products.yaml#/components/schemas/ProductId
         plan_id:
           type: string
           format: uuid

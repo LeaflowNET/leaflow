@@ -12,7 +12,7 @@ paths:
           explode: false
           schema:
             description: Return only the snapshots of this volume
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -73,7 +73,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
       responses:
         "200":
           description: OK
@@ -98,7 +98,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
       requestBody:
         required: true
         content:
@@ -124,7 +124,7 @@ paths:
         "Deletes this resource. Quota capacity and storage metering are released only after cleanup is confirmed.\n\
         \nA resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource
         is released through its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown
-        cleanup is not proof of release.\n\nWhile subscriptions pay for the snapshot (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the snapshot working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
+        cleanup is not proof of release.\n\nWhile subscription items pay for the snapshot (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under its terms, and `period_end` keeps the snapshot working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
       operationId: delete-volume-snapshot
       tags:
         - volume-snapshots
@@ -133,13 +133,13 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
         - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
         "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         "202":
-          description: Deletion was accepted. Without a subscription the snapshot is `deleting` until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription item the snapshot is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -155,13 +155,13 @@ components:
     DeleteVolumeSnapshotResponseBody:
       description:
         The snapshot as it is when the deletion is accepted, and the Billing cancellation that releases it when
-        subscriptions pay for it.
+        subscription items pay for it.
       type: object
       properties:
         volume_snapshot:
           $ref: "#/components/schemas/VolumeSnapshotResource"
         cancellation:
-          description: The cancellation Compute created for the snapshot's subscriptions; null when none pays for it.
+          description: The cancellation Compute created for the snapshot's subscription items; null when none pays for it.
           oneOf:
             - type: "null"
             - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
@@ -177,18 +177,18 @@ components:
       properties:
         availability_zone_id:
           description: A volume restored from this snapshot must reside in this availability zone
-          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         created_at:
           type: string
           format: date-time
         volume_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeSnapshotId
         name:
           type: string
         region_id:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         size_gib:
           description:
             Capacity of the source volume when the snapshot was created. A volume restored from it cannot be
@@ -254,11 +254,18 @@ components:
             - "null"
           format: uuid
           readOnly: true
-          description: The subscription for this resource; its presence alone does not imply delivery.
+          description: The Billing subscription of this resource; its presence alone does not imply delivery.
+        subscription_item_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          readOnly: true
+          description: The resource's item of that subscription.
         release_set:
           description:
-            The subscription that pays for this snapshot, with the resource it pays for, so that a
-            cancellation through Billing can name what it releases. Empty when no subscription pays for it, and
+            The subscription item that pays for this snapshot, with the resource it pays for, so that a
+            cancellation through Billing can name what it releases. Empty when no subscription item pays for it, and
             once it is released.
           type: array
           items:
@@ -282,6 +289,7 @@ components:
         - order_id
         - order_item_id
         - subscription_id
+        - subscription_item_id
         - release_set
         - latest_operation
       additionalProperties: false
@@ -307,7 +315,7 @@ components:
       type: object
       properties:
         volume_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         name:
           type: string
           minLength: 1

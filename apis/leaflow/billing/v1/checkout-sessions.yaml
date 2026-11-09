@@ -38,13 +38,14 @@ paths:
     post:
       summary: Create a renewal Checkout Session
       description: |-
-        Opens a Checkout Session renewing a licensed subscription, with periods and price chosen as in
-        renewing. Nothing is charged until you complete it, when a promotion code can be applied; it then renews from
-        the subscription's current_term_end at that time. To renew at once from credit grants, balance or a payment
-        method, renew the subscription instead. Purchases and changes of a service's resources are created through
-        that service.
+        Opens a Checkout Session renewing one or more subscriptions in one order, such as a machine and the separately
+        bought volumes and elastic IPs attached to it, with periods and price chosen as in renewing. Every subscription
+        must be paid by the same billing account and belong to the same project and service. Nothing is charged until
+        you complete it, when a promotion code can be applied; each subscription then renews from its current_term_end
+        at that time. To renew one subscription at once from credit grants, balance or a payment method, renew the
+        subscription instead. Purchases and changes of a service's resources are created through that service.
 
-        Open to the owner of the subscription's current billing account and to members of its project with the
+        Open to the owner of the subscriptions' current billing account and to members of their project with the
         project permission `billing:finance.manage`. Keep `checkout_session_id` and read the session after an
         unknown outcome; creating it again conflicts.
       operationId: create-checkout-session
@@ -65,9 +66,10 @@ paths:
                 $ref: "#/components/schemas/CheckoutSession"
         "409":
           description:
-            "The session already exists, refused with `BILLING_CHECKOUT_SESSION_EXISTS`, or the subscription
-            has an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING`: a pending renewal, a
-            pending or paid change waiting to switch, an open cancellation or a committed reclaim."
+            "The session already exists, refused with `BILLING_CHECKOUT_SESSION_EXISTS`, or a subscription has
+            an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING` and `meta.subscription_id`:
+            a pending renewal, a pending or paid change of an item waiting to switch, an open cancellation of the whole
+            subscription or a committed reclaim."
           content:
             application/json:
               schema:
@@ -242,7 +244,7 @@ components:
           type: string
           format: uuid
         product_id:
-          $ref: ./products.yaml#/components/schemas/ProductID
+          $ref: ./products.yaml#/components/schemas/ProductId
           description: The service the purchase is for.
         billing_account_id:
           type: integer
@@ -264,8 +266,8 @@ components:
             - type: "null"
         type:
           description:
-            "`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription's
-            configuration or billing terms."
+            "`new` buys, `renew` extends subscriptions, `modify` changes subscription items' configuration or
+            billing terms."
           type: string
           enum:
             - new
@@ -311,6 +313,11 @@ components:
             - string
             - "null"
           format: uuid
+        subscriptions:
+          description: The subscriptions the session buys, renews or changes, in order; each item names its entry in `subscription_index`.
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckoutSessionSubscription"
       required:
         - id
         - product_id
@@ -328,6 +335,33 @@ components:
         - completed_at
         - expired_at
         - order_id
+        - subscriptions
+      additionalProperties: false
+    CheckoutSessionSubscription:
+      description: One subscription of the session.
+      type: object
+      properties:
+        subscription_id:
+          description: The existing subscription renewed or changed, or that new items are added to. Null for a subscription the purchase opens.
+          type:
+            - string
+            - "null"
+          format: uuid
+        trial_period_days:
+          description: The free trial a subscription the purchase opens gets; null without one.
+          type:
+            - integer
+            - "null"
+        trial_end:
+          description: The end of the free trial a subscription the purchase opens gets; null without one or when given in days.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - subscription_id
+        - trial_period_days
+        - trial_end
       additionalProperties: false
     CheckoutSessionList:
       type: object
@@ -371,8 +405,12 @@ components:
           type: object
           additionalProperties:
             type: string
-        subscription_id:
-          description: The subscription changed or renewed. Null for a new purchase.
+        subscription_index:
+          description: The item's subscription, as its index in the session's `subscriptions`.
+          type: integer
+          minimum: 0
+        subscription_item_id:
+          description: The subscription item changed or renewed. Null for an item the purchase adds.
           type:
             - string
             - "null"
@@ -390,7 +428,8 @@ components:
         - price_id
         - quantity
         - dimensions
-        - subscription_id
+        - subscription_index
+        - subscription_item_id
         - periods
       additionalProperties: false
     CheckoutSessionItemList:
@@ -407,16 +446,20 @@ components:
         - pagination
       additionalProperties: false
     CheckoutSessionCreate:
-      description: The subscription to renew, and its periods and price chosen as in renewing.
+      description: The subscriptions to renew together, and the periods and price chosen as in renewing, applied to each.
       type: object
       properties:
         checkout_session_id:
           description: Chosen by the caller. Creating it again conflicts; read the session after an unknown outcome.
           type: string
           format: uuid
-        subscription_id:
-          type: string
-          format: uuid
+        subscriptions:
+          description: Each subscription at most once.
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/CheckoutSessionSubscriptionInput"
         periods:
           description: As in renewing.
           type: integer
@@ -439,6 +482,16 @@ components:
             - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
       required:
         - checkout_session_id
+        - subscriptions
+      additionalProperties: false
+    CheckoutSessionSubscriptionInput:
+      description: One subscription to renew.
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+      required:
         - subscription_id
       additionalProperties: false
     CheckoutSessionConfirm:

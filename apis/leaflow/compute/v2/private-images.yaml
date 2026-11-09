@@ -18,7 +18,7 @@ paths:
           description: Return only the images of this region
           explode: false
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/RegionID
+            $ref: ./identifiers.yaml#/components/schemas/RegionId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -87,7 +87,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/ImageID
+            $ref: ./identifiers.yaml#/components/schemas/ImageId
       responses:
         "200":
           description: OK
@@ -112,7 +112,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/ImageID
+            $ref: ./identifiers.yaml#/components/schemas/ImageId
       requestBody:
         required: true
         content:
@@ -142,7 +142,7 @@ paths:
         after cleanup is confirmed.\n\n\
         A resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource is
         released through its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown
-        cleanup is not proof of release.\n\nWhile subscriptions pay for the private image (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the private image working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
+        cleanup is not proof of release.\n\nWhile subscription items pay for the private image (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under its terms, and `period_end` keeps the private image working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
       operationId: delete-private-image
       tags:
         - private-images
@@ -151,7 +151,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/ImageID
+            $ref: ./identifiers.yaml#/components/schemas/ImageId
         - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
         "409":
@@ -173,13 +173,13 @@ components:
     DeletePrivateImageResponseBody:
       description:
         The private image as it is when the deletion is accepted, and the Billing cancellation that releases it when
-        subscriptions pay for it.
+        subscription items pay for it.
       type: object
       properties:
         private_image:
           $ref: "#/components/schemas/PrivateImageResource"
         cancellation:
-          description: The cancellation Compute created for the private image's subscriptions; null when none pays for it.
+          description: The cancellation Compute created for the private image's subscription items; null when none pays for it.
           oneOf:
             - type: "null"
             - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
@@ -195,9 +195,9 @@ components:
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/ImageID
+          $ref: ./identifiers.yaml#/components/schemas/ImageId
         region_id:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         name:
           type: string
         os_family:
@@ -274,7 +274,7 @@ components:
           description:
             The instance this image was captured from. The image remains usable after that
             instance is released
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
         created_at:
           type: string
           format: date-time
@@ -322,11 +322,18 @@ components:
             - "null"
           format: uuid
           readOnly: true
-          description: The subscription for this resource; its presence alone does not imply delivery.
+          description: The Billing subscription of this resource; its presence alone does not imply delivery.
+        subscription_item_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          readOnly: true
+          description: The resource's item of that subscription.
         release_set:
           description:
-            The subscription that pays for this private image, with the resource it pays for, so that a
-            cancellation through Billing can name what it releases. Empty when no subscription pays for it, and
+            The subscription item that pays for this private image, with the resource it pays for, so that a
+            cancellation through Billing can name what it releases. Empty when no subscription item pays for it, and
             once it is released.
           type: array
           items:
@@ -359,6 +366,7 @@ components:
         - order_id
         - order_item_id
         - subscription_id
+        - subscription_item_id
         - release_set
         - latest_operation
       additionalProperties: false
@@ -379,7 +387,7 @@ components:
       type: object
       properties:
         instance_id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
           description: Captured from the boot volume of this instance; data volumes are not included
         name:
           type: string

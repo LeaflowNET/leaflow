@@ -12,7 +12,7 @@ paths:
           explode: false
           schema:
             description: Return only the backups of this volume
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -76,7 +76,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
       responses:
         "200":
           description: OK
@@ -101,7 +101,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
       requestBody:
         required: true
         content:
@@ -128,7 +128,7 @@ paths:
         of the backup ends once it is deleted.\n\nQuota capacity and storage metering are released only after cleanup
         is confirmed.\n\nA resource whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead. A subscribed resource is released through
         its subscription cancellation. Cleanup must be confirmed before metering is stopped; unknown cleanup is not proof
-        of release.\n\nWhile subscriptions pay for the volume backup (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the volume backup working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
+        of release.\n\nWhile subscription items pay for the volume backup (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under its terms, and `period_end` keeps the volume backup working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for."
       operationId: delete-volume-backup
       tags:
         - volume-backups
@@ -137,13 +137,13 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
         - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
         "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         "202":
-          description: Deletion was accepted. Without a subscription the backup is `deleting` until it is deleted, and `cancellation` is null.
+          description: Deletion was accepted. Without a subscription item the backup is `deleting` until it is deleted, and `cancellation` is null.
           content:
             application/json:
               schema:
@@ -159,13 +159,13 @@ components:
     DeleteVolumeBackupResponseBody:
       description:
         The volume backup as it is when the deletion is accepted, and the Billing cancellation that releases it when
-        subscriptions pay for it.
+        subscription items pay for it.
       type: object
       properties:
         volume_backup:
           $ref: "#/components/schemas/VolumeBackupResource"
         cancellation:
-          description: The cancellation Compute created for the volume backup's subscriptions; null when none pays for it.
+          description: The cancellation Compute created for the volume backup's subscription items; null when none pays for it.
           oneOf:
             - type: "null"
             - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
@@ -183,11 +183,11 @@ components:
           type: string
           format: date-time
         id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
         name:
           type: string
         region_id:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         size_gib:
           description:
             Capacity of the source volume when the backup was created. A restored volume cannot be smaller
@@ -202,7 +202,7 @@ components:
           format: int64
         source_volume_id:
           description: The volume this backup was taken from. The backup remains usable after that volume is deleted
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         status:
           description:
             "`pending` from the purchase until the backup is taken, then `available`. `failed` means the
@@ -219,7 +219,7 @@ components:
             - deleting
         source_availability_zone_id:
           description: Availability zone of the source volume. A restore may target another zone in the same region
-          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         failure_reason:
           description:
             Why creation failed; null unless `status` is `failed`. `checkout_expired` means checkout was
@@ -264,11 +264,18 @@ components:
             - "null"
           format: uuid
           readOnly: true
-          description: The subscription for this resource; its presence alone does not imply delivery.
+          description: The Billing subscription of this resource; its presence alone does not imply delivery.
+        subscription_item_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          readOnly: true
+          description: The resource's item of that subscription.
         release_set:
           description:
-            The subscription that pays for this volume backup, with the resource it pays for, so that a
-            cancellation through Billing can name what it releases. Empty when no subscription pays for it, and
+            The subscription item that pays for this volume backup, with the resource it pays for, so that a
+            cancellation through Billing can name what it releases. Empty when no subscription item pays for it, and
             once it is released.
           type: array
           items:
@@ -293,6 +300,7 @@ components:
         - order_id
         - order_item_id
         - subscription_id
+        - subscription_item_id
         - release_set
         - latest_operation
       additionalProperties: false
@@ -315,7 +323,7 @@ components:
       type: object
       properties:
         volume_id:
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         name:
           type: string
           minLength: 1

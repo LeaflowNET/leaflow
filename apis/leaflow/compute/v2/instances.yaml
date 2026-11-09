@@ -41,7 +41,7 @@ paths:
 
         The instances are created in the availability zone of their instance type, and the volumes bought with them have to be of volume types of that zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). The types have to have room for all of them, checked before anything is ordered: refused with 409 `INSTANCE_TYPE_SOLD_OUT` or `VOLUME_TYPE_SOLD_OUT` when a type takes no new orders for now, `INSTANCE_TYPE_CAPACITY_REACHED` or `VOLUME_TYPE_CAPACITY_REACHED` when what is sold of it is used up, `INSTANCE_TYPE_NO_HOST_ROOM` when no host of the zone can take the machine, `VOLUME_TYPE_NO_POOL_ROOM` when the storage of the zone cannot take the boot volume, and `ELASTIC_IP_LINE_EXHAUSTED` when the line of the new elastic IPs has fewer addresses left than instances. Two orders placed at the same moment can both pass; an instance that finds a type full when its order is accepted is not created and is refunded, ending `failed` with `provisioning_failed`.
 
-        Choose an image or existing volume through boot_volume, and exactly one of network_interface_id or subnet_id. Existing network interfaces, boot volumes or elastic IPs require count=1. They are not held while the instance is pending; if one is no longer usable when the order is accepted, the instance ends `failed` with `provisioning_failed`. Image boots require boot_volume; existing volumes retain their own subscription. Instances, volumes and public IPs keep their own subscription items on the same order.
+        Choose an image or existing volume through boot_volume, and exactly one of network_interface_id or subnet_id. Existing network interfaces, boot volumes or elastic IPs require count=1. They are not held while the instance is pending; if one is no longer usable when the order is accepted, the instance ends `failed` with `provisioning_failed`. Image boots require boot_volume; existing volumes retain their own subscription. Each instance gets its own Billing subscription, with the boot volume, data volumes and elastic IP bought with it as items of it: they renew, renew automatically and expire with the machine as a whole, while each can still be changed or released alone. `checkout.auto_renew` turns automatic renewal on for each machine.
 
         Instances of one request succeed or fail individually. Each instance, with its boot volume, network interface and elastic IP, is created or fails as a whole. Instances that were created are kept; each failed instance ends `failed` with `provisioning_failed`, its part of the order is refunded, and the order then ends `partially_completed`. An instance is delivered whole or not at all: when the customer cancels any of its order items before the order is accepted, it is not created, its remaining items are canceled and refunded, and it ends `failed` with `order_canceled`. Each instance is named after this request with a number appended.
 
@@ -87,7 +87,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       responses:
         "200":
           description: OK
@@ -104,19 +104,11 @@ paths:
     patch:
       summary: Update an instance
       description: |-
-        Changes the descriptive fields (`name`, `labels`, `notes`) or the operational field `instance_type_id`. All fields are optional and at least one is required. Starting and stopping are the `:start` and `:stop` methods.
-
-        `instance_type_id` starts a workflow and cannot be combined with any other field in the same request. Such a request is refused with 422 `UPDATE_FIELDS_COMBINED`, because a rename that committed beside a change that was then refused would leave the request half applied. `checkout` and `proration_date` belong to the purchase of the `instance_type_id` change and are accepted only together with it.
-
-        **Descriptive fields** are not operations and are accepted at any time, whatever the instance is doing. The request returns 200 with `checkout_session_id` and `order_id` null.
+        Changes the descriptive fields `name`, `labels` and `description`; all are optional and at least one is required. They are not operations and are accepted at any time, whatever the instance is doing. Changing the instance type is the `:resize` method; starting and stopping are `:start` and `:stop`.
 
         - `name` changes the display name only. The hostname inside the instance is unchanged; it equals the instance id.
         - `labels` records what this instance is for, as key-value pairs. Nothing on the platform reads them. **The whole set is replaced**: whatever is absent from the request is removed, and an empty object clears them all. Do not put credentials here. Labels are visible to platform operators.
-        - `notes` is a free-text note about this instance: what it runs, and what to be careful about before touching it. **The whole note is replaced**; send an empty string to clear it. Do not put credentials here. The note is visible to platform operators.
-
-        **`instance_type_id`** changes the instance's type **cold**: the instance has to be stopped, and is refused with 409 `INSTANCE_RESIZE_REQUIRES_STOP` otherwise. Its operating system is not booted for the change, and it is still stopped once the change is applied; start it when you are ready. An instance stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`; start it once and stop it again. A target type that cannot hold what the instance already uses is refused before anything is ordered: fewer network interfaces than are attached with 409 `INSTANCE_RESIZE_NETWORK_INTERFACES_EXCEED`, fewer elastic IPs than are associated with 409 `INSTANCE_RESIZE_ELASTIC_IPS_EXCEED`, and less purchasable bandwidth than an associated elastic IP has with 409 `INSTANCE_BANDWIDTH_CEILING` naming it in `meta.elastic_ip_id`. The request returns 202 with the instance and the Checkout Session for the change, including for metered terms. The instance keeps its usage type and period, priced with the target type's matching option; a target type without that option is refused with 409 `BILLING_OPTION_UNAVAILABLE`. The resize starts once Billing accepts the order. Do not submit the change again after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
-
-        The instance is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. It keeps its current type until the resize is applied; the new type takes effect, and is billed from then on, when `instance_type_id` shows it. If checkout is not completed, the order is not accepted or the resize fails, the instance keeps its current type and Billing shows the outcome. A completed resize is final and cannot be reverted; to return to the previous type, submit another resize.
+        - `description` is a free-text note about this instance: what it runs, and what to be careful about before touching it. **The whole note is replaced**; send an empty string to clear it. Do not put credentials here. The note is visible to platform operators.
       operationId: update-instance
       tags:
         - instances
@@ -125,7 +117,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -134,21 +126,11 @@ paths:
               $ref: "#/components/schemas/UpdateInstanceRequestBody"
       responses:
         "200":
-          description: Only descriptive fields changed; no operation started. `checkout_session_id` and `order_id` are null.
+          description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UpdateInstanceResponseBody"
-        "202":
-          description:
-            A resize started. The instance, still on its current type, and the Checkout Session for the
-            change.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UpdateInstanceResponseBody"
-        "409":
-          $ref: ./openapi.yaml#/components/responses/Conflict
+                $ref: "#/components/schemas/Instance"
         default:
           description: Error
           content:
@@ -164,7 +146,7 @@ paths:
 
         Refused with `COMPUTE_PURCHASE_PENDING` while the purchase that created it still awaits checkout or payment; `meta.checkout_session_id` names its Checkout Session and `meta.order_id` its order once checkout created one. Expire the session or cancel the order in Billing instead.
 
-        While subscriptions pay for the instance (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed subscription being refunded under its terms, and `period_end` keeps the instance working until `scheduled_at` and releases it then. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
+        While subscription items pay for the instance (those in its `release_set`), deleting it cancels them rather than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`. `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under its terms, and `period_end` keeps the instance working until `scheduled_at` and releases it then. Volumes and elastic IPs kept after the release keep their items, and the subscription continues with them. Asking again while that cancellation is pending answers with it again, whatever mode is asked for.
       operationId: delete-instance
       tags:
         - instances
@@ -173,17 +155,54 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
         - $ref: ./openapi.yaml#/components/parameters/CancellationMode
       responses:
         "409":
           $ref: ./openapi.yaml#/components/responses/Conflict
         "202":
-          description: Release was accepted. Without a subscription the instance is `deleting` until it is released, and `cancellation` is null.
+          description: Release was accepted. Without a subscription item the instance is `deleting` until it is released, and `cancellation` is null.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteInstanceResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/instances/{instanceId}:resize:
+    parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
+    post:
+      summary: Resize an instance
+      description: |-
+        Changes the instance's type **cold**, through a change of its subscription item purchased in Billing: the instance has to be stopped, and is refused with 409 `INSTANCE_RESIZE_REQUIRES_STOP` otherwise. Its operating system is not booted for the change, and it is still stopped once the change is applied; start it when you are ready. An instance stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`; start it once and stop it again. A target type that cannot hold what the instance already uses is refused before anything is ordered: fewer network interfaces than are attached with 409 `INSTANCE_RESIZE_NETWORK_INTERFACES_EXCEED`, fewer elastic IPs than are associated with 409 `INSTANCE_RESIZE_ELASTIC_IPS_EXCEED`, and less purchasable bandwidth than an associated elastic IP has with 409 `INSTANCE_BANDWIDTH_CEILING` naming it in `meta.elastic_ip_id`. The request returns 202 with the instance and the Checkout Session for the change, including for metered terms. The instance keeps its usage type and period, priced with the target type's matching option; a target type without that option is refused with 409 `BILLING_OPTION_UNAVAILABLE`. The resize starts once Billing accepts the order. Do not submit the change again after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
+
+        The instance is `resizing` until the resize is applied, its Checkout Session expires or its order is canceled, so other operations and a second resize are refused with `COMPUTE_RESOURCE_BUSY` meanwhile. It keeps its current type until the resize is applied; the new type takes effect, and is billed from then on, when `instance_type_id` shows it. If checkout is not completed, the order is not accepted or the resize fails, the instance keeps its current type and Billing shows the outcome. A completed resize is final and cannot be reverted; to return to the previous type, submit another resize.
+      operationId: resize-instance
+      tags:
+        - instances
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResizeInstanceRequestBody"
+      responses:
+        "202":
+          description: A resize started. The instance, still on its current type, and the Checkout Session for the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResizeInstanceResponseBody"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
         default:
           description: Error
           content:
@@ -196,7 +215,7 @@ paths:
         in: path
         required: true
         schema:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
     post:
       summary: Start an instance
       description: |-
@@ -227,13 +246,13 @@ paths:
         in: path
         required: true
         schema:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
     post:
       summary: Stop an instance
       description: |-
         Shuts the instance down **on its host**, as Alibaba Cloud's ordinary stop does: it keeps its volumes, network interfaces, addresses and quota, and the vCPU and memory of its host stay reserved for it, so it starts again without asking for room. **A metered instance keeps being charged for compute while stopped**; its volumes and elastic IPs are charged as always. An instance stopped by a suspension, for non-payment or by the platform, is not charged for compute while the suspension lasts. It is `stopping` until it is stopped. Stopping a stopped instance changes nothing.
 
-        Changing `instance_type_id` is done on a stopped instance and only then. A stopped instance can also be rebuilt and have network interfaces and volumes attached and detached; rescuing it needs it running.
+        Resizing is done on a stopped instance and only then. A stopped instance can also be rebuilt and have network interfaces and volumes attached and detached; rescuing it needs it running.
       operationId: stop-instance
       tags:
         - instances
@@ -281,7 +300,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -301,14 +320,14 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-  /api/v2/instances/{instanceId}/console:
-    get:
-      summary: Retrieve a VNC console
+  /api/v2/instances/{instanceId}:createConsoleUrl:
+    post:
+      summary: Create a VNC console address
       description: |-
-        The instance's VNC console, operated from a browser through a noVNC client. It does not require the instance to be reachable over the network, which makes it usable when a network misconfiguration prevents login.
+        Issues an address for the instance's VNC console, operated from a browser through a noVNC client. It does not require the instance to be reachable over the network, which makes it usable when a network misconfiguration prevents login.
 
-        The returned address is single-use and expires within minutes. Every request issues a new address, so request one before each use and do not cache the response.
-      operationId: get-instance-console
+        The address is single-use and expires within minutes. Every request issues a new address, so request one before each use and do not cache the response.
+      operationId: create-instance-console-url
       tags:
         - instances
       parameters:
@@ -316,7 +335,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       responses:
         "200":
           description: OK
@@ -347,7 +366,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -390,7 +409,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -431,7 +450,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -465,7 +484,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -496,7 +515,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -535,12 +554,12 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
         - name: volumeId
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            $ref: ./identifiers.yaml#/components/schemas/VolumeId
       responses:
         "202":
           description: The detachment was accepted.
@@ -567,7 +586,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
@@ -596,7 +615,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       requestBody:
         required: true
         content:
@@ -633,12 +652,12 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
         - name: networkInterfaceId
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+            $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       responses:
         "202":
           description: The detachment was accepted.
@@ -675,7 +694,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       responses:
         "202":
           description: Operation accepted
@@ -705,7 +724,7 @@ paths:
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/InstanceID
+            $ref: ./identifiers.yaml#/components/schemas/InstanceId
       responses:
         "202":
           description: Operation accepted
@@ -726,13 +745,13 @@ components:
     DeleteInstanceResponseBody:
       description:
         The instance as it is when the deletion is accepted, and the Billing cancellation that releases it when
-        subscriptions pay for it.
+        subscription items pay for it.
       type: object
       properties:
         instance:
           $ref: "#/components/schemas/Instance"
         cancellation:
-          description: The cancellation Compute created for the instance's subscriptions; null when none pays for it.
+          description: The cancellation Compute created for the instance's subscription items; null when none pays for it.
           oneOf:
             - type: "null"
             - $ref: ./billing-terms.yaml#/components/schemas/BillingCancellation
@@ -744,7 +763,7 @@ components:
       type: object
       properties:
         availability_zone_id:
-          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneID
+          $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         created_at:
           type: string
           format: date-time
@@ -752,13 +771,13 @@ components:
           description: Hostname inside the instance; equals the instance id
           type: string
         id:
-          $ref: ./identifiers.yaml#/components/schemas/InstanceID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceId
         image_id:
           description:
             Non-empty when the instance was created from an image, public or private. `image_type`
             says which collection holds it
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/ImageID
+            - $ref: ./identifiers.yaml#/components/schemas/ImageId
             - type: "null"
         image_type:
           description:
@@ -773,7 +792,7 @@ components:
             - null
         instance_type_id:
           description: The instance type in effect, and the basis for billing
-          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         ipv6_address:
           description:
             IPv6 address of the primary network interface. Assigned automatically once IPv6 is enabled
@@ -805,7 +824,7 @@ components:
             - "null"
         virtual_private_cloud_id:
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudID
+            - $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
             - type: "null"
         elastic_ip_addresses:
           description:
@@ -817,7 +836,7 @@ components:
           items:
             type: string
         region_id:
-          $ref: ./identifiers.yaml#/components/schemas/RegionID
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         status:
           description:
             "`pending` until the instance is created: before the order is accepted no instance
@@ -859,7 +878,7 @@ components:
             - deleting
         subnet_id:
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/SubnetID
+            - $ref: ./identifiers.yaml#/components/schemas/SubnetId
             - type: "null"
         updated_at:
           type: string
@@ -905,15 +924,22 @@ components:
           format: uuid
         subscription_id:
           description: |-
-            The Billing subscription associated with this resource. It may still be pending; its
-            presence does not imply delivery or metering. Null when no subscription is associated.
+            The Billing subscription the instance renews under, with the volumes and elastic IP bought with it or for it.
+            Read it in Billing for the term end, automatic renewal and renewal. It may still be pending; its presence
+            does not imply delivery or metering. Null when no subscription is associated.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_item_id:
+          description: The instance's own item of that subscription. Null when no subscription is associated.
           type:
             - string
             - "null"
           format: uuid
         release_set:
           description:
-            Subscriptions required to release this instance and volumes deleted with it, each
+            Subscription items required to release this instance and volumes deleted with it, each
             with the resource it pays for, so that each line of a cancellation can name what it releases. Billing
             determines cancellation terms. An empty set does not establish refund eligibility.
           type: array
@@ -934,14 +960,14 @@ components:
             Non-empty when the instance was created from a volume you already had, instead of from
             an image
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            - $ref: ./identifiers.yaml#/components/schemas/VolumeId
             - type: "null"
         launch_template_id:
           description:
             The launch template the instance was created from; null when none was named. Changing
             or deleting the template afterwards changes nothing about the instance.
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+            - $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateId
             - type: "null"
         launch_template_version_number:
           description: The version of that launch template it was created from; null when none was named.
@@ -1003,6 +1029,7 @@ components:
         - restrictions
         - order_item_id
         - subscription_id
+        - subscription_item_id
         - release_set
         - access_state
         - failure_reason
@@ -1066,7 +1093,7 @@ components:
             fails, no instance is created. Associating afterwards is still possible
             (`associate-elastic-ip`), but then it is two operations and a failure in between leaves an instance
              you cannot reach. Omitted, the instance has no public address.
-          $ref: "#/components/schemas/InstanceElasticIP"
+          $ref: "#/components/schemas/InstanceElasticIp"
         password:
           description:
             The login account's password. Omitted, only SSH keys log in, those the project shares and those
@@ -1098,10 +1125,7 @@ components:
         - compute
       additionalProperties: false
     UpdateInstanceRequestBody:
-      description: |-
-        The mutable fields of an instance, all optional, at least one required. `instance_type_id` is an operational
-        field: it starts a workflow and cannot be combined with any other field; such a request is refused with 422
-        `UPDATE_FIELDS_COMBINED`.
+      description: The descriptive fields of an instance, all optional, at least one required.
       type: object
       properties:
         name:
@@ -1121,25 +1145,31 @@ components:
           description: The complete note. Send an empty string to clear it
           type: string
           maxLength: 4096
+      minProperties: 1
+      additionalProperties: false
+    ResizeInstanceRequestBody:
+      type: object
+      properties:
         instance_type_id:
           description:
             The instance type to resize to. It has to be on sale, in the instance's region and of
             its availability zone (422 `INSTANCE_RESIZE_OTHER_AVAILABILITY_ZONE`), and it has to have room for one
             more machine of it (409 `INSTANCE_TYPE_SOLD_OUT`, `INSTANCE_TYPE_CAPACITY_REACHED` or `INSTANCE_TYPE_NO_HOST_ROOM`).
-            Operational field; the change is purchased through Billing.
-          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+            The change is purchased through Billing.
+          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         proration_date:
           description:
             The `proration_date` of the Billing quote for this change, so that the order is priced from
-            the same instant. Only with `instance_type_id`, and only for automatic checkout; deferred checkout is priced
+            the same instant. Only for automatic checkout; deferred checkout is priced
             when the customer completes it. Defaults to the time of the request; it must be a whole second, not in the
             future and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`.
           type: string
           format: date-time
         checkout:
-          description: How the purchase of the `instance_type_id` change is checked out. Only with `instance_type_id`.
+          description: How the purchase of the change is checked out.
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
-      minProperties: 1
+      required:
+        - instance_type_id
       additionalProperties: false
     RebootInstanceRequestBody:
       type: object
@@ -1226,7 +1256,7 @@ components:
           description:
             A public image (`/public-images`), which must be on sale unless it is the one this instance
             already runs, or an available private image of this project (`/private-images`)
-          $ref: ./identifiers.yaml#/components/schemas/ImageID
+          $ref: ./identifiers.yaml#/components/schemas/ImageId
         password:
           description:
             The login account's password on the reinstalled system. Omitted, only SSH keys log in, those the
@@ -1306,7 +1336,7 @@ components:
       properties:
         instance_type_id:
           description: An instance type currently on sale. Required unless the launch template names one.
-          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeID
+          $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         billing:
           description:
             The terms of each instance, and the usage type and period every component bought with it
@@ -1321,7 +1351,7 @@ components:
       properties:
         launch_template_id:
           description: A launch template of this project in the instance type's region.
-          $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateID
+          $ref: ./identifiers.yaml#/components/schemas/LaunchTemplateId
         version_number:
           description: A live version of it; the template's `default_version` when omitted.
           type: integer
@@ -1354,7 +1384,7 @@ components:
             A prepared boot volume owned by this project, available, unattached and in the instance type's
             availability zone.
             Only one instance may be created when used.
-          $ref: ./identifiers.yaml#/components/schemas/VolumeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeId
         login_username:
           description: The existing account used to log in to this volume's operating system.
           type: string
@@ -1365,27 +1395,20 @@ components:
         - volume_id
         - login_username
       additionalProperties: false
-    UpdateInstanceResponseBody:
+    ResizeInstanceResponseBody:
       description: |-
-        The instance and, when the update placed a Billing order, the Checkout Session for it. After a resize the
-        instance is still on its current type, keeps its ID, and its current subscription remains in force until
-        the resize is applied. Returned with 200 when only descriptive fields changed and with 202 when an operation started.
+        The instance and the Checkout Session for the resize. The instance is still on its current type, keeps its
+        ID, and its subscription item keeps its current terms until the resize is applied.
       type: object
       properties:
         instance:
           $ref: "#/components/schemas/Instance"
         checkout_session_id:
-          description:
-            The Billing Checkout Session of the purchase; null when the update placed no order. With deferred
-            checkout, the customer completes it in Billing.
-          type:
-            - string
-            - "null"
+          description: The Billing Checkout Session of the purchase. With deferred checkout, the customer completes it in Billing.
+          type: string
           format: uuid
         order_id:
-          description:
-            The order created when checkout completes, at once for automatic checkout; null until then and
-            when the update placed no order.
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
           type:
             - string
             - "null"
@@ -1407,12 +1430,12 @@ components:
             - image
         image_id:
           description: A public image on sale (`/public-images`), or an available private image of this project (`/private-images`).
-          $ref: ./identifiers.yaml#/components/schemas/ImageID
+          $ref: ./identifiers.yaml#/components/schemas/ImageId
         volume_type_id:
           description:
             A volume type on sale and sold in the instance's availability zone; any volume type boots an
             instance
-          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeId
         size_gib:
           type: integer
           format: int64
@@ -1444,7 +1467,7 @@ components:
       properties:
         volume_type_id:
           description: A volume type on sale and sold in the instance's availability zone.
-          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeID
+          $ref: ./identifiers.yaml#/components/schemas/VolumeTypeId
         size_gib:
           description: Within the volume type's `min_size_gib` and `max_size_gib` and a multiple of its `size_step_gib`.
           type: integer
@@ -1488,7 +1511,7 @@ components:
             - new
         subnet_id:
           description: The subnet the interface is created in, in the instance type's region.
-          $ref: ./identifiers.yaml#/components/schemas/SubnetID
+          $ref: ./identifiers.yaml#/components/schemas/SubnetId
         security_group_ids:
           description:
             The security groups of the interface, of the subnet's virtual private cloud. The default
@@ -1497,7 +1520,7 @@ components:
           minItems: 1
           maxItems: 5
           items:
-            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupID
+            $ref: ./identifiers.yaml#/components/schemas/SecurityGroupId
       required:
         - type
         - subnet_id
@@ -1514,24 +1537,24 @@ components:
           description:
             An unattached network interface of this project in the instance type's region. It keeps its
             security groups and any elastic IP associated with it. Only one instance may be created when used.
-          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceID
+          $ref: ./identifiers.yaml#/components/schemas/NetworkInterfaceId
       required:
         - type
         - network_interface_id
       additionalProperties: false
-    InstanceElasticIP:
+    InstanceElasticIp:
       description:
         "`new` buys an elastic IP in the instance's order; `existing` associates one you already
         hold. One address is associated with one interface, so either creates only one instance."
       oneOf:
-        - $ref: "#/components/schemas/NewElasticIP"
-        - $ref: "#/components/schemas/ExistingElasticIP"
+        - $ref: "#/components/schemas/NewElasticIp"
+        - $ref: "#/components/schemas/ExistingElasticIp"
       discriminator:
         propertyName: type
         mapping:
-          new: "#/components/schemas/NewElasticIP"
-          existing: "#/components/schemas/ExistingElasticIP"
-    NewElasticIP:
+          new: "#/components/schemas/NewElasticIp"
+          existing: "#/components/schemas/ExistingElasticIp"
+    NewElasticIp:
       description: One IPv4 elastic IP created with this bandwidth configuration in the instance's order.
       type: object
       properties:
@@ -1540,7 +1563,7 @@ components:
           enum:
             - new
         line_id:
-          $ref: ./identifiers.yaml#/components/schemas/ElasticIPLineID
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIpLineId
         bandwidth_mbps:
           description:
             Any whole number of Mbps within the line's `min_bandwidth_mbps` and `max_bandwidth_mbps`,
@@ -1554,16 +1577,15 @@ components:
           default: bandwidth
         billing:
           description:
-            The terms of the elastic IP's network subscription, `compute.billing` when omitted; they follow
-            the rule shared by every component of the purchase. Its address subscription is always pay-as-you-go and is
-            exempt from that rule.
+            The terms of the elastic IP's network item, `compute.billing` when omitted; they follow the rule shared
+            by every component of the purchase. Its address item is always pay-as-you-go and is exempt from that rule.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
         - type
         - line_id
         - bandwidth_mbps
       additionalProperties: false
-    ExistingElasticIP:
+    ExistingElasticIp:
       type: object
       properties:
         type:
@@ -1573,8 +1595,8 @@ components:
         elastic_ip_id:
           description:
             An idle elastic IP of this project in the same region. It keeps its own bandwidth and
-            subscriptions; changing its bandwidth is a separate operation.
-          $ref: ./identifiers.yaml#/components/schemas/ElasticIPID
+            Billing subscription; changing its bandwidth is a separate operation.
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
       required:
         - type
         - elastic_ip_id
@@ -1590,11 +1612,11 @@ components:
         reason:
           description: |-
             Why it is held. `operator_suspended` is a suspension by the platform. `billing_suspended` is the instance's
-            own subscription suspended for non-payment, and `billing_reclaimed` that subscription ending,
-            after which the instance is released. `boot_volume_suspended` and `boot_volume_reclaimed` are the same
-            for the subscription of the volume the instance boots from: that volume is billed apart, and the
-            instance cannot run without it, so renewing the volume's subscription lifts the hold, and a reclaimed
-            boot volume is released together with its instance.
+            subscription suspended because its term ended without renewal or the account is in arrears, and
+            `billing_reclaimed` that subscription ending, after which the instance is released. `boot_volume_suspended`
+            and `boot_volume_reclaimed` are the same for the subscription of a volume the instance boots from that was
+            bought on its own: the instance cannot run without it, so renewing that subscription lifts the hold, and a
+            reclaimed boot volume is released together with its instance.
           type: string
           enum:
             - operator_suspended
@@ -1613,7 +1635,7 @@ components:
             The volume the instance boots from, for `boot_volume_suspended` and `boot_volume_reclaimed`;
             null otherwise.
           anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/VolumeID
+            - $ref: ./identifiers.yaml#/components/schemas/VolumeId
             - type: "null"
         started_at:
           description: When the hold began; null when that instant was not recorded.

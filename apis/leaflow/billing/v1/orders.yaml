@@ -69,7 +69,7 @@ paths:
         payment waiting for the payer is canceled with the order; one the gateway is processing is refused with
         `BILLING_PAYMENT_PENDING` and `meta.transaction_id`. Repeating the cancellation does not refund twice.
 
-        An accepted order is canceled by its owning service, and delivered items through subscription cancellation.
+        An accepted order is canceled by its owning service, and delivered items through cancellation of their subscription items.
         Refunds are previewed with `preview-order-refund`. Open to the owner of the order's billing account and to members of its project.
       operationId: cancel-order
       tags:
@@ -162,7 +162,7 @@ components:
         - failed
         - canceled
     OrderItemStatus:
-      description: "`pending`: waiting to be set up. `completed`: set up, as confirmed by the service. `failed`: not set up; its amount was refunded to the original payment sources. `canceled`: withdrawn without delivery; any collected amount is returned. A completed item ends when its subscription is canceled."
+      description: "`pending`: waiting to be set up. `completed`: set up, as confirmed by the service. `failed`: not set up; its amount was refunded to the original payment sources. `canceled`: withdrawn without delivery; any collected amount is returned. A completed item ends when its subscription item is canceled."
       type: string
       enum:
         - pending
@@ -220,7 +220,7 @@ components:
         currency:
           type: string
         type:
-          description: "`new` buys, `renew` extends a licensed subscription, `modify` changes a subscription's configuration or billing terms."
+          description: "`new` buys, `renew` extends subscriptions, `modify` changes subscription items' configuration or billing terms."
           type: string
           enum:
             - new
@@ -229,7 +229,7 @@ components:
         status:
           $ref: "#/components/schemas/OrderStatus"
         change_effective:
-          description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced when the order is created and starts when the current paid period ends; if the invoice is unpaid by then, the order is canceled and the subscription renews or ends as usual.
+          description: When a plan change takes effect; `none` for anything that is not a change. A `period_end` order stays pending until the first period at the new price is paid. That period is invoiced when the order is created and starts when the current paid period ends; if the invoice is unpaid by then, the order is canceled and the item renews or ends with its subscription as usual.
           type: string
           enum:
             - none
@@ -306,7 +306,7 @@ components:
         - renew
         - modify
     OrderItem:
-      description: The purchase terms frozen at placement. Monetary fields come from the order's invoice lines and are zero without an immediate charge, such as for a metered purchase. Later catalog changes do not reprice the line. A new service purchase has its pending subscription from placement.
+      description: The purchase terms frozen at placement. Monetary fields come from the order's invoice lines and are zero without an immediate charge, such as for a metered purchase. Later catalog changes do not reprice the line. A new service purchase has its pending subscription and subscription item from placement.
       type: object
       properties:
         renewal_discounts_enabled:
@@ -325,7 +325,11 @@ components:
           type: object
           additionalProperties: true
         subscription_id:
-          description: "The Billing subscription: the new pending subscription of a recurring purchase, or the existing one renewed or changed, which keeps its ID. Absent for a purchase without a subscription."
+          description: "The Billing subscription the line belongs to: a new pending one, the existing one an added item joins, or the one renewed or changed, which keeps its ID. Absent for a purchase without a subscription."
+          type: string
+          format: uuid
+        subscription_item_id:
+          description: "The subscription item the line created, renewed or changed, which keeps its ID. Absent for a purchase without a subscription."
           type: string
           format: uuid
         interval:
@@ -387,7 +391,7 @@ components:
           type: string
           format: uuid
         product_id:
-          $ref: ./products.yaml#/components/schemas/ProductID
+          $ref: ./products.yaml#/components/schemas/ProductId
           description: Which service this line belongs to.
         product:
           $ref: ./products.yaml#/components/schemas/Product
