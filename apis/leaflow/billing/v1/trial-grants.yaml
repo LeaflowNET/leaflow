@@ -1,0 +1,169 @@
+paths:
+  /api/v1/trial-grants:
+    get:
+      summary: List free trial grants
+      description: |-
+        Free trials held by your billing accounts. Choose an available grant when checking out a purchase its offer
+        covers, by saving its ID as `trial_grant_id` on the Checkout Session; a session and its preview list the grants that
+        can be used for it.
+      operationId: list-trial-grants
+      tags:
+        - trial-grants
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: status
+          in: query
+          required: false
+          description: Only grants in these statuses; omit for every status. Comma-separated, for example `status=available,scheduled`.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 5
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/TrialGrantStatus"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialGrantList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/trial-grants/{trialGrantId}:
+    parameters:
+      - name: trialGrantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a free trial grant
+      description: A free trial held by one of your billing accounts. Returns 404 if it does not exist or is not yours.
+      operationId: get-trial-grant
+      tags:
+        - trial-grants
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialGrant"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    TrialGrantStatus:
+      description: "`scheduled` before valid_from, `available` to be chosen at checkout, `redeemed` once used for a subscription, `expired` after valid_until without being used, or `voided` once withdrawn."
+      type: string
+      enum:
+        - scheduled
+        - available
+        - redeemed
+        - expired
+        - voided
+    TrialOffer:
+      description: The terms of a free trial. The licensed items of the subscription it is used for are free for `trial_period_days`, while metered usage is charged as usual. When the trial ends it converts to paid if automatic renewal is on; otherwise `trial_settings` applies.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        trial_period_days:
+          type: integer
+          minimum: 1
+          maximum: 730
+        trial_settings:
+          $ref: ./subscriptions.yaml#/components/schemas/TrialSettings
+        applies_to:
+          description: The purchases it can be used for. Every line of the subscription must be covered.
+          allOf:
+            - $ref: ./discounts.yaml#/components/schemas/Applicability
+      required:
+        - id
+        - name
+        - description
+        - trial_period_days
+        - trial_settings
+        - applies_to
+      additionalProperties: false
+    TrialGrant:
+      description: One free trial held by a billing account for a period. It is used for one subscription; if the order it was used for is canceled or fails, it can be used again while it is valid.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        trial_offer:
+          $ref: "#/components/schemas/TrialOffer"
+        status:
+          $ref: "#/components/schemas/TrialGrantStatus"
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          description: Null when the grant does not expire.
+          type:
+            - string
+            - "null"
+          format: date-time
+        voided_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        order_id:
+          description: The order the grant was used for; null until it is used.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_id:
+          description: The subscription the grant was used for; null until it is used.
+          type:
+            - string
+            - "null"
+          format: uuid
+        redeemed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - billing_account_id
+        - trial_offer
+        - status
+        - valid_from
+        - valid_until
+        - voided_at
+        - order_id
+        - subscription_id
+        - redeemed_at
+      additionalProperties: false
+    TrialGrantList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrialGrant"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

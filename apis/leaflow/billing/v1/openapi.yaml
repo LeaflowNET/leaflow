@@ -2,7 +2,7 @@ openapi: 3.2.1
 info:
   title: Leaflow Billing API
   version: v1
-  description: Products, prices, orders, subscriptions and account billing. Operations on a billing account require an account access token. The account, its balance, payment options and quotes are also readable by members of the projects it currently pays for; changing the account and moving its funds need the owner. Members of a project, as each operation states, can also read the project's billing account, subscriptions and orders, complete and pay for its purchases, quote purchases, changes and renewals, preview cancellations, and, with the project permission `billing:finance.manage` granted in IAM, renew, cancel and turn automatic renewal of its subscriptions on or off, change its billing account and read its costs. A member without the permission an operation needs is refused with 403 `PERMISSION_DENIED` and `meta.permission`; a caller who is not a member, with 403 `IAM_NOT_PROJECT_MEMBER`. Public catalogue operations declare no security requirement.
+  description: Products, prices, orders, subscriptions and account billing. Operations on a billing account require an account access token. The account, its balance, payment options and checkout previews are also readable by members of the projects it currently pays for; changing the account and moving its funds need the owner. Members of a project, as each operation states, can also read the project's billing account, subscriptions and orders, complete and pay for its purchases, preview the checkout of purchases, changes and renewals, preview cancellations, and, with the project permission `billing:finance.manage` granted in IAM, renew, cancel and turn automatic renewal of its subscriptions on or off, change its billing account and read its costs. A member without the permission an operation needs is refused with 403 `PERMISSION_DENIED` and `meta.permission`; a caller who is not a member, with 403 `IAM_NOT_PROJECT_MEMBER`. Public catalogue operations declare no security requirement.
 servers:
   - url: https://billing.leaflow.cloud
     description: Billing API
@@ -25,11 +25,11 @@ tags:
   - name: plans
   - name: prices
   - name: products
-  - name: quotes
   - name: refunds
   - name: spend
   - name: subscriptions
   - name: transactions
+  - name: trial-grants
   - name: usage-charges
   - name: statements
 paths:
@@ -97,6 +97,10 @@ paths:
     $ref: ./transactions.yaml#/paths/~1api~1v1~1transactions
   /api/v1/discounts:
     $ref: ./discounts.yaml#/paths/~1api~1v1~1discounts
+  /api/v1/trial-grants:
+    $ref: ./trial-grants.yaml#/paths/~1api~1v1~1trial-grants
+  /api/v1/trial-grants/{trialGrantId}:
+    $ref: ./trial-grants.yaml#/paths/~1api~1v1~1trial-grants~1{trialGrantId}
   /api/v1/credit-grants:
     $ref: ./credit-grants.yaml#/paths/~1api~1v1~1credit-grants
   /api/v1/credit-notes:
@@ -115,8 +119,6 @@ paths:
     $ref: ./subscriptions.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}
   /api/v1/subscriptions/{subscriptionId}:cancel:
     $ref: ./subscriptions.yaml#/paths/~1api~1v1~1subscriptions~1{subscriptionId}:cancel
-  /api/v1/quotes:
-    $ref: ./quotes.yaml#/paths/~1api~1v1~1quotes
   /api/v1/usage-estimates:
     $ref: ./prices.yaml#/paths/~1api~1v1~1usage-estimates
   /api/v1/cancellations:
@@ -133,12 +135,10 @@ paths:
     $ref: ./allowances.yaml#/paths/~1api~1v1~1allowances
   /api/v1/checkout-sessions:
     $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions
+  /api/v1/checkout-sessions:preview:
+    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions:preview
   /api/v1/checkout-sessions/{checkoutSessionId}:
     $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}
-  /api/v1/checkout-sessions/{checkoutSessionId}/items:
-    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1items
-  /api/v1/checkout-sessions/{checkoutSessionId}/quote:
-    $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}~1quote
   /api/v1/checkout-sessions/{checkoutSessionId}:confirm:
     $ref: ./checkout-sessions.yaml#/paths/~1api~1v1~1checkout-sessions~1{checkoutSessionId}:confirm
   /api/v1/checkout-sessions/{checkoutSessionId}:expire:
@@ -194,18 +194,6 @@ components:
       $ref: ./prices.yaml#/components/schemas/RefundPolicy
     OrderCancel:
       $ref: ./orders.yaml#/components/schemas/OrderCancel
-    QuoteRenewal:
-      $ref: ./quotes.yaml#/components/schemas/QuoteRenewal
-    QuoteRenewalResult:
-      $ref: ./quotes.yaml#/components/schemas/QuoteRenewalResult
-    QuoteRenewalItem:
-      $ref: ./quotes.yaml#/components/schemas/QuoteRenewalItem
-    QuoteItem:
-      $ref: ./quotes.yaml#/components/schemas/QuoteItem
-    Quote:
-      $ref: ./quotes.yaml#/components/schemas/Quote
-    QuotedDiscount:
-      $ref: ./quotes.yaml#/components/schemas/QuotedDiscount
     CancellationPreviewRequest:
       $ref: ./cancellations.yaml#/components/schemas/CancellationPreviewRequest
     CancellationPreview:
@@ -364,8 +352,26 @@ components:
       $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionList
     CheckoutSessionItem:
       $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItem
-    CheckoutSessionItemList:
-      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItemList
+    CheckoutSessionItemDowngradeRefund:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItemDowngradeRefund
+    CheckoutSessionDiscount:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionDiscount
+    CheckoutSessionTrial:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionTrial
+    SubscriptionData:
+      $ref: ./checkout-sessions.yaml#/components/schemas/SubscriptionData
+    SubscriptionDataInput:
+      $ref: ./checkout-sessions.yaml#/components/schemas/SubscriptionDataInput
+    CheckoutSessionPreviewRequest:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionPreviewRequest
+    CheckoutSessionPreviewSubscription:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionPreviewSubscription
+    CheckoutSessionItemInput:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionItemInput
+    CustomerAddress:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CustomerAddress
+    CheckoutSessionUpdate:
+      $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionUpdate
     CheckoutSessionCreate:
       $ref: ./checkout-sessions.yaml#/components/schemas/CheckoutSessionCreate
     CheckoutSessionSubscription:
@@ -392,6 +398,14 @@ components:
       $ref: ./discounts.yaml#/components/schemas/Discount
     DiscountList:
       $ref: ./discounts.yaml#/components/schemas/DiscountList
+    TrialGrant:
+      $ref: ./trial-grants.yaml#/components/schemas/TrialGrant
+    TrialGrantList:
+      $ref: ./trial-grants.yaml#/components/schemas/TrialGrantList
+    TrialGrantStatus:
+      $ref: ./trial-grants.yaml#/components/schemas/TrialGrantStatus
+    TrialOffer:
+      $ref: ./trial-grants.yaml#/components/schemas/TrialOffer
     PriceOption:
       $ref: ./prices.yaml#/components/schemas/PriceOption
     SubscriptionRestriction:
@@ -452,8 +466,6 @@ components:
       $ref: ./prices.yaml#/components/schemas/Tier
     PlanFeature:
       $ref: ./plans.yaml#/components/schemas/PlanFeature
-    QuoteItemInput:
-      $ref: ./quotes.yaml#/components/schemas/QuoteItemInput
     SpendRow:
       $ref: ./spend.yaml#/components/schemas/SpendRow
     SpendRowList:
@@ -472,8 +484,6 @@ components:
       $ref: ./prices.yaml#/components/schemas/UsageEstimate
     UsageEstimateItem:
       $ref: ./prices.yaml#/components/schemas/UsageEstimateItem
-    QuoteRequest:
-      $ref: ./quotes.yaml#/components/schemas/QuoteRequest
   parameters:
     From:
       name: from

@@ -2,7 +2,7 @@ paths:
   /api/v1/checkout-sessions:
     get:
       summary: List Checkout Sessions
-      description:
+      description: |-
         Checkout Sessions of your billing accounts, newest first; members of a project list its sessions with
         `project_ids`. An open session is a purchase waiting for checkout to be completed.
       operationId: list-checkout-sessions
@@ -41,9 +41,10 @@ paths:
         Opens a Checkout Session renewing one or more subscriptions in one order, such as a machine and the separately
         bought volumes and elastic IPs attached to it, with periods and price chosen as in renewing. Every subscription
         must be paid by the same billing account and belong to the same project and service. Nothing is charged until
-        you complete it, when a promotion code can be applied; each subscription then renews from its current_term_end
-        at that time. To renew one subscription at once from credit grants, balance or a payment method, renew the
-        subscription instead. Purchases and changes of a service's resources are created through that service.
+        you complete it; save a promotion code on it first with `update-checkout-session`. Each subscription then renews
+        from its current_term_end at that time. To renew one subscription at once from credit grants, balance or a
+        payment method, renew the subscription instead. Purchases and changes of a service's resources are created
+        through that service.
 
         Open to the owner of the subscriptions' current billing account and to members of their project with the
         project permission `billing:finance.manage`. Keep `checkout_session_id` and read the session after an
@@ -65,7 +66,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CheckoutSession"
         "409":
-          description:
+          description: |-
             "The session already exists, refused with `BILLING_CHECKOUT_SESSION_EXISTS`, or a subscription has
             an operation in progress, refused with `BILLING_SUBSCRIPTION_OPERATION_PENDING` and `meta.subscription_id`:
             a pending renewal, a pending or paid change of an item waiting to switch, an open cancellation of the whole
@@ -76,15 +77,122 @@ paths:
                 $ref: ./openapi.yaml#/components/schemas/Error
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/checkout-sessions:preview:
+    query:
+      summary: Preview a Checkout Session
+      description: |-
+        What a Checkout Session for a purchase, a change of your subscriptions or their renewal would invoice if it
+        were completed now, returned as a session that is not saved: it has no `id`, and nothing is ordered, reserved
+        or redeemed. Use it to show prices before buying; the service that sells a resource creates the session for its
+        purchase or change, and you create renewal sessions here.
+
+        With `billing_account_id` the preview is for that billing account: its currency, account discounts, tax,
+        funds and free trial grants apply, changes and renewals use the account currently paying for each
+        subscription, and an access token is required. The account must be yours or currently pay for a project you
+        are a member of. Without it, a purchase is priced in `currency` for anyone, signed in or not: no account
+        discount, funds or trial grant apply, and tax that would be added is included only for `address`.
+
+        A promotion code is evaluated without being applied; conditions that depend on the account, such as a first
+        purchase, are checked only with an account and otherwise reported as `unverified`. An invalid or inapplicable
+        code or trial grant fails the request. Future usage of metered prices is estimated with `estimate-usage`.
+      operationId: preview-checkout-session
+      security:
+        - {}
+        - accessTokenAuth: []
+      tags:
+        - checkout-sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutSessionPreviewRequest"
+            examples:
+              promotion_code:
+                summary: Check whether a promotion code applies to a proposed purchase, without applying it.
+                value:
+                  type: new
+                  billing_account_id: 1
+                  subscriptions:
+                    - items:
+                        - price_id: 019c0000-0000-7000-8000-000000000002
+                          quantity: "1"
+                  promotion_code: WELCOME
+              without_account:
+                summary: Price a proposed purchase for a visitor who is not signed in.
+                value:
+                  type: new
+                  currency: USD
+                  subscriptions:
+                    - items:
+                        - price_id: 019c0000-0000-7000-8000-000000000002
+                          quantity: "1"
+              with_address:
+                summary: Price a proposed purchase for a visitor who is not signed in, with the tax added where they are.
+                value:
+                  type: new
+                  currency: EUR
+                  address:
+                    country: DE
+                  subscriptions:
+                    - items:
+                        - price_id: 019c0000-0000-7000-8000-000000000002
+                          quantity: "1"
+              trial:
+                summary: Price a machine bought with a free trial grant of the account.
+                value:
+                  type: new
+                  billing_account_id: 1
+                  subscriptions:
+                    - items:
+                        - product_id: compute
+                          plan_id: 019c0000-0000-7000-8000-000000000004
+                          interval: month
+                          interval_count: 1
+                          quantity: "1"
+                  trial_grant_id: 019c0000-0000-7000-8000-000000000006
+              change:
+                summary: Price changing a subscription item to another plan at once, keeping its billing terms.
+                value:
+                  type: modify
+                  billing_account_id: 1
+                  change_effective: immediate
+                  subscriptions:
+                    - subscription_id: 019c0000-0000-7000-8000-000000000003
+                      items:
+                        - subscription_item_id: 019c0000-0000-7000-8000-000000000005
+                          plan_id: 019c0000-0000-7000-8000-000000000004
+                          quantity: "1"
+              renewal:
+                summary: Price renewing two subscriptions together for one more month.
+                value:
+                  type: renew
+                  billing_account_id: 1
+                  interval: month
+                  interval_count: 1
+                  subscriptions:
+                    - subscription_id: 019c0000-0000-7000-8000-000000000003
+                    - subscription_id: 019c0000-0000-7000-8000-000000000007
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSession"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/checkout-sessions/{checkoutSessionId}:
     parameters:
       - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
     get:
       summary: Get a Checkout Session
-      description:
-        A Checkout Session of your billing account or of a project you are a member of. Poll it to follow
-        checkout; once it is complete, read its order for payment and delivery. An unknown session returns 404; any
-        other session returns 403.
+      description: |-
+        A Checkout Session of your billing account or of a project you are a member of, with what completing it now
+        would invoice under the choices saved on it. A saved promotion code or trial grant that can no longer be applied
+        is left out of the amounts; `discount` and the subscriptions' `trial_grant_id` show what applies, and confirming
+        fails until the session is updated. Poll it to follow checkout; once it is complete, read its order for payment
+        and delivery. An unknown session returns 404; any other session returns 403.
       operationId: get-checkout-session
       tags:
         - checkout-sessions
@@ -97,61 +205,37 @@ paths:
                 $ref: "#/components/schemas/CheckoutSession"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
-  /api/v1/checkout-sessions/{checkoutSessionId}/items:
-    parameters:
-      - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
-    get:
-      summary: List Checkout Session items
-      description: What the session buys, by position. Prices and amounts are in its quote. Readable by whoever can read the session.
-      operationId: list-checkout-session-items
-      tags:
-        - checkout-sessions
-      parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CheckoutSessionItemList"
-        default:
-          $ref: ./openapi.yaml#/components/responses/Error
-  /api/v1/checkout-sessions/{checkoutSessionId}/quote:
-    parameters:
-      - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
-    get:
-      summary: Quote a Checkout Session
+    patch:
+      summary: Update a Checkout Session
       description: |-
-        What completing this open session now would invoice, with `promotion_code` or otherwise the best applicable
-        account discount, and the account funds available for it. Nothing is applied, reserved or redeemed. An invalid
-        or inapplicable code fails the request without changing the session.
+        Saves your checkout choices on an open session: a promotion code, a free trial grant and automatic renewal.
+        Choices left out keep their values, and null removes a code or a grant. The session is returned with its
+        amounts calculated under the new choices; nothing is redeemed until it is completed.
 
-        Complete the session with the returned `total` as `expected_amount`, the same `promotion_code` and, for an
-        immediate change, the returned `proration_date`. An expired session is refused with
-        `BILLING_CHECKOUT_SESSION_EXPIRED`, and a complete one with `BILLING_CHECKOUT_SESSION_COMPLETE`; read its order
-        instead.
+        A code that does not exist or cannot be applied is refused with its promotion error, and a grant that cannot be
+        used with `BILLING_TRIAL_GRANT_INAPPLICABLE`; the session is then unchanged. A grant applies to the first new
+        subscription of the session whose lines its offer all covers, and that has a licensed line and no trial of its
+        own. `auto_renew` turns automatic renewal on or off for every subscription with licensed items the session
+        opens; for a free trial, it decides whether the trial converts to paid when it ends. A session that is not
+        open is refused with `BILLING_CHECKOUT_SESSION_COMPLETE` or `BILLING_CHECKOUT_SESSION_EXPIRED`.
 
         Open to the owner of the session's billing account and to members of its project.
-      operationId: get-checkout-session-quote
+      operationId: update-checkout-session
       tags:
         - checkout-sessions
-      parameters:
-        - name: promotion_code
-          in: query
-          required: false
-          schema:
-            type: string
-            minLength: 1
-            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutSessionUpdate"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: ./quotes.yaml#/components/schemas/Quote
+                $ref: "#/components/schemas/CheckoutSession"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/checkout-sessions/{checkoutSessionId}:confirm:
@@ -160,11 +244,13 @@ paths:
     post:
       summary: Confirm a Checkout Session
       description: |-
-        Completes an open session: applies `promotion_code`, or otherwise the best applicable account discount, checks
-        the total against `expected_amount` and creates the order with its invoice issued. A zero-total invoice is paid
-        at once; otherwise pay the invoice next. A failed payment leaves the order and its terms as they are, and the
-        invoice can be paid again until the order expires. Nothing is created when the code is invalid or
-        inapplicable or the total differs, which fails with `BILLING_AMOUNT_CHANGED`.
+        Completes an open session under the choices saved on it: its promotion code, or otherwise the best applicable
+        account discount, and its free trial grant. Checks the total against `expected_amount` and creates the order
+        with its invoice issued. A zero-total invoice is paid at once; otherwise pay the invoice next. A failed payment
+        leaves the order and its terms as they are, and the invoice can be paid again until the order expires. Nothing
+        is created when the total differs, which fails with `BILLING_AMOUNT_CHANGED`, or when a saved code or grant can
+        no longer be applied, which fails with its error until the session is updated. A trial grant used by an order
+        that is later canceled or fails can be used again.
 
         Confirming a complete session again with the same terms returns it with its order; different terms are refused
         with `BILLING_CHECKOUT_SESSION_COMPLETE`. An expired session is refused with `BILLING_CHECKOUT_SESSION_EXPIRED`.
@@ -200,7 +286,7 @@ paths:
       - $ref: ./openapi.yaml#/components/parameters/CheckoutSessionId
     post:
       summary: Expire a Checkout Session
-      description:
+      description: |-
         Ends an open session without an order; the service that created it releases what it was holding for
         the purchase. An expired session is returned unchanged. Open to the owner of the session's billing account and
         to members of its project.
@@ -225,7 +311,7 @@ paths:
 components:
   schemas:
     CheckoutSessionStatus:
-      description:
+      description: |-
         "`open`: waiting for you to complete checkout; nothing is ordered, invoiced or reserved. `complete`:
         the order and its issued invoice exist; read the order for payment and delivery. `expired`: ended without an
         order."
@@ -235,37 +321,50 @@ components:
         - complete
         - expired
     CheckoutSession:
-      description:
-        A purchase waiting for you to complete checkout. Completing it applies the discount and creates the
-        order with its invoice issued; the order carries the session's ID.
+      description: |-
+        A purchase, a change of subscriptions or their renewal, waiting for checkout to be completed, and what
+        completing it invoices. Completing it applies the choices saved on it and creates the order with its invoice
+        issued; the order carries the session's ID. A preview returns the same object without saving it.
+
+        Amounts are what completing an open session would invoice at the time it is read, and for a complete session
+        those of its order's invoice. An expired session has no amounts; they are null.
       type: object
       properties:
         id:
-          type: string
+          description: Null in a preview.
+          type:
+            - string
+            - "null"
           format: uuid
         product_id:
           $ref: ./products.yaml#/components/schemas/ProductId
           description: The service the purchase is for.
         billing_account_id:
-          type: integer
+          description: Null in a preview without an account.
+          type:
+            - integer
+            - "null"
           format: int64
         account:
-          $ref: ./accounts.yaml#/components/schemas/AccountIdentity
+          description: Null in a preview without an account.
+          oneOf:
+            - $ref: ./accounts.yaml#/components/schemas/AccountIdentity
+            - type: "null"
         project_id:
-          description: The project the purchase is for. Null for an account-level purchase, such as a membership.
+          description: The project the purchase is for. Null for an account-level purchase, such as a membership, and in a preview.
           type:
             - string
             - "null"
           format: uuid
         project:
-          description:
-            The project and its current name. Null for an account-level purchase or when the project cannot
-            be read; `project_id` still identifies it.
+          description: |-
+            The project and its current name. Null when `project_id` is, or when the project cannot be read;
+            `project_id` still identifies it.
           oneOf:
             - $ref: ../../type/v1/identity.yaml#/components/schemas/NamedIdentity
             - type: "null"
         type:
-          description:
+          description: |-
             "`new` buys, `renew` extends subscriptions, `modify` changes subscription items' configuration or
             billing terms."
           type: string
@@ -281,21 +380,87 @@ components:
             - immediate
             - period_end
         status:
-          $ref: "#/components/schemas/CheckoutSessionStatus"
+          description: "`open` in a preview."
+          allOf:
+            - $ref: "#/components/schemas/CheckoutSessionStatus"
         currency:
           type: string
         checkout:
-          description:
-            The checkout choices as the purchase gave them. Billing does not check `return_url`; validate it
-            before navigating.
+          description: |-
+            The checkout choices, as the purchase gave them and as you saved them since. Billing does not check
+            `return_url`; validate it before navigating.
           allOf:
             - $ref: ../type/v1/checkout.yaml#/components/schemas/CheckoutOptions
-        expires_at:
-          description: When an open session expires. The order a complete session created has its own payment deadline.
+        promotion_code:
+          description: The promotion code saved on the session, or used to complete it; null without one.
+          type:
+            - string
+            - "null"
+        discount:
+          description: The discount the session gets, from its promotion code or otherwise the best applicable account discount. Null when there is none, and for an expired session.
+          oneOf:
+            - $ref: "#/components/schemas/CheckoutSessionDiscount"
+            - type: "null"
+        subtotal:
+          description: Sum before discounts, excluding tax already included in the item amounts.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        discount_amount:
+          description: Total item discounts.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_amount:
+          description: Total tax on the discounted amounts.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        total:
+          description: subtotal minus discount_amount plus tax_amount, before credit grants and balance. Confirm an open session with it as `expected_amount`.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_status:
+          description: |-
+            "`complete`: tax is calculated for the billing account's invoice contact, or for `address` in a preview
+            without an account. `requires_location_inputs`: a preview without an account or `address`, which leaves out
+            tax that would be added; tax already contained in a price is included."
           type: string
+          enum:
+            - complete
+            - requires_location_inputs
+        proration_date:
+          description: |-
+            Immediate changes and items added to an existing subscription of an open session only; null otherwise.
+            The instant they are priced from; confirm the session with it so it is priced from the same instant.
+          type:
+            - string
+            - "null"
+          format: date-time
+        funds:
+          description: Account funds for completing an open session; null for other sessions and without an account.
+          oneOf:
+            - $ref: ../type/v1/funds.yaml#/components/schemas/Funds
+            - type: "null"
+        trial_grants:
+          description: |-
+            The free trial grants of the account that the session can use now, soonest to expire first. Empty for a
+            session that is not open, without an account, and for changes and renewals.
+          type: array
+          items:
+            $ref: ./trial-grants.yaml#/components/schemas/TrialGrant
+        expires_at:
+          description: When an open session expires; null in a preview. The order a complete session created has its own payment deadline.
+          type:
+            - string
+            - "null"
           format: date-time
         created_at:
-          type: string
+          description: Null in a preview.
+          type:
+            - string
+            - "null"
           format: date-time
         completed_at:
           type:
@@ -314,7 +479,7 @@ components:
             - "null"
           format: uuid
         subscriptions:
-          description: The subscriptions the session buys, renews or changes, in order; each item names its entry in `subscription_index`.
+          description: The subscriptions the session buys, renews or changes, in order, each with its items.
           type: array
           items:
             $ref: "#/components/schemas/CheckoutSessionSubscription"
@@ -330,6 +495,16 @@ components:
         - status
         - currency
         - checkout
+        - promotion_code
+        - discount
+        - subtotal
+        - discount_amount
+        - tax_amount
+        - total
+        - tax_status
+        - proration_date
+        - funds
+        - trial_grants
         - expires_at
         - created_at
         - completed_at
@@ -338,7 +513,7 @@ components:
         - subscriptions
       additionalProperties: false
     CheckoutSessionSubscription:
-      description: One subscription of the session.
+      description: One subscription of the session and its items, with its share of the session's amounts.
       type: object
       properties:
         subscription_id:
@@ -347,66 +522,190 @@ components:
             - string
             - "null"
           format: uuid
-        trial_period_days:
-          description: The free trial a subscription the purchase opens gets; null without one.
+        subscription_data:
+          description: The settings the owning service gave a subscription the purchase opens; null without any.
+          oneOf:
+            - $ref: "#/components/schemas/SubscriptionData"
+            - type: "null"
+        trial_grant_id:
+          description: The free trial grant this subscription uses, saved on an open session or used by a complete one; null otherwise.
+          type:
+            - string
+            - "null"
+          format: uuid
+        trial:
+          description: The free trial the subscription opens with, from `subscription_data` or the trial grant. Null without one, and for an expired session.
+          oneOf:
+            - $ref: "#/components/schemas/CheckoutSessionTrial"
+            - type: "null"
+        interval:
+          description: The term every item of the subscription renews for, for renewals; `none` otherwise.
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        interval_count:
+          description: Renewals only; null otherwise.
           type:
             - integer
             - "null"
+          minimum: 1
+        periods:
+          description: Renewals only; null otherwise. How many consecutive terms are renewed.
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        amount:
+          description: The items' amounts before discounts, including any setup charge.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        discount_amount:
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_amount:
+          description: Tax on the discounted amount, including any tax already contained in it.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_included_amount:
+          description: The part of `tax_amount` already contained in `amount` minus `discount_amount`.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        total:
+          description: amount minus discount_amount plus tax_amount minus tax_included_amount; this subscription's share of the session's `total`.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        items:
+          description: The subscription's items, in order.
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckoutSessionItem"
+      required:
+        - subscription_id
+        - subscription_data
+        - trial_grant_id
+        - trial
+        - interval
+        - interval_count
+        - periods
+        - amount
+        - discount_amount
+        - tax_amount
+        - tax_included_amount
+        - total
+        - items
+      additionalProperties: false
+    SubscriptionData:
+      description: Settings of a subscription a purchase opens, as Stripe Checkout's subscription_data.
+      type: object
+      properties:
+        trial_period_days:
+          description: A free trial of this many days; null without one or when given as `trial_end`.
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 730
         trial_end:
-          description: The end of the free trial a subscription the purchase opens gets; null without one or when given in days.
+          description: The end of the free trial; null without one or when given in days.
           type:
             - string
             - "null"
           format: date-time
+        trial_settings:
+          description: How the free trial ends; null without a trial.
+          oneOf:
+            - $ref: ./subscriptions.yaml#/components/schemas/TrialSettings
+            - type: "null"
       required:
-        - subscription_id
         - trial_period_days
         - trial_end
+        - trial_settings
       additionalProperties: false
-    CheckoutSessionList:
+    CheckoutSessionTrial:
+      description: |-
+        A free trial a subscription opens with. Its licensed items are free until `trial_end`; metered usage is
+        charged as usual. For an open session the times are as if it were completed now.
       type: object
       properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/CheckoutSession"
-        pagination:
-          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+        trial_start:
+          type: string
+          format: date-time
+        trial_end:
+          type: string
+          format: date-time
+        trial_settings:
+          $ref: ./subscriptions.yaml#/components/schemas/TrialSettings
       required:
-        - items
-        - pagination
+        - trial_start
+        - trial_end
+        - trial_settings
       additionalProperties: false
-    CheckoutSessionItem:
-      description:
-        One item of the session. It becomes the order item at the same position; its price is chosen when
-        checkout completes.
+    CheckoutSessionDiscount:
+      description: The discount a session gets. It is redeemed only when the session completes.
       type: object
       properties:
-        position:
-          type: integer
-          minimum: 0
-        plan_id:
+        type:
           type: string
-          format: uuid
-        plan_name:
+          enum:
+            - promotion_code
+            - account_discount
+        name:
           type: string
-        price_id:
-          description:
-            The price the item named. Null when Billing selects it by billing terms or from the subscription
-            being changed or renewed.
+        promotion_code:
+          description: Code text for a promotion_code discount; null for an account_discount.
           type:
             - string
             - "null"
-          format: uuid
-        quantity:
+          minLength: 1
+          maxLength: 64
+        frequency:
+          description: |-
+            "Whether the discount continues on renewals of what is bought: `once` applies only to this
+            purchase, `recurring` for `frequency_duration` periods including the first, `forever` on every renewal."
           type: string
-        dimensions:
-          description: The dimension values of what is bought, such as region and instance type.
-          type: object
-          additionalProperties:
-            type: string
-        subscription_index:
-          description: The item's subscription, as its index in the session's `subscriptions`.
+          enum:
+            - once
+            - recurring
+            - forever
+        frequency_duration:
+          description: For `recurring`, the periods the discount lasts; null otherwise.
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        eligibility:
+          description: |-
+            "`confirmed`: every condition of the discount holds for the billing account. `unverified`: a preview
+            without an account, where conditions that depend on the account, such as a first purchase or a per-account
+            limit, are checked only when a session is completed."
+          type: string
+          enum:
+            - confirmed
+            - unverified
+      required:
+        - type
+        - name
+        - promotion_code
+        - frequency
+        - frequency_duration
+        - eligibility
+      additionalProperties: false
+    CheckoutSessionItem:
+      description: |-
+        One item of the session; it becomes the order item at the same position. Its price is selected as when
+        checkout completes, and amounts are this item's share of the session's.
+      type: object
+      properties:
+        position:
+          description: Counted across the session's subscriptions in order, starting from zero.
           type: integer
           minimum: 0
         subscription_item_id:
@@ -415,30 +714,172 @@ components:
             - string
             - "null"
           format: uuid
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductId
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        price_id:
+          description: |-
+            The price the item is charged under: the one it named, or the one selected by billing terms or from the
+            subscription item changed or renewed. Null for an expired session whose item did not name one.
+          type:
+            - string
+            - "null"
+          format: uuid
+        type:
+          description: The price type; null when `price_id` is.
+          oneOf:
+            - $ref: ./prices.yaml#/components/schemas/PriceType
+            - type: "null"
+        usage_type:
+          description: The usage type; null when `price_id` is.
+          oneOf:
+            - $ref: ./prices.yaml#/components/schemas/UsageType
+            - type: "null"
+        interval:
+          description: The billing period of a recurring licensed price; `none` otherwise, and when `price_id` is null.
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        interval_count:
+          description: Periods per billing cycle of a recurring licensed price; null otherwise.
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        quantity:
+          type: string
+        dimensions:
+          description: The dimension values of what is bought, such as region and instance type.
+          type: object
+          additionalProperties:
+            type: string
         periods:
           description: Renewals only; null otherwise. How many consecutive periods are renewed.
           type:
             - integer
             - "null"
           minimum: 1
+        unit_amount:
+          description: Unit price before discounts. Null when no single unit price applies, such as tiered or multiple-rate pricing.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        setup_amount:
+          description: The setup charge already included in `amount`; null when none applies.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        recurring_amount:
+          description: |-
+            Recurring licensed items only; null otherwise. What each later period renews at, before discounts and
+            tax, which differs from `amount` when the first period is priced differently, such as in a free trial. The
+            session's `discount` says whether its discount continues on renewals.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        amount:
+          description: Amount before discounts, including any setup charge.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        discount_amount:
+          description: Total reduction on this item, including any continuing renewal discount.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_amount:
+          description: Tax on the discounted amount, including any tax already contained in that amount.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        tax_included_amount:
+          description: The part of tax_amount already contained in amount minus discount_amount.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        total:
+          description: amount minus discount_amount plus tax_amount minus tax_included_amount.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        remaining_amount:
+          description: |-
+            Immediate changes only; null otherwise. Before tax, the new terms for the time from `proration_date` to
+            the end of the paid period. An upgrade invoices `remaining_amount` minus `unused_amount`.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        unused_amount:
+          description: |-
+            Immediate changes only; null otherwise. Before tax, for an upgrade or an unchanged period price, the
+            amount paid for that time, up to the new terms' value for the same time; for a downgrade, the remaining value
+            of what was paid, under the refund terms of each paid period.
+          oneOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+            - type: "null"
+        downgrade_refund:
+          description: Immediate downgrades only, when `unused_amount` exceeds `remaining_amount`; null otherwise.
+          oneOf:
+            - $ref: "#/components/schemas/CheckoutSessionItemDowngradeRefund"
+            - type: "null"
       required:
         - position
+        - subscription_item_id
+        - product_id
         - plan_id
         - plan_name
         - price_id
+        - type
+        - usage_type
+        - interval
+        - interval_count
         - quantity
         - dimensions
-        - subscription_index
-        - subscription_item_id
         - periods
+        - unit_amount
+        - setup_amount
+        - recurring_amount
+        - amount
+        - discount_amount
+        - tax_amount
+        - tax_included_amount
+        - total
+        - remaining_amount
+        - unused_amount
+        - downgrade_refund
       additionalProperties: false
-    CheckoutSessionItemList:
+    CheckoutSessionItemDowngradeRefund:
+      description: |-
+        What an immediate downgrade would refund, estimated as of `proration_date`. The refund itself is determined
+        when the change takes effect.
+      type: object
+      properties:
+        refundable_amount:
+          description: Returned to the original payment sources, tax paid on it included.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        forfeited_amount:
+          description: Before tax, the part of the excess that the item's refund terms do not return.
+          allOf:
+            - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+      required:
+        - refundable_amount
+        - forfeited_amount
+      additionalProperties: false
+    CheckoutSessionList:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/CheckoutSessionItem"
+            $ref: "#/components/schemas/CheckoutSession"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:
@@ -494,25 +935,235 @@ components:
       required:
         - subscription_id
       additionalProperties: false
-    CheckoutSessionConfirm:
+    CheckoutSessionPreviewRequest:
+      description: |-
+        The session to preview, as it would be created. Give exactly one of `billing_account_id` and `currency`;
+        changes, renewals, items added to an existing subscription and trial grants need the account. A request that
+        does not fit `type` fails with `BILLING_PURCHASE_INVALID` and the field.
       type: object
       properties:
+        type:
+          description: "`new` previews a purchase, `modify` a change of subscription items, `renew` a renewal."
+          type: string
+          enum:
+            - new
+            - renew
+            - modify
+        billing_account_id:
+          description: The billing account to price for; it must be yours or currently pay for a project you are a member of, and an access token is required. Subscriptions changed or renewed must currently be paid by it.
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          description: For `new` only. The ISO 4217 currency to price in without an account.
+          type: string
+          minLength: 3
+          maxLength: 3
+        address:
+          description: |-
+            Only with `currency`. Where the customer is, to include the tax that would be added there for a customer
+            who is not tax exempt; `tax_status` is then `complete`. Refused with `billing_account_id`, whose invoice
+            contact decides tax.
+          allOf:
+            - $ref: "#/components/schemas/CustomerAddress"
+        change_effective:
+          description: |-
+            For `modify` only; defaults to `immediate`. `immediate` prices the rest of the paid period from
+            `proration_date`, charging an upgrade the difference and showing what a downgrade refunds. `period_end`
+            prices the first period at the new terms, which replaces the renewal when the paid period ends.
+          type: string
+          enum:
+            - immediate
+            - period_end
+        subscriptions:
+          description: At most 100 items in all for `new` and `modify`, and each subscription at most once for `renew`.
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CheckoutSessionPreviewSubscription"
+        periods:
+          description: For `renew` only, as in creating a renewal Checkout Session.
+          type: integer
+          default: 1
+          minimum: 1
+        interval_count:
+          description: For `renew` only, as in creating a renewal Checkout Session.
+          type: integer
+          minimum: 1
+        interval:
+          description: For `renew` only, as in creating a renewal Checkout Session.
+          type: string
+          enum:
+            - day
+            - month
+            - year
+        cancellation_policy:
+          description: For `renew` only, as in creating a renewal Checkout Session.
+          allOf:
+            - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
         promotion_code:
-          description: As quoted. Omit to apply the best applicable account discount.
+          description: For `new` and `modify`. Evaluated without being applied.
           type: string
           minLength: 1
           maxLength: 64
+        trial_grant_id:
+          description: For `new` with `billing_account_id`. A free trial grant of the account to preview the purchase with.
+          type: string
+          format: uuid
+      required:
+        - type
+        - subscriptions
+      additionalProperties: false
+    CheckoutSessionPreviewSubscription:
+      description: |-
+        One subscription of the previewed session. For `new`, give its items, with `subscription_id` to add them to
+        that existing subscription and otherwise optionally `subscription_data`; for `modify`, the subscription and the
+        items changed; for `renew`, only the subscription.
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CheckoutSessionItemInput"
+        subscription_data:
+          $ref: "#/components/schemas/SubscriptionDataInput"
+      additionalProperties: false
+    SubscriptionDataInput:
+      description: Settings of a subscription a previewed purchase opens, as the owning service would give them.
+      type: object
+      properties:
+        trial_period_days:
+          description: Give this or `trial_end`, not both.
+          type: integer
+          minimum: 1
+          maximum: 730
+        trial_end:
+          type: string
+          format: date-time
+        trial_settings:
+          $ref: ./subscriptions.yaml#/components/schemas/TrialSettings
+      additionalProperties: false
+    CheckoutSessionItemInput:
+      description: |-
+        Identify a price, or select one for a plan; give each resource's ID or lookup key, never both, and
+        product_id with lookup keys. A change names its `subscription_item_id`; without a price or billing terms the
+        plan's price with the item's price type, usage type, interval, interval count and cancellation policy is
+        selected, and omitted dimensions keep the item's. A metered item includes only any setup charge; its usage is
+        estimated with `estimate-usage`.
+      type: object
+      properties:
+        subscription_item_id:
+          description: For `modify` only. The subscription item changed.
+          type: string
+          format: uuid
+        price_lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        plan_lookup_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+        price_id:
+          type: string
+          format: uuid
+        product_id:
+          $ref: ./products.yaml#/components/schemas/ProductId
+        plan_id:
+          type: string
+          format: uuid
+        price_type:
+          description: Narrows the selection when a plan offers more than one price type.
+          allOf:
+            - $ref: ./prices.yaml#/components/schemas/PriceType
+        usage_type:
+          description: Narrows the selection when a plan offers more than one usage type.
+          allOf:
+            - $ref: ./prices.yaml#/components/schemas/UsageType
+        interval:
+          type: string
+          enum:
+            - none
+            - day
+            - month
+            - year
+        interval_count:
+          type: integer
+          minimum: 1
+        cancellation_policy:
+          description: Selects among licensed prices with otherwise identical billing terms. Ambiguous terms are refused instead of choosing a price arbitrarily.
+          allOf:
+            - $ref: ./prices.yaml#/components/schemas/CancellationPolicy
+        quantity:
+          description: The quantity bought, or after a change.
+          type: string
+          pattern: ^(?:(?:[1-9][0-9]{0,27}|0(?:[1-9][0-9]{0,26}|0(?:[1-9][0-9]{0,25}|0(?:[1-9][0-9]{0,24}|0(?:[1-9][0-9]{0,23}|0(?:[1-9][0-9]{0,22}|0(?:[1-9][0-9]{0,21}|0(?:[1-9][0-9]{0,20}|0(?:[1-9][0-9]{0,19}|0(?:[1-9][0-9]{0,18}|0(?:[1-9][0-9]{0,17}|0(?:[1-9][0-9]{0,16}|0(?:[1-9][0-9]{0,15}|0(?:[1-9][0-9]{0,14}|0(?:[1-9][0-9]{0,13}|0(?:[1-9][0-9]{0,12}|0(?:[1-9][0-9]{0,11}|0(?:[1-9][0-9]{0,10}|0(?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9])))))))))))))))))))))))))))([.][0-9]{1,10})?|0{1,28}[.](?:[1-9][0-9]{0,9}|0(?:[1-9][0-9]{0,8}|0(?:[1-9][0-9]{0,7}|0(?:[1-9][0-9]{0,6}|0(?:[1-9][0-9]{0,5}|0(?:[1-9][0-9]{0,4}|0(?:[1-9][0-9]{0,3}|0(?:[1-9][0-9]{0,2}|0(?:[1-9][0-9]{0,1}|0[1-9]))))))))))$
+        dimensions:
+          description: The dimension values of what is bought, such as region and instance type, or after a change, given in full. Required whenever the price uses a rate card; prices with their own amounts ignore them. Every key the meter declares must be given. A combination no rate covers is refused with `BILLING_PRICE_UNAVAILABLE` rather than priced at zero. Prices are set per currency, and a currency may not offer some combinations at all, for example in a region it does not sell to.
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - quantity
+      additionalProperties: false
+    CustomerAddress:
+      description: Where a customer is, for the tax that would be added there.
+      type: object
+      properties:
+        country:
+          description: ISO 3166-1 alpha-2, two uppercase letters.
+          type: string
+          pattern: ^[A-Z]{2}$
+        state:
+          description: The state or province, as the tax rates name it.
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+        - country
+      additionalProperties: false
+    CheckoutSessionUpdate:
+      description: Give at least one choice. Saving a choice equal to the current one changes nothing.
+      type: object
+      properties:
+        promotion_code:
+          description: The promotion code to complete the session with; null removes it, and the best applicable account discount applies instead.
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 64
+        trial_grant_id:
+          description: A free trial grant of the session's billing account to use; null removes it.
+          type:
+            - string
+            - "null"
+          format: uuid
+        auto_renew:
+          description: Turns on or off automatic renewal of every subscription with licensed items the session opens. It must be your own choice.
+          type: boolean
+      minProperties: 1
+      additionalProperties: false
+    CheckoutSessionConfirm:
+      type: object
+      properties:
         expected_amount:
-          description: The quote's `total`, after discounts and tax and before credit grants or balance.
+          description: The session's `total` as read, after discounts and tax and before credit grants or balance.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
             - type: string
               pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
         proration_date:
-          description:
-            Immediate changes only. The quote's `proration_date`; it must be a whole second, not in the future
-            and at most 10 minutes old, otherwise the request is refused with `BILLING_CHANGE_INVALID`. Defaults to the
-            time of the request.
+          description: |-
+            Immediate changes and items added to an existing subscription only. The session's `proration_date` as
+            read; it must be a whole second, not in the future and at most 10 minutes old, otherwise the request is
+            refused with `BILLING_CHANGE_INVALID`. Defaults to the time of the request.
           type: string
           format: date-time
       required:
