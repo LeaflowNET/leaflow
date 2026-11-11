@@ -52,12 +52,6 @@ info:
     summarised rather than sent individually. Nothing is summarised in the inbox: it always holds
     every notification. A notification that was summarised or suppressed is still readable here.
 
-    ## One-time credentials
-
-    Some notifications carry a reference to a credential rather than the credential itself — the
-    initial password of a newly created instance, for example. That credential is readable exactly
-    once, expires on its own, and is destroyed as soon as it has been read. Requesting it a second
-    time returns `CREDENTIAL_TICKET_CONSUMED`.
 servers:
   - url: https://notification.leaflow.cloud
     description: Inbox, delivery preferences and outbound channels
@@ -818,69 +812,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-  /api/v1/credentials/{ticketId}:
-    get:
-      summary: Describe a one-time credential
-      description: |-
-        Reports whether the credential is still available without consuming it. It never contains
-        the credential itself.
-
-        A ticket addressed to someone else returns `CREDENTIAL_TICKET_NOT_FOUND`, the same answer
-        as one that does not exist.
-      operationId: describe-credential-ticket
-      tags:
-        - Credential
-      parameters:
-        - $ref: "#/components/parameters/TicketId"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CredentialTicketResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-  /api/v1/credentials/{ticketId}:reveal:
-    post:
-      summary: Reveal a one-time credential
-      description: |-
-        Returns the credential and destroys it in the same step. **This is the only operation that
-        ever returns it, and it succeeds only once.**
-
-        Every subsequent request returns `CREDENTIAL_TICKET_CONSUMED`, including one issued
-        concurrently with the first: exactly one caller receives the credential.
-
-        A ticket that has expired returns `CREDENTIAL_TICKET_EXPIRED`, and one withdrawn by the
-        service that created it returns `CREDENTIAL_TICKET_REVOKED`. In all three cases the
-        credential is already gone and cannot be recovered; obtain a new one from the service that
-        owns the resource.
-
-        This operation is a POST rather than a GET because a GET would be followed by link
-        scanners in mail clients and by browser prefetching, either of which would consume the
-        credential before the recipient opened it.
-      operationId: reveal-credential
-      tags:
-        - Credential
-      parameters:
-        - $ref: "#/components/parameters/TicketId"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RevealedCredentialResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1535,81 +1466,6 @@ components:
           minLength: 1
           maxLength: 128
       additionalProperties: false
-    CredentialSubjectKind:
-      description: What the credential belongs to.
-      type: string
-      enum:
-        - compute_instance
-    CredentialTicketResource:
-      description: A one-time credential, described without being consumed.
-      type: object
-      properties:
-        available:
-          description: |-
-            True when the credential can still be revealed. False once it has been revealed, has
-            expired, or was withdrawn — in all three cases it is already destroyed
-          type: boolean
-        expires_at:
-          description: After this moment the credential is destroyed whether or not it was read
-          type: string
-          format: date-time
-        id:
-          type: string
-          format: uuid
-        revealed_at:
-          description: When it was revealed; null if it has not been
-          type:
-            - string
-            - "null"
-          format: date-time
-        revoked_at:
-          description: When the service that issued it withdrew it; null if it did not
-          type:
-            - string
-            - "null"
-          format: date-time
-        subject_id:
-          description: The resource the credential belongs to
-          type: string
-        subject_kind:
-          $ref: "#/components/schemas/CredentialSubjectKind"
-      required:
-        - id
-        - subject_kind
-        - subject_id
-        - available
-        - expires_at
-        - revealed_at
-        - revoked_at
-      additionalProperties: false
-    RevealedCredentialResource:
-      description: |-
-        The credential itself. This shape is returned by exactly one operation, and that operation
-        succeeds at most once per ticket.
-      type: object
-      properties:
-        revealed_at:
-          type: string
-          format: date-time
-        secret:
-          description: The credential. It is destroyed as this response is produced and cannot be obtained again
-          type: string
-        subject_id:
-          type: string
-        subject_kind:
-          $ref: "#/components/schemas/CredentialSubjectKind"
-        username:
-          description: The account the credential belongs to, where the resource has one; null otherwise
-          type:
-            - string
-            - "null"
-      required:
-        - subject_kind
-        - subject_id
-        - secret
-        - username
-        - revealed_at
-      additionalProperties: false
   parameters:
     NotificationId:
       name: notificationId
@@ -1643,14 +1499,6 @@ components:
       in: path
       required: true
       description: The outbound channel
-      schema:
-        type: string
-        format: uuid
-    TicketId:
-      name: ticketId
-      in: path
-      required: true
-      description: The one-time credential
       schema:
         type: string
         format: uuid
