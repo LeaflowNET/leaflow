@@ -70,7 +70,7 @@ components:
         - expired
         - voided
     TrialOffer:
-      description: The terms of a free trial. The licensed items of the subscription it is used for are free for `trial_period_days`, while metered usage is charged as usual. When the trial ends it converts to paid if automatic renewal is on; otherwise `trial_settings` applies.
+      description: The terms of a free trial. The licensed items of the subscription it is used for are free for `trial_period_days`, while metered usage is charged as usual. The subscription holds only the listed plans and no more of each than its `max_quantity`, both when it is bought and while the trial lasts. When the trial ends it converts to paid if automatic renewal is on; otherwise `trial_settings` applies.
       type: object
       properties:
         id:
@@ -86,17 +86,33 @@ components:
           maximum: 730
         trial_settings:
           $ref: ./subscriptions.yaml#/components/schemas/TrialSettings
-        applies_to:
-          description: The purchases it can be used for. Every line of the subscription must be covered.
-          allOf:
-            - $ref: ./discounts.yaml#/components/schemas/Applicability
+        items:
+          description: The plans a subscription on the trial may hold. An offer without items applies to no purchase.
+          type: array
+          items:
+            $ref: "#/components/schemas/TrialOfferItem"
       required:
         - id
         - name
         - description
         - trial_period_days
         - trial_settings
-        - applies_to
+        - items
+      additionalProperties: false
+    TrialOfferItem:
+      description: A plan a subscription on the trial may hold, and how much of it.
+      type: object
+      properties:
+        plan:
+          description: The plan, which may since have been archived.
+          allOf:
+            - $ref: ./openapi.yaml#/components/schemas/ObjectIdentity
+        max_quantity:
+          description: The most the subscription's licensed items of this plan may hold together, in the plan's quantity unit, such as gibibytes of storage or megabits per second of bandwidth. Metered items of the plan are charged as usual and do not count towards it.
+          type: string
+      required:
+        - plan
+        - max_quantity
       additionalProperties: false
     TrialGrant:
       description: One free trial held by a billing account for a period. It is used for one subscription; if the order it was used for is canceled or fails, it can be used again while it is valid.
