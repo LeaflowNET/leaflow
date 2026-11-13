@@ -113,6 +113,8 @@ paths:
         The `secret` in the response is the complete key and **appears in this response only**. It is returned by no other endpoint, and a key that has been lost has to be revoked and reissued.
 
         Supply it wherever a value such as `OPENAI_API_KEY` is expected. The forwarding endpoints accept the OpenAI, Anthropic and Gemini request formats alike.
+
+        `model_aliases` is refused with 400 `API_KEY_MODEL_ALIASES_TOO_MANY` beyond 10 entries, 400 `API_KEY_MODEL_ALIAS_INVALID` for an empty, overlong or self-referencing entry, 422 `API_KEY_MODEL_ALIAS_TARGET_UNKNOWN` for a model that does not exist, and 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED` for a model missing from `allowed_models` while `restrict_models` is true.
       operationId: create-api-key
       tags:
         - APIKey
@@ -167,6 +169,8 @@ paths:
         Attributes only. Enabling, disabling and revoking each have their own endpoint.
 
         A field that is not supplied is left unchanged. To remove an expiry, send `clear_expiry` as true rather than a null `expires_at`.
+
+        `model_aliases` replaces the aliases as a whole, and an empty object removes them. They are checked against the key as it stands after the update, so narrowing `allowed_models` below a model an alias points at fails with 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED`. The other refusals are those of issuing a key.
 
         A revoked key accepts no modification.
       operationId: update-api-key
@@ -289,6 +293,8 @@ paths:
       summary: List the available models
       description: |-
         A model that has been retired does not appear here, while it remains readable individually.
+
+        Restricted models are listed to every project. Calling one requires a grant for the project, and `access_granted` says whether the current project holds one.
 
         `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
 
@@ -880,6 +886,8 @@ components:
         restrict_models:
           description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
         status:
           type: string
           enum:
@@ -898,11 +906,23 @@ components:
         - suspended
         - restrict_models
         - allowed_models
+        - model_aliases
         - expires_at
         - last_used_at
         - created_by
         - created_at
       additionalProperties: false
+    ModelAliases:
+      description: |-
+        Model names the key rewrites. A request naming a key of this map is served by the model it maps to, and is admitted, billed and recorded as that model; aliases are not followed in chains. At most 10 entries, each name and model at most 128 characters.
+
+        The model must exist, and while `restrict_models` is true it must also be listed in `allowed_models`. A restricted model is callable only while the project holds a grant for it.
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+        maxLength: 128
+      maxProperties: 10
     LengthAwarePageAPIKeyResource:
       type: object
       properties:
@@ -953,6 +973,8 @@ components:
         restrict_models:
           description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
       required:
         - name
       additionalProperties: false
@@ -997,6 +1019,8 @@ components:
         restrict_models:
           description: While true, only the models listed in `allowed_models` are permitted
           type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
         secret:
           description: The complete key, **returned in this response only**. Store it immediately
           type: string
@@ -1019,6 +1043,7 @@ components:
         - suspended
         - restrict_models
         - allowed_models
+        - model_aliases
         - expires_at
         - last_used_at
         - created_by
@@ -1051,6 +1076,8 @@ components:
           type:
             - boolean
             - "null"
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
       additionalProperties: false
     ModelResource:
       type: object
@@ -1100,6 +1127,22 @@ components:
           description: Produced output modalities. Image input does not imply image generation.
         capabilities:
           $ref: "./capabilities.yaml#/components/schemas/ModelCapabilities"
+        access:
+          description: |-
+            Who can call the model. Every model is listed to every project.
+
+            - `public`: callable by every project.
+            - `restricted`: callable only by projects holding a grant. A request from any other project fails with 403 `MODEL_ACCESS_REQUIRED`.
+          type: string
+          enum:
+            - public
+            - restricted
+        access_granted:
+          description: Whether the current project can call the model. Always true for a public model
+          type: boolean
+        moderation_disabled:
+          description: True when the model is served without upstream content moderation
+          type: boolean
       required:
         - id
         - display_name
@@ -1113,6 +1156,9 @@ components:
         - input_modalities
         - output_modalities
         - capabilities
+        - access
+        - access_granted
+        - moderation_disabled
       additionalProperties: false
     ModelBilling:
       description: |-
