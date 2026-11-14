@@ -35,7 +35,7 @@ paths:
     post:
       summary: Create instances
       description: |-
-        Creates a Billing Checkout Session, including for metered terms, and returns one `pending` instance per requested instance with it. Each new component carries its own commercial terms; their usage type and period must match. A pending instance has no server, boot volume or address, and is not metered.
+        Creates a Billing Checkout Session, including for metered terms, and returns one `pending` instance per requested instance with it. Each new component selects its own Billing price. Billing validates prices and subscription compatibility. A pending instance has no server, boot volume or address, and is not metered.
 
         Creation starts once Billing accepts the order: the instance stays `pending` while it is created, then becomes `running`. With automatic checkout, insufficient funds refuse the request and nothing is created. With deferred checkout, the instances stay `pending` until the customer completes checkout in Billing and the order is paid; an expired Checkout Session, or a canceled or expired order, leaves them `failed` with `checkout_expired`, `order_canceled` or `order_expired`. Do not submit another creation request after paying. After an uncertain response, look the Checkout Session up in Billing before submitting again.
 
@@ -1064,7 +1064,7 @@ components:
       description: |-
         Every part a launch template can describe may come from `launch_template` instead: a part given here overrides the template's, and `data_volumes`, when given, replaces the template's list. After that the instance type, the boot volume and the network interface are required, each refused with 422 `INSTANCE_CREATE_INVALID` naming the field when neither gives it.
 
-        Every component bought with the instance (its boot volume, data volumes and elastic IP) shares the usage type and period of `compute.billing`; a component's own `billing` exists to choose a different termination policy, and when omitted it is `compute.billing`.
+        Every newly purchased component (compute capacity, boot volume, data volume and elastic IP network) requires its own `billing.price_id` from that component's Billing plan. Billing checks subscription compatibility; price IDs are never inherited between components.
       type: object
       properties:
         launch_template:
@@ -1347,9 +1347,7 @@ components:
           description: An instance type currently on sale. Required unless the launch template names one.
           $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         billing:
-          description:
-            The terms of each instance, and the usage type and period every component bought with it
-            shares.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
         - billing
@@ -1459,9 +1457,10 @@ components:
             - detach
           default: delete
         billing:
-          description: Its own terms, to choose a different termination policy; `compute.billing` when omitted.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
+        - billing
         - type
         - image_id
         - volume_type_id
@@ -1492,9 +1491,10 @@ components:
             - detach
           default: delete
         billing:
-          description: Its own terms, to choose a different termination policy; `compute.billing` when omitted.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
+        - billing
         - volume_type_id
         - size_gib
       additionalProperties: false
@@ -1585,11 +1585,10 @@ components:
           $ref: ./elastic-ips.yaml#/components/schemas/InternetChargeType
           default: bandwidth
         billing:
-          description:
-            The terms of the elastic IP's network item, `compute.billing` when omitted; they follow the rule shared
-            by every component of the purchase. Its address item is always pay-as-you-go and is exempt from that rule.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
+        - billing
         - type
         - line_id
         - bandwidth_mbps

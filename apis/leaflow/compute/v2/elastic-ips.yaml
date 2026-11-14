@@ -36,7 +36,7 @@ paths:
 
         An elastic IP bought on its own has a Billing subscription of its own, with two items: the address, always pay-as-you-go and charged while the address is not associated with anything, and the network, on the chosen terms.
 
-        **Buying for an instance.** With `instance_id`, the elastic IP is associated with the primary network interface of that instance of the project once created, and its two items join the instance's Billing subscription: a prepaid network item is charged up to the instance's term end, the rest of the current period in proportion to the time left, and from then on renews, renews automatically and expires with the instance. `billing` may be omitted to take the instance's terms; given, its usage type and period must be the instance's (422 `ELASTIC_IP_BILLING_TERMS_MISMATCH`). An instance that cannot take another elastic IP, or whose type allows less bandwidth than `bandwidth_mbps`, is refused before anything is ordered, as associating would be. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`. The instance may still be being created after its order was accepted; the elastic IP is associated once the instance is created, and is refunded if the instance's creation fails.
+        **Buying for an instance.** With `instance_id`, the elastic IP is associated with the primary network interface of that instance of the project once created, and its two items join the instance's Billing subscription: a prepaid network item is charged up to the instance's term end, the rest of the current period in proportion to the time left, and from then on renews, renews automatically and expires with the instance. `billing.price_id` is required and identifies a price of this component's plan. Billing checks that it can join the existing subscription. An instance that cannot take another elastic IP, or whose type allows less bandwidth than `bandwidth_mbps`, is refused before anything is ordered, as associating would be. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`. The instance may still be being created after its order was accepted; the elastic IP is associated once the instance is created, and is refunded if the instance's creation fails.
 
         The elastic IP is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-elastic-ip
@@ -641,10 +641,7 @@ components:
         line_id:
           $ref: ./identifiers.yaml#/components/schemas/ElasticIpLineId
         billing:
-          description:
-            The terms of the network item, which pays for the bandwidth or the traffic. The address item is
-            always pay-as-you-go and takes no terms. Traffic is only sold pay-as-you-go. Required unless `instance_id`
-            is given, which takes the instance's terms when this is omitted.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
         checkout:
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
@@ -652,6 +649,7 @@ components:
           description: Buy the elastic IP for this instance of the project; see the operation.
           $ref: ./identifiers.yaml#/components/schemas/InstanceId
       required:
+        - billing
         - bandwidth_mbps
         - line_id
       additionalProperties: false
