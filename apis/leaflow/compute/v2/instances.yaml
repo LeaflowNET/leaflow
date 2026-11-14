@@ -41,7 +41,7 @@ paths:
 
         The instances are created in the availability zone of their instance type, and the volumes bought with them have to be of volume types of that zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). The types have to have room for all of them, checked before anything is ordered: refused with 409 `INSTANCE_TYPE_SOLD_OUT` or `VOLUME_TYPE_SOLD_OUT` when a type takes no new orders for now, `INSTANCE_TYPE_CAPACITY_REACHED` or `VOLUME_TYPE_CAPACITY_REACHED` when what is sold of it is used up, `INSTANCE_TYPE_NO_HOST_ROOM` when no host of the zone can take the machine, `VOLUME_TYPE_NO_POOL_ROOM` when the storage of the zone cannot take the boot volume, and `ELASTIC_IP_LINE_EXHAUSTED` when the line of the new elastic IPs has fewer addresses left than instances. Two orders placed at the same moment can both pass; an instance that finds a type full when its order is accepted is not created and is refunded, ending `failed` with `provisioning_failed`.
 
-        Choose an image or existing volume through boot_volume, and exactly one of network_interface_id or subnet_id. Existing network interfaces, boot volumes or elastic IPs require count=1. They are not held while the instance is pending; if one is no longer usable when the order is accepted, the instance ends `failed` with `provisioning_failed`. Image boots require boot_volume; existing volumes retain their own subscription. Each instance gets its own Billing subscription, with the boot volume, data volumes and elastic IP bought with it as items of it: they renew, renew automatically and expire with the machine as a whole, while each can still be changed or released alone. `checkout.auto_renew` turns automatic renewal on for each machine.
+        Choose an image or existing volume through boot_volume, and exactly one of network_interface_id or subnet_id. Existing network interfaces, boot volumes or elastic IPs require count=1. They are not held while the instance is pending; if one is no longer usable when the order is accepted, the instance ends `failed` with `provisioning_failed`. Any of them, and a private image, may still be being created after its own order was accepted: the instance is created once they exist, and if one of them is not created, the instance ends `failed` with `provisioning_failed` and its part of the order is refunded. One whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`. Image boots require boot_volume; existing volumes retain their own subscription. Each instance gets its own Billing subscription, with the boot volume, data volumes and elastic IP bought with it as items of it: they renew, renew automatically and expire with the machine as a whole, while each can still be changed or released alone. `checkout.auto_renew` turns automatic renewal on for each machine.
 
         Instances of one request succeed or fail individually. Each instance, with its boot volume, network interface and elastic IP, is created or fails as a whole. Instances that were created are kept; each failed instance ends `failed` with `provisioning_failed`, its part of the order is refunded, and the order then ends `partially_completed`. An instance is delivered whole or not at all: when the customer cancels any of its order items before the order is accepted, it is not created, its remaining items are canceled and refunded, and it ends `failed` with `order_canceled`. Each instance is named after this request with a number appended.
 
@@ -441,6 +441,8 @@ paths:
 
         The image this instance already runs is accepted even after the platform has withdrawn it, since rebuilding is the only way back into an instance broken from the inside. Any *other* withdrawn image is rejected with `IMAGE_RETIRED`, which is a change of image and therefore a new order.
 
+        A private image still being captured after its order was accepted can be named: the rebuild starts once the image is ready, and fails with `COMPUTE_RESOURCE_CREATION_FAILED`, the instance unchanged, if the capture fails.
+
         The instance is `rebuilding` until the rebuild has finished.
       operationId: rebuild-instance
       tags:
@@ -506,7 +508,10 @@ paths:
         The volume must be in the same region and availability zone as the instance. Returns the
         volume; the instance is `attaching_volume` and the volume is `attaching` until the
         attachment is confirmed. Partition the volume and mount the file system inside the instance once it
-        is attached.
+        is attached. A volume still being created after its order was accepted can be attached right away; the
+        attachment is accepted and goes ahead once the volume is created, and fails with
+        `COMPUTE_RESOURCE_CREATION_FAILED` if the volume's creation fails. A volume whose purchase still awaits checkout
+        or payment is refused with `COMPUTE_PURCHASE_PENDING`.
       operationId: attach-instance-volume
       tags:
         - instances
@@ -607,6 +612,10 @@ paths:
       description: Returns the network interface; the instance is `attaching_network_interface`
         and the interface is `attaching` until the attachment is confirmed. The instance has to be running or
         stopped; one stopped by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`.
+        A network interface still being created can be attached right away, so an interface can be created and
+        attached in two consecutive requests. The attachment is accepted and goes ahead once the interface is
+        created, and fails with `NETWORK_INTERFACE_UNAVAILABLE` if the interface's creation fails. An instance
+        still being created is refused with `INSTANCE_STILL_PENDING`.
       operationId: attach-instance-network-interface
       tags:
         - instances
