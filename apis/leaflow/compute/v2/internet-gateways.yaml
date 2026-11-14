@@ -1,0 +1,178 @@
+paths:
+  /api/v2/internet-gateways:
+    get:
+      operationId: list-internet-gateways
+      summary: List internet gateways
+      tags:
+        - internet-gateways
+      parameters:
+        - name: virtual_private_cloud_id
+          in: query
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGatewayListResponseBody"
+        default: &id001
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      operationId: create-internet-gateway
+      summary: Create an internet gateway
+      tags:
+        - internet-gateways
+      description:
+        Reserves an unbilled VPC connection through the selected line’s exit network. Compatible lines share this connection. It
+        is attached when a bandwidth service needs it; creating it grants no public
+        access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInternetGatewayRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGateway"
+        default: *id001
+  /api/v2/internet-gateways/{internetGatewayId}:
+    get:
+      operationId: get-internet-gateway
+      summary: Get an internet gateway
+      tags:
+        - internet-gateways
+      parameters: &id002
+        - name: internetGatewayId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/InternetGatewayId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGateway"
+        default: *id001
+    patch:
+      operationId: update-internet-gateway
+      summary: Update an internet gateway
+      tags:
+        - internet-gateways
+      parameters: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInternetGatewayRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGateway"
+        default: *id001
+    delete:
+      operationId: delete-internet-gateway
+      summary: Delete an unused internet gateway
+      description: Refused while any EIP association or unreleased IPv6 bandwidth
+        service uses this connection.
+      tags:
+        - internet-gateways
+      parameters: *id002
+      responses:
+        "204":
+          description: Deleted
+        default: *id001
+components:
+  schemas:
+    InternetGateway:
+      type: object
+      description: An unbilled dual-stack VPC connection. Addresses and bandwidth
+        retain separate lifecycles.
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/InternetGatewayId
+        project_id:
+          type: string
+          format: uuid
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
+        virtual_private_cloud_id: &id003
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        name: &id005
+          type: string
+          minLength: 1
+          maxLength: 128
+        description: &id006
+          type: string
+          maxLength: 255
+        status:
+          type: string
+          enum:
+            - pending
+            - available
+            - deleted
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - project_id
+        - region_id
+        - virtual_private_cloud_id
+        - name
+        - description
+        - status
+        - created_at
+      additionalProperties: false
+    CreateInternetGatewayRequestBody:
+      type: object
+      properties:
+        virtual_private_cloud_id: *id003
+        line_id:
+          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
+          description: Selects the exit network. Other lines using that exit may share this gateway.
+        name: *id005
+        description: *id006
+      required:
+        - virtual_private_cloud_id
+        - line_id
+        - name
+      additionalProperties: false
+    UpdateInternetGatewayRequestBody:
+      type: object
+      properties:
+        name: *id005
+        description: *id006
+      minProperties: 1
+      additionalProperties: false
+    InternetGatewayListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternetGateway"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false

@@ -1,20 +1,20 @@
 paths:
-  /api/v2/elastic-ip-lines:
+  /api/v2/internet-lines:
     get:
-      operationId: list-elastic-ip-lines
+      operationId: list-internet-lines
       security:
         - {}
         - scopedTokenAuth: []
-      summary: List and search elastic IP lines
+      summary: List and search internet lines
       tags:
-        - elastic-ip-lines
+        - internet-lines
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ElasticIpLineListResponseBody"
+                $ref: "#/components/schemas/InternetLineListResponseBody"
         default:
           description: Error
           content:
@@ -22,8 +22,7 @@ paths:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
       description:
-        Lists the lines on sale. A line is the network an elastic IP is bought on, with the bandwidth that
-        can be chosen and the two Billing Plans its elastic IPs are paid under. Region is optional. Prices, commercial
+        Lists the commercial internet lines on sale. A line can supply IPv4 and IPv6, with selectable bandwidth ceilings and separate address and bandwidth Billing Plans. Region is optional. Prices, commercial
         terms and checkout are read directly from Billing. `q` searches the names and descriptions of the lines on
         sale; filters combine with AND, and pagination is independent of them.
       parameters:
@@ -44,46 +43,44 @@ paths:
             maxLength: 255
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
-  /api/v2/elastic-ip-lines/{elasticIpLineId}:
+  /api/v2/internet-lines/{internetLineId}:
     get:
-      operationId: get-elastic-ip-line
+      operationId: get-internet-line
       security:
         - {}
         - scopedTokenAuth: []
-      summary: Get an elastic IP line
+      summary: Get an internet line
       tags:
-        - elastic-ip-lines
+        - internet-lines
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ElasticIpLine"
+                $ref: "#/components/schemas/InternetLine"
         default:
           description: Error
           content:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-      description:
-        Includes lines off sale that existing elastic IPs are on. No inventory or gateway facts are
-        returned.
+      description: Returns a line currently on sale. Lines off sale are not exposed by this public catalog endpoint. No inventory or gateway facts are returned.
       parameters:
-        - name: elasticIpLineId
+        - name: internetLineId
           in: path
           required: true
           schema:
-            $ref: ./identifiers.yaml#/components/schemas/ElasticIpLineId
+            $ref: ./identifiers.yaml#/components/schemas/InternetLineId
 components:
   schemas:
-    ElasticIpLine:
+    InternetLine:
       description: |-
-        The network an elastic IP is bought on: the bandwidth that can be chosen, and the two Billing Plans every elastic IP of the line is paid under in one order. The address item is always used and meters the address while it is held idle, associated with nothing; the network item pays the bandwidth, prepaid or used while associated, or the traffic sent. Contains no supply ranges, gateways or backend execution state.
+        A regional commercial internet offering that can supply both IPv4 addresses and IPv6 prefixes. Address and bandwidth services have independent subscriptions. IPv4 addresses are billed for their full holding duration. Mbps duration is billed while bandwidth service is enabled, regardless of address association; traffic billing measures actual outbound bytes. Billing owns prices and checkout.
       type: object
       properties:
         id:
-          $ref: ./identifiers.yaml#/components/schemas/ElasticIpLineId
+          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
         region_id:
           $ref: ./identifiers.yaml#/components/schemas/RegionId
         name:
@@ -95,40 +92,34 @@ components:
           minLength: 0
           maxLength: 255
         address_billing:
-          description:
-            The address line every elastic IP of this line has. It is always metered, and meters the
-            address while no network interface holds it.
+          description: The address product, metered for the full holding duration regardless of association or bandwidth purchase.
           allOf:
             - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
-        internet_billing:
+        bandwidth_billing:
           description:
-            The network line every elastic IP of this line has, which pays its bandwidth, prepaid or used
-            while associated, or its traffic. Metered, the line's quantity is 1 and the bandwidth or the traffic is
-            what its meters read, by the elastic IP's `internet_charge_type`.
+            The independent bandwidth product. Duration billing runs while enabled regardless of address association;
+            traffic billing measures actual outbound bytes only.
           allOf:
             - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
         min_bandwidth_mbps:
-          description: The least bandwidth an elastic IP of this line can be bought with, in Mbps.
+          description: The least bandwidth a service on this line can be bought with, in Mbps.
           type: integer
           format: int64
         max_bandwidth_mbps:
           description:
-            The most bandwidth an elastic IP of this line can be bought with, in Mbps, at most 1000. An elastic
+            The most bandwidth a service on this line can be bought with, in Mbps, at most 1000. An elastic
             IP associated with an instance is also held to the instance type's `max_bandwidth_mbps`.
           type: integer
           format: int64
         sale_status:
-          description:
-            "`on_sale` is offered for new elastic IPs; `off_sale` takes none, while the elastic IPs already
-            on it keep working."
+          description: "`on_sale` accepts new address and bandwidth purchases; `off_sale` refuses new purchases while existing services continue."
           type: string
           enum:
             - on_sale
             - off_sale
         traffic_sale_status:
-          description:
-            Whether an elastic IP of this line can be bought with `internet_charge_type` `traffic`, billed by
-            the bytes it sends. `off_sale` refuses that with `ELASTIC_IP_TRAFFIC_UNAVAILABLE`.
+          description: >-
+            Whether bandwidth services on this line can use `internet_charge_type: traffic`, billed by actual outbound bytes. `off_sale` refuses new traffic-billed bandwidth purchases.
           type: string
           enum:
             - on_sale
@@ -145,7 +136,7 @@ components:
         - name
         - description
         - address_billing
-        - internet_billing
+        - bandwidth_billing
         - min_bandwidth_mbps
         - max_bandwidth_mbps
         - sale_status
@@ -153,13 +144,13 @@ components:
         - created_at
         - updated_at
       additionalProperties: false
-    ElasticIpLineListResponseBody:
+    InternetLineListResponseBody:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/ElasticIpLine"
+            $ref: "#/components/schemas/InternetLine"
         pagination:
           $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
       required:

@@ -1,0 +1,449 @@
+paths:
+  /api/v2/internet-bandwidths:
+    get:
+      operationId: list-internet-bandwidths
+      summary: List internet bandwidth services
+      tags:
+        - internet-bandwidths
+      parameters:
+        - name: scope
+          in: query
+          schema:
+            $ref: "#/components/schemas/InternetBandwidthScope"
+        - name: elastic_ip_id
+          in: query
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+        - name: virtual_private_cloud_id
+          in: query
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidthListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    post:
+      operationId: create-internet-bandwidth
+      summary: Purchase internet bandwidth
+      tags:
+        - internet-bandwidths
+      description:
+        Mbps duration is charged from enablement until suspension or release, even when its EIP is unassociated.
+        Traffic billing counts actual outbound bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInternetBandwidthRequestBody"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidthMutation"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/internet-bandwidths/{internetBandwidthId}:
+    get:
+      operationId: get-internet-bandwidth
+      summary: Get internet bandwidth
+      tags:
+        - internet-bandwidths
+      parameters:
+        - name: internetBandwidthId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/InternetBandwidthId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidth"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    patch:
+      operationId: update-internet-bandwidth
+      summary: Change bandwidth configuration
+      tags:
+        - internet-bandwidths
+      parameters:
+        - name: internetBandwidthId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/InternetBandwidthId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInternetBandwidthRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidthMutation"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    delete:
+      operationId: delete-internet-bandwidth
+      summary: Cancel internet bandwidth
+      tags:
+        - internet-bandwidths
+      description: Cancels only this service. Its EIP, association, IPv6 prefix and IGW are retained.
+      parameters:
+        - name: internetBandwidthId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/InternetBandwidthId
+        - name: cancellation_mode
+          in: query
+          schema:
+            type: string
+            enum:
+              - immediate
+              - period_end
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidthMutation"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/internet-bandwidths/{internetBandwidthId}/traffic-usage:
+    get:
+      operationId: list-internet-bandwidth-traffic-usage
+      summary: List outbound traffic usage
+      tags:
+        - internet-bandwidths
+      parameters:
+        - name: internetBandwidthId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/InternetBandwidthId
+        - name: interval
+          in: query
+          schema:
+            $ref: "#/components/schemas/InternetBandwidthTrafficInterval"
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetBandwidthTrafficUsageListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    InternetBandwidthScope:
+      type: string
+      enum:
+        - elastic_ip
+        - vpc_ipv6
+    InternetBandwidthChargeType:
+      type: string
+      enum:
+        - bandwidth
+        - traffic
+    InternetBandwidthStatus:
+      type: string
+      enum:
+        - pending
+        - available
+        - deleted
+        - failed
+        - error
+        - updating
+        - suspending
+        - resuming
+        - deleting
+    InternetBandwidth:
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/InternetBandwidthId
+        project_id:
+          type: string
+          format: uuid
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
+        line_id:
+          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
+        scope:
+          $ref: "#/components/schemas/InternetBandwidthScope"
+        elastic_ip_id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        ip_prefix_allocation_id:
+          $ref: ./identifiers.yaml#/components/schemas/IpPrefixAllocationId
+        bandwidth_mbps:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        internet_charge_type:
+          $ref: "#/components/schemas/InternetBandwidthChargeType"
+        status:
+          $ref: "#/components/schemas/InternetBandwidthStatus"
+        access_state:
+          type: string
+          enum:
+            - pending
+            - enabled
+            - suspended
+            - reclaimed
+        checkout_session_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        subscription_id:
+          type: string
+          format: uuid
+        subscription_item_id:
+          type: string
+          format: uuid
+        failure_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        released_at:
+          type: string
+          format: date-time
+        release_set:
+          type: array
+          items:
+            $ref: ./release-sets.yaml#/components/schemas/ReleaseSetItem
+      required:
+        - id
+        - project_id
+        - region_id
+        - line_id
+        - scope
+        - bandwidth_mbps
+        - internet_charge_type
+        - status
+        - created_at
+        - release_set
+      additionalProperties: false
+    InternetBandwidthBilling:
+      type: object
+      properties:
+        price_id:
+          type: string
+          format: uuid
+      required:
+        - price_id
+      additionalProperties: false
+    InternetBandwidthCancellation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+            - immediate
+            - period_end
+        scheduled_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - mode
+      additionalProperties: false
+    InternetBandwidthMutation:
+      type: object
+      properties:
+        internet_bandwidth:
+          $ref: "#/components/schemas/InternetBandwidth"
+        checkout_session_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        cancellation:
+          $ref: "#/components/schemas/InternetBandwidthCancellation"
+      required:
+        - internet_bandwidth
+      additionalProperties: false
+    CreateInternetBandwidthRequestBody:
+      type: object
+      properties:
+        scope:
+          $ref: "#/components/schemas/InternetBandwidthScope"
+        elastic_ip_id:
+          $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        bandwidth_mbps:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        internet_charge_type:
+          $ref: "#/components/schemas/InternetBandwidthChargeType"
+        billing:
+          $ref: "#/components/schemas/InternetBandwidthBilling"
+        checkout:
+          $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+      required:
+        - scope
+        - bandwidth_mbps
+        - internet_charge_type
+        - billing
+      additionalProperties: false
+      description:
+        The scope must match exactly one target. Each service purchases its own Billing price independently
+        of the address or instance.
+    UpdateInternetBandwidthRequestBody:
+      type: object
+      properties:
+        bandwidth_mbps:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        internet_charge_type:
+          $ref: "#/components/schemas/InternetBandwidthChargeType"
+        proration_date:
+          type: string
+          format: date-time
+          description: The quote's proration instant, forwarded unchanged for an automatic prepaid ceiling change. Deferred checkout is repriced when completed. Refused for metered or charge-type changes.
+        checkout:
+          $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+      required: []
+      additionalProperties: false
+      description:
+        Specify exactly one of bandwidth_mbps and internet_charge_type. Prepaid ceiling changes use the
+        existing subscription price through checkout; metered changes do not accept checkout options.
+    InternetBandwidthListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternetBandwidth"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    InternetBandwidthTrafficInterval:
+      type: string
+      enum:
+        - hour
+        - day
+    InternetBandwidthTrafficUsage:
+      type: object
+      properties:
+        start_time:
+          type: string
+          format: date-time
+        egress_bytes:
+          type: integer
+          format: int64
+        egress_packets:
+          type: integer
+          format: int64
+      required:
+        - start_time
+        - egress_bytes
+        - egress_packets
+      additionalProperties: false
+    InternetBandwidthTrafficUsageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternetBandwidthTrafficUsage"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    InternetBandwidthPurchase:
+      type: object
+      description:
+        Independent bandwidth purchased with an address. Omit this component to hold an address without
+        public forwarding.
+      properties:
+        bandwidth_mbps:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        internet_charge_type:
+          $ref: "#/components/schemas/InternetBandwidthChargeType"
+        billing:
+          $ref: "#/components/schemas/InternetBandwidthBilling"
+      required:
+        - bandwidth_mbps
+        - internet_charge_type
+        - billing
+      additionalProperties: false
