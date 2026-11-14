@@ -52,7 +52,7 @@ paths:
 
         A volume bought on its own is licensed, with a Billing subscription of its own: `billing.usage_type` `metered` is refused with `VOLUME_USAGE_TYPE_UNAVAILABLE`. A volume created with an instance follows the machine's terms instead and may be metered.
 
-        **Buying for an instance.** With `instance_id`, the volume is attached to that instance of the project once created, and becomes an item of the instance's Billing subscription: it is charged up to the instance's term end, the rest of the current period in proportion to the time left, and from then on renews, renews automatically and expires with the instance. Its volume type has to be of the instance's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). `billing` may be omitted to take the instance's terms; given, its usage type and period must be the instance's (422 `VOLUME_BILLING_TERMS_MISMATCH`), while its termination policy may differ. An instance with no room for another volume is refused before anything is ordered, as attaching would be. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`. The instance may still be being created after its order was accepted; the volume is attached once the instance is created, and is refunded if the instance's creation fails.
+        **Buying for an instance.** With `instance_id`, the volume is attached to that instance of the project once created, and becomes an item of the instance's Billing subscription: it is charged up to the instance's term end, the rest of the current period in proportion to the time left, and from then on renews, renews automatically and expires with the instance. Its volume type has to be of the instance's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`). `billing.price_id` is required and identifies a price of this component's plan. Billing checks that it can join the existing subscription. An instance with no room for another volume is refused before anything is ordered, as attaching would be. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`. The instance may still be being created after its order was accepted; the volume is attached once the instance is created, and is refunded if the instance's creation fails.
 
         The volume is `pending` from the moment its Checkout Session is created until it is delivered or its checkout or order ends. Every other operation on it is refused with `COMPUTE_RESOURCE_BUSY` meanwhile, and its deletion with `COMPUTE_PURCHASE_PENDING` while its purchase awaits checkout or payment.
       operationId: create-volume
@@ -494,7 +494,7 @@ components:
             `VOLUME_SOURCE_CONFLICT`
           $ref: ./identifiers.yaml#/components/schemas/VolumeBackupId
         billing:
-          description: Required unless `instance_id` is given, which takes the instance's terms when this is omitted.
+          description: The selected Billing price for this component. Required even when joining an existing subscription; Billing checks compatibility.
           $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
         checkout:
           $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
@@ -502,6 +502,7 @@ components:
           description: Buy the volume for this instance of the project; see the operation.
           $ref: ./identifiers.yaml#/components/schemas/InstanceId
       required:
+        - billing
         - volume_type_id
         - name
       additionalProperties: false
