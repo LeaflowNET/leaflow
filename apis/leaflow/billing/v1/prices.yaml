@@ -282,18 +282,9 @@ components:
       description: |-
         `none` refunds nothing.
 
-        `prorated` refunds the amount paid for the current period minus the value of the time used, never below zero
-        or above what remains unrefunded. Time used runs from the period start to the effective cancellation, by the
-        second. Each whole month from the period start is valued at the order item's `monthly_list_amount`, and the
-        remainder at that amount in proportion to the length of the month it falls in; without `monthly_list_amount`,
-        time used is valued at the amount paid in proportion to the length of the period. A renewal starts a new
-        period, and an immediate change starts one at the change. Discounts and setup fees are not refunded. Refunds
-        return to the original payment sources, with tax refunded in proportion.
+        `prorated` refunds the amount paid for the current period minus the value of the time used, never below zero or above what remains unrefunded. Time used runs from the period start to effective cancellation, by the second. The order item freezes `list_amount` for one `list_interval`: each complete interval uses that amount, and the remainder is proportional to the actual length of its interval. Calendar intervals are anchored at the service period start in UTC. Without a frozen reference, time used is valued at the amount paid in proportion to the period length. A renewal starts a new period; an immediate change starts one at the change. Discounts and setup fees are not refunded. Refunds return to the original payment sources, with tax refunded in proportion.
 
-        `short_rate` refunds as `prorated`, except that when the cancellation takes effect less than
-        `short_rate_threshold_seconds` after the period start, the value of the time used is multiplied by
-        `short_rate_multiplier`, up to `monthly_list_amount` for each month begun or, without `monthly_list_amount`,
-        up to the amount paid.
+        `short_rate` applies the same calculation, but when cancellation takes effect less than `short_rate_threshold_seconds` after the period start, multiplies the used value by `short_rate_multiplier`, capped at `list_amount` for each reference interval begun, or at the amount paid when no reference was frozen.
       type: string
       enum:
         - none

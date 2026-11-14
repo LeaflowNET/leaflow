@@ -1,50 +1,16 @@
 components:
   schemas:
-    BillingPeriod:
-      type: object
-      properties:
-        unit:
-          type: string
-          enum:
-            - month
-            - year
-        count:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 2147483647
-      required:
-        - unit
-        - count
-      additionalProperties: false
     BillingChoice:
-      description:
-        The commercial terms for one newly purchased component. Licensed requires period and
-        termination_policy; metered refuses both. Components in one instance purchase must use the same usage
-        type and period, while their termination policies may differ.
+      description: The Billing price selected for this component's plan. Billing validates the price, currency, availability, cancellation terms and subscription period. Each newly purchased component selects its own price; a price cannot be inherited from a different component's plan.
       type: object
       properties:
-        usage_type:
-          description: "`licensed` pays for a period in advance; `metered` bills usage until canceled."
+        price_id:
+          description: The ID of a recurring price returned by Billing for this component's plan.
           type: string
-          enum:
-            - licensed
-            - metered
-        period:
-          $ref: "#/components/schemas/BillingPeriod"
-        termination_policy:
-          $ref: "#/components/schemas/TerminationPolicy"
+          format: uuid
       required:
-        - usage_type
+        - price_id
       additionalProperties: false
-    TerminationPolicy:
-      description:
-        Immediate ends service when cancellation takes effect, with refunds governed by the purchased
-        terms. Period-end keeps service until the paid period ends.
-      type: string
-      enum:
-        - immediate
-        - period_end
     CheckoutOptions:
       $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
     BillingComponent:
