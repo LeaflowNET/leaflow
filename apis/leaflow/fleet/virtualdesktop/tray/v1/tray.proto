@@ -164,6 +164,11 @@ service TrayService {
   // Scrolls over a tray icon (StatusNotifierItem Scroll; for XEmbed icons
   // clicks of buttons 4 to 7).
   rpc ScrollTrayIcon(ScrollTrayIconRequest) returns (ScrollTrayIconResponse);
+  // Enters or leaves an XEmbed icon without clicking it, so applications may
+  // display their own hover windows. StatusNotifierItem has no hover method;
+  // participants must not send this call for those icons. Older servers may
+  // return UNIMPLEMENTED, in which case participants stop forwarding hover.
+  rpc SetTrayIconPointer(SetTrayIconPointerRequest) returns (SetTrayIconPointerResponse);
   // Reads a menu or a submenu of a tray icon whose has_menu is set (dbusmenu
   // AboutToShow, then GetLayout). An icon without a menu, or an unknown
   // item, fails with NOT_FOUND; an application that does not answer on D-Bus
@@ -350,3 +355,23 @@ message SendTrayMenuEventResponse {
   // The session revision at which the event was delivered.
   uint64 revision = 1;
 }
+
+// The request of SetTrayIconPointer. Like other tray actions this requires the
+// input lease. Pointer motion is ordered with window input by the X11 backend.
+message SetTrayIconPointerRequest {
+  // The XEmbed icon.
+  uint64 tray_icon_id = 1;
+  // True on entry; false on departure. Entry moves to the icon's center.
+  bool entered = 2;
+  // The icon's area in session canvas coordinates. Required, with x and y in
+  // 0..32743 and width and height in 1..256. The XEmbed host uses a 24px icon.
+  leaflow.fleet.virtualdesktop.display.v1.Rectangle icon_area = 3;
+  // Pointer position after departure, in session canvas coordinates, 0..32767.
+  // An old departure is ignored if newer window input already left the icon.
+  sint32 x = 4;
+  // Vertical pointer position, in the same coordinates and range as x.
+  sint32 y = 5;
+}
+
+// The pointer request was accepted; no application button event is generated.
+message SetTrayIconPointerResponse {}
