@@ -50,6 +50,9 @@ type Call struct {
 
 	// Stream receives raw SSE frames; use ctx to cancel or bound the call.
 	Stream io.Writer
+	Files  map[string][]transport.File
+	// AcceptFiles transfers a non-JSON response to Result.File rather than decoding it.
+	AcceptFiles bool
 }
 
 // Result is what came back.
@@ -64,6 +67,8 @@ type Result struct {
 	// Value is the decoded reply — map[string]any, []any or a scalar — or nil
 	// when the operation returned no body.
 	Value any
+	// File owns a response stream; callers must close its Body even when saving fails.
+	File *transport.FileResponse
 }
 
 // Call checks the arguments against the contract and makes the request.
@@ -102,6 +107,8 @@ func (c *Client) Call(ctx context.Context, call Call) (*Result, error) {
 	}
 
 	request.Stream = call.Stream
+	request.Files = call.Files
+	request.AcceptFiles = call.AcceptFiles
 	value, status, err := c.transport(credentials).Do(ctx, request)
 	if err != nil {
 		return nil, err
@@ -111,6 +118,9 @@ func (c *Client) Call(ctx context.Context, call Call) (*Result, error) {
 		return &Result{Status: status, Streamed: true}, nil
 	}
 
+	if file, ok := value.(*transport.FileResponse); ok {
+		return &Result{Status: status, File: file}, nil
+	}
 	return &Result{
 		Status: status,
 		Value:  value,
