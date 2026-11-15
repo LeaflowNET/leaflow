@@ -30,10 +30,7 @@ paths:
       summary: Create an internet gateway
       tags:
         - internet-gateways
-      description:
-        Reserves an unbilled VPC connection through the selected line’s exit network. Compatible lines share this connection. It
-        is attached when a bandwidth service needs it; creating it grants no public
-        access.
+      description: Creates an unbilled, detached gateway in the selected region. Attach it to a VPC before opening public services.
       requestBody:
         required: true
         content:
@@ -90,15 +87,56 @@ paths:
         default: *id001
     delete:
       operationId: delete-internet-gateway
-      summary: Delete an unused internet gateway
-      description: Refused while any EIP association or unreleased IPv6 bandwidth
-        service uses this connection.
+      summary: Delete a detached internet gateway
+      description: Refused while attached to a VPC. Detach the gateway before deleting it.
       tags:
         - internet-gateways
       parameters: *id002
       responses:
         "204":
           description: Deleted
+        default: *id001
+  /api/v2/internet-gateways/{internetGatewayId}:attach:
+    post:
+      operationId: attach-internet-gateway
+      summary: Attach an internet gateway
+      description: Attaches a detached gateway to a VPC in the same project and region. A VPC can have only one attached gateway.
+      tags: [internet-gateways]
+      parameters: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachInternetGatewayRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGateway"
+        default: *id001
+  /api/v2/internet-gateways/{internetGatewayId}:detach:
+    post:
+      operationId: detach-internet-gateway
+      summary: Detach an internet gateway
+      description: Detaches the gateway from the specified VPC. Refused while an EIP association or unreleased IPv6 bandwidth service uses the connection.
+      tags: [internet-gateways]
+      parameters: *id002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetachInternetGatewayRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternetGateway"
         default: *id001
 components:
   schemas:
@@ -115,7 +153,9 @@ components:
         region_id:
           $ref: ./identifiers.yaml#/components/schemas/RegionId
         virtual_private_cloud_id: &id003
-          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+          oneOf:
+            - $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+            - type: "null"
         name: &id005
           type: string
           minLength: 1
@@ -129,6 +169,8 @@ components:
             - pending
             - available
             - deleted
+            - detached
+            - attached
         created_at:
           type: string
           format: date-time
@@ -145,15 +187,12 @@ components:
     CreateInternetGatewayRequestBody:
       type: object
       properties:
-        virtual_private_cloud_id: *id003
-        line_id:
-          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
-          description: Selects the exit network. Other lines using that exit may share this gateway.
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
         name: *id005
         description: *id006
       required:
-        - virtual_private_cloud_id
-        - line_id
+        - region_id
         - name
       additionalProperties: false
     UpdateInternetGatewayRequestBody:
@@ -175,4 +214,18 @@ components:
       required:
         - items
         - pagination
+      additionalProperties: false
+    AttachInternetGatewayRequestBody:
+      type: object
+      properties:
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+      required: [virtual_private_cloud_id]
+      additionalProperties: false
+    DetachInternetGatewayRequestBody:
+      type: object
+      properties:
+        virtual_private_cloud_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+      required: [virtual_private_cloud_id]
       additionalProperties: false

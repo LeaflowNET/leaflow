@@ -66,9 +66,10 @@ paths:
         is created once they exist, and if one of them is not created, the instance ends `failed` with `provisioning_failed`
         and its part of the order is refunded. One whose purchase still awaits checkout or payment is refused with
         `COMPUTE_PURCHASE_PENDING`. Image boots require boot_volume; existing volumes retain their own subscription.
-        Each instance gets its own Billing subscription, with the boot volume, data volumes and elastic IP bought
-        with it as items of it: they renew, renew automatically and expire with the machine as a whole, while each
-        can still be changed or released alone. `checkout.auto_renew` turns automatic renewal on for each machine.
+        Each instance gets its own Billing subscription, with the boot volume and data volumes bought with it
+        as items of it. These items renew and expire together, while each can still be changed or released alone.
+        A new elastic IP and its optional bandwidth service have separate subscriptions in the same checkout.
+        `checkout.auto_renew` turns automatic renewal on for each machine.
 
 
         Instances of one request succeed or fail individually. Each instance, with its boot volume, network interface
@@ -209,7 +210,7 @@ paths:
         than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`.
         `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under
         its terms, and `period_end` keeps the instance working until `scheduled_at` and releases it then. Volumes
-        and elastic IPs kept after the release keep their items, and the subscription continues with them. Asking
+        and elastic IPs kept after the release retain their subscription items and continue to be billed under their existing terms. Asking
         again while that cancellation is pending answers with it again, whatever mode is asked for."
       operationId: delete-instance
       tags:
@@ -343,8 +344,7 @@ paths:
           $ref: ./identifiers.yaml#/components/schemas/InstanceId
     post:
       summary: Stop an instance
-      description:
-        "Shuts the instance down **on its host**, as Alibaba Cloud's ordinary stop does: it keeps its
+      description: "Shuts the instance down **on its host**. It keeps its
         volumes, network interfaces, addresses and quota, and the vCPU and memory of its host stay reserved for
         it, so it starts again without asking for room. **A metered instance keeps being charged for compute while
         stopped**; its volumes and elastic IPs are charged as always. An instance stopped by a suspension, for non-payment
@@ -1789,8 +1789,8 @@ components:
             - existing
         elastic_ip_id:
           description:
-            An idle elastic IP of this project in the same region. It keeps its own bandwidth and Billing
-            subscription; changing its bandwidth is a separate operation.
+            An unassociated elastic IP of this project in the same region. Its address subscription and any existing
+            bandwidth service are retained; changing bandwidth is a separate operation on that service.
           $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
       required:
         - type
