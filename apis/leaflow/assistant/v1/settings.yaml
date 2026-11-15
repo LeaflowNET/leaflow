@@ -4,8 +4,7 @@ paths:
       summary: Get settings
       description: |-
         The caller's assistant settings in this project. `defaultModel` is what a new conversation uses
-        when it names no model: the caller's choice, or the first model in the Canopy catalogue that can
-        run an agent.
+        when it names no model: the caller's choice, the platform default, or the first available model that supports tool calling.
       operationId: get-settings
       tags:
         - Setting
@@ -21,7 +20,7 @@ paths:
     patch:
       summary: Update settings
       description: |-
-        Omitted fields stay as they are; null clears a choice so the catalogue default applies again.
+        Omitted fields stay as they are; null clears a choice so the platform default or catalogue fallback applies again.
         Existing conversations keep their models.
 
         Fails with 422 and code MODEL_UNAVAILABLE when the model cannot run an agent, and with 422 and
@@ -59,12 +58,16 @@ components:
           anyOf:
             - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
             - type: "null"
+        defaultApprovalMode:
+          description: The approval mode used for a new conversation when none is specified.
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
         defaultModel:
           $ref: "#/components/schemas/DefaultModelResource"
       required:
         - defaultModelId
         - defaultReasoningEffort
         - defaultModel
+        - defaultApprovalMode
       additionalProperties: false
     DefaultModelResource:
       description: The model and effort a new conversation gets when it names none.
@@ -80,10 +83,11 @@ components:
             - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
             - type: "null"
         source:
-          description: "`user` when it is the caller's choice, `catalog` when it comes from the Canopy catalogue."
+          description: "`user` when it is the caller's choice, `platform` for the platform default, or `catalog` for the catalogue fallback."
           type: string
           enum:
             - user
+            - platform
             - catalog
       required:
         - modelId
