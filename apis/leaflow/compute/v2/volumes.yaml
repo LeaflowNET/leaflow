@@ -66,7 +66,7 @@ paths:
               $ref: "#/components/schemas/CreateVolumeRequestBody"
       responses:
         "202":
-          description: The volume and its Checkout Session were created; the volume does not exist in the cloud yet.
+          description: The volume and its Checkout Session were created; the volume is not usable yet.
           content:
             application/json:
               schema:
@@ -82,7 +82,7 @@ paths:
   /api/v2/volumes/{volumeId}:
     get:
       summary: Retrieve a volume
-      description: Returns the stored state of the volume; it does not query the cloud.
+      description: Returns the volume.
       operationId: get-volume
       tags:
         - volumes
@@ -216,7 +216,7 @@ paths:
     post:
       summary: Change the type of a volume
       description: |-
-        Moves the volume to another volume type at the same capacity, priced as that type, through a change of its subscription item purchased in Billing, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume is `retyping` until the change is applied, its Checkout Session expires or its order is canceled. A target on the same storage backend takes effect at once; one on another backend copies the volume's data there first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`.
+        Moves the volume to another volume type at the same capacity, priced as that type, through a change of its subscription item purchased in Billing, and returns 202 with the volume and the Checkout Session for the change, which keeps the volume's usage type and period. The volume has to be detached (409 `VOLUME_RETYPE_ATTACHED`), so a boot volume cannot change its type. The target has to be on sale (`VOLUME_TYPE_OFF_SALE`), in the volume's region (422 `VOLUME_RETYPE_OTHER_REGION`), of the volume's availability zone (422 `VOLUME_TYPE_OTHER_AVAILABILITY_ZONE`) with room for the volume (409 `VOLUME_TYPE_SOLD_OUT`, `VOLUME_TYPE_CAPACITY_REACHED`, `VOLUME_TYPE_NO_POOL_ROOM`), admit the volume's capacity (422 `VOLUME_SIZE_OUT_OF_RANGE`, `VOLUME_SIZE_NOT_ON_STEP`) and differ from the current one (422 `VOLUME_RETYPE_SAME_TYPE`). The volume is `retyping` until the change is applied, its Checkout Session expires or its order is canceled. Some changes take effect at once; others copy the volume's data first, which takes longer the larger the volume is. The volume keeps its type until `volume_type_id` shows the new one, and its `performance` follows from then on; a change that did not take effect leaves the volume as it was and is refunded. During a free trial that began with a trial grant, the subscription has to stay within the plans and quantities of the trial offer, otherwise Billing refuses with 422 `BILLING_TRIAL_OFFER_EXCEEDED`.
       operationId: retype-volume
       tags:
         - volumes
@@ -329,7 +329,7 @@ components:
           description:
             "`pending` until the volume is created, with no storage allocated before the order is accepted;
             then `available`, or `in_use` once attached. `failed` means the volume was not created; `failure_reason`
-            states why. `error` means the cloud reports the volume broken. A value naming an operation in progress
+            states why. `error` means the volume is broken. A value naming an operation in progress
             (`resizing`, `retyping`, `reverting`, `attaching`, `detaching`, `suspending`, `resuming`, `deleting`) is
             shown while that operation runs; the volume refuses another operation until it ends."
           type: string
