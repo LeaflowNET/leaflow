@@ -116,8 +116,9 @@ paths:
     delete:
       summary: Release a virtual private cloud
       description:
-        Deletion is rejected while instances or network interfaces remain in the network. Its
-        subnets, routes, security groups and IPv6 configuration are removed with it.
+        Deletion is rejected while instances or network interfaces remain in the network. Its subnets, routes,
+        security groups and IPv6 CIDR blocks are removed with it, and the traffic of its IPv6 CIDR blocks stops being
+        billed.
       operationId: delete-virtual-private-cloud
       tags:
         - virtual-private-clouds
@@ -142,7 +143,7 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:enableIpv6:
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:associateIpv6CidrBlock:
     parameters:
       - name: virtualPrivateCloudId
         in: path
@@ -150,17 +151,68 @@ paths:
         schema:
           $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
     post:
-      summary: Enable IPv6 on a virtual private cloud
+      summary: Associate an IPv6 CIDR block with a virtual private cloud
       description: |-
-        Gives the virtual private cloud a /56 that is routed to it, and every subnet of it a /64 of that /56; a subnet created afterwards takes its /64 at creation. It requires no elastic IP or NAT gateway: IPv6 is routed, not translated. A network interface created afterwards receives an address of its subnet's /64; addresses cannot be requested or released individually, and security groups apply to them as to IPv4. An interface created before IPv6 was enabled keeps only its IPv4 address.
+        Associates an IPv6 /56 CIDR block from the selected internet line with the virtual private cloud. Each existing subnet receives a /64, and each existing network interface receives one IPv6 address from its subnet. Subsequent subnets and network interfaces receive their IPv6 configuration automatically. Existing IPv4 addresses and elastic IP associations are preserved. IPv6 addresses cannot be selected, added or removed individually. Security group rules apply to IPv6 traffic; assigning an address does not permit inbound traffic unless the rules allow it. No elastic IP or NAT gateway is required.
 
-        Enabling IPv6 that is already enabled answers with the virtual private cloud as it is.
-      operationId: enable-virtual-private-cloud-ipv6
+        The guest operating system must support IPv6 automatic configuration to use the assigned address. Address assignment does not indicate that the guest operating system has configured the address.
+
+        The addresses of the block reach the internet. Each network interface sends at most its instance type's `max_bandwidth_mbps`, and the bytes the addresses send to the internet are billed by the line's `ipv6_billing`, pay-as-you-go; inbound traffic is not billed. The association therefore goes through a Billing Checkout Session that opens a subscription of its own with one metered item; `billing.price_id` selects its price.
+
+        A virtual private cloud has at most one IPv6 CIDR block that is not `failed`; another is refused with 409 `VIRTUAL_PRIVATE_CLOUD_IPV6_CIDR_BLOCK_LIMIT_EXCEEDED`. A line that supplies no IPv6 is refused with 409 `INTERNET_LINE_IPV6_UNAVAILABLE`, and a line that cannot be used together with the elastic IPs associated in the virtual private cloud with 409 `INTERNET_LINE_MISMATCH`.
+
+        The block remains `pending` until its order is accepted, then becomes `associating` while the block, subnet ranges and network interface addresses are configured. It becomes `associated` when this configuration is complete; order acceptance alone does not enable internet access. If checkout expires, the order is declined or canceled, or provisioning fails, the block becomes `failed` with a `failure_reason`. A failed association removes any IPv6 configuration introduced by that association, preserves IPv4 configuration and refunds any payment collected for the failed provisioning.
+      operationId: associate-virtual-private-cloud-ipv6-cidr-block
       tags:
         - virtual-private-clouds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssociateIpv6CidrBlockRequestBody"
       responses:
         "202":
-          description: Enabling IPv6 was accepted; `ipv6_cidr` names the /56 at once.
+          description: The association was accepted, with the Checkout Session of its traffic subscription.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssociateIpv6CidrBlockResponseBody"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disassociateIpv6CidrBlock:
+    parameters:
+      - name: virtualPrivateCloudId
+        in: path
+        required: true
+        schema:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+    post:
+      summary: Disassociate an IPv6 CIDR block from a virtual private cloud
+      description: |-
+        Disassociates the block and cancels its traffic subscription in Billing. This operation removes all network interface IPv6 addresses and subnet IPv6 ranges allocated from the block, including those on attached interfaces. Existing IPv6 connections are interrupted. IPv4 addresses, elastic IP associations, network interfaces and instances are preserved. Network interfaces holding addresses from the block do not prevent disassociation.
+
+        The block remains `disassociating` until its IPv6 configuration has been removed, then is no longer listed. Outbound internet traffic remains billable until internet access is disabled, not merely until the request is accepted. Usage incurred before that point may be billed later. A `failed` block is removed immediately.
+
+        A `pending` block is rejected with 409 `COMPUTE_PURCHASE_PENDING`; expire its Checkout Session or cancel its order in Billing instead. An `associating` block is rejected with 409 `COMPUTE_RESOURCE_BUSY`. Repeating this request for a `disassociating` block returns its current state without starting another disassociation.
+      operationId: disassociate-virtual-private-cloud-ipv6-cidr-block
+      tags:
+        - virtual-private-clouds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisassociateIpv6CidrBlockRequestBody"
+      responses:
+        "202":
+          description: The disassociation was accepted.
           content:
             application/json:
               schema:
@@ -173,30 +225,51 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disableIpv6:
-    parameters:
-      - name: virtualPrivateCloudId
-        in: path
-        required: true
-        schema:
-          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
-    post:
-      summary: Disable IPv6 on a virtual private cloud
-      description:
-        Removes the IPv6 of every subnet and gives the /56 back. Refused while a network interface remains in
-        the virtual private cloud, since its IPv6 address would stop working with nothing reporting it.
-      operationId: disable-virtual-private-cloud-ipv6
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/ipv6-traffic-usage:
+    get:
+      summary: List the IPv6 traffic a virtual private cloud sent
+      description: |-
+        The bytes and packets the IPv6 addresses of the virtual private cloud sent to the internet, summed by hour or by day in UTC over `[start_time, end_time)`. Only intervals with traffic are listed. Inbound traffic is not measured.
+
+        Traffic appears some minutes after it is sent. A span longer than 31 days by hour, or 366 days by day, is refused with `TRAFFIC_USAGE_QUERY_INVALID`.
+      operationId: list-virtual-private-cloud-ipv6-traffic-usage
       tags:
         - virtual-private-clouds
+      parameters:
+        - name: virtualPrivateCloudId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum:
+              - hour
+              - day
+            default: hour
+        - name: start_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
       responses:
-        "202":
-          description: Disabling IPv6 was accepted.
+        "200":
+          description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VirtualPrivateCloud"
-        "409":
-          $ref: ./openapi.yaml#/components/responses/Conflict
+                $ref: ./elastic-ips.yaml#/components/schemas/TrafficUsageListResponseBody
         default:
           description: Error
           content:
@@ -263,34 +336,25 @@ components:
           type: string
         ipv4_cidr:
           type: string
-        ipv6_internet_line_id:
-          description: The internet line supplying this VPC's IPv6 prefix; null when IPv6 has no commercial line. Use its bandwidth product when purchasing VPC IPv6 bandwidth.
-          anyOf:
-            - $ref: ./identifiers.yaml#/components/schemas/InternetLineId
-            - type: "null"
-        ipv6_cidr:
-          description:
-            The /56 routed to the virtual private cloud, from which each of its subnets takes a /64; null
-            while IPv6 is not enabled.
-          type:
-            - string
-            - "null"
+        ipv6_cidr_blocks:
+          description: The IPv6 CIDR block associations, including pending and failed associations. Empty when no associations remain.
+          type: array
+          items:
+            $ref: "#/components/schemas/VirtualPrivateCloudIpv6CidrBlock"
         status:
           description:
             "`available` from creation. `failed` means the network is broken; instances cannot be created in it then and are refused with
             `VIRTUAL_PRIVATE_CLOUD_UNAVAILABLE`. `deleting` from the moment its deletion began until it is gone:
             subnets, security groups and routes in it can no longer be created, changed or deleted, and are refused
             with `VIRTUAL_PRIVATE_CLOUD_DELETING`. A deletion that stopped before the end leaves it `deleting`, and
-            deleting it again resumes from where it stopped. `creating`, `enabling_ipv6` and `disabling_ipv6` name
-            operations in progress; the network refuses another operation until they end."
+            deleting it again resumes from where it stopped. `creating` names the operation in progress. Associating and disassociating an IPv6 CIDR block are shown
+            in that block's `state`."
           type: string
           enum:
             - available
             - deleting
             - failed
             - creating
-            - enabling_ipv6
-            - disabling_ipv6
         created_at:
           type: string
           format: date-time
@@ -308,11 +372,161 @@ components:
         - region_id
         - name
         - ipv4_cidr
-        - ipv6_cidr
+        - ipv6_cidr_blocks
         - status
         - created_at
         - updated_at
         - latest_operation
+      additionalProperties: false
+    VirtualPrivateCloudIpv6CidrBlock:
+      description:
+        An IPv6 CIDR block associated with a virtual private cloud. Its addresses reach the internet, and the
+        bytes they send there are billed by one metered item of a Billing subscription of its own.
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIpv6CidrBlockId
+        cidr:
+          description: The /56, from which each subnet takes a /64; null until the block is allocated.
+          type:
+            - string
+            - "null"
+        line_id:
+          description: The internet line the block belongs to.
+          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
+        state:
+          description:
+            "`pending` until the order is accepted. `associating` while the block, subnet IPv6 ranges and network
+            interface IPv6 addresses are being configured. `associated` after this configuration is complete.
+            `disassociating` while the IPv6 configuration is being removed. `failed` after unsuccessful
+            provisioning has been cleaned up; `failure_reason` identifies the cause. A failed association
+            can be removed by disassociating it."
+          type: string
+          enum:
+            - pending
+            - associating
+            - associated
+            - disassociating
+            - failed
+        failure_reason:
+          description:
+            Why the association failed; null unless `state` is `failed`. `checkout_expired` means checkout
+            was not completed before its Checkout Session expired. `provisioning_failed` means the association failed
+            after the order was accepted, and its charge is refunded.
+          type:
+            - string
+            - "null"
+          enum:
+            - order_declined
+            - order_canceled
+            - order_expired
+            - checkout_expired
+            - provisioning_failed
+            - null
+        access_state:
+          description:
+            "`pending` while initial internet access is not yet enabled. `enabled` when IPv6 internet access is
+            available under the traffic subscription. `suspended` when billing restrictions disable internet
+            access; assigned IPv6 addresses and communication within the virtual private cloud are preserved,
+            subject to security group rules. Resolving the billing restriction restores internet access without
+            reallocating addresses. `reclaimed` when the subscription requires permanent release; the block is
+            then disassociated, removing its network interface addresses and subnet IPv6 ranges while preserving
+            IPv4 configuration. Null when no access entitlement exists."
+          type:
+            - string
+            - "null"
+          enum:
+            - pending
+            - enabled
+            - suspended
+            - reclaimed
+            - null
+        checkout_session_id:
+          description: The Billing Checkout Session that bought the block.
+          type:
+            - string
+            - "null"
+          format: uuid
+        order_id:
+          description: The order created when checkout completes; null until then.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_id:
+          description: The Billing subscription of the block's traffic; null until the order is accepted.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_item_id:
+          description: The metered subscription item of the block's traffic; null until the order is accepted.
+          type:
+            - string
+            - "null"
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - cidr
+        - line_id
+        - state
+        - failure_reason
+        - access_state
+        - checkout_session_id
+        - order_id
+        - subscription_id
+        - subscription_item_id
+        - created_at
+      additionalProperties: false
+    AssociateIpv6CidrBlockRequestBody:
+      type: object
+      properties:
+        line_id:
+          description: An internet line of the virtual private cloud's region whose `ipv6_billing` is not null.
+          $ref: ./identifiers.yaml#/components/schemas/InternetLineId
+        billing:
+          description: The selected pay-as-you-go Billing price of the line's `ipv6_billing` Plan.
+          $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
+        checkout:
+          $ref: ./billing-terms.yaml#/components/schemas/CheckoutOptions
+      required:
+        - line_id
+        - billing
+      additionalProperties: false
+    AssociateIpv6CidrBlockResponseBody:
+      description: The virtual private cloud with the new block, and the Checkout Session that buys it.
+      type: object
+      properties:
+        virtual_private_cloud:
+          $ref: "#/components/schemas/VirtualPrivateCloud"
+        ipv6_cidr_block_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIpv6CidrBlockId
+        checkout_session_id:
+          description: The Billing Checkout Session of the purchase. With deferred checkout, the customer completes it in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - virtual_private_cloud
+        - ipv6_cidr_block_id
+        - checkout_session_id
+        - order_id
+      additionalProperties: false
+    DisassociateIpv6CidrBlockRequestBody:
+      type: object
+      properties:
+        ipv6_cidr_block_id:
+          $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIpv6CidrBlockId
+      required:
+        - ipv6_cidr_block_id
       additionalProperties: false
     VirtualPrivateCloudListResponseBody:
       type: object

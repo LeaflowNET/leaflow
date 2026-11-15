@@ -22,8 +22,8 @@ paths:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
       description:
-        Lists the commercial internet lines on sale. A line can supply IPv4 and IPv6, with selectable bandwidth ceilings and separate address and bandwidth Billing Plans. Region is optional. Prices, commercial
-        terms and checkout are read directly from Billing. `q` searches the names and descriptions of the lines on
+        Lists the lines on sale. A line is the network that elastic IPs and the IPv6 CIDR blocks of virtual
+        private clouds are bought on, with the bandwidth that can be chosen and the Billing Plans they are paid under. Region is optional. Prices, commercial terms and checkout are read directly from Billing. `q` searches the names and descriptions of the lines on
         sale; filters combine with AND, and pagination is independent of them.
       parameters:
         - name: region_id
@@ -65,7 +65,7 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
-      description: Returns a line currently on sale. Lines off sale are not exposed by this public catalog endpoint.
+      description: Includes lines off sale that existing elastic IPs or virtual private clouds are on.
       parameters:
         - name: internetLineId
           in: path
@@ -76,7 +76,7 @@ components:
   schemas:
     InternetLine:
       description: |-
-        A regional commercial internet offering that can supply both IPv4 addresses and IPv6 prefixes. Address and bandwidth services have independent subscriptions. IPv4 addresses are billed for their full holding duration. Mbps duration is billed while bandwidth service is enabled, regardless of address association; traffic billing measures actual outbound bytes. Billing owns prices and checkout.
+        The network that elastic IPs and the IPv6 CIDR blocks of virtual private clouds are bought on: the bandwidth that can be chosen, and the Billing Plans they are paid under. An elastic IP is paid under both of its Plans in one order: the address item meters the address while it is associated with nothing, and the internet item pays the bandwidth, prepaid or used while associated, or the traffic sent. An IPv6 CIDR block of a virtual private cloud is paid by the bytes its addresses send, under `ipv6_billing`.
       type: object
       properties:
         id:
@@ -92,34 +92,48 @@ components:
           minLength: 0
           maxLength: 255
         address_billing:
-          description: The address product, metered for the full holding duration regardless of association or bandwidth purchase.
-          allOf:
-            - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
-        bandwidth_billing:
           description:
-            The independent bandwidth product. Duration billing runs while enabled regardless of address association;
-            traffic billing measures actual outbound bytes only.
+            The order line every elastic IP of this line has for its address. It is always metered, and meters
+            the address while no network interface holds it.
           allOf:
             - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+        internet_billing:
+          description:
+            The order line that pays an elastic IP of this line by its `internet_charge_type`, the bandwidth
+            prepaid or metered while associated, or the traffic. Metered, its quantity is 1 and its meters read the
+            bandwidth or the traffic.
+          allOf:
+            - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+        ipv6_billing:
+          description:
+            The order line of an IPv6 CIDR block of this line, always metered by the bytes its addresses send to
+            the internet; null when the line supplies no IPv6.
+          anyOf:
+            - $ref: ./billing-terms.yaml#/components/schemas/BillingComponent
+            - type: "null"
         min_bandwidth_mbps:
-          description: The least bandwidth a service on this line can be bought with, in Mbps.
+          description: The least bandwidth that can be bought on this line, in Mbps.
           type: integer
           format: int64
         max_bandwidth_mbps:
           description:
-            The most bandwidth a service on this line can be bought with, in Mbps, at most 1000. An elastic
-            IP associated with an instance is also held to the instance type's `max_bandwidth_mbps`.
+            The most bandwidth that can be bought on this line, in Mbps, at most 1000. An elastic IP associated
+            with an instance is also held to the instance type's `max_bandwidth_mbps`.
           type: integer
           format: int64
         sale_status:
-          description: "`on_sale` accepts new address and bandwidth purchases; `off_sale` refuses new purchases while existing services continue."
+          description:
+            "`on_sale` accepts new elastic IPs and IPv6 CIDR blocks; `off_sale` accepts none, while
+            what is already on the line keeps working."
           type: string
           enum:
             - on_sale
             - off_sale
         traffic_sale_status:
-          description: >-
-            Whether bandwidth services on this line can use `internet_charge_type: traffic`, billed by actual outbound bytes. `off_sale` refuses new traffic-billed bandwidth purchases.
+          description:
+            Whether an elastic IP of this line can be bought with `internet_charge_type` `traffic`, billed by
+            the bytes it sends.
+            `off_sale` refuses it with `INTERNET_LINE_TRAFFIC_UNAVAILABLE`.
           type: string
           enum:
             - on_sale
@@ -136,7 +150,8 @@ components:
         - name
         - description
         - address_billing
-        - bandwidth_billing
+        - internet_billing
+        - ipv6_billing
         - min_bandwidth_mbps
         - max_bandwidth_mbps
         - sale_status
@@ -157,3 +172,13 @@ components:
         - items
         - pagination
       additionalProperties: false
+    InternetChargeType:
+      type: string
+      description: What the internet item of an elastic IP charges for.
+        `bandwidth` charges for the bandwidth ceiling, prepaid for a period or by the Mbit/s-second while the address
+        is associated.
+        `traffic` charges for the bytes sent to the internet, pay-as-you-go only, while the bandwidth is only a ceiling.
+        Inbound traffic is never charged.
+      enum:
+        - bandwidth
+        - traffic

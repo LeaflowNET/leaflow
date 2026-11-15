@@ -215,7 +215,9 @@ paths:
         Removes a secondary IPv4 address and answers 202 with the network interface `removing_address`
         until it is gone. The primary address goes only with the network interface (409
         `NETWORK_INTERFACE_ADDRESS_PRIMARY`), and an address an elastic IP is associated with is refused until it is
-        disassociated (409 `NETWORK_INTERFACE_ADDRESS_ASSOCIATED`).
+        disassociated (409 `NETWORK_INTERFACE_ADDRESS_ASSOCIATED`). This operation does not remove IPv6
+        addresses; an IPv6 address is rejected with 409 `NETWORK_INTERFACE_ADDRESS_PRIMARY`. IPv6 addresses
+        are removed when their virtual private cloud CIDR block is disassociated or their network interface is deleted.
       operationId: delete-network-interface-address
       tags:
         - network-interfaces
@@ -271,6 +273,12 @@ components:
           items:
             $ref: ./identifiers.yaml#/components/schemas/SecurityGroupId
         addresses:
+          description:
+            IPv4 and IPv6 addresses of this network interface. Each interface has one primary IPv4 address
+            and may have secondary IPv4 addresses. When an IPv6 CIDR block is associated with its virtual
+            private cloud, the interface also receives one primary IPv6 address automatically, including
+            interfaces created before the association. Disassociating the block removes that IPv6 address
+            without removing IPv4 addresses.
           type: array
           items:
             $ref: "#/components/schemas/NetworkInterfaceAddress"
@@ -353,7 +361,7 @@ components:
         subnet_id:
           $ref: ./identifiers.yaml#/components/schemas/SubnetId
         address:
-          description: The private address to assign. Allocated automatically when omitted
+          description: The primary private IPv4 address to assign. Allocated automatically when omitted. IPv6 addresses are assigned automatically and cannot be specified here.
           type: string
           maxLength: 64
       required:
@@ -391,6 +399,7 @@ components:
           maxLength: 15
       additionalProperties: false
     NetworkInterfaceAddress:
+      description: An IPv4 or IPv6 address assigned to a network interface. Address roles are defined separately for each IP version.
       type: object
       properties:
         id:
@@ -401,8 +410,16 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+        ip_version:
+          description: The IP version of the address.
+          type: integer
+          enum: [4, 6]
         role:
-          description: "`primary` is the interface's primary private address, which is the instance's network location; every other address of the interface is `secondary`."
+          description:
+            "`primary` identifies the primary address for its IP version. An interface has one primary IPv4
+            address and, when IPv6 is configured, one primary IPv6 address. `secondary` applies only to
+            additional IPv4 addresses. The IPv6 address is managed through the virtual private cloud
+            CIDR block association, not through the secondary IPv4 address operations."
           type: string
           enum:
             - primary
@@ -427,6 +444,7 @@ components:
         - id
         - subnet_id
         - address
+        - ip_version
         - role
         - state
         - assigned_at

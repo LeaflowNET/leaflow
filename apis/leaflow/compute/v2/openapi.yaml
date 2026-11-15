@@ -44,10 +44,6 @@ servers:
 security:
   - scopedTokenAuth: []
 tags:
-  - name: internet-bandwidths
-    description: Independently billed internet bandwidth services.
-  - name: internet-gateways
-    description: Unbilled VPC internet connections.
   - name: availability-zones
     description: Availability zones, the placement unit of volumes and instances.
   - name: internet-lines
@@ -97,20 +93,6 @@ tags:
   - name: volumes
     description: Volumes resources and operations.
 paths:
-  /api/v2/internet-bandwidths:
-    $ref: ./internet-bandwidths.yaml#/paths/~1api~1v2~1internet-bandwidths
-  /api/v2/internet-bandwidths/{internetBandwidthId}:
-    $ref: ./internet-bandwidths.yaml#/paths/~1api~1v2~1internet-bandwidths~1{internetBandwidthId}
-  /api/v2/internet-bandwidths/{internetBandwidthId}/traffic-usage:
-    $ref: ./internet-bandwidths.yaml#/paths/~1api~1v2~1internet-bandwidths~1{internetBandwidthId}~1traffic-usage
-  /api/v2/internet-gateways/{internetGatewayId}:attach:
-    $ref: ./internet-gateways.yaml#/paths/~1api~1v2~1internet-gateways~1{internetGatewayId}:attach
-  /api/v2/internet-gateways/{internetGatewayId}:detach:
-    $ref: ./internet-gateways.yaml#/paths/~1api~1v2~1internet-gateways~1{internetGatewayId}:detach
-  /api/v2/internet-gateways:
-    $ref: ./internet-gateways.yaml#/paths/~1api~1v2~1internet-gateways
-  /api/v2/internet-gateways/{internetGatewayId}:
-    $ref: ./internet-gateways.yaml#/paths/~1api~1v2~1internet-gateways~1{internetGatewayId}
   /api/v2/availability-zones:
     $ref: ./availability-zones.yaml#/paths/~1api~1v2~1availability-zones
   /api/v2/availability-zones/{availabilityZoneId}:
@@ -123,6 +105,12 @@ paths:
     $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips
   /api/v2/elastic-ips/{elasticIpId}:
     $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}
+  /api/v2/elastic-ips/{elasticIpId}:changeBandwidth:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}:changeBandwidth
+  /api/v2/elastic-ips/{elasticIpId}:changeChargeType:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}:changeChargeType
+  /api/v2/elastic-ips/{elasticIpId}/traffic-usage:
+    $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}~1traffic-usage
   /api/v2/elastic-ips/{elasticIpId}/association:
     $ref: ./elastic-ips.yaml#/paths/~1api~1v2~1elastic-ips~1{elasticIpId}~1association
   /api/v2/elastic-ips/{elasticIpId}:associate:
@@ -235,10 +223,12 @@ paths:
     $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds
   /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:
     $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}
-  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:enableIpv6:
-    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:enableIpv6
-  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disableIpv6:
-    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:disableIpv6
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:associateIpv6CidrBlock:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:associateIpv6CidrBlock
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}:disassociateIpv6CidrBlock:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}:disassociateIpv6CidrBlock
+  /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/ipv6-traffic-usage:
+    $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1ipv6-traffic-usage
   /api/v2/virtual-private-clouds/{virtualPrivateCloudId}/free-subnet-cidr:
     $ref: ./virtual-private-clouds.yaml#/paths/~1api~1v2~1virtual-private-clouds~1{virtualPrivateCloudId}~1free-subnet-cidr
   /api/v2/volume-backups:
@@ -309,6 +299,8 @@ components:
       $ref: ./internet-lines.yaml#/components/schemas/InternetLine
     InternetLineListResponseBody:
       $ref: ./internet-lines.yaml#/components/schemas/InternetLineListResponseBody
+    InternetChargeType:
+      $ref: ./internet-lines.yaml#/components/schemas/InternetChargeType
     DeleteElasticIpResponseBody:
       $ref: ./elastic-ips.yaml#/components/schemas/DeleteElasticIpResponseBody
     Ipv4HostAddress:
@@ -329,6 +321,16 @@ components:
       $ref: ./elastic-ips.yaml#/components/schemas/CreateElasticIpResponseBody
     ElasticIpAssociation:
       $ref: ./elastic-ips.yaml#/components/schemas/ElasticIpAssociation
+    TrafficUsage:
+      $ref: ./elastic-ips.yaml#/components/schemas/TrafficUsage
+    TrafficUsageListResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/TrafficUsageListResponseBody
+    ChangeElasticIpBandwidthRequestBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/ChangeElasticIpBandwidthRequestBody
+    ChangeElasticIpChargeTypeRequestBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/ChangeElasticIpChargeTypeRequestBody
+    ElasticIpChangeResponseBody:
+      $ref: ./elastic-ips.yaml#/components/schemas/ElasticIpChangeResponseBody
     InstanceId:
       $ref: ./identifiers.yaml#/components/schemas/InstanceId
     NetworkInterfaceId:
@@ -379,6 +381,8 @@ components:
       $ref: ./identifiers.yaml#/components/schemas/OperationLogId
     VirtualPrivateCloudPeeringId:
       $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudPeeringId
+    VirtualPrivateCloudIpv6CidrBlockId:
+      $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudIpv6CidrBlockId
     VirtualPrivateCloudRouteId:
       $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudRouteId
     SecurityGroupRuleId:
@@ -591,6 +595,14 @@ components:
       $ref: ./virtual-private-cloud-subnets.yaml#/components/schemas/UpdateVirtualPrivateCloudSubnetRequestBody
     VirtualPrivateCloud:
       $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloud
+    VirtualPrivateCloudIpv6CidrBlock:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloudIpv6CidrBlock
+    AssociateIpv6CidrBlockRequestBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/AssociateIpv6CidrBlockRequestBody
+    AssociateIpv6CidrBlockResponseBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/AssociateIpv6CidrBlockResponseBody
+    DisassociateIpv6CidrBlockRequestBody:
+      $ref: ./virtual-private-clouds.yaml#/components/schemas/DisassociateIpv6CidrBlockRequestBody
     VirtualPrivateCloudListResponseBody:
       $ref: ./virtual-private-clouds.yaml#/components/schemas/VirtualPrivateCloudListResponseBody
     CreateVirtualPrivateCloudRequestBody:

@@ -66,10 +66,9 @@ paths:
         is created once they exist, and if one of them is not created, the instance ends `failed` with `provisioning_failed`
         and its part of the order is refunded. One whose purchase still awaits checkout or payment is refused with
         `COMPUTE_PURCHASE_PENDING`. Image boots require boot_volume; existing volumes retain their own subscription.
-        Each instance gets its own Billing subscription, with the boot volume and data volumes bought with it
-        as items of it. These items renew and expire together, while each can still be changed or released alone.
-        A new elastic IP and its optional bandwidth service have separate subscriptions in the same checkout.
-        `checkout.auto_renew` turns automatic renewal on for each machine.
+        Each instance gets its own Billing subscription, with the boot volume, data volumes and elastic IP bought
+        with it as items of it: they renew, renew automatically and expire with the machine as a whole, while each
+        can still be changed or released alone. `checkout.auto_renew` turns automatic renewal on for each machine.
 
 
         Instances of one request succeed or fail individually. Each instance, with its boot volume, network interface
@@ -208,7 +207,7 @@ paths:
         than being refused: Compute creates one Billing cancellation for the whole set and answers with it in `cancellation`.
         `cancellation_mode` chooses when: `immediate` cancels the set now, a licensed item being refunded under
         its terms, and `period_end` keeps the instance working until `scheduled_at` and releases it then. Volumes
-        and elastic IPs kept after the release retain their subscription items and continue to be billed under their existing terms. Asking
+        and elastic IPs kept after the release keep their items, and the subscription continues with them. Asking
         again while that cancellation is pending answers with it again, whatever mode is asked for."
       operationId: delete-instance
       tags:
@@ -976,8 +975,10 @@ components:
           $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         ipv6_address:
           description:
-            IPv6 address of the primary network interface. Assigned automatically once IPv6 is enabled
-            on the virtual private cloud
+            IPv6 address of the primary network interface; null when no IPv6 address is assigned. Assigned
+            automatically to both existing and newly created interfaces when an IPv6 CIDR block is associated
+            with the virtual private cloud. Disassociating the block removes this address and preserves the
+            IPv4 configuration. The guest operating system must support IPv6 automatic configuration to use it.
           type:
             - string
             - "null"
@@ -1763,7 +1764,7 @@ components:
           new: "#/components/schemas/NewElasticIp"
           existing: "#/components/schemas/ExistingElasticIp"
     NewElasticIp:
-      description: An independently subscribed IPv4 address, optionally with bandwidth, created with each instance.
+      description: One IPv4 elastic IP created with this bandwidth configuration in the instance's order.
       type: object
       properties:
         type:
@@ -1772,11 +1773,25 @@ components:
             - new
         line_id:
           $ref: ./identifiers.yaml#/components/schemas/InternetLineId
-        bandwidth:
-          $ref: ./internet-bandwidths.yaml#/components/schemas/InternetBandwidthPurchase
+        bandwidth_mbps:
+          description:
+            The ceiling on the traffic the address sends, in Mbit/s. Any whole number of Mbps within the line's
+            `min_bandwidth_mbps` and `max_bandwidth_mbps`, otherwise refused with `INTERNET_LINE_BANDWIDTH_RANGE`.
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000
+        internet_charge_type:
+          $ref: ./internet-lines.yaml#/components/schemas/InternetChargeType
+          default: bandwidth
+        billing:
+          description: The selected Billing price for the internet item of the elastic IP. Required even when joining an existing subscription; Billing checks compatibility.
+          $ref: ./billing-terms.yaml#/components/schemas/BillingChoice
       required:
+        - billing
         - type
         - line_id
+        - bandwidth_mbps
       additionalProperties: false
     ExistingElasticIp:
       type: object
@@ -1787,8 +1802,8 @@ components:
             - existing
         elastic_ip_id:
           description:
-            An unassociated elastic IP of this project in the same region. Its address subscription and any existing
-            bandwidth service are retained; changing bandwidth is a separate operation on that service.
+            An idle elastic IP of this project in the same region. It keeps its own bandwidth and Billing
+            subscription; changing its bandwidth is a separate operation.
           $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
       required:
         - type

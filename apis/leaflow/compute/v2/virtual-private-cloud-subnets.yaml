@@ -4,8 +4,8 @@ paths:
       summary: List subnets
       description:
         The subnets of the virtual private cloud, or with `-` those of every virtual private cloud of the
-        project. A subnet is dual-stack once IPv6 is enabled on its virtual private cloud, which gives every subnet a
-        /64 of the cloud's /56.
+        project. A subnet is dual-stack once an IPv6 CIDR block is associated with its virtual private cloud, which
+        gives every subnet a /64 of the block.
       operationId: list-virtual-private-cloud-subnets
       tags:
         - virtual-private-cloud-subnets
@@ -35,7 +35,7 @@ paths:
       description:
         The IPv4 CIDR must fall inside the virtual private cloud's CIDR and must not overlap another subnet
         of it; to find a free one, read the virtual private cloud's `free-subnet-cidr`. In a virtual private cloud with
-        IPv6 enabled the subnet also takes the lowest free /64 of the cloud's /56, refused with 409
+        an associated IPv6 CIDR block the subnet also takes the lowest free /64 of the block, refused with 409
         `VIRTUAL_PRIVATE_CLOUD_SUBNET_IPV6_CIDR_EXHAUSTED` when none is left.
       operationId: create-virtual-private-cloud-subnet
       tags:
@@ -160,9 +160,11 @@ components:
             - "null"
         ipv6_cidr:
           description:
-            The subnet's /64, from the virtual private cloud's /56; null while IPv6 is not enabled on the
-            virtual private cloud. A network interface created in the subnet takes an address of it that is never
-            handed out again within the subnet.
+            The subnet's /64 allocated from the virtual private cloud's IPv6 CIDR block; null when no IPv6 range
+            is configured. Existing and newly created subnets receive their range automatically. Each existing
+            and newly created network interface receives one IPv6 address from this range, in addition to its
+            IPv4 addresses. Disassociating the block removes this range and its network interface IPv6 addresses
+            while preserving IPv4 configuration.
           type:
             - string
             - "null"
