@@ -44,6 +44,7 @@ func TestAnonymousCommandsWithoutLoginOrProject(t *testing.T) {
 		if r.Header.Get("Authorization") != "" {
 			t.Error("public command sent authorization")
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	}))
 	defer server.Close()
