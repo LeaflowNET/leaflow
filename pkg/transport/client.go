@@ -86,9 +86,11 @@ type Request struct {
 	// Path already has its {placeholders} substituted.
 	Path string
 
-	Query  url.Values
-	Header http.Header
-	Body   any
+	Query       url.Values
+	Header      http.Header
+	Body        any
+	Files       map[string][]File
+	AcceptFiles bool
 
 	// Stream receives an SSE response as it arrives. Its lifetime is bounded by ctx.
 	Stream io.Writer
@@ -149,6 +151,21 @@ func canRetry(err *APIError) bool {
 }
 
 func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
+	if !request.AcceptFiles && request.Stream == nil {
+		binary, readable := false, false
+		for _, mediaType := range request.Operation.ResponseMediaTypes() {
+			switch {
+			case mediaType == "text/event-stream":
+			case mediaType == "application/json", strings.HasSuffix(mediaType, "+json"), strings.HasPrefix(mediaType, "text/"):
+				readable = true
+			default:
+				binary = true
+			}
+		}
+		if binary && !readable {
+			return nil, 0, fmt.Errorf("this operation requires a file receiver; no request was sent")
+		}
+	}
 	var token string
 	if request.Operation.Credential != spec.NoCredential {
 		if c.credentials == nil {
@@ -173,8 +190,18 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 	}
 
 	var body io.Reader
+	contentType := "application/json"
 
-	if request.Body != nil {
+	if request.Operation.Inputs().ContentType == "multipart/form-data" {
+		stream, mediaType, err := multipartBody(ctx, request)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer stream.Close()
+		body, contentType = stream, mediaType
+	} else if len(request.Files) > 0 {
+		return nil, 0, fmt.Errorf("file sources require a multipart operation")
+	} else if request.Body != nil {
 		encoded, err := json.Marshal(request.Body)
 		if err != nil {
 			return nil, 0, fmt.Errorf("%w: %v", ErrRequestFailed, err)
@@ -204,12 +231,15 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 		httpRequest.Header.Del("Authorization")
 	}
 	httpRequest.Header.Set("Accept", "application/json")
+	if mediaTypes := request.Operation.ResponseMediaTypes(); len(mediaTypes) > 0 {
+		httpRequest.Header.Set("Accept", strings.Join(mediaTypes, ", "))
+	}
 	if request.Stream != nil {
 		httpRequest.Header.Set("Accept", "text/event-stream, application/json")
 	}
 
 	if body != nil {
-		httpRequest.Header.Set("Content-Type", "application/json")
+		httpRequest.Header.Set("Content-Type", contentType)
 	}
 
 	httpClient := c.http
@@ -222,7 +252,12 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %s: %v", ErrRequestFailed, target, err)
 	}
-	defer response.Body.Close()
+	owned := true
+	defer func() {
+		if owned {
+			_ = response.Body.Close()
+		}
+	}()
 
 	c.trace("< %d %s\n", response.StatusCode, http.StatusText(response.StatusCode))
 	mediaType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
@@ -232,7 +267,26 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 		}
 		return Streamed{}, response.StatusCode, nil
 	}
-	raw, err := io.ReadAll(response.Body)
+	if response.StatusCode >= 200 && response.StatusCode < 300 && mediaType != "" && mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") && mediaType != "text/event-stream" {
+		if request.AcceptFiles {
+			_, disposition, _ := mime.ParseMediaType(response.Header.Get("Content-Disposition"))
+			owned = false
+			return &FileResponse{
+				Filename:  disposition["filename"],
+				MediaType: mediaType,
+				Size:      response.ContentLength,
+				Body:      response.Body,
+			}, response.StatusCode, nil
+		}
+		if !strings.HasPrefix(mediaType, "text/") {
+			return nil, response.StatusCode, fmt.Errorf("this response requires a file receiver (%s); the request has already executed", mediaType)
+		}
+	}
+	const maxReplyBytes = 16 << 20
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maxReplyBytes+1))
+	if len(raw) > maxReplyBytes {
+		return nil, response.StatusCode, fmt.Errorf("response exceeds %d bytes; the request has already executed", maxReplyBytes)
+	}
 	if err != nil {
 		return nil, response.StatusCode, fmt.Errorf("%w: %v", ErrRequestFailed, err)
 	}
@@ -242,7 +296,7 @@ func (c *Client) send(ctx context.Context, request *Request) (any, int, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, response.StatusCode, nil
 	}
-	if mediaType == "text/event-stream" {
+	if strings.HasPrefix(mediaType, "text/") {
 		return string(raw), response.StatusCode, nil
 	}
 

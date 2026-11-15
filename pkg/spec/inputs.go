@@ -25,8 +25,9 @@ type Inputs struct {
 
 	Query []*openapi3.Parameter
 
-	// Body is the application/json schema, or nil when the operation takes none.
-	Body *openapi3.Schema
+	// Body is the selected request schema, or nil when the operation takes none.
+	Body        *openapi3.Schema
+	ContentType string
 }
 
 var placeholder = regexp.MustCompile(`\{([^}]+)\}`)
@@ -76,22 +77,18 @@ func newInputs(op *Operation) *Inputs {
 		return inputs.Query[i].Name < inputs.Query[j].Name
 	})
 
-	inputs.Body = bodySchema(op)
+	if op.RequestBody != nil {
+		for _, contentType := range []string{"application/json", "multipart/form-data"} {
+			media := op.RequestBody.Content.Get(contentType)
+			if media != nil && media.Schema != nil {
+				inputs.Body = media.Schema.Value
+				inputs.ContentType = contentType
+				break
+			}
+		}
+	}
 
 	return inputs
-}
-
-func bodySchema(op *Operation) *openapi3.Schema {
-	if op.RequestBody == nil {
-		return nil
-	}
-
-	media := op.RequestBody.Content.Get("application/json")
-	if media == nil || media.Schema == nil {
-		return nil
-	}
-
-	return media.Schema.Value
 }
 
 // RequiresBody reports whether the contract insists on one.

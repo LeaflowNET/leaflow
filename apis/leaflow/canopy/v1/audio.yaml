@@ -1,0 +1,173 @@
+paths:
+  /v1/audio/speech:
+    post:
+      operationId: create-speech
+      summary: Generate speech from text
+      description: >-
+        Generates audio using the current project identity. No separate API key is required.
+        Read the model's capabilities.audio.voices and capabilities.audio.formats before selecting
+        a voice and format. Null capability values mean unknown, not unrestricted support.
+      tags: [Audio]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeechRequest'
+      responses:
+        '200':
+          description: Generated audio, or speech events when stream_format is sse.
+          content:
+            audio/mpeg: &audio
+              schema:
+                type: string
+                format: binary
+            audio/wav: *audio
+            audio/ogg: *audio
+            audio/aac: *audio
+            audio/flac: *audio
+            application/octet-stream: *audio
+            text/event-stream: *audio
+        default: &error
+          description: Inference error.
+          content:
+            application/json:
+              schema:
+                $ref: './inference.yaml#/components/schemas/InferenceError'
+  /v1/audio/transcriptions:
+    post:
+      operationId: create-transcription
+      summary: Transcribe audio
+      description: >-
+        Transcribes an uploaded audio file using the current project identity. No separate API key
+        is required. Consult the model's audio capabilities for accepted formats and upload limits.
+      tags: [Audio]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranscriptionRequest'
+      responses:
+        '200': &transcription
+          description: Transcription in the requested format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transcription'
+            text/plain:
+              schema:
+                type: string
+            text/vtt:
+              schema:
+                type: string
+            application/x-subrip:
+              schema:
+                type: string
+        default: *error
+  /v1/audio/translations:
+    post:
+      operationId: create-audio-translation
+      summary: Translate audio into English
+      description: >-
+        Translates an uploaded audio file into English using the current project identity.
+        No separate API key is required. Consult the model's audio capabilities before calling.
+      tags: [Audio]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AudioTranslationRequest'
+      responses:
+        '200': *transcription
+        default: *error
+components:
+  schemas:
+    SpeechRequest:
+      type: object
+      required: [model, input, voice]
+      properties:
+        model:
+          type: string
+          minLength: 1
+        input:
+          type: string
+          minLength: 1
+          description: Text to synthesize. Input limits depend on the selected model.
+        voice:
+          type: string
+          minLength: 1
+          description: A voice identifier from the selected model's capabilities.audio.voices.
+        response_format:
+          type: string
+          description: An audio format from capabilities.audio.formats. Omit to use the model default.
+        speed:
+          type: number
+          description: Speaking speed, where supported by the selected model.
+        instructions:
+          type: string
+          description: Voice instructions, where supported by the selected model.
+        stream_format:
+          type: string
+          enum: [audio, sse]
+          description: Audio bytes or server-sent events. Omit for audio bytes.
+      additionalProperties: true
+    AudioTranslationRequest:
+      type: object
+      required: [model, file]
+      properties:
+        model:
+          type: string
+          minLength: 1
+        file:
+          type: string
+          format: binary
+          description: The audio file to process.
+        prompt:
+          type: string
+          description: Optional context to guide recognition.
+        response_format:
+          type: string
+          description: A response format from capabilities.audio.response_formats. Omit for the model default.
+        temperature:
+          type: number
+          description: Sampling temperature, where supported by the selected model.
+      additionalProperties: false
+    TranscriptionRequest:
+      type: object
+      required: [model, file]
+      properties:
+        model:
+          type: string
+          minLength: 1
+        file:
+          type: string
+          format: binary
+          description: The audio file to process.
+        prompt:
+          type: string
+          description: Optional context to guide recognition.
+        response_format:
+          type: string
+          description: A response format from capabilities.audio.response_formats. Omit for the model default.
+        temperature:
+          type: number
+          description: Sampling temperature, where supported by the selected model.
+        language:
+          type: string
+          description: The input language as an ISO 639-1 code.
+        timestamp_granularities[]:
+          type: array
+          items:
+            type: string
+            enum: [word, segment]
+          description: Timestamp granularities, where supported by the model and response format.
+      additionalProperties: false
+    Transcription:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+      additionalProperties: true

@@ -73,6 +73,7 @@ type Operation struct {
 	Parameters openapi3.Parameters
 
 	RequestBody *openapi3.RequestBody
+	Responses   *openapi3.Responses
 
 	// inputs is the parameter split, computed once when the contract is read.
 	inputs *Inputs
@@ -219,6 +220,7 @@ func newService(name string, doc *openapi3.T) *Service {
 				Credential:  ReadCredential(doc, op),
 				BaseURL:     svc.BaseURL,
 				Parameters:  params,
+				Responses:   op.Responses,
 			}
 
 			if op.RequestBody != nil {
