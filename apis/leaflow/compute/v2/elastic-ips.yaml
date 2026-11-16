@@ -26,7 +26,7 @@ paths:
       description: |-
         Select an internet line. The elastic IP is bought through a Billing Checkout Session, and no address is allocated before its order is accepted.
 
-        The line has to have an address left, counted before anything is ordered: refused with 409 `INTERNET_LINE_EXHAUSTED` when every address it sells is held or already promised to a purchase waiting for its order. Two purchases checked at the same moment can both pass on the last address; the later one ends `failed` with `provisioning_failed` and its charge is refunded.
+        The line has to have an address left, counted before anything is ordered: refused with 409 `INTERNET_LINE_EXHAUSTED` when every address it sells is held or already promised to a purchase waiting for its order. If no address remains when the order is accepted, the elastic IP ends `failed` with `provisioning_failed` and its charge is refunded.
 
         Returns the elastic IP as `pending` with its Checkout Session; `address` is null until the address is allocated after the order is accepted. A requested `address` is not held while pending; if it is no longer available then, the elastic IP ends `failed` with `provisioning_failed` and its charge is refunded.
 
@@ -175,7 +175,7 @@ paths:
       description: |-
         Moves a pay-as-you-go elastic IP between charging for its bandwidth and charging for its traffic, within the same network item and without checkout. A prepaid network item has paid for its bandwidth and is refused with `ELASTIC_IP_CHARGE_TYPE_PREPAID`; `traffic` on a line whose `traffic_sale_status` is `off_sale` is refused with `INTERNET_LINE_TRAFFIC_UNAVAILABLE`, the type already in effect with `ELASTIC_IP_CHARGE_TYPE_UNCHANGED`, and a type the currency of the network item does not offer on the line with HTTP 403 `ELASTIC_IP_CHARGE_TYPE_NOT_OFFERED`: prices are set per currency, and a currency without one there does not sell that type.
 
-        The change takes effect at the instant it is applied: bandwidth stops being metered then and traffic starts being, or the other way round. Traffic is counted in windows, and a window is charged the way the elastic IP was charged for most of it, so a report that arrives late is still charged as it was at the time and a window the change falls in is never charged both ways. `bandwidth_mbps` stays the ceiling either way. The elastic IP is `updating_internet_charge_type` until the change is applied.
+        The change takes effect at the instant it is applied: bandwidth stops being metered then and traffic starts being, or the other way round. `bandwidth_mbps` stays the ceiling either way. The elastic IP is `updating_internet_charge_type` until the change is applied.
       operationId: change-elastic-ip-charge-type
       tags:
         - elastic-ips
@@ -587,9 +587,7 @@ components:
       type: object
       properties:
         items:
-          type:
-            - array
-            - "null"
+          type: array
           items:
             $ref: "#/components/schemas/ElasticIp"
         pagination:

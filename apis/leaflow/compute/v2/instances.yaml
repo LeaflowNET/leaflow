@@ -54,9 +54,9 @@ paths:
         when a type takes no new orders for now, `INSTANCE_TYPE_CAPACITY_REACHED` or `VOLUME_TYPE_CAPACITY_REACHED`
         when what is sold of it is used up, `INSTANCE_TYPE_NO_HOST_ROOM` when no host of the zone can take the machine,
         `VOLUME_TYPE_NO_POOL_ROOM` when the storage of the zone cannot take the boot volume, and `INTERNET_LINE_EXHAUSTED`
-        when the line of the new elastic IPs has fewer addresses left than instances. Two orders placed at the same
-        moment can both pass; an instance that finds a type full when its order is accepted is not created and is
-        refunded, ending `failed` with `provisioning_failed`.
+        when the line of the new elastic IPs has fewer addresses left than instances. If capacity is full when the
+        order is accepted, the instance is not created, ends `failed` with `provisioning_failed`, and its charge is
+        refunded.
 
 
         Choose an image or existing volume through boot_volume, and exactly one of network_interface_id or subnet_id.
@@ -153,11 +153,10 @@ paths:
 
         - `labels` records what this instance is for, as key-value pairs. Nothing on the platform reads them. **The
         whole set is replaced**: whatever is absent from the request is removed, and an empty object clears them
-        all. Do not put credentials here. Labels are visible to platform operators.
+        all. Do not put credentials here.
 
         - `description` is a free-text note about this instance: what it runs, and what to be careful about before
-        touching it. **The whole note is replaced**; send an empty string to clear it. Do not put credentials here.
-        The note is visible to platform operators."
+        touching it. **The whole note is replaced**; send an empty string to clear it. Do not put credentials here."
       operationId: update-instance
       tags:
         - instances
@@ -249,8 +248,7 @@ paths:
         "Changes the instance's type **cold**, through a change of its subscription item purchased in
         Billing: the instance has to be stopped, and is refused with 409 `INSTANCE_RESIZE_REQUIRES_STOP` otherwise.
         Its operating system is not booted for the change, and it is still stopped once the change is applied; start
-        it when you are ready. An instance stopped by the legacy stop, which released its host, is refused with
-        409 `INSTANCE_SHELVED`; start it once and stop it again. A target type that cannot hold what the instance
+        it when you are ready. If refused with 409 `INSTANCE_SHELVED`, start the instance once and stop it again. A target type that cannot hold what the instance
         already uses is refused before anything is ordered: fewer network interfaces than are attached with 409
         `INSTANCE_RESIZE_NETWORK_INTERFACES_EXCEED`, fewer elastic IPs than are associated with 409 `INSTANCE_RESIZE_ELASTIC_IPS_EXCEED`,
         and less purchasable bandwidth than an associated elastic IP has with 409 `INSTANCE_BANDWIDTH_CEILING` naming
@@ -312,8 +310,7 @@ paths:
         When its boot volume grew since it was last connected, the start connects its volumes afresh so that the
         boot volume runs at the performance of its new size: the instance is taken off its host for that moment
         and placed again. Only then can the start find no room in the zone; it is refused with 409 `INSTANCE_START_NO_HOST_ROOM`,
-        or ends with the instance still stopped, and can be tried again later. An instance stopped by the legacy
-        stop, which released its host, is placed again the same way."
+        or ends with the instance still stopped, and can be tried again later."
       operationId: start-instance
       tags:
         - instances
@@ -573,9 +570,8 @@ paths:
         unaffected.
 
 
-        The instance has to be running or stopped. An instance stopped by the legacy stop, which released its host,
-        is refused with 409 `INSTANCE_SHELVED`; start it once first, which works even when its operating system
-        no longer boots.
+        The instance has to be running or stopped. If refused with 409 `INSTANCE_SHELVED`, start the instance once
+        first, which works even when its operating system no longer boots.
 
 
         The image this instance already runs is accepted even after the platform has withdrawn it, since rebuilding
@@ -760,8 +756,8 @@ paths:
       summary: Attach a network interface
       description:
         Returns the network interface; the instance is `attaching_network_interface` and the interface
-        is `attaching` until the attachment is confirmed. The instance has to be running or stopped; one stopped
-        by the legacy stop, which released its host, is refused with 409 `INSTANCE_SHELVED`. A network interface
+        is `attaching` until the attachment is confirmed. The instance has to be running or stopped; if refused with
+        409 `INSTANCE_SHELVED`, start the instance once first. A network interface
         still being created can be attached right away, so an interface can be created and attached in two consecutive
         requests. The attachment is accepted and goes ahead once the interface is created, and fails with `NETWORK_INTERFACE_UNAVAILABLE`
         if the interface's creation fails. An instance still being created is refused with `INSTANCE_STILL_PENDING`.
@@ -800,8 +796,8 @@ paths:
       summary: Detach a network interface
       description:
         "The primary network interface cannot be detached; the instance would lose its network address.
-        The instance has to be running or stopped; one stopped by the legacy stop, which released its host, is refused
-        with 409 `INSTANCE_SHELVED`.
+        The instance has to be running or stopped; if refused with 409 `INSTANCE_SHELVED`, start the instance once
+        first.
 
 
         Returns the network interface; the instance is `detaching_network_interface` and the interface is `detaching`
@@ -1012,9 +1008,7 @@ components:
           description:
             Elastic IPv4 addresses associated with the primary network interface; an empty array when
             none are associated
-          type:
-            - array
-            - "null"
+          type: array
           items:
             type: string
         region_id:

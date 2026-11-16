@@ -52,8 +52,8 @@ paths:
     get:
       summary: Get an instance type
       description:
-        Returns an instance type on sale or sold out, under the same access rules as listing. Off-sale, retired
-        or absent types return 404.
+        Returns an instance type, including retired types (`sale_status` is `off_sale`) that existing instances
+        still run. Retired types cannot be ordered for new instances or resizes.
       operationId: get-instance-type
       security:
         - {}
@@ -91,12 +91,14 @@ components:
           $ref: ./identifiers.yaml#/components/schemas/AvailabilityZoneId
         sale_status:
           description:
-            "`sold_out` takes no new orders for now while the type stays listed; the instances already of it keep
-            working."
+            "`on_sale` accepts new orders. `sold_out` takes no new orders for now while the type stays listed.
+            `off_sale` means the type was withdrawn: it is hidden from listing and takes no new orders, while
+            instances already running it keep working."
           type: string
           enum:
             - on_sale
             - sold_out
+            - off_sale
         id:
           $ref: ./identifiers.yaml#/components/schemas/InstanceTypeId
         instance_family_id:
@@ -110,6 +112,10 @@ components:
           type: integer
           format: int64
         max_elastic_ips:
+          type: integer
+          format: int64
+        max_ipv4_per_network_interface:
+          description: Maximum IPv4 addresses (primary and secondary) each attached network interface may hold.
           type: integer
           format: int64
         max_network_interfaces:
@@ -141,6 +147,7 @@ components:
         - availability_zone_id
         - sale_status
         - max_network_interfaces
+        - max_ipv4_per_network_interface
         - max_elastic_ips
         - max_bandwidth_mbps
         - billing

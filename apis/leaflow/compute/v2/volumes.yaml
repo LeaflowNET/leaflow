@@ -41,7 +41,7 @@ paths:
       description: |-
         The volume is created in the availability zone of its volume type, and only an instance in the same zone can attach it.
 
-        The type has to have room for it, checked before anything is ordered: refused with 409 `VOLUME_TYPE_SOLD_OUT` when the type takes no new volumes for now, `VOLUME_TYPE_CAPACITY_REACHED` when what is sold of it is used up, and `VOLUME_TYPE_NO_POOL_ROOM` when the storage of its zone cannot take the volume. Two orders placed at the same moment can both pass; the one that finds the type full when its order is accepted is not created and is refunded, ending `failed` with `provisioning_failed`.
+        The type has to have room for it, checked before anything is ordered: refused with 409 `VOLUME_TYPE_SOLD_OUT` when the type takes no new volumes for now, `VOLUME_TYPE_CAPACITY_REACHED` when what is sold of it is used up, and `VOLUME_TYPE_NO_POOL_ROOM` when the storage of its zone cannot take the volume. If capacity is full when the order is accepted, the volume is not created, ends `failed` with `provisioning_failed`, and its charge is refunded.
 
         The volume is empty, or is restored from exactly one source: `volume_snapshot_id` or `volume_backup_id`. Giving both is refused with 422 `VOLUME_SOURCE_CONFLICT`. A restore is a purchase of a **new** volume; the source volume is unaffected and need not still exist. The snapshot or backup may still be being created after its order was accepted: the volume is created from it once it is ready, and is refunded if its creation fails. One whose purchase still awaits checkout or payment is refused with `COMPUTE_PURCHASE_PENDING`.
 
@@ -452,9 +452,7 @@ components:
       type: object
       properties:
         items:
-          type:
-            - array
-            - "null"
+          type: array
           items:
             $ref: "#/components/schemas/VolumeResource"
         pagination:
