@@ -7,10 +7,11 @@ info:
 
     Project inference is served on this host at each protocol's own endpoints:
 
-    - OpenAI: `/v1/chat/completions`, `/v1/responses` and `/v1/embeddings`; use
+    - OpenAI: `/v1/chat/completions`, `/v1/responses`, `/v1/decisions` and `/v1/embeddings`; use
       `https://canopy.leaflow.cloud/v1` as the OpenAI SDK base URL.
     - Anthropic: `/v1/messages`; use `https://canopy.leaflow.cloud` as the Anthropic SDK base URL.
     - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent`.
+    - TypeSafe System One: `/v1/systemone`; use `https://canopy.leaflow.cloud` as the TypeSafe SDK base URL.
 
     Every chat model accepts all four chat protocols: Chat Completions, Responses, Messages and Gemini
     generateContent. A request is forwarded unchanged, apart from the model name and the credentials, when a
@@ -22,6 +23,9 @@ info:
 
     Responses is stateless: `store` must be false, and a response cannot be retrieved after it is returned.
     Send the output items of a response back unchanged, in their order, as input to the next request.
+
+    Every decision model accepts both decision protocols (`/v1/decisions` and `/v1/systemone`), isolated from
+    chat protocols, translating between them when no native route is available.
 
     What a model does follows from its `input_modalities`, `output_modalities` and the media blocks of its
     `capabilities`. Embeddings, images, audio and videos are accepted for a model whose providers serve them.
@@ -64,6 +68,10 @@ paths:
     $ref: ./videos.yaml#/paths/~1v1~1videos~1{video}
   /v1/videos/{video}/content:
     $ref: ./videos.yaml#/paths/~1v1~1videos~1{video}~1content
+  /v1/decisions:
+    $ref: ./decisions.yaml#/paths/~1v1~1decisions
+  /v1/systemone:
+    $ref: ./decisions.yaml#/paths/~1v1~1systemone
   /v1/responses:
     $ref: ./responses.yaml#/paths/~1v1~1responses
   /v1/chat/completions:

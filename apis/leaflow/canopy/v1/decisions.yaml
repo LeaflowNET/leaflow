@@ -1,0 +1,408 @@
+paths:
+  /v1/decisions:
+    post:
+      operationId: create-decision
+      tags:
+        - Inference
+      summary: Create a decision
+      description: |-
+        Evaluate structured `predicate`, `choice` and `score` questions against an `input` context in a
+        single forward pass in the OpenAI Decisions protocol. Accepted for every decision model, whichever
+        decision protocol its providers speak; when no native `/v1/decisions` route is available, requests
+        are translated to `/v1/systemone` and responses are translated back. Remote image URLs cannot be
+        translated to `/v1/systemone` and are refused with 400 `DECISION_IMAGE_URL_UNSUPPORTED` rather than
+        fetched by the gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+      responses:
+        "200":
+          description: Calibrated answers and token usage in question order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionResponse"
+        default: &id001_1
+          description: Error object.
+          content:
+            application/json:
+              schema:
+                $ref: ./inference.yaml#/components/schemas/InferenceError
+  /v1/systemone:
+    post:
+      operationId: create-system-one
+      tags:
+        - Inference
+      summary: Evaluate System One questions
+      description: |-
+        Evaluate structured `noul`, `choice`, `score` and `box` questions against a `state` context in the
+        TypeSafe System One protocol. Accepted for every decision model, whichever decision protocol its
+        providers speak; when no native `/v1/systemone` route is available, `noul`, `choice` and `score`
+        questions are translated to `/v1/decisions` (`box` questions require a native System One route and
+        are refused with 400 `SYSTEMONE_BOX_UNSUPPORTED` otherwise). The runtime also accepts
+        `Content-Encoding: zstd` or `gzip` request bodies and `multipart/form-data` payloads carrying a
+        `request` JSON part alongside binary image asset parts.
+      parameters:
+        - name: TypeSafe-Danger-Zone-Images
+          in: header
+          schema:
+            type: string
+          description: Set to `true` when sending `assets` or `box` questions.
+        - name: TypeSafe-Danger-Zone-Long-Context
+          in: header
+          schema:
+            type: string
+          description: Set to `true` to opt into extended context windows on models that gate them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemOneRequest"
+      responses:
+        "200":
+          description: Keyed System One answers and token usage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemOneResponse"
+        default: *id001_1
+components:
+  schemas:
+    DecisionChoiceOption:
+      type: object
+      properties:
+        value:
+          description: Option value (`string` or `boolean`).
+        description:
+          type: string
+      required:
+        - value
+      additionalProperties: true
+    DecisionScoreLevel:
+      type: object
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+      required:
+        - label
+      additionalProperties: true
+    DecisionQuestion:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - predicate
+            - choice
+            - score
+        name:
+          type: string
+        instructions:
+          description: Plain string or array of `input_text`, `input_image` and `input_json` parts.
+        choices:
+          type: array
+          minItems: 2
+          maxItems: 255
+          items:
+            $ref: "#/components/schemas/DecisionChoiceOption"
+        levels:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/DecisionScoreLevel"
+      required:
+        - type
+        - instructions
+      additionalProperties: true
+    DecisionRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          minLength: 1
+        input:
+          description: Plain text string or ordered array of message and tool items to evaluate.
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 400
+          items:
+            $ref: "#/components/schemas/DecisionQuestion"
+        prompt_cache_key:
+          type:
+            - string
+            - "null"
+        prompt_cache_options:
+          type:
+            - object
+            - "null"
+          additionalProperties: true
+        safety_identifier:
+          type:
+            - string
+            - "null"
+      required:
+        - model
+        - input
+        - questions
+      additionalProperties: true
+    DecisionProbability:
+      type: object
+      properties:
+        value:
+          description: Option value (`string` or `boolean` for `choice`; 0-based integer level index for `score`).
+        label:
+          type: string
+        probability:
+          type: number
+          format: double
+      required:
+        - value
+        - probability
+      additionalProperties: true
+    DecisionAnswer:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - predicate
+            - choice
+            - score
+            - refusal
+        name:
+          type:
+            - string
+            - "null"
+        probability:
+          type: number
+          format: double
+        choice:
+          description: Highest-probability option value (`string` or `boolean`) for `choice` answers.
+        score:
+          type: number
+          format: double
+        confidence:
+          type: number
+          format: double
+        probabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DecisionProbability"
+      required:
+        - type
+      additionalProperties: true
+    DecisionInputTokensDetails:
+      type: object
+      properties:
+        cached_tokens:
+          type: integer
+          format: int64
+        cache_write_tokens:
+          type: integer
+          format: int64
+      required:
+        - cached_tokens
+        - cache_write_tokens
+      additionalProperties: true
+    DecisionOutputTokensDetails:
+      type: object
+      properties:
+        reasoning_tokens:
+          type: integer
+          format: int64
+      required:
+        - reasoning_tokens
+      additionalProperties: true
+    DecisionUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+          format: int64
+        input_tokens_details:
+          $ref: "#/components/schemas/DecisionInputTokensDetails"
+        output_tokens:
+          type: integer
+          format: int64
+        output_tokens_details:
+          $ref: "#/components/schemas/DecisionOutputTokensDetails"
+        total_tokens:
+          type: integer
+          format: int64
+      required:
+        - input_tokens
+        - output_tokens
+        - total_tokens
+      additionalProperties: true
+    DecisionResponse:
+      type: object
+      properties:
+        model:
+          type: string
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DecisionAnswer"
+        usage:
+          $ref: "#/components/schemas/DecisionUsage"
+      required:
+        - model
+        - answers
+        - usage
+      additionalProperties: true
+    SystemOneQuestion:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - noul
+            - choice
+            - score
+            - box
+        instructions:
+          description: Optional question instructions (string, object, array or null).
+        criteria:
+          description: Question-specific criteria (`object` map for `noul`/`choice`, ordered `array` for `score`).
+      required:
+        - type
+      additionalProperties: true
+    SystemOneAsset:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - image
+        format:
+          type: string
+          enum:
+            - png
+            - jpg
+            - jpeg
+        data_base64:
+          type: string
+        part:
+          type: string
+      required:
+        - type
+      additionalProperties: true
+    SystemOneRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          minLength: 1
+        state:
+          description: Non-null text string, JSON object or JSON array representing the context to evaluate.
+        questions:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            $ref: "#/components/schemas/SystemOneQuestion"
+        assets:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SystemOneAsset"
+      required:
+        - model
+        - state
+        - questions
+      additionalProperties: true
+    SystemOneBoundingBox:
+      type: object
+      properties:
+        top:
+          type: number
+          format: double
+        bottom:
+          type: number
+          format: double
+        left:
+          type: number
+          format: double
+        right:
+          type: number
+          format: double
+      required:
+        - top
+        - bottom
+        - left
+        - right
+      additionalProperties: false
+    SystemOneAnswer:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - noul
+            - choice
+            - score
+            - box
+        noul:
+          type: number
+          format: double
+        choice:
+          type: string
+        score:
+          type: number
+          format: double
+        confidence:
+          type:
+            - number
+            - "null"
+          format: double
+        probabilities:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        legend:
+          type: object
+          additionalProperties: true
+        box:
+          $ref: "#/components/schemas/SystemOneBoundingBox"
+      required:
+        - type
+      additionalProperties: true
+    SystemOneUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+          format: int64
+        output_tokens:
+          type: integer
+          format: int64
+      required:
+        - input_tokens
+        - output_tokens
+      additionalProperties: true
+    SystemOneResponse:
+      type: object
+      properties:
+        model:
+          type: string
+        answers:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SystemOneAnswer"
+        usage:
+          $ref: "#/components/schemas/SystemOneUsage"
+        latency_ms:
+          type: number
+          format: double
+      required:
+        - model
+        - answers
+        - usage
+      additionalProperties: true
