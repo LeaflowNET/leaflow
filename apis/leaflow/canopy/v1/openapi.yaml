@@ -43,7 +43,7 @@ info:
     - **The plaintext of an API key is returned once.** The `secret` appears in the response that issues it and is returned by no other endpoint. A key that has been lost has to be revoked and reissued.
     - **Disabling and revoking are distinct.** A disabled key may be enabled again at any time, while a revocation is irreversible and is intended for a key that has been exposed. Neither removes the record, and the usage the key accrued remains readable.
     - **A usage query must carry a time range**, spanning no more than 31 days, or 400 days for the usage timeline. `from` and `to` carry a timezone offset, which the server does not infer.
-    - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the `upstream_request_id` from the response when reporting a problem.
+    - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the request `id` when reporting a problem.
     - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
     - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates Billing holds for each model's `billing`.
 servers:
@@ -354,7 +354,7 @@ paths:
       description: |-
         Cursor-paged, most recent first. An empty `next_cursor` indicates the last page.
 
-        **The request and response bodies are not returned**; they are not recorded. Quote the `upstream_request_id` when reporting a problem.
+        **The request and response bodies are not returned**; they are not recorded. Quote the request `id` when reporting a problem.
 
         A `usage_source` of `estimated` indicates that the upstream provider reported no usage for that request, and that the figures are derived from the character classes of the payload.
 
@@ -1425,9 +1425,6 @@ components:
             - client_aborted
         stream:
           type: boolean
-        upstream_request_id:
-          description: The id of the request on the upstream side. Quote it when reporting a problem
-          type: string
         upstream_status:
           description: The HTTP status returned upstream. 0 indicates that the request never reached it
           type: integer
@@ -1460,7 +1457,6 @@ components:
         - status
         - error_code
         - upstream_status
-        - upstream_request_id
         - input_tokens
         - output_tokens
         - cache_read_tokens
