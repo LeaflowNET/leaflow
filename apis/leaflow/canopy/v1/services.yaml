@@ -1,0 +1,146 @@
+paths:
+  /api/v1/service:
+    get:
+      summary: Get the model platform service
+      description: |-
+        The model platform service of the authenticated project. The forwarding endpoints accept its requests only while `status` is `active`; each request is then billed under `subscription_id`, per token, at the rates Billing holds for each model's `billing`.
+
+        When the project is deleted, its API keys are revoked and the subscription is canceled; the service then reads `inactive` with `ended_at` set.
+      operationId: get-service
+      tags:
+        - Service
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Enable the model platform service
+      description: |-
+        Purchases the model platform service for this project. The service itself has no charge; requests are metered under it by the tokens they use. It takes no billing choice. Returns the service as `pending` with its Checkout Session; it becomes `active` once the order is accepted, which with automatic checkout and nothing to pay happens without further action.
+
+        Refused with 409 `SERVICE_ALREADY_ENABLED` while an enablement is pending or the service is active. A refusal of the order by Billing is returned with Billing's code, such as `BILLING_PRICE_UNAVAILABLE` when the service has no price in the currency of the project's billing account.
+      operationId: create-service
+      tags:
+        - Service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceRequestBody"
+      responses:
+        "202":
+          description: The service and its Checkout Session were created; the service is not active yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateServiceResponseBody"
+        "409":
+          $ref: ./openapi.yaml#/components/responses/Conflict
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ServiceResource:
+      description: The model platform service of a project.
+      type: object
+      properties:
+        status:
+          description: "`inactive` has never been enabled or its subscription has ended; `pending` awaits completion of its checkout and acceptance of its order; `active` accepts requests on the forwarding endpoints; `failed` means the enablement failed, as `failure_reason` states. An `inactive` or `failed` service can be enabled again."
+          type: string
+          enum:
+            - inactive
+            - pending
+            - active
+            - failed
+        failure_reason:
+          description: Why the enablement failed; null unless `status` is `failed`. `checkout_expired` means checkout was not completed before its Checkout Session expired; `order_declined` means Billing did not accept the order, for example because the billing account is suspended; `order_canceled` means the order was withdrawn; `order_expired` means it was not paid in time.
+          type:
+            - string
+            - "null"
+          enum:
+            - checkout_expired
+            - order_declined
+            - order_canceled
+            - order_expired
+            - null
+        checkout_session_id:
+          description: The Checkout Session of the latest enablement; null before any enablement.
+          type:
+            - string
+            - "null"
+          format: uuid
+        order_id:
+          description: The order that enabled the service, or that the latest enablement's checkout created; null before checkout completes.
+          type:
+            - string
+            - "null"
+          format: uuid
+        plan_id:
+          description: The Billing plan the service is sold under; null where the service is not sold. Price enabling it with Billing's `preview-checkout-session`, giving this plan with the `recurring` price type, the `metered` usage type and a quantity of 1; token usage is priced per model, at the rates Billing holds for each model's `billing`.
+          type:
+            - string
+            - "null"
+          format: uuid
+        subscription_id:
+          description: The Billing subscription that requests are billed under; null until an enablement's checkout completes.
+          type:
+            - string
+            - "null"
+          format: uuid
+        activated_at:
+          description: When the service became active and billing began; null until then.
+          type:
+            - string
+            - "null"
+          format: date-time
+        ended_at:
+          description: When the subscription ended; null unless it has.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - status
+        - plan_id
+        - failure_reason
+        - checkout_session_id
+        - order_id
+        - subscription_id
+        - activated_at
+        - ended_at
+      additionalProperties: false
+    CreateServiceRequestBody:
+      type: object
+      properties:
+        checkout:
+          $ref: "#/components/schemas/CheckoutOptions"
+      additionalProperties: false
+    CreateServiceResponseBody:
+      description: The service, `pending` until its order is accepted, and its Checkout Session.
+      type: object
+      properties:
+        service:
+          $ref: "#/components/schemas/ServiceResource"
+        checkout_session_id:
+          description: The Billing Checkout Session of this enablement. With deferred checkout, the customer completes it in Billing.
+          type: string
+          format: uuid
+        order_id:
+          description: The order created when checkout completes, at once for automatic checkout; null until then.
+          type:
+            - string
+            - "null"
+          format: uuid
+      required:
+        - service
+        - checkout_session_id
+        - order_id
+      additionalProperties: false
+    CheckoutOptions:
+      $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions

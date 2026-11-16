@@ -1,0 +1,255 @@
+paths:
+  /api/v1/requests:
+    get:
+      summary: List request records
+      description: |-
+        Cursor-paged, most recent first. An empty `next_cursor` indicates the last page.
+
+        **The request and response bodies are not returned**; they are not recorded. Individual request records are retained for 90 days. Quote the request `id` when reporting a problem.
+
+        A `usage_source` of `estimated` indicates that the upstream provider reported no usage for that request, and that the figures are derived from the character classes of the payload.
+
+        Omit cursor on the first page. Stop when next_cursor is empty; do not send an empty cursor.
+      operationId: list-requests
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/requests/{requestId}:
+    get:
+      summary: Get a single request record
+      operationId: get-request
+      tags:
+        - Usage
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          description: A typed request id such as `req_01j...`; a bare UUID is also accepted.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ReasoningDiagnostics:
+      type: object
+      properties:
+        requested:
+          type: object
+          additionalProperties: true
+      required:
+        - requested
+      additionalProperties: false
+    RequestResource:
+      type: object
+      properties:
+        api_key_id:
+          description: Null for a request that did not come through one of the project's API keys.
+          type:
+            - string
+            - "null"
+          format: uuid
+        cache_read_tokens:
+          description: The portion served from the upstream prefix cache, which costs an order of magnitude less than ordinary input. Null on a request billed on a non-token meter.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Tokens written to the provider's prompt cache. Null on a request billed on a non-token meter.
+          type:
+            - integer
+            - "null"
+          format: int64
+        error_code:
+          description: The error code on failure. Empty on success
+          type: string
+        finished_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        first_token_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        id:
+          description: A typed request id such as `req_01j...`. Legacy rows may still be returned as a bare UUID.
+          type: string
+        input_tokens:
+          description: Input tokens the provider billed for. Null on a request billed on a non-token meter, such as image generation, video generation or speech.
+          type:
+            - integer
+            - "null"
+          format: int64
+        model_id:
+          description: The model named in the request
+          type: string
+        operation:
+          description: The request operation, such as video_create or video_retrieve. Absent for historical requests where it was not recorded.
+          type: string
+        output_tokens:
+          description: Output tokens the provider billed for. Null on a request billed on a non-token meter, such as image generation, video generation or speech.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Reasoning tokens the provider reports separately. Null on a request billed on a non-token meter.
+          type:
+            - integer
+            - "null"
+          format: int64
+        retries:
+          type: integer
+          format: int64
+        source:
+          description: Who made the request. `api_key` means one of the project's API keys and `project_token` a project access token on the OpenAI-compatible endpoints; any other value names the Leaflow service that made it on the project's behalf, such as `assistant`, and more services may appear. Null for requests recorded before sources were tracked
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        started_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - in_flight
+            - succeeded
+            - refused
+            - upstream_failed
+            - client_aborted
+        stream:
+          type: boolean
+        upstream_status:
+          description: The HTTP status returned upstream. 0 indicates that the request never reached it
+          type: integer
+          format: int64
+        total_tokens:
+          description: Total tokens across all five classes. Null on a request billed on a non-token meter.
+          type:
+            - integer
+            - "null"
+          format: int64
+        usage_source:
+          description: upstream means the figures were reported by the provider; estimated means they were derived from the character classes of the payload
+          type: string
+          enum:
+            - none
+            - upstream
+            - estimated
+        reasoning:
+          anyOf:
+            - $ref: "#/components/schemas/ReasoningDiagnostics"
+            - type: "null"
+        media:
+          description: Media quantities and their rate dimensions. Null for a token-only request.
+          anyOf:
+            - $ref: ./usage.yaml#/components/schemas/MediaUsage
+            - type: "null"
+        media_details:
+          $ref: "#/components/schemas/MediaUsageDetails"
+      required:
+        - id
+        - model_id
+        - api_key_id
+        - stream
+        - status
+        - error_code
+        - upstream_status
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+        - usage_source
+        - started_at
+        - first_token_at
+        - finished_at
+        - retries
+        - source
+        - reasoning
+      additionalProperties: false
+    RequestList:
+      type: object
+      properties:
+        items:
+          description: The items on this page.
+          type: array
+          items:
+            $ref: "#/components/schemas/RequestResource"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/CursorPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false
+    MediaUsageDetails:
+      type: object
+      description: |-
+        Per-request media measurements. Omitted values are unknown, not zero.
+        Reference counts are audit data, not an additional billable quantity.
+        video_quantity is the exact decimal quantity for the existing video_seconds
+        meter; video_seconds in the summary remains a rounded compatibility counter.
+        No monetary price or refund is calculated by Canopy.
+      properties:
+        input_video_seconds:
+          type: number
+          format: double
+          minimum: 0
+        output_video_seconds:
+          type: number
+          format: double
+          minimum: 0
+        input_audio_seconds:
+          type: number
+          format: double
+          minimum: 0
+        input_image_quantity:
+          type: string
+          pattern: ^[0-9]+$
+          description: Recorded input quantity for the input_images meter, independent of its Billing price. Absent when unmeasured or not separately metered.
+        input_images:
+          type: integer
+          format: int64
+          minimum: 0
+        output_images:
+          type: integer
+          format: int64
+          minimum: 0
+        video_quantity:
+          type: string
+          pattern: ^[0-9]+([.][0-9]+)?$
+        reference_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+      additionalProperties: false

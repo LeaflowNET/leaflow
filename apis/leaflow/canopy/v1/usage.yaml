@@ -1,0 +1,704 @@
+paths:
+  /api/v1/usage/by-api-key:
+    get:
+      summary: Get usage by API key
+      description: Answers which key is consuming the budget. A key that has been revoked still appears, since the usage it accrued beforehand is part of that answer.
+      operationId: list-usage-by-api-key
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyUsageListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/by-model:
+    get:
+      summary: Get usage by model
+      operationId: list-usage-by-model
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelUsageListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/by-source:
+    get:
+      summary: Get usage by source
+      description: Answers how much usage came from API keys (`api_key`), project tokens (`project_token`), or each internal Leaflow service (`assistant`, `fleet`, and others). A row whose `source` is null covers historical or unlabelled internal calls.
+      operationId: list-usage-by-source
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUsageListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/summary:
+    get:
+      summary: Get total usage
+      description: |-
+        `from` and `to` are required and may span no more than 400 days. Both carry a timezone offset, so `2026-08-01T00:00:00+08:00` starts at that instant in UTC+8.
+
+        The five token classes are reported separately. A cache read costs an order of magnitude less than ordinary input, and a single total cannot be decomposed again.
+      operationId: get-usage-summary
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotalsResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/timeline:
+    get:
+      summary: Get a usage series
+      description: |-
+        Divided into buckets of `bucket`, starting at `from`. The final bucket may be partial. The range may span up to 400 days, and the number of buckets is limited to 400.
+
+        To divide by local day, send `from` as midnight in local time with its offset and `bucket` as `24h`. The server does not infer a timezone.
+      operationId: get-usage-timeline
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+        - $ref: ./openapi.yaml#/components/parameters/BucketQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageTimelineResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/by-api-key/timeline:
+    get:
+      summary: Get bucketed usage grouped by API key
+      description: Returns hourly (`1h`), daily (`1d` / `24h`), or monthly (`1M`) token and media usage for each API key in a single query. Buckets with no usage for a key are omitted.
+      operationId: list-usage-by-api-key-timeline
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+        - $ref: ./openapi.yaml#/components/parameters/BucketQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyUsageTimelineResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/usage/by-source/timeline:
+    get:
+      summary: Get bucketed usage grouped by calling source
+      description: Returns hourly (`1h`), daily (`1d` / `24h`), or monthly (`1M`) token and media usage for each calling source (`api_key`, `project_token`, or internal service name such as `assistant`) in a single query. Buckets with no usage for a source are omitted.
+      operationId: list-usage-by-source-timeline
+      tags:
+        - Usage
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/FromRequired
+        - $ref: ./openapi.yaml#/components/parameters/ToRequired
+        - $ref: ./openapi.yaml#/components/parameters/ModelIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
+        - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+        - $ref: ./openapi.yaml#/components/parameters/BucketQuery
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUsageTimelineResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    MediaUsage:
+      type: object
+      description: Media quantities and the rate dimensions they were billed at. Absent on a token-only request.
+      properties:
+        images:
+          description: Number of generated images.
+          type: integer
+          format: int64
+        audio_characters:
+          description: Input characters of speech synthesis.
+          type: integer
+          format: int64
+        audio_seconds:
+          description: Duration of transcribed audio.
+          type: integer
+          format: int64
+        video_seconds:
+          description: Duration of a generated video.
+          type: integer
+          format: int64
+        size:
+          description: Image or video size the request asked for, if it carried one.
+          type:
+            - string
+            - "null"
+        quality:
+          description: Image quality the request asked for, if it carried one.
+          type:
+            - string
+            - "null"
+        resolution:
+          description: Video resolution tier the request asked for, if it carried one.
+          type:
+            - string
+            - "null"
+      required:
+        - images
+        - audio_characters
+        - audio_seconds
+        - video_seconds
+        - size
+        - quality
+        - resolution
+      additionalProperties: false
+    APIKeyUsageResource:
+      type: object
+      properties:
+        api_key_id:
+          type: string
+          format: uuid
+        cache_read_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - api_key_id
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    APIKeyUsageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIKeyUsageResource"
+      required:
+        - items
+      additionalProperties: false
+    APIKeyUsageBucketResource:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        api_key_id:
+          type: string
+          format: uuid
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_read_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+      required:
+        - from
+        - to
+        - api_key_id
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    APIKeyUsageTimelineResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIKeyUsageBucketResource"
+      required:
+        - items
+      additionalProperties: false
+    ModelUsageResource:
+      type: object
+      properties:
+        cache_read_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        model_id:
+          type: string
+        output_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - model_id
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    ModelUsageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelUsageResource"
+      required:
+        - items
+      additionalProperties: false
+    SourceUsageResource:
+      type: object
+      properties:
+        source:
+          description: Who made the requests (`api_key`, `project_token`, or an internal Leaflow service name such as `assistant`). Null covers historical or unlabelled internal calls.
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        cache_read_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - source
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    SourceUsageListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceUsageResource"
+      required:
+        - items
+      additionalProperties: false
+    SourceUsageBucketResource:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        source:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_read_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+      required:
+        - from
+        - to
+        - source
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    SourceUsageTimelineResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceUsageBucketResource"
+      required:
+        - items
+      additionalProperties: false
+    TotalsResource:
+      type: object
+      properties:
+        cache_read_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        input_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+      required:
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    UsageBucketResource:
+      type: object
+      properties:
+        cache_read_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        cache_write_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        from:
+          description: Start of the bucket, inclusive
+          type: string
+          format: date-time
+        input_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        output_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reasoning_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        media:
+          description: Media quantities and their rate dimensions. Null when this range has no media usage.
+          anyOf:
+            - $ref: "#/components/schemas/MediaUsage"
+            - type: "null"
+        requests:
+          type: integer
+          format: int64
+        total_tokens:
+          description: Null when this range has no token usage.
+          type:
+            - integer
+            - "null"
+          format: int64
+        to:
+          description: End of the bucket, exclusive
+          type: string
+          format: date-time
+      required:
+        - from
+        - to
+        - requests
+        - total_tokens
+        - input_tokens
+        - output_tokens
+        - cache_read_tokens
+        - cache_write_tokens
+        - reasoning_tokens
+      additionalProperties: false
+    UsageTimelineResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageBucketResource"
+      required:
+        - items
+      additionalProperties: false

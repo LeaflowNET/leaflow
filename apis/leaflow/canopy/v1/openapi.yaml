@@ -46,7 +46,7 @@ info:
 
     - **The plaintext of an API key is returned once.** The `secret` appears in the response that issues it and is returned by no other endpoint. A key that has been lost has to be revoked and reissued.
     - **Disabling and revoking are distinct.** A disabled key may be enabled again at any time, while a revocation is irreversible and is intended for a key that has been exposed. Neither removes the record, and the usage the key accrued remains readable.
-    - **A usage query must carry a time range**, spanning no more than 31 days, or 400 days for the usage timeline. `from` and `to` carry a timezone offset, which the server does not infer.
+    - **A usage query must carry a time range**, spanning no more than 31 days for individual request records (which are retained for 90 days), or 400 days for aggregated usage endpoints (which are retained for 400 days). `from` and `to` carry a timezone offset, which the server does not infer.
     - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the request `id` when reporting a problem.
     - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
     - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates Billing holds for each model's `billing`.
@@ -55,6 +55,17 @@ servers:
     description: Canopy management and project inference
 security:
   - bearerAuth: []
+tags:
+  - name: Inference
+    description: Model inference and media generation endpoints.
+  - name: APIKey
+    description: Project API keys.
+  - name: Model
+    description: Callable model catalogue and billing metadata.
+  - name: Service
+    description: Project service enablement.
+  - name: Usage
+    description: Recorded requests and token or media usage.
 paths:
   /v1/audio/speech:
     $ref: ./audio.yaml#/paths/~1v1~1audio~1speech
@@ -89,760 +100,59 @@ paths:
   /v1/models/{model}:
     $ref: ./inference.yaml#/paths/~1v1~1models~1{model}
   /api/v1/keys:
-    get:
-      summary: List API keys
-      operationId: list-api-keys
-      tags:
-        - APIKey
-      parameters:
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
-        - name: status
-          in: query
-          description: Restricts the result to the specified status. Every status is returned while this is absent
-          explode: false
-          schema:
-            description: Restricts the result to the specified status. Every status is returned while this is absent
-            type: string
-            enum:
-              - active
-              - disabled
-              - revoked
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LengthAwarePageAPIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    post:
-      summary: Issue an API key
-      description: |-
-        The `secret` in the response is the complete key and **appears in this response only**. It is returned by no other endpoint, and a key that has been lost has to be revoked and reissued.
-
-        Supply it wherever a value such as `OPENAI_API_KEY` is expected. The forwarding endpoints accept the OpenAI, Anthropic and Gemini request formats alike.
-
-        `model_aliases` is refused with 400 `API_KEY_MODEL_ALIASES_TOO_MANY` beyond 10 entries, 400 `API_KEY_MODEL_ALIAS_INVALID` for an empty, overlong or self-referencing entry, 422 `API_KEY_MODEL_ALIAS_TARGET_UNKNOWN` for a model that does not exist, and 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED` for a model missing from `allowed_models` while `restrict_models` is true.
-      operationId: create-api-key
-      tags:
-        - APIKey
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateAPIKeyRequestBody"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssuedAPIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./api-keys.yaml#/paths/~1api~1v1~1keys
   /api/v1/keys/{keyId}:
-    get:
-      summary: Get an API key
-      operationId: get-api-key
-      tags:
-        - APIKey
-      parameters:
-        - name: keyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    patch:
-      summary: Update an API key
-      description: |-
-        Attributes only. Enabling, disabling and revoking each have their own endpoint.
-
-        A field that is not supplied is left unchanged. To remove an expiry, send `clear_expiry` as true rather than a null `expires_at`.
-
-        `model_aliases` replaces the aliases as a whole, and an empty object removes them. They are checked against the key as it stands after the update, so narrowing `allowed_models` below a model an alias points at fails with 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED`. The other refusals are those of issuing a key.
-
-        A revoked key accepts no modification.
-      operationId: update-api-key
-      tags:
-        - APIKey
-      parameters:
-        - name: keyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateAPIKeyRequestBody"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./api-keys.yaml#/paths/~1api~1v1~1keys~1{keyId}
   /api/v1/keys/{keyId}:disable:
-    post:
-      summary: Disable an API key
-      description: A temporary measure; the key may be enabled again at any time. Use revocation to invalidate it permanently.
-      operationId: disable-api-key
-      tags:
-        - APIKey
-      parameters:
-        - name: keyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./api-keys.yaml#/paths/~1api~1v1~1keys~1{keyId}:disable
   /api/v1/keys/{keyId}:enable:
-    post:
-      summary: Enable an API key
-      description: Two cases cannot be enabled again. A revoked key answers `API_KEY_REVOKED`, and a key disabled because its project is suspended answers `API_KEY_PROJECT_SUSPENDED` with `suspended` set to true; the latter requires the project to be restored first.
-      operationId: enable-api-key
-      tags:
-        - APIKey
-      parameters:
-        - name: keyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./api-keys.yaml#/paths/~1api~1v1~1keys~1{keyId}:enable
   /api/v1/keys/{keyId}:revoke:
-    post:
-      summary: Revoke an API key
-      description: |-
-        **Irreversible.** It is intended for a key that has been exposed, such as one committed to a repository.
-
-        The record is retained, so the requests the key issued before it was revoked remain readable.
-
-        Use disabling for a temporary measure.
-      operationId: revoke-api-key
-      tags:
-        - APIKey
-      parameters:
-        - name: keyId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./api-keys.yaml#/paths/~1api~1v1~1keys~1{keyId}:revoke
   /api/v1/models:
-    get:
-      summary: List the available models
-      description: |-
-        A model that has been retired does not appear here, while it remains readable individually.
-
-        Restricted models are listed to every project. Calling one requires a grant for the project, and `access_granted` says whether the current project holds one.
-
-        `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
-
-        Canopy returns no amounts: each model's `billing` names the Billing plan and the rate dimensions its token usage is priced at. Read the rates from the `rates` of the plan's prices in Billing's `search-prices`.
-      operationId: list-models
-      tags:
-        - Model
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelListResponseBody"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./models.yaml#/paths/~1api~1v1~1models
+  /api/v1/models:lookup:
+    $ref: ./models.yaml#/paths/~1api~1v1~1models:lookup
   /api/v1/models/{modelId}:
-    get:
-      summary: Get a model
-      description: A model that has been retired remains readable here, while forwarding to it is refused with `MODEL_RETIRED`. That is distinct from a model that does not exist.
-      operationId: get-model
-      tags:
-        - Model
-      parameters:
-        - name: modelId
-          in: path
-          required: true
-          schema:
-            type: string
-            maxLength: 128
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./models.yaml#/paths/~1api~1v1~1models~1{modelId}
   /api/v1/requests:
-    get:
-      summary: List request records
-      description: |-
-        Cursor-paged, most recent first. An empty `next_cursor` indicates the last page.
-
-        **The request and response bodies are not returned**; they are not recorded. Quote the request `id` when reporting a problem.
-
-        A `usage_source` of `estimated` indicates that the upstream provider reported no usage for that request, and that the figures are derived from the character classes of the payload.
-
-        Omit cursor on the first page. Stop when next_cursor is empty; do not send an empty cursor.
-      operationId: list-requests
-      tags:
-        - Usage
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: model_id
-          in: query
-          description: Restricts the result to the specified model
-          explode: false
-          schema:
-            description: Restricts the result to the specified model
-            type: string
-            maxLength: 128
-        - name: api_key_id
-          in: query
-          description: Restricts the result to the specified API key
-          explode: false
-          schema:
-            description: Restricts the result to the specified API key
-            type: string
-        - name: status
-          in: query
-          description: Restricts the result to the specified status
-          explode: false
-          schema:
-            description: Restricts the result to the specified status
-            type: string
-            enum:
-              - in_flight
-              - succeeded
-              - refused
-              - upstream_failed
-              - client_aborted
-        - name: source
-          in: query
-          description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-          explode: false
-          schema:
-            description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-            type: string
-            minLength: 1
-            maxLength: 64
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
-        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CursorPageRequestResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./requests.yaml#/paths/~1api~1v1~1requests
   /api/v1/requests/{requestId}:
-    get:
-      summary: Get a single request record
-      operationId: get-request
-      tags:
-        - Usage
-      parameters:
-        - name: requestId
-          in: path
-          required: true
-          description: A typed request id such as `req_01j...`; a bare UUID is also accepted.
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RequestResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./requests.yaml#/paths/~1api~1v1~1requests~1{requestId}
   /api/v1/service:
-    get:
-      summary: Get the model platform service
-      description: |-
-        The model platform service of the authenticated project. The forwarding endpoints accept its requests only while `status` is `active`; each request is then billed under `subscription_id`, per token, at the rates Billing holds for each model's `billing`.
-
-        When the project is deleted, its API keys are revoked and the subscription is canceled; the service then reads `inactive` with `ended_at` set.
-      operationId: get-service
-      tags:
-        - Service
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ServiceResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-    post:
-      summary: Enable the model platform service
-      description: |-
-        Purchases the model platform service for this project. The service itself has no charge; requests are metered under it by the tokens they use. It takes no billing choice. Returns the service as `pending` with its Checkout Session; it becomes `active` once the order is accepted, which with automatic checkout and nothing to pay happens without further action.
-
-        Refused with 409 `SERVICE_ALREADY_ENABLED` while an enablement is pending or the service is active. A refusal of the order by Billing is returned with Billing's code, such as `BILLING_PRICE_UNAVAILABLE` when the service has no price in the currency of the project's billing account.
-      operationId: create-service
-      tags:
-        - Service
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateServiceRequestBody"
-      responses:
-        "202":
-          description: The service and its Checkout Session were created; the service is not active yet.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreateServiceResponseBody"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./services.yaml#/paths/~1api~1v1~1service
   /api/v1/usage/by-api-key:
-    get:
-      summary: Get usage by API key
-      description: Answers which key is consuming the budget. A key that has been revoked still appears, since the usage it accrued beforehand is part of that answer.
-      operationId: list-usage-by-api-key
-      tags:
-        - Usage
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: model_id
-          in: query
-          description: Restricts the result to the specified model
-          explode: false
-          schema:
-            description: Restricts the result to the specified model
-            type: string
-            maxLength: 128
-        - name: api_key_id
-          in: query
-          description: Restricts the result to the specified API key
-          explode: false
-          schema:
-            description: Restricts the result to the specified API key
-            type: string
-        - name: status
-          in: query
-          description: Restricts the result to the specified status
-          explode: false
-          schema:
-            description: Restricts the result to the specified status
-            type: string
-            enum:
-              - in_flight
-              - succeeded
-              - refused
-              - upstream_failed
-              - client_aborted
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/APIKeyUsageListResponseBody"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-api-key
   /api/v1/usage/by-model:
-    get:
-      summary: Get usage by model
-      operationId: list-usage-by-model
-      tags:
-        - Usage
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: model_id
-          in: query
-          description: Restricts the result to the specified model
-          explode: false
-          schema:
-            description: Restricts the result to the specified model
-            type: string
-            maxLength: 128
-        - name: api_key_id
-          in: query
-          description: Restricts the result to the specified API key
-          explode: false
-          schema:
-            description: Restricts the result to the specified API key
-            type: string
-        - name: status
-          in: query
-          description: Restricts the result to the specified status
-          explode: false
-          schema:
-            description: Restricts the result to the specified status
-            type: string
-            enum:
-              - in_flight
-              - succeeded
-              - refused
-              - upstream_failed
-              - client_aborted
-        - name: source
-          in: query
-          description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-          explode: false
-          schema:
-            description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-            type: string
-            minLength: 1
-            maxLength: 64
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ModelUsageListResponseBody"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-model
+  /api/v1/usage/by-source:
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-source
   /api/v1/usage/summary:
-    get:
-      summary: Get total usage
-      description: |-
-        `from` and `to` are required and may span no more than 31 days. Both carry a timezone offset, so `2026-08-01T00:00:00+08:00` starts at that instant in UTC+8.
-
-        The five token classes are reported separately. A cache read costs an order of magnitude less than ordinary input, and a single total cannot be decomposed again.
-      operationId: get-usage-summary
-      tags:
-        - Usage
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: model_id
-          in: query
-          description: Restricts the result to the specified model
-          explode: false
-          schema:
-            description: Restricts the result to the specified model
-            type: string
-            maxLength: 128
-        - name: api_key_id
-          in: query
-          description: Restricts the result to the specified API key
-          explode: false
-          schema:
-            description: Restricts the result to the specified API key
-            type: string
-        - name: status
-          in: query
-          description: Restricts the result to the specified status
-          explode: false
-          schema:
-            description: Restricts the result to the specified status
-            type: string
-            enum:
-              - in_flight
-              - succeeded
-              - refused
-              - upstream_failed
-              - client_aborted
-        - name: source
-          in: query
-          description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-          explode: false
-          schema:
-            description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-            type: string
-            minLength: 1
-            maxLength: 64
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TotalsResource"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1summary
   /api/v1/usage/timeline:
-    get:
-      summary: Get a usage series
-      description: |-
-        Divided into buckets of `bucket`, starting at `from`. The final bucket may be partial. The range may span up to 400 days, and the number of buckets is limited to 400.
-
-        To divide by local day, send `from` as midnight in local time with its offset and `bucket` as `24h`. The server does not infer a timezone.
-      operationId: get-usage-timeline
-      tags:
-        - Usage
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: Start of the range, inclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-          explode: false
-          schema:
-            description: End of the range, exclusive. RFC 3339, carrying a timezone offset
-            type: string
-            format: date-time
-        - name: model_id
-          in: query
-          description: Restricts the result to the specified model
-          explode: false
-          schema:
-            description: Restricts the result to the specified model
-            type: string
-            maxLength: 128
-        - name: api_key_id
-          in: query
-          description: Restricts the result to the specified API key
-          explode: false
-          schema:
-            description: Restricts the result to the specified API key
-            type: string
-        - name: status
-          in: query
-          description: Restricts the result to the specified status
-          explode: false
-          schema:
-            description: Restricts the result to the specified status
-            type: string
-            enum:
-              - in_flight
-              - succeeded
-              - refused
-              - upstream_failed
-              - client_aborted
-        - name: source
-          in: query
-          description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-          explode: false
-          schema:
-            description: Restricts the result to requests from the specified source, as reported in a request's `source`. Requests recorded before sources were tracked have none and are excluded
-            type: string
-            minLength: 1
-            maxLength: 64
-        - name: bucket
-          in: query
-          description: The length of each bucket, written as a duration such as 1h or 24h. The number of buckets is limited to 400
-          explode: false
-          schema:
-            description: The length of each bucket, written as a duration such as 1h or 24h. The number of buckets is limited to 400
-            type: string
-            default: 1h
-            maxLength: 16
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UsageTimelineResponseBody"
-        default:
-          description: Error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1timeline
+  /api/v1/usage/by-api-key/timeline:
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-api-key~1timeline
+  /api/v1/usage/by-source/timeline:
+    $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-source~1timeline
 components:
   securitySchemes:
     bearerAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The request conflicts with the current state of the service. The codes are described where they apply.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
-    ReasoningDiagnostics:
-      type: object
-      properties:
-        requested:
-          type: object
-          additionalProperties: true
-      required:
-        - requested
-      additionalProperties: false
     ChatCompletionRequest:
       $ref: ./inference.yaml#/components/schemas/ChatCompletionRequest
     ChatCompletion:
@@ -859,985 +169,137 @@ components:
       $ref: ./inference.yaml#/components/schemas/InferenceError
     Error:
       $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    OffsetPagination:
+      $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+    CursorPagination:
+      $ref: ../../type/v1/pagination.yaml#/components/schemas/CursorPagination
     APIKeyResource:
-      type: object
-      properties:
-        allowed_models:
-          description: Carries no meaning while `restrict_models` is false
-          type: array
-          items:
-            type: string
-        created_at:
-          type: string
-          format: date-time
-        created_by:
-          description: Who created the key
-          type: string
-          format: uuid
-        expires_at:
-          description: When the key expires. Null means it never expires
-          type:
-            - string
-            - "null"
-          format: date-time
-        id:
-          type: string
-          format: uuid
-        last_four:
-          description: The last four characters of the plaintext
-          type: string
-        last_used_at:
-          description: When the key was last used to forward a request successfully, accurate to about a minute
-          type:
-            - string
-            - "null"
-          format: date-time
-        name:
-          type: string
-        prefix:
-          description: The leading characters of the plaintext, by which a key is recognised in a list
-          type: string
-        restrict_models:
-          description: While true, only the models listed in `allowed_models` are permitted
-          type: boolean
-        model_aliases:
-          $ref: "#/components/schemas/ModelAliases"
-        status:
-          type: string
-          enum:
-            - active
-            - disabled
-            - revoked
-        suspended:
-          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
-          type: boolean
-      required:
-        - id
-        - name
-        - prefix
-        - last_four
-        - status
-        - suspended
-        - restrict_models
-        - allowed_models
-        - model_aliases
-        - expires_at
-        - last_used_at
-        - created_by
-        - created_at
-      additionalProperties: false
+      $ref: ./api-keys.yaml#/components/schemas/APIKeyResource
     ModelAliases:
-      description: |-
-        Model names the key rewrites. A request naming a key of this map is served by the model it maps to, and is admitted, billed and recorded as that model; aliases are not followed in chains. At most 10 entries, each name and model at most 128 characters.
-
-        The model must exist, and while `restrict_models` is true it must also be listed in `allowed_models`. A restricted model is callable only while the project holds a grant for it.
-      type: object
-      additionalProperties:
+      $ref: ./api-keys.yaml#/components/schemas/ModelAliases
+    APIKeyList:
+      $ref: ./api-keys.yaml#/components/schemas/APIKeyList
+    CreateAPIKeyRequestBody:
+      $ref: ./api-keys.yaml#/components/schemas/CreateAPIKeyRequestBody
+    IssuedAPIKeyResource:
+      $ref: ./api-keys.yaml#/components/schemas/IssuedAPIKeyResource
+    UpdateAPIKeyRequestBody:
+      $ref: ./api-keys.yaml#/components/schemas/UpdateAPIKeyRequestBody
+    ModelResource:
+      $ref: ./models.yaml#/components/schemas/ModelResource
+    ModelBilling:
+      $ref: ./models.yaml#/components/schemas/ModelBilling
+    ModelMeter:
+      $ref: ./models.yaml#/components/schemas/ModelMeter
+    ModelListResponseBody:
+      $ref: ./models.yaml#/components/schemas/ModelListResponseBody
+    ServiceResource:
+      $ref: ./services.yaml#/components/schemas/ServiceResource
+    CreateServiceRequestBody:
+      $ref: ./services.yaml#/components/schemas/CreateServiceRequestBody
+    CreateServiceResponseBody:
+      $ref: ./services.yaml#/components/schemas/CreateServiceResponseBody
+    CheckoutOptions:
+      $ref: ./services.yaml#/components/schemas/CheckoutOptions
+    ReasoningDiagnostics:
+      $ref: ./requests.yaml#/components/schemas/ReasoningDiagnostics
+    MediaUsage:
+      $ref: ./usage.yaml#/components/schemas/MediaUsage
+    MediaUsageDetails:
+      $ref: ./requests.yaml#/components/schemas/MediaUsageDetails
+    RequestResource:
+      $ref: ./requests.yaml#/components/schemas/RequestResource
+    RequestList:
+      $ref: ./requests.yaml#/components/schemas/RequestList
+    APIKeyUsageResource:
+      $ref: ./usage.yaml#/components/schemas/APIKeyUsageResource
+    APIKeyUsageListResponseBody:
+      $ref: ./usage.yaml#/components/schemas/APIKeyUsageListResponseBody
+    APIKeyUsageBucketResource:
+      $ref: ./usage.yaml#/components/schemas/APIKeyUsageBucketResource
+    APIKeyUsageTimelineResponseBody:
+      $ref: ./usage.yaml#/components/schemas/APIKeyUsageTimelineResponseBody
+    ModelUsageResource:
+      $ref: ./usage.yaml#/components/schemas/ModelUsageResource
+    ModelUsageListResponseBody:
+      $ref: ./usage.yaml#/components/schemas/ModelUsageListResponseBody
+    SourceUsageResource:
+      $ref: ./usage.yaml#/components/schemas/SourceUsageResource
+    SourceUsageListResponseBody:
+      $ref: ./usage.yaml#/components/schemas/SourceUsageListResponseBody
+    SourceUsageBucketResource:
+      $ref: ./usage.yaml#/components/schemas/SourceUsageBucketResource
+    SourceUsageTimelineResponseBody:
+      $ref: ./usage.yaml#/components/schemas/SourceUsageTimelineResponseBody
+    TotalsResource:
+      $ref: ./usage.yaml#/components/schemas/TotalsResource
+    UsageBucketResource:
+      $ref: ./usage.yaml#/components/schemas/UsageBucketResource
+    UsageTimelineResponseBody:
+      $ref: ./usage.yaml#/components/schemas/UsageTimelineResponseBody
+  parameters:
+    FromRequired:
+      name: from
+      in: query
+      required: true
+      description: Start of the range, inclusive. RFC 3339, carrying a timezone offset.
+      explode: false
+      schema:
+        type: string
+        format: date-time
+    ToRequired:
+      name: to
+      in: query
+      required: true
+      description: End of the range, exclusive. RFC 3339, carrying a timezone offset.
+      explode: false
+      schema:
+        type: string
+        format: date-time
+    ModelIdQuery:
+      name: model_id
+      in: query
+      description: Restricts the result to the specified model.
+      explode: false
+      schema:
+        type: string
+        maxLength: 128
+    ApiKeyIdQuery:
+      name: api_key_id
+      in: query
+      description: Restricts the result to the specified API key.
+      explode: false
+      schema:
+        type: string
+        format: uuid
+    RequestStatusQuery:
+      name: status
+      in: query
+      description: Restricts the result to requests in the specified status.
+      explode: false
+      schema:
+        type: string
+        enum:
+          - in_flight
+          - succeeded
+          - refused
+          - upstream_failed
+          - client_aborted
+    RequestSourceQuery:
+      name: source
+      in: query
+      description: Restricts the result to requests from the specified source (`api_key`, `project_token`, or an internal service name such as `assistant` or `fleet`).
+      explode: false
+      schema:
         type: string
         minLength: 1
-        maxLength: 128
-      maxProperties: 10
-    LengthAwarePageAPIKeyResource:
-      type: object
-      properties:
-        items:
-          description: The items in this page
-          type: array
-          items:
-            $ref: "#/components/schemas/APIKeyResource"
-        limit:
-          description: Maximum number of items in this page, echoing the request
-          type: integer
-          format: int64
-        offset:
-          description: Number of items skipped, echoing the request
-          type: integer
-          format: int64
-        total:
-          description: Total number of matches, not only this page
-          type: integer
-          format: int64
-      required:
-        - items
-        - total
-        - limit
-        - offset
-      additionalProperties: false
-    CreateAPIKeyRequestBody:
-      type: object
-      properties:
-        allowed_models:
-          description: Ignored while `restrict_models` is false
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-        expires_at:
-          description: When the key expires. Omitted means it never expires
-          type:
-            - string
-            - "null"
-          format: date-time
-        name:
-          description: A name for the holder's own use, such as CI or Production
-          type: string
-          minLength: 1
-          maxLength: 128
-        restrict_models:
-          description: While true, only the models listed in `allowed_models` are permitted
-          type: boolean
-        model_aliases:
-          $ref: "#/components/schemas/ModelAliases"
-      required:
-        - name
-      additionalProperties: false
-    IssuedAPIKeyResource:
-      type: object
-      properties:
-        allowed_models:
-          description: Carries no meaning while `restrict_models` is false
-          type: array
-          items:
-            type: string
-        created_at:
-          type: string
-          format: date-time
-        created_by:
-          description: Who created the key
-          type: string
-          format: uuid
-        expires_at:
-          description: When the key expires. Null means it never expires
-          type:
-            - string
-            - "null"
-          format: date-time
-        id:
-          type: string
-          format: uuid
-        last_four:
-          description: The last four characters of the plaintext
-          type: string
-        last_used_at:
-          description: When the key was last used to forward a request successfully, accurate to about a minute
-          type:
-            - string
-            - "null"
-          format: date-time
-        name:
-          type: string
-        prefix:
-          description: The leading characters of the plaintext, by which a key is recognised in a list
-          type: string
-        restrict_models:
-          description: While true, only the models listed in `allowed_models` are permitted
-          type: boolean
-        model_aliases:
-          $ref: "#/components/schemas/ModelAliases"
-        secret:
-          description: The complete key, **returned in this response only**. Store it immediately
-          type: string
-        status:
-          type: string
-          enum:
-            - active
-            - disabled
-            - revoked
-        suspended:
-          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
-          type: boolean
-      required:
-        - secret
-        - id
-        - name
-        - prefix
-        - last_four
-        - status
-        - suspended
-        - restrict_models
-        - allowed_models
-        - model_aliases
-        - expires_at
-        - last_used_at
-        - created_by
-        - created_at
-      additionalProperties: false
-    UpdateAPIKeyRequestBody:
-      type: object
-      properties:
-        allowed_models:
-          type:
-            - array
-            - "null"
-          items:
-            type: string
-        clear_expiry:
-          description: True removes the expiry
-          type: boolean
-        expires_at:
-          description: Sets the expiry. To remove it, use `clear_expiry`
-          type:
-            - string
-            - "null"
-          format: date-time
-        name:
-          type:
-            - string
-            - "null"
-          maxLength: 128
-        restrict_models:
-          type:
-            - boolean
-            - "null"
-        model_aliases:
-          $ref: "#/components/schemas/ModelAliases"
-      additionalProperties: false
-    ModelResource:
-      type: object
-      properties:
-        context_length:
-          description: The context window. Advisory only; the server does not truncate on its basis
-          type: integer
-          format: int64
-        display_name:
-          type: string
-        family:
-          description: Groups the models of one family together, such as claude, gpt or gemini
-          type: string
-        id:
-          description: The string to send in the `model` field of the request body
-          type: string
-        max_output_tokens:
-          description: The maximum output length. Advisory only
-          type: integer
-          format: int64
-        billing:
-          $ref: "#/components/schemas/ModelBilling"
-        status:
-          type: string
-          enum:
-            - available
-            - draining
-            - retired
-        developer:
-          type: string
-          description: The model developer; not the upstream provider or model family.
-        description:
-          type: string
-        input_modalities:
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "./capabilities.yaml#/components/schemas/Modality"
-          description: Accepted input modalities. Null means unknown.
-        output_modalities:
-          type:
-            - array
-            - "null"
-          items:
-            $ref: "./capabilities.yaml#/components/schemas/Modality"
-          description: Produced output modalities. Image input does not imply image generation.
-        capabilities:
-          $ref: "./capabilities.yaml#/components/schemas/ModelCapabilities"
-        access:
-          description: |-
-            Who can call the model. Every model is listed to every project.
-
-            - `public`: callable by every project.
-            - `restricted`: callable only by projects holding a grant. A request from any other project fails with 403 `MODEL_ACCESS_REQUIRED`.
-          type: string
-          enum:
-            - public
-            - restricted
-        access_granted:
-          description: Whether the current project can call the model. Always true for a public model
-          type: boolean
-        moderation_disabled:
-          description: True when the model is served without upstream content moderation
-          type: boolean
-      required:
-        - id
-        - display_name
-        - family
-        - status
-        - context_length
-        - max_output_tokens
-        - billing
-        - developer
-        - description
-        - input_modalities
-        - output_modalities
-        - capabilities
-        - access
-        - access_granted
-        - moderation_disabled
-      additionalProperties: false
-    ModelBilling:
-      description: |-
-        How requests to a model are billed: under the service's subscription, on the Billing plan `plan_id`, one rate for each billable kind. Read the rates from Billing with `search-prices` for the plan, narrowing each price's `rates` with each meter's `dimensions`.
-
-        Text is billed on the five token kinds. `input` excludes cached input, which is `cache_read`; `output` excludes reasoning the provider reports separately, which is `reasoning`. Media is billed on its own unit and never converted to tokens: `images` counts generated images, `audio_characters` counts the input characters of speech synthesis, `audio_seconds` counts the duration of a transcription, and `video_seconds` counts the duration of a generated video. A request is billed for each kind it used.
-
-        Rates are set per currency, and a currency may not offer a model at all. A model is offered in the currency of the project's billing account when at least one of its billable kinds has a rate there; a kind without a rate in that currency is not charged. Requests to a model with no rate in that currency are refused with 403 `BILLING_MODEL_NOT_OFFERED`.
-      type: object
-      properties:
-        plan_id:
-          description: The Billing plan of the service; null where the service is not sold.
-          type:
-            - string
-            - "null"
-          format: uuid
-        meters:
-          description:
-            One entry for each billable kind the model uses. A text model lists the five token kinds in the order
-            input, output, cache_read, cache_write, reasoning; media kinds follow in the order images, audio_characters,
-            audio_seconds, video_seconds.
-          type: array
-          items:
-            $ref: "#/components/schemas/ModelMeter"
-      required:
-        - plan_id
-        - meters
-      additionalProperties: false
-    ModelMeter:
-      type: object
-      properties:
-        kind:
-          description:
-            The billable quantity this entry prices. Token kinds are `input`, `output`, `cache_read`, `cache_write`
-            and `reasoning`; media kinds are `images`, `audio_characters`, `audio_seconds` and `video_seconds`.
-          type: string
-          enum:
-            - input
-            - output
-            - cache_read
-            - cache_write
-            - reasoning
-            - images
-            - audio_characters
-            - audio_seconds
-            - video_seconds
-            - rerank_units
-        meter_lookup_key:
-          type: string
-        unit:
-          description: The unit the meter counts in, such as token, image, character or second.
-          type: string
-        dimension_keys:
-          description: The dimension keys every rate of this kind is matched on, in the order the meter declares them.
-          type: array
-          items:
-            type: string
-        dimensions:
-          description:
-            One set of dimension values of this kind, useful as a query template. A media kind may have other
-            values on the same keys, such as another size or resolution.
-          type: object
-          additionalProperties:
-            type: string
-      required:
-        - kind
-        - meter_lookup_key
-        - unit
-        - dimension_keys
-        - dimensions
-      additionalProperties: false
-    MediaUsage:
-      type: object
-      description: Media quantities and the rate dimensions they were billed at. Absent on a token-only request.
-      properties:
-        images:
-          description: Number of generated images.
-          type: integer
-          format: int64
-        audio_characters:
-          description: Input characters of speech synthesis.
-          type: integer
-          format: int64
-        audio_seconds:
-          description: Duration of transcribed audio.
-          type: integer
-          format: int64
-        video_seconds:
-          description: Duration of a generated video.
-          type: integer
-          format: int64
-        size:
-          description: Image or video size the request asked for, if it carried one.
-          type:
-            - string
-            - "null"
-        quality:
-          description: Image quality the request asked for, if it carried one.
-          type:
-            - string
-            - "null"
-        resolution:
-          description: Video resolution tier the request asked for, if it carried one.
-          type:
-            - string
-            - "null"
-      required:
-        - images
-        - audio_characters
-        - audio_seconds
-        - video_seconds
-        - size
-        - quality
-        - resolution
-      additionalProperties: false
-    ModelListResponseBody:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/ModelResource"
-      required:
-        - items
-      additionalProperties: false
-    MediaUsageDetails:
-      type: object
-      description: |-
-        Per-request media measurements. Omitted values are unknown, not zero.
-        Reference counts are audit data, not an additional billable quantity.
-        video_quantity is the exact decimal quantity for the existing video_seconds
-        meter; video_seconds in the summary remains a rounded compatibility counter.
-        No monetary price or refund is calculated by Canopy.
-      properties:
-        input_video_seconds:
-          type: number
-          format: double
-          minimum: 0
-        output_video_seconds:
-          type: number
-          format: double
-          minimum: 0
-        input_audio_seconds:
-          type: number
-          format: double
-          minimum: 0
-        input_image_quantity:
-          type: string
-          pattern: "^[0-9]+$"
-          description: Recorded input quantity for the input_images meter, independent of its Billing price. Absent when unmeasured or not separately metered.
-        input_images:
-          type: integer
-          format: int64
-          minimum: 0
-        output_images:
-          type: integer
-          format: int64
-          minimum: 0
-        video_quantity:
-          type: string
-          pattern: "^[0-9]+([.][0-9]+)?$"
-        reference_counts:
-          type: object
-          additionalProperties:
-            type: integer
-            minimum: 0
-      additionalProperties: false
-    RequestResource:
-      type: object
-      properties:
-        api_key_id:
-          description: Null for a request that did not come through one of the project's API keys.
-          type:
-            - string
-            - "null"
-          format: uuid
-        cache_read_tokens:
-          description:
-            The portion served from the upstream prefix cache, which costs an order of magnitude less than
-            ordinary input. Null on a request billed on a non-token meter.
-          type:
-            - integer
-            - "null"
-          format: int64
-        cache_write_tokens:
-          description: Tokens written to the provider's prompt cache. Null on a request billed on a non-token meter.
-          type:
-            - integer
-            - "null"
-          format: int64
-        error_code:
-          description: The error code on failure. Empty on success
-          type: string
-        finished_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-        first_token_at:
-          type:
-            - string
-            - "null"
-          format: date-time
-        id:
-          description: A typed request id such as `req_01j...`. Legacy rows may still be returned as a bare UUID.
-          type: string
-        input_tokens:
-          description:
-            Input tokens the provider billed for. Null on a request billed on a non-token meter, such as image
-            generation, video generation or speech.
-          type:
-            - integer
-            - "null"
-          format: int64
-        model_id:
-          description: The model named in the request
-          type: string
-        operation:
-          description: The request operation, such as video_create or video_retrieve. Absent for historical requests where it was not recorded.
-          type: string
-        output_tokens:
-          description:
-            Output tokens the provider billed for. Null on a request billed on a non-token meter, such as image
-            generation, video generation or speech.
-          type:
-            - integer
-            - "null"
-          format: int64
-        reasoning_tokens:
-          description: Reasoning tokens the provider reports separately. Null on a request billed on a non-token meter.
-          type:
-            - integer
-            - "null"
-          format: int64
-        retries:
-          type: integer
-          format: int64
-        source:
-          description:
-            Who made the request. `api_key` means one of the project's API keys and `project_token` a project
-            access token on the OpenAI-compatible endpoints; any other value names the Leaflow service that made it on the
-            project's behalf, such as `assistant`, and more services may appear. Null for requests recorded before sources
-            were tracked
-          type:
-            - string
-            - "null"
-          maxLength: 64
-        started_at:
-          type: string
-          format: date-time
-        status:
-          type: string
-          enum:
-            - in_flight
-            - succeeded
-            - refused
-            - upstream_failed
-            - client_aborted
-        stream:
-          type: boolean
-        upstream_status:
-          description: The HTTP status returned upstream. 0 indicates that the request never reached it
-          type: integer
-          format: int64
-        usage_source:
-          description:
-            upstream means the figures were reported by the provider; estimated means they were derived from
-            the character classes of the payload
-          type: string
-          enum:
-            - none
-            - upstream
-            - estimated
-        reasoning:
-          anyOf:
-            - $ref: "#/components/schemas/ReasoningDiagnostics"
-            - type: "null"
-        media:
-          description: Media quantities and their rate dimensions. Null for a token-only request.
-          anyOf:
-            - $ref: "#/components/schemas/MediaUsage"
-            - type: "null"
-        media_details:
-          $ref: "#/components/schemas/MediaUsageDetails"
-      required:
-        - id
-        - model_id
-        - api_key_id
-        - stream
-        - status
-        - error_code
-        - upstream_status
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-        - usage_source
-        - started_at
-        - first_token_at
-        - finished_at
-        - retries
-        - source
-        - reasoning
-      additionalProperties: false
-    CursorPageRequestResource:
-      type: object
-      properties:
-        items:
-          description: The items in this page
-          type: array
-          items:
-            $ref: "#/components/schemas/RequestResource"
-        next_cursor:
-          description: The cursor for the next page. Empty on the last page
-          type: string
-      required:
-        - items
-        - next_cursor
-      additionalProperties: false
-    APIKeyUsageResource:
-      type: object
-      properties:
-        api_key_id:
-          type: string
-          format: uuid
-        cache_read_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        cache_write_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        input_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        output_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        reasoning_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        media:
-          description: Media quantities and their rate dimensions. Null when this range has no media usage.
-          anyOf:
-            - $ref: "#/components/schemas/MediaUsage"
-            - type: "null"
-        requests:
-          type: integer
-          format: int64
-      required:
-        - api_key_id
-        - requests
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-      additionalProperties: false
-    APIKeyUsageListResponseBody:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/APIKeyUsageResource"
-      required:
-        - items
-      additionalProperties: false
-    ModelUsageResource:
-      type: object
-      properties:
-        cache_read_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        cache_write_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        input_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        model_id:
-          type: string
-        output_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        reasoning_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        media:
-          description: Media quantities and their rate dimensions. Null when this range has no media usage.
-          anyOf:
-            - $ref: "#/components/schemas/MediaUsage"
-            - type: "null"
-        requests:
-          type: integer
-          format: int64
-      required:
-        - model_id
-        - requests
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-      additionalProperties: false
-    ModelUsageListResponseBody:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/ModelUsageResource"
-      required:
-        - items
-      additionalProperties: false
-    TotalsResource:
-      type: object
-      properties:
-        cache_read_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        cache_write_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        input_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        output_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        reasoning_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        media:
-          description: Media quantities and their rate dimensions. Null when this range has no media usage.
-          anyOf:
-            - $ref: "#/components/schemas/MediaUsage"
-            - type: "null"
-        requests:
-          type: integer
-          format: int64
-      required:
-        - requests
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-      additionalProperties: false
-    UsageBucketResource:
-      type: object
-      properties:
-        cache_read_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        cache_write_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        from:
-          description: Start of the bucket, inclusive
-          type: string
-          format: date-time
-        input_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        output_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        reasoning_tokens:
-          description: Null when this range has no token usage.
-          type:
-            - integer
-            - "null"
-          format: int64
-        media:
-          description: Media quantities and their rate dimensions. Null when this range has no media usage.
-          anyOf:
-            - $ref: "#/components/schemas/MediaUsage"
-            - type: "null"
-        requests:
-          type: integer
-          format: int64
-        to:
-          description: End of the bucket, exclusive
-          type: string
-          format: date-time
-      required:
-        - from
-        - to
-        - requests
-        - input_tokens
-        - output_tokens
-        - cache_read_tokens
-        - cache_write_tokens
-        - reasoning_tokens
-      additionalProperties: false
-    UsageTimelineResponseBody:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/UsageBucketResource"
-      required:
-        - items
-      additionalProperties: false
-    ServiceResource:
-      description: The model platform service of a project.
-      type: object
-      properties:
-        status:
-          description: "`inactive` has never been enabled or its subscription has ended; `pending` awaits completion of its checkout and acceptance of its order; `active` accepts requests on the forwarding endpoints; `failed` means the enablement failed, as `failure_reason` states. An `inactive` or `failed` service can be enabled again."
-          type: string
-          enum:
-            - inactive
-            - pending
-            - active
-            - failed
-        failure_reason:
-          description: Why the enablement failed; null unless `status` is `failed`. `checkout_expired` means checkout was not completed before its Checkout Session expired; `order_declined` means Billing did not accept the order, for example because the billing account is suspended; `order_canceled` means the order was withdrawn; `order_expired` means it was not paid in time.
-          type:
-            - string
-            - "null"
-          enum:
-            - checkout_expired
-            - order_declined
-            - order_canceled
-            - order_expired
-            - null
-        checkout_session_id:
-          description: The Checkout Session of the latest enablement; null before any enablement.
-          type:
-            - string
-            - "null"
-          format: uuid
-        order_id:
-          description: The order that enabled the service, or that the latest enablement's checkout created; null before checkout completes.
-          type:
-            - string
-            - "null"
-          format: uuid
-        plan_id:
-          description: The Billing plan the service is sold under; null where the service is not sold. Price enabling it with Billing's `preview-checkout-session`, giving this plan with the `recurring` price type, the `metered` usage type and a quantity of 1; token usage is priced per model, at the rates Billing holds for each model's `billing`.
-          type:
-            - string
-            - "null"
-          format: uuid
-        subscription_id:
-          description: The Billing subscription that requests are billed under; null until an enablement's checkout completes.
-          type:
-            - string
-            - "null"
-          format: uuid
-        activated_at:
-          description: When the service became active and billing began; null until then.
-          type:
-            - string
-            - "null"
-          format: date-time
-        ended_at:
-          description: When the subscription ended; null unless it has.
-          type:
-            - string
-            - "null"
-          format: date-time
-      required:
-        - status
-        - plan_id
-        - failure_reason
-        - checkout_session_id
-        - order_id
-        - subscription_id
-        - activated_at
-        - ended_at
-      additionalProperties: false
-    CreateServiceRequestBody:
-      type: object
-      properties:
-        checkout:
-          $ref: "#/components/schemas/CheckoutOptions"
-      additionalProperties: false
-    CreateServiceResponseBody:
-      description: The service, `pending` until its order is accepted, and its Checkout Session.
-      type: object
-      properties:
-        service:
-          $ref: "#/components/schemas/ServiceResource"
-        checkout_session_id:
-          description: The Billing Checkout Session of this enablement. With deferred checkout, the customer completes it in Billing.
-          type: string
-          format: uuid
-        order_id:
-          description: The order created when checkout completes, at once for automatic checkout; null until then.
-          type:
-            - string
-            - "null"
-          format: uuid
-      required:
-        - service
-        - checkout_session_id
-        - order_id
-      additionalProperties: false
-    CheckoutOptions:
-      $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
-  responses:
-    Conflict:
-      description: The request conflicts with the current state of the service. The codes are described where they apply.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+        maxLength: 64
+    BucketQuery:
+      name: bucket
+      in: query
+      description: Length of each bucket (`1h`, `1d` / `24h`, `1M` calendar month in `from`'s timezone offset, or any Go duration). At most 400 buckets.
+      explode: false
+      schema:
+        type: string
+        default: 1h
+        maxLength: 16

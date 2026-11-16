@@ -1,0 +1,411 @@
+paths:
+  /api/v1/keys:
+    get:
+      summary: List API keys
+      operationId: list-api-keys
+      tags:
+        - APIKey
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: status
+          in: query
+          description: Restricts the result to the specified status. Every status is returned while this is absent
+          explode: false
+          schema:
+            description: Restricts the result to the specified status. Every status is returned while this is absent
+            type: string
+            enum:
+              - active
+              - disabled
+              - revoked
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Issue an API key
+      description: |-
+        The `secret` in the response is the complete key and **appears in this response only**. It is returned by no other endpoint, and a key that has been lost has to be revoked and reissued.
+
+        Supply it wherever a value such as `OPENAI_API_KEY` is expected. The forwarding endpoints accept the OpenAI, Anthropic and Gemini request formats alike.
+
+        `model_aliases` is refused with 400 `API_KEY_MODEL_ALIASES_TOO_MANY` beyond 10 entries, 400 `API_KEY_MODEL_ALIAS_INVALID` for an empty, overlong or self-referencing entry, 422 `API_KEY_MODEL_ALIAS_TARGET_UNKNOWN` for a model that does not exist, and 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED` for a model missing from `allowed_models` while `restrict_models` is true.
+      operationId: create-api-key
+      tags:
+        - APIKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIKeyRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuedAPIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/keys/{keyId}:
+    get:
+      summary: Get an API key
+      operationId: get-api-key
+      tags:
+        - APIKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update an API key
+      description: |-
+        Attributes only. Enabling, disabling and revoking each have their own endpoint.
+
+        A field that is not supplied is left unchanged. To remove an expiry, send `clear_expiry` as true rather than a null `expires_at`.
+
+        `model_aliases` replaces the aliases as a whole, and an empty object removes them. They are checked against the key as it stands after the update, so narrowing `allowed_models` below a model an alias points at fails with 400 `API_KEY_MODEL_ALIAS_TARGET_NOT_ALLOWED`. The other refusals are those of issuing a key.
+
+        A revoked key accepts no modification.
+      operationId: update-api-key
+      tags:
+        - APIKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAPIKeyRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/keys/{keyId}:disable:
+    post:
+      summary: Disable an API key
+      description: A temporary measure; the key may be enabled again at any time. Use revocation to invalidate it permanently.
+      operationId: disable-api-key
+      tags:
+        - APIKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/keys/{keyId}:enable:
+    post:
+      summary: Enable an API key
+      description: Two cases cannot be enabled again. A revoked key answers `API_KEY_REVOKED`, and a key disabled because its project is suspended answers `API_KEY_PROJECT_SUSPENDED` with `suspended` set to true; the latter requires the project to be restored first.
+      operationId: enable-api-key
+      tags:
+        - APIKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/keys/{keyId}:revoke:
+    post:
+      summary: Revoke an API key
+      description: |-
+        **Irreversible.** It is intended for a key that has been exposed, such as one committed to a repository.
+
+        The record is retained, so the requests the key issued before it was revoked remain readable.
+
+        Use disabling for a temporary measure.
+      operationId: revoke-api-key
+      tags:
+        - APIKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIKeyResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    APIKeyResource:
+      type: object
+      properties:
+        allowed_models:
+          description: Carries no meaning while `restrict_models` is false
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          description: Who created the key
+          type: string
+          format: uuid
+        expires_at:
+          description: When the key expires. Null means it never expires
+          type:
+            - string
+            - "null"
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        last_four:
+          description: The last four characters of the plaintext
+          type: string
+        last_used_at:
+          description: When the key was last used to forward a request successfully, accurate to about a minute
+          type:
+            - string
+            - "null"
+          format: date-time
+        name:
+          type: string
+        prefix:
+          description: The leading characters of the plaintext, by which a key is recognised in a list
+          type: string
+        restrict_models:
+          description: While true, only the models listed in `allowed_models` are permitted
+          type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+            - revoked
+        suspended:
+          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
+          type: boolean
+      required:
+        - id
+        - name
+        - prefix
+        - last_four
+        - status
+        - suspended
+        - restrict_models
+        - allowed_models
+        - model_aliases
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+      additionalProperties: false
+    ModelAliases:
+      description: |-
+        Model names the key rewrites. A request naming a key of this map is served by the model it maps to, and is admitted, billed and recorded as that model; aliases are not followed in chains. At most 10 entries, each name and model at most 128 characters.
+
+        The model must exist, and while `restrict_models` is true it must also be listed in `allowed_models`. A restricted model is callable only while the project holds a grant for it.
+      type: object
+      additionalProperties:
+        type: string
+        minLength: 1
+        maxLength: 128
+      maxProperties: 10
+    CreateAPIKeyRequestBody:
+      type: object
+      properties:
+        allowed_models:
+          description: Ignored while `restrict_models` is false
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        expires_at:
+          description: When the key expires. Omitted means it never expires
+          type:
+            - string
+            - "null"
+          format: date-time
+        name:
+          description: A name for the holder's own use, such as CI or Production
+          type: string
+          minLength: 1
+          maxLength: 128
+        restrict_models:
+          description: While true, only the models listed in `allowed_models` are permitted
+          type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
+      required:
+        - name
+      additionalProperties: false
+    IssuedAPIKeyResource:
+      type: object
+      properties:
+        allowed_models:
+          description: Carries no meaning while `restrict_models` is false
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          description: Who created the key
+          type: string
+          format: uuid
+        expires_at:
+          description: When the key expires. Null means it never expires
+          type:
+            - string
+            - "null"
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        last_four:
+          description: The last four characters of the plaintext
+          type: string
+        last_used_at:
+          description: When the key was last used to forward a request successfully, accurate to about a minute
+          type:
+            - string
+            - "null"
+          format: date-time
+        name:
+          type: string
+        prefix:
+          description: The leading characters of the plaintext, by which a key is recognised in a list
+          type: string
+        restrict_models:
+          description: While true, only the models listed in `allowed_models` are permitted
+          type: boolean
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
+        secret:
+          description: The complete key, **returned in this response only**. Store it immediately
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+            - revoked
+        suspended:
+          description: True indicates that the key was disabled because its project is suspended, and that the project has to be restored before the key can be used again
+          type: boolean
+      required:
+        - secret
+        - id
+        - name
+        - prefix
+        - last_four
+        - status
+        - suspended
+        - restrict_models
+        - allowed_models
+        - model_aliases
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+      additionalProperties: false
+    UpdateAPIKeyRequestBody:
+      type: object
+      properties:
+        allowed_models:
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        clear_expiry:
+          description: True removes the expiry
+          type: boolean
+        expires_at:
+          description: Sets the expiry. To remove it, use `clear_expiry`
+          type:
+            - string
+            - "null"
+          format: date-time
+        name:
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        restrict_models:
+          type:
+            - boolean
+            - "null"
+        model_aliases:
+          $ref: "#/components/schemas/ModelAliases"
+      additionalProperties: false
+    APIKeyList:
+      type: object
+      properties:
+        items:
+          description: The items on this page.
+          type: array
+          items:
+            $ref: "#/components/schemas/APIKeyResource"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false

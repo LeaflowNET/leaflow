@@ -1,0 +1,230 @@
+paths:
+  /api/v1/models:
+    get:
+      summary: List the available models
+      description: |-
+        A model that has been retired does not appear here, while it remains readable individually.
+
+        Restricted models are listed to every project. Calling one requires a grant for the project, and `access_granted` says whether the current project holds one.
+
+        `context_length` and `max_output_tokens` are advisory. The server does not truncate on their basis, and the request body is forwarded upstream unchanged.
+
+        Canopy returns no amounts: each model's `billing` names the Billing plan and the rate dimensions its token usage is priced at. Read the rates from the `rates` of the plan's prices in Billing's `search-prices`.
+      operationId: list-models
+      tags:
+        - Model
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/models/{modelId}:
+    get:
+      summary: Get a model
+      description: A model that has been retired remains readable here, while forwarding to it is refused with `MODEL_RETIRED`. That is distinct from a model that does not exist.
+      operationId: get-model
+      tags:
+        - Model
+      parameters:
+        - name: modelId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/models:lookup:
+    get:
+      summary: Look up a model by name or ID
+      description: |-
+        Reads a model by query parameter rather than URL path segment, safely supporting slash-prefixed model names such as `cyber/deepseek-v4.1-flash` as well as internal model identifiers. Retired models remain readable here.
+      operationId: lookup-model
+      tags:
+        - Model
+      parameters:
+        - name: model_id
+          in: query
+          required: true
+          description: Public model name (for example `cyber/deepseek-v4.1-flash`) or model identifier.
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ModelResource:
+      type: object
+      properties:
+        context_length:
+          description: The context window. Advisory only; the server does not truncate on its basis
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        family:
+          description: Groups the models of one family together, such as claude, gpt or gemini
+          type: string
+        id:
+          description: The string to send in the `model` field of the request body
+          type: string
+        max_output_tokens:
+          description: The maximum output length. Advisory only
+          type: integer
+          format: int64
+        billing:
+          $ref: "#/components/schemas/ModelBilling"
+        status:
+          type: string
+          enum:
+            - available
+            - draining
+            - retired
+        developer:
+          type: string
+          description: The model developer; not the upstream provider or model family.
+        description:
+          type: string
+        input_modalities:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: ./capabilities.yaml#/components/schemas/Modality
+          description: Accepted input modalities. Null means unknown.
+        output_modalities:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: ./capabilities.yaml#/components/schemas/Modality
+          description: Produced output modalities. Image input does not imply image generation.
+        capabilities:
+          $ref: ./capabilities.yaml#/components/schemas/ModelCapabilities
+        access:
+          description: |-
+            Who can call the model. Every model is listed to every project.
+
+            - `public`: callable by every project.
+            - `restricted`: callable only by projects holding a grant. A request from any other project fails with 403 `MODEL_ACCESS_REQUIRED`.
+          type: string
+          enum:
+            - public
+            - restricted
+        access_granted:
+          description: Whether the current project can call the model. Always true for a public model
+          type: boolean
+        moderation_disabled:
+          description: True when the model is served without upstream content moderation
+          type: boolean
+      required:
+        - id
+        - display_name
+        - family
+        - status
+        - context_length
+        - max_output_tokens
+        - billing
+        - developer
+        - description
+        - input_modalities
+        - output_modalities
+        - capabilities
+        - access
+        - access_granted
+        - moderation_disabled
+      additionalProperties: false
+    ModelBilling:
+      description: |-
+        How requests to a model are billed: under the service's subscription, on the Billing plan `plan_id`, one rate for each billable kind. Read the rates from Billing with `search-prices` for the plan, narrowing each price's `rates` with each meter's `dimensions`.
+
+        Text is billed on the five token kinds. `input` excludes cached input, which is `cache_read`; `output` excludes reasoning the provider reports separately, which is `reasoning`. Media is billed on its own unit and never converted to tokens: `images` counts generated images, `audio_characters` counts the input characters of speech synthesis, `audio_seconds` counts the duration of a transcription, and `video_seconds` counts the duration of a generated video. A request is billed for each kind it used.
+
+        Rates are set per currency, and a currency may not offer a model at all. A model is offered in the currency of the project's billing account when at least one of its billable kinds has a rate there; a kind without a rate in that currency is not charged. Requests to a model with no rate in that currency are refused with 403 `BILLING_MODEL_NOT_OFFERED`.
+      type: object
+      properties:
+        plan_id:
+          description: The Billing plan of the service; null where the service is not sold.
+          type:
+            - string
+            - "null"
+          format: uuid
+        meters:
+          description: One entry for each billable kind the model uses. A text model lists the five token kinds in the order input, output, cache_read, cache_write, reasoning; media kinds follow in the order images, audio_characters, audio_seconds, video_seconds.
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelMeter"
+      required:
+        - plan_id
+        - meters
+      additionalProperties: false
+    ModelMeter:
+      type: object
+      properties:
+        kind:
+          description: The billable quantity this entry prices. Token kinds are `input`, `output`, `cache_read`, `cache_write` and `reasoning`; media kinds are `images`, `audio_characters`, `audio_seconds` and `video_seconds`.
+          type: string
+          enum:
+            - input
+            - output
+            - cache_read
+            - cache_write
+            - reasoning
+            - images
+            - audio_characters
+            - audio_seconds
+            - video_seconds
+            - rerank_units
+        meter_lookup_key:
+          type: string
+        unit:
+          description: The unit the meter counts in, such as token, image, character or second.
+          type: string
+        dimension_keys:
+          description: The dimension keys every rate of this kind is matched on, in the order the meter declares them.
+          type: array
+          items:
+            type: string
+        dimensions:
+          description: One set of dimension values of this kind, useful as a query template. A media kind may have other values on the same keys, such as another size or resolution.
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - kind
+        - meter_lookup_key
+        - unit
+        - dimension_keys
+        - dimensions
+      additionalProperties: false
+    ModelListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelResource"
+      required:
+        - items
+      additionalProperties: false
