@@ -88,8 +88,12 @@ func writeMultipart(ctx context.Context, form *multipart.Writer, values map[stri
 	sort.Strings(names)
 	for _, name := range names {
 		if uploads, ok := files[name]; ok {
+			fieldName := name
+			if name == "image" && len(uploads) > 1 {
+				fieldName = "image[]"
+			}
 			for _, file := range uploads {
-				if err := writeFile(ctx, form, name, file); err != nil {
+				if err := writeFile(ctx, form, fieldName, file); err != nil {
 					return err
 				}
 			}
