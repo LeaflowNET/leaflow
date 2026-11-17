@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -28,7 +29,7 @@ func (o *Operation) FileFields() map[string]bool {
 			if value.Format == "binary" {
 				fields[name] = false
 			}
-			if value.Type.Is("array") && value.Items != nil && value.Items.Value != nil && value.Items.Value.Format == "binary" {
+			if value.Type != nil && slices.Contains(*value.Type, "array") && value.Items != nil && value.Items.Value != nil && value.Items.Value.Format == "binary" {
 				fields[name] = true
 			}
 		}

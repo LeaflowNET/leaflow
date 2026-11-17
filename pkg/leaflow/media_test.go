@@ -142,4 +142,13 @@ func TestMediaFileFieldsComeFromTheContract(t *testing.T) {
 	if !present || repeated || len(fields) != 1 || operation.RequestMediaType() != "multipart/form-data" {
 		t.Fatalf("fields=%v", fields)
 	}
+
+	editOp, err := client.Operation("canopy", "create-image-edit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	editFields := editOp.FileFields()
+	if !editFields["image"] || editFields["mask"] || len(editFields) != 2 || editOp.RequestMediaType() != "multipart/form-data" {
+		t.Fatalf("image edit fields=%v media=%s", editFields, editOp.RequestMediaType())
+	}
 }

@@ -1,9 +1,13 @@
 package dynamic
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"mime"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -63,6 +67,11 @@ func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error
 		return err
 	}
 
+	files, err := prepareLocalFiles(binding.Operation.FileFields(), body)
+	if err != nil {
+		return err
+	}
+
 	var stream io.Writer
 	if fields, ok := body.(map[string]any); ok && fields["stream"] == true {
 		stream = cmd.OutOrStdout()
@@ -72,6 +81,7 @@ func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error
 		Path:      fillPath(binding, path),
 		Query:     url.Values(query),
 		Body:      body,
+		Files:     files,
 		Stream:    stream,
 	})
 	if err != nil {
@@ -91,6 +101,75 @@ func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error
 	}
 
 	return rt.Printer.Print(result)
+}
+
+type localFile string
+
+func (f localFile) Open(context.Context) (io.ReadCloser, error) {
+	return os.Open(string(f))
+}
+
+func prepareLocalFiles(fileFields map[string]bool, body any) (map[string][]transport.File, error) {
+	if len(fileFields) == 0 {
+		return nil, nil
+	}
+	fields, ok := body.(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	uploads := map[string][]transport.File{}
+	for name, repeated := range fileFields {
+		raw, present := fields[name]
+		if !present || raw == nil {
+			continue
+		}
+		var paths []string
+		if repeated {
+			items, ok := raw.([]any)
+			if !ok {
+				return nil, fmt.Errorf("--%s must be one or more file paths", naming.Kebab(name))
+			}
+			for _, item := range items {
+				text, ok := item.(string)
+				if !ok || strings.TrimSpace(text) == "" {
+					return nil, fmt.Errorf("--%s requires non-empty file paths", naming.Kebab(name))
+				}
+				paths = append(paths, text)
+			}
+		} else {
+			text, ok := raw.(string)
+			if !ok || strings.TrimSpace(text) == "" {
+				return nil, fmt.Errorf("--%s requires a file path", naming.Kebab(name))
+			}
+			paths = []string{text}
+		}
+
+		filenames := make([]any, 0, len(paths))
+		for _, item := range paths {
+			target := strings.TrimPrefix(strings.TrimSpace(item), "@")
+			info, err := os.Stat(target)
+			if err != nil {
+				return nil, fmt.Errorf("--%s: %w", naming.Kebab(name), err)
+			}
+			if info.IsDir() {
+				return nil, fmt.Errorf("--%s: %s is a directory", naming.Kebab(name), target)
+			}
+			filename := filepath.Base(target)
+			mediaType, _, _ := mime.ParseMediaType(mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))))
+			uploads[name] = append(uploads[name], transport.File{
+				Filename:  filename,
+				MediaType: mediaType,
+				Source:    localFile(target),
+			})
+			filenames = append(filenames, filename)
+		}
+		if repeated {
+			fields[name] = filenames
+		} else {
+			fields[name] = filenames[0]
+		}
+	}
+	return uploads, nil
 }
 
 func fillPath(binding *Binding, values []string) string {
