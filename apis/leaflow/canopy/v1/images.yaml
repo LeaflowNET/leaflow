@@ -1,0 +1,202 @@
+paths:
+  /v1/images/generations:
+    post:
+      operationId: create-image
+      summary: Generate images from a prompt
+      description: |-
+        Generates one or more images from a text prompt. Unified multimodal image models (such as
+        Qwen-Image and Wan 2.6/2.7) also accept ordered reference image URLs or data URIs in `image` or
+        `images`, plus model-specific fields declared in `capabilities.parameters` (such as
+        `negative_prompt`, `seed`, `watermark`, `prompt_extend`, `thinking_mode`, `enable_sequential`,
+        `bbox_list` or `color_palette`).
+      tags:
+        - Inference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageGenerationRequest"
+      responses:
+        "200":
+          description: Generated images.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImagesResponse"
+        default: &error
+          description: Inference error.
+          content:
+            application/json:
+              schema:
+                $ref: "./inference.yaml#/components/schemas/InferenceError"
+  /v1/images/edits:
+    post:
+      operationId: create-image-edit
+      summary: Edit or fuse reference images
+      description: |-
+        Edits or fuses one or more reference images according to a text prompt. Accepts OpenAI
+        `multipart/form-data` uploads (`image` or repeated `image[]` file parts, plus optional `mask`);
+        the runtime also accepts `application/json` requests carrying `images` or `image` URLs / base64
+        data URIs. Native providers such as Alibaba Cloud Bailian (Qwen-Image-Edit, Qwen-Image 2.1/3.0,
+        Wan 2.6/2.7 Image) are translated to their native multimodal protocol while preserving reference
+        image order.
+      tags:
+        - Inference
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImageEditRequest"
+      responses:
+        "200":
+          description: Edited images.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImagesResponse"
+        default: *error
+components:
+  schemas:
+    ImageInputReference:
+      description: A reference image URL (`https://...`), base64 data URI (`data:image/...;base64,...`), or object carrying `image_url`.
+      oneOf:
+        - type: string
+          minLength: 1
+        - type: object
+          required:
+            - image_url
+          properties:
+            image_url:
+              type: string
+              minLength: 1
+          additionalProperties: true
+    ImageGenerationRequest:
+      type: object
+      required:
+        - model
+        - prompt
+      properties:
+        model:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+          minLength: 1
+        n:
+          type: integer
+          minimum: 1
+          maximum: 128
+        size:
+          type: string
+          description: Output dimensions or tier such as `1024x1024`, `1K`, `2K`, `4K` or `auto`.
+        quality:
+          type: string
+        response_format:
+          type: string
+          enum:
+            - url
+            - b64_json
+        image:
+          description: Optional single reference image or ordered list of reference images.
+          oneOf:
+            - type: string
+              minLength: 1
+            - type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/ImageInputReference"
+        images:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ImageInputReference"
+          description: Optional ordered reference images.
+        user:
+          type: string
+      additionalProperties: true
+    ImageEditRequest:
+      type: object
+      required:
+        - model
+        - prompt
+        - image
+      properties:
+        model:
+          type: string
+          minLength: 1
+        prompt:
+          type: string
+          minLength: 1
+        image:
+          description: One or more reference image uploads, preserved in order.
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: binary
+        mask:
+          description: Optional mask image upload where transparent or white areas indicate regions to edit.
+          type: string
+          format: binary
+        n:
+          type: integer
+          minimum: 1
+          maximum: 128
+        size:
+          type: string
+          description: Output dimensions or tier such as `1024x1024`, `1K`, `2K`, `4K` or `auto`.
+        quality:
+          type: string
+        response_format:
+          type: string
+          enum:
+            - url
+            - b64_json
+        negative_prompt:
+          type: string
+        seed:
+          type: integer
+        watermark:
+          type: boolean
+        prompt_extend:
+          type: boolean
+        prompt_extend_mode:
+          type: string
+        enable_thinking:
+          type: boolean
+        thinking_mode:
+          type: boolean
+        enable_sequential:
+          type: boolean
+        enable_interleave:
+          type: boolean
+        max_images:
+          type: integer
+        user:
+          type: string
+      additionalProperties: false
+    ImageData:
+      type: object
+      properties:
+        url:
+          type: string
+        b64_json:
+          type: string
+        revised_prompt:
+          type: string
+      additionalProperties: true
+    ImagesResponse:
+      type: object
+      required:
+        - data
+      properties:
+        created:
+          type: integer
+          format: int64
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageData"
+      additionalProperties: true
