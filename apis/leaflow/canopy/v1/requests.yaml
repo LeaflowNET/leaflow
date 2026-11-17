@@ -20,6 +20,7 @@ paths:
         - $ref: ./openapi.yaml#/components/parameters/ApiKeyIdQuery
         - $ref: ./openapi.yaml#/components/parameters/RequestStatusQuery
         - $ref: ./openapi.yaml#/components/parameters/RequestSourceQuery
+        - $ref: ./openapi.yaml#/components/parameters/ObjectIdQuery
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
         - $ref: ../../type/v1/pagination.yaml#/components/parameters/Cursor
       responses:
@@ -98,6 +99,29 @@ components:
             - string
             - "null"
           format: date-time
+        last_active_at:
+          description: Latest activity timestamp recorded while a long-lived session or stream (such as Realtime WebSocket) is in flight. Null when not checkpointed.
+          type:
+            - string
+            - "null"
+          format: date-time
+        object_type:
+          description: Managed object type associated with this request, such as `video`, `batch` or `fine_tune`. Null for stateless requests.
+          type:
+            - string
+            - "null"
+          maxLength: 32
+        object_id:
+          description: Public typed id of the managed object associated with this request, such as `video_01j...`. Null when unassociated.
+          type:
+            - string
+            - "null"
+          maxLength: 128
+        task:
+          description: Current lifecycle snapshot and delivery audit summary when this request belongs to an asynchronous task.
+          anyOf:
+            - $ref: "#/components/schemas/RequestTaskResource"
+            - type: "null"
         id:
           description: A typed request id such as `req_01j...`. Legacy rows may still be returned as a bare UUID.
           type: string
@@ -192,10 +216,71 @@ components:
         - usage_source
         - started_at
         - first_token_at
+        - last_active_at
         - finished_at
         - retries
         - source
+        - object_type
+        - object_id
+        - task
         - reasoning
+      additionalProperties: false
+    RequestTaskResource:
+      type: object
+      description: Lifecycle snapshot and delivery audit summary of an asynchronous managed task (such as video generation, batch processing or fine-tuning).
+      properties:
+        type:
+          description: Managed task type (`video`, `batch`, `fine_tune`).
+          type: string
+        id:
+          description: Public typed task identifier, such as `video_01j...`.
+          type: string
+        status:
+          description: Current lifecycle status of the task (`queued`, `in_progress`, `validating`, `finalizing`, `completed`, `succeeded`, `failed`, `cancelled`, `expired`).
+          type: string
+        progress:
+          description: Reported completion percentage (0-100) when provided by the upstream task.
+          type:
+            - integer
+            - "null"
+          format: int64
+        settled_at:
+          description: When billable task output was settled into the request ledger. Null while unsettled or when the task failed without billable output.
+          type:
+            - string
+            - "null"
+          format: date-time
+        settlement_request_id:
+          description: Typed id (`req_01j...`) of the request record carrying the settled billable usage for this task, when settled.
+          type:
+            - string
+            - "null"
+        download_count:
+          description: Number of successful result-content retrievals recorded for this task within the retained request window.
+          type: integer
+          format: int64
+        last_downloaded_at:
+          description: Timestamp of the most recent successful result-content retrieval, or null if never retrieved.
+          type:
+            - string
+            - "null"
+          format: date-time
+        expires_at:
+          description: Timestamp after which the upstream task artifact expires, or null when unspecified.
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - type
+        - id
+        - status
+        - progress
+        - settled_at
+        - settlement_request_id
+        - download_count
+        - last_downloaded_at
+        - expires_at
       additionalProperties: false
     RequestList:
       type: object
