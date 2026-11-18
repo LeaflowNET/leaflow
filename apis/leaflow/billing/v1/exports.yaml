@@ -1,0 +1,250 @@
+paths:
+  /api/v1/exports:
+    get:
+      summary: List exports
+      description: Asynchronous data exports for your billing accounts, newest first.
+      operationId: list-exports
+      tags:
+        - exports
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - $ref: ./openapi.yaml#/components/parameters/AccountIdQuery
+        - name: type
+          in: query
+          required: false
+          description: Export dataset identifier such as `invoice_items` or `usage_charges`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: status
+          in: query
+          required: false
+          description: Only exports in these statuses; omit for every status. Comma-separated.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 5
+            uniqueItems: true
+            items:
+              $ref: "#/components/schemas/ExportStatus"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create export
+      description: Queues an asynchronous export for a billing account. `invoice_items` accepts a date range up to 92 days; `usage_charges` accepts a date range up to 31 days or a `statement_id` or `invoice_item_id`. Completed exports are kept for 7 days.
+      operationId: create-export
+      tags:
+        - exports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportCreate"
+      responses:
+        "201":
+          description: Export queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Export"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/exports/{exportId}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ExportId
+    get:
+      summary: Get export
+      description: Status, filter, digest, row count and expiration time of an export belonging to your billing account.
+      operationId: get-export
+      tags:
+        - exports
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Export"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/exports/{exportId}/content:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/ExportId
+    get:
+      summary: Download export file
+      description: Streams the generated export file when `status` is `succeeded`. Refused with 409 while pending, running or failed, and with 410 `BILLING_EXPORT_EXPIRED` once expired.
+      operationId: download-export
+      tags:
+        - exports
+      responses:
+        "200":
+          description: OK
+          headers:
+            Content-Disposition:
+              description: Attachment header carrying the export filename.
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "409":
+          description: The export has not succeeded yet.
+          content:
+            application/json:
+              schema:
+                $ref: ./openapi.yaml#/components/schemas/Error
+        "410":
+          description: The export file has expired and been removed.
+          content:
+            application/json:
+              schema:
+                $ref: ./openapi.yaml#/components/schemas/Error
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    ExportStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - succeeded
+        - failed
+        - expired
+    ExportFilter:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          description: Exclusive.
+          type: string
+          format: date-time
+        project_ids:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        product_id:
+          type: string
+          maxLength: 64
+        meter_id:
+          type: string
+          format: uuid
+        resource_id:
+          type: string
+          maxLength: 255
+        statement_id:
+          type: string
+          format: uuid
+        invoice_item_id:
+          type: string
+          format: uuid
+    ExportCreate:
+      type: object
+      properties:
+        billing_account_id:
+          type: integer
+          format: int64
+          minimum: 1
+        type:
+          description: "`invoice_items` exports issued invoice lines with discounts, tax, rounding and credited amounts; `usage_charges` exports priced usage windows with gross, allowance-deducted and net quantities."
+          type: string
+          minLength: 1
+          maxLength: 64
+        format:
+          description: Output file format; defaults to `csv`.
+          type: string
+          minLength: 1
+          maxLength: 32
+        filter:
+          $ref: "#/components/schemas/ExportFilter"
+      required:
+        - billing_account_id
+        - type
+    Export:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        billing_account_id:
+          type: integer
+          format: int64
+        created_by:
+          type: string
+        type:
+          type: string
+        format:
+          type: string
+        status:
+          $ref: "#/components/schemas/ExportStatus"
+        filter:
+          $ref: "#/components/schemas/ExportFilter"
+        filename:
+          type: string
+        content_type:
+          type: string
+        row_count:
+          type: integer
+          format: int64
+        size_bytes:
+          type: integer
+          format: int64
+        error_code:
+          description: Stable machine error code recorded when `status` is `failed`.
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - billing_account_id
+        - created_by
+        - type
+        - format
+        - status
+        - filter
+        - filename
+        - content_type
+        - row_count
+        - size_bytes
+        - created_at
+    ExportList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Export"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination

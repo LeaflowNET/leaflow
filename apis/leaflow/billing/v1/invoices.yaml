@@ -23,6 +23,12 @@ paths:
             uniqueItems: true
             items:
               $ref: "#/components/schemas/InvoiceStatus"
+        - name: source
+          in: query
+          required: false
+          description: Only invoices from this source; omit for every source.
+          schema:
+            $ref: "#/components/schemas/InvoiceSource"
         - name: subscription_id
           in: query
           required: false
@@ -80,8 +86,41 @@ paths:
                 $ref: "#/components/schemas/InvoiceItemList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/invoices/{invoiceId}/pdf:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/InvoiceId
+    get:
+      summary: Download invoice PDF
+      description: Renders a commercial invoice PDF for an issued invoice readable with get-invoice, using the supplier and customer details frozen at issuance. A missing or unissued invoice returns 404; any other invoice returns 403.
+      operationId: download-invoice-pdf
+      tags:
+        - invoices
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/DocumentLocaleQuery
+        - $ref: ./openapi.yaml#/components/parameters/InlineQuery
+      responses:
+        "200":
+          description: OK
+          headers:
+            Content-Disposition:
+              description: "`inline` when requested, `attachment` otherwise, carrying the invoice filename such as `INV-10023-000001.pdf`."
+              schema:
+                type: string
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    InvoiceSource:
+      description: "`usage` for invoices issued at a statement closing; `order` for purchase, renewal, subscription-change and custom fee invoices."
+      type: string
+      enum:
+        - order
+        - usage
     InvoiceStatus:
       description: "`open`: issued and not yet settled; a zero-total invoice is paid at once. `paid` stays paid after a refund, with the refunded part in amount_refunded. `void`: collection has stopped and any funds received have been returned. Usage not yet invoiced is not on any invoice."
       type: string
@@ -194,6 +233,32 @@ components:
           type: string
         customer_address_country:
           type: string
+        supplier_name:
+          description: The supplier legal name recorded when the invoice was issued.
+          type: string
+        supplier_tax_id:
+          type: string
+        supplier_email:
+          type: string
+        supplier_address_line1:
+          type: string
+        supplier_address_line2:
+          type: string
+        supplier_address_city:
+          type: string
+        supplier_address_state:
+          type: string
+        supplier_address_postal_code:
+          type: string
+        supplier_address_country:
+          type: string
+        source:
+          $ref: "#/components/schemas/InvoiceSource"
+        finalized_at:
+          type:
+            - string
+            - "null"
+          format: date-time
         paid_at:
           type:
             - string

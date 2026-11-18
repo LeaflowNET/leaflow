@@ -2,7 +2,7 @@ paths:
   /api/v1/monthly-statements:
     get:
       summary: List monthly statements
-      description: Usage billing per UTC calendar month for your billing accounts, newest first. Each month combines its statements, the invoices they issued and how those were paid.
+      description: Monthly statements of account per UTC calendar month for your billing accounts, newest first. Each month summarizes order invoices issued in the month, closed usage statements of the month, credit notes issued in the month and payments recorded on those invoices.
       operationId: list-monthly-statements
       tags:
         - statements
@@ -33,6 +33,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MonthlyStatementList"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/monthly-statements/pdf:
+    get:
+      summary: Download monthly statement PDF
+      description: Renders the statement of account of one finalized UTC calendar month from invoices, usage statements, credit notes and payments read at download time. Supplement statements, later credit notes and later payments are reflected in later downloads. Not a tax invoice or a demand for payment. A month that is not finalized returns 409 with `BILLING_STATEMENT_NOT_FINALIZED`.
+      operationId: download-monthly-statement-pdf
+      tags:
+        - statements
+      parameters:
+        - name: billing_account_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: period_start
+          in: query
+          required: true
+          description: Start of the UTC calendar month, as returned in the monthly statement's `period_start`.
+          schema:
+            type: string
+            format: date-time
+        - $ref: ./openapi.yaml#/components/parameters/DocumentLocaleQuery
+        - $ref: ./openapi.yaml#/components/parameters/InlineQuery
+      responses:
+        "200":
+          description: OK
+          headers:
+            Content-Disposition:
+              description: "`inline` when requested, `attachment` otherwise, carrying a filename such as `statement-10023-202609.pdf`."
+              schema:
+                type: string
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/statements:
@@ -161,7 +199,7 @@ paths:
 components:
   schemas:
     MonthlyStatement:
-      description: One billing account's usage billing for one UTC calendar month, summed over its statements. Not payable itself; each statement's invoice is collected on its own.
+      description: One billing account's Statement of Account for one UTC calendar month, combining order invoices issued in the month, closed usage statements of the month, credit notes issued in the month and their payment state. Not a separate tax invoice or demand for payment; each underlying invoice is collected on its own.
       type: object
       properties:
         billing_account_id:
@@ -176,21 +214,31 @@ components:
           type: string
           format: date-time
         finalized:
-          description: True after the period's final closing, which applies the month's minimum charges. Usage priced later is billed in supplement statements and added here.
+          description: True after the month's final usage closing, which applies the month's minimum charges, or after the month ends when it had no usage. Usage priced later is billed in supplement statements and added here.
           type: boolean
         finalized_at:
           type: string
           format: date-time
+        order_invoice_count:
+          description: Non-usage invoices finalized during the month.
+          type: integer
+          format: int32
         statement_count:
-          description: Statements of the period, including the open one.
+          description: Usage statements of the period, including the open one.
           type: integer
           format: int32
         billed:
           $ref: "#/components/schemas/StatementAmounts"
-          description: The sum of the closed statements' invoiced amounts.
+          description: Sum of order_billed and usage_billed.
+        order_billed:
+          $ref: "#/components/schemas/StatementAmounts"
+          description: Sum of non-usage invoices finalized during the month.
+        usage_billed:
+          $ref: "#/components/schemas/StatementAmounts"
+          description: Sum of closed usage statements of the period.
         credited_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Credit issued at closings against the period's earlier invoices, tax included; the period's net charge is the billed total less this.
+          description: Valid credit notes issued during the month, tax included.
         unbilled:
           $ref: "#/components/schemas/StatementAmounts"
           description: The open statement's estimate for usage priced since the last closing. Absent without an open statement.
@@ -212,8 +260,11 @@ components:
         - period_start
         - period_end
         - finalized
+        - order_invoice_count
         - statement_count
         - billed
+        - order_billed
+        - usage_billed
         - credited_amount
         - credit_applied
         - amount_paid

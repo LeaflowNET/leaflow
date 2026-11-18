@@ -78,6 +78,33 @@ paths:
                 $ref: "#/components/schemas/CreditNoteItemList"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/credit-notes/{creditNoteId}/pdf:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/CreditNoteId
+    get:
+      summary: Download credit note PDF
+      description: Renders a commercial credit note PDF referencing the original invoice number and frozen billing details. Requires authorization for the original invoice's billing account.
+      operationId: download-credit-note-pdf
+      tags:
+        - credit-notes
+      parameters:
+        - $ref: ./openapi.yaml#/components/parameters/DocumentLocaleQuery
+        - $ref: ./openapi.yaml#/components/parameters/InlineQuery
+      responses:
+        "200":
+          description: OK
+          headers:
+            Content-Disposition:
+              description: "`inline` when requested, `attachment` otherwise, carrying the credit note filename such as `INV-10023-000001-CN001.pdf`."
+              schema:
+                type: string
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
     CreditNoteStatus:
@@ -92,9 +119,15 @@ components:
         id:
           type: string
           format: uuid
+        number:
+          description: Original invoice number followed by `-CN` and a sequence counted per original invoice without gaps, such as `INV-10023-000001-CN001`.
+          type: string
         invoice_id:
           type: string
           format: uuid
+        invoice_number:
+          description: Number of the original invoice reduced by this credit note.
+          type: string
         currency:
           type: string
         issued_at:
@@ -136,7 +169,9 @@ components:
             - operator
       required:
         - id
+        - number
         - invoice_id
+        - invoice_number
         - currency
         - issued_at
         - status

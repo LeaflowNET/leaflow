@@ -32,6 +32,7 @@ tags:
   - name: trial-grants
   - name: usage-charges
   - name: statements
+  - name: exports
 paths:
   /api/v1/withdrawals/{withdrawalId}/items:
     $ref: ./withdrawals.yaml#/paths/~1api~1v1~1withdrawals~1{withdrawalId}~1items
@@ -93,6 +94,8 @@ paths:
     $ref: ./invoices.yaml#/paths/~1api~1v1~1invoices~1{invoiceId}
   /api/v1/invoices/{invoiceId}/items:
     $ref: ./invoices.yaml#/paths/~1api~1v1~1invoices~1{invoiceId}~1items
+  /api/v1/invoices/{invoiceId}/pdf:
+    $ref: ./invoices.yaml#/paths/~1api~1v1~1invoices~1{invoiceId}~1pdf
   /api/v1/transactions:
     $ref: ./transactions.yaml#/paths/~1api~1v1~1transactions
   /api/v1/discounts:
@@ -109,6 +112,8 @@ paths:
     $ref: ./credit-notes.yaml#/paths/~1api~1v1~1credit-notes~1{creditNoteId}
   /api/v1/credit-notes/{creditNoteId}/items:
     $ref: ./credit-notes.yaml#/paths/~1api~1v1~1credit-notes~1{creditNoteId}~1items
+  /api/v1/credit-notes/{creditNoteId}/pdf:
+    $ref: ./credit-notes.yaml#/paths/~1api~1v1~1credit-notes~1{creditNoteId}~1pdf
   /api/v1/refunds:
     $ref: ./refunds.yaml#/paths/~1api~1v1~1refunds
   /api/v1/usage-charges:
@@ -177,12 +182,20 @@ paths:
     $ref: ./spend.yaml#/paths/~1api~1v1~1spend
   /api/v1/monthly-statements:
     $ref: ./statements.yaml#/paths/~1api~1v1~1monthly-statements
+  /api/v1/monthly-statements/pdf:
+    $ref: ./statements.yaml#/paths/~1api~1v1~1monthly-statements~1pdf
   /api/v1/statements:
     $ref: ./statements.yaml#/paths/~1api~1v1~1statements
   /api/v1/statements/{statementId}:
     $ref: ./statements.yaml#/paths/~1api~1v1~1statements~1{statementId}
   /api/v1/statements/{statementId}/usage-summary:
     $ref: ./statements.yaml#/paths/~1api~1v1~1statements~1{statementId}~1usage-summary
+  /api/v1/exports:
+    $ref: ./exports.yaml#/paths/~1api~1v1~1exports
+  /api/v1/exports/{exportId}:
+    $ref: ./exports.yaml#/paths/~1api~1v1~1exports~1{exportId}
+  /api/v1/exports/{exportId}/content:
+    $ref: ./exports.yaml#/paths/~1api~1v1~1exports~1{exportId}~1content
 components:
   securitySchemes:
     accessTokenAuth:
@@ -286,6 +299,8 @@ components:
       $ref: ./payments.yaml#/components/schemas/PaymentPreview
     PaymentResult:
       $ref: ./payments.yaml#/components/schemas/PaymentResult
+    InvoiceSource:
+      $ref: ./invoices.yaml#/components/schemas/InvoiceSource
     InvoiceStatus:
       $ref: ./invoices.yaml#/components/schemas/InvoiceStatus
     Invoice:
@@ -486,7 +501,45 @@ components:
       $ref: ./prices.yaml#/components/schemas/UsageEstimate
     UsageEstimateItem:
       $ref: ./prices.yaml#/components/schemas/UsageEstimateItem
+    DocumentLocale:
+      description: Language for rendered PDF headings and labels; party names and recorded line descriptions stay unchanged.
+      type: string
+      enum:
+        - zh-Hans
+        - zh-Hant-HK
+        - en
+    ExportStatus:
+      $ref: ./exports.yaml#/components/schemas/ExportStatus
+    ExportFilter:
+      $ref: ./exports.yaml#/components/schemas/ExportFilter
+    ExportCreate:
+      $ref: ./exports.yaml#/components/schemas/ExportCreate
+    Export:
+      $ref: ./exports.yaml#/components/schemas/Export
+    ExportList:
+      $ref: ./exports.yaml#/components/schemas/ExportList
   parameters:
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentLocaleQuery:
+      name: locale
+      in: query
+      required: false
+      description: Language for rendered PDF headings and labels; defaults to `Accept-Language`.
+      schema:
+        $ref: "#/components/schemas/DocumentLocale"
+    InlineQuery:
+      name: inline
+      in: query
+      required: false
+      description: "Render in the browser (`Content-Disposition: inline`) instead of downloading."
+      schema:
+        type: boolean
     From:
       name: from
       in: query

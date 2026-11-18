@@ -52,7 +52,7 @@ func TestCommandUploadsRepeatedImageFilesInOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer r.MultipartForm.RemoveAll()
-		uploads := r.MultipartForm.File["image"]
+		uploads := r.MultipartForm.File["image[]"]
 		if len(uploads) != 2 || uploads[0].Filename != "person.png" || uploads[1].Filename != "coat.jpg" {
 			t.Fatalf("unexpected uploads: %+v", uploads)
 		}
