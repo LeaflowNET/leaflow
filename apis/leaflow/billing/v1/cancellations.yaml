@@ -75,6 +75,11 @@ paths:
         terms, `period_end` meaning the end of the trial, and nothing is refunded. For `period_end` the paid terms of
         all items must end at the same time.
 
+        A billing account has a monthly refund quota: how many subscriptions it may end early with a refund in a UTC
+        calendar month. An `immediate` cancellation costs one for every subscription with a refund above zero, unless
+        it is withdrawn or fails. `period_end` cancellations, metered and one-time items, free trials and purchases
+        that cost nothing cost none. The preview shows the quota in `refund_quota`.
+
         Refused with:
 
         - 400 `BILLING_CANCELLATION_INVALID` when `items` or `proration_date` is invalid (`meta.field`), or the items
@@ -88,7 +93,10 @@ paths:
           item has a paid change waiting to switch (`meta.order_id`);
         - 409 `BILLING_ORDER_PAYMENT_IN_FLIGHT` while an online renewal payment for one of their subscriptions is in
           progress;
-        - 409 `BILLING_CANCELLATION_REFUND_CHANGED` when the refund no longer equals `expected_refundable_amount`.
+        - 409 `BILLING_CANCELLATION_REFUND_CHANGED` when the refund no longer equals `expected_refundable_amount`;
+        - 422 `BILLING_CANCELLATION_REFUND_QUOTA_EXCEEDED` when the cancellation costs more of the monthly refund
+          quota than remains, with `meta.limit`, `meta.used`, `meta.remaining`, `meta.cost` and `meta.reset_at` as in
+          the preview's `refund_quota`; `period_end` stays available.
 
         Repeating the request for the same items, mode and amount while the cancellation is open returns it with 200.
         When it covers every continuing item of a subscription, unpaid renewal orders of that subscription are
@@ -120,7 +128,7 @@ paths:
   /api/v1/cancellations:preview:
     query:
       summary: Preview a cancellation
-      description: What creating the cancellation now would return, per item and in total. Nothing is canceled, ended or refunded. Open to the owner of the items' current billing account and to members of their project; refused for the same states as creating it.
+      description: What creating the cancellation now would return, per item and in total. Nothing is canceled, ended or refunded. Open to the owner of the items' current billing account and to members of their project; refused for the same states as creating it, including 422 `BILLING_CANCELLATION_REFUND_QUOTA_EXCEEDED`.
       operationId: preview-cancellation
       tags:
         - cancellations
@@ -467,6 +475,8 @@ components:
         - `credit_amount`: the part restored to the credit grants that paid.
         - `tax_amount`: the tax included in `refundable_amount`.
         - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
+        - `refund_quota`: the billing account's monthly refund quota and what this cancellation would cost of it;
+          absent when refunds are not limited.
 
         Metered and one-time items show zero; their usage until release is charged as usual.
       type: object
@@ -497,6 +507,8 @@ components:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
         forfeited_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refund_quota:
+          $ref: "#/components/schemas/RefundQuota"
         items:
           type: array
           items:
@@ -512,6 +524,36 @@ components:
         - tax_amount
         - forfeited_amount
         - items
+    RefundQuota:
+      description: How many subscriptions the billing account may end early with a refund in the current UTC calendar month, and what the previewed cancellation would cost of it.
+      type: object
+      properties:
+        limit:
+          description: The quota for the month.
+          type: integer
+          minimum: 1
+        used:
+          description: Used so far this month, without the previewed cancellation.
+          type: integer
+          minimum: 0
+        remaining:
+          description: Left this month before the previewed cancellation; `limit` minus `used`, never below zero.
+          type: integer
+          minimum: 0
+        cost:
+          description: What creating the previewed cancellation would use, one for every subscription with a refund above zero. Zero for `period_end` and when nothing is refunded; creating it is refused when greater than `remaining`.
+          type: integer
+          minimum: 0
+        reset_at:
+          description: When the next month begins and `used` starts again from zero.
+          type: string
+          format: date-time
+      required:
+        - limit
+        - used
+        - remaining
+        - cost
+        - reset_at
     CancellationPreviewItem:
       description: One subscription item of the previewed cancellation.
       type: object
