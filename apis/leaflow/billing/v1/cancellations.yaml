@@ -69,21 +69,25 @@ paths:
         `immediate` the refund is computed as of `proration_date` and is not reduced by service used during release.
         Metered usage is charged until release. A subscription whose continuing items all end is canceled.
 
-        `mode` must be allowed for every item. Metered and one-time items end only `immediate`. A licensed item ends
-        `period_end` while its subscription's paid term lasts, and `immediate` unless its terms allow only the end of
-        the paid term and that term has not ended. During a free trial a licensed item ends either way whatever its
-        terms, `period_end` meaning the end of the trial, and nothing is refunded. For `period_end` the paid terms of
-        all items must end at the same time.
+        `mode` must be allowed for every item. A licensed item ends `period_end` while its subscription's paid term
+        lasts, and `immediate` unless its terms allow only the end of the paid term and that term has not ended.
+        During a free trial a licensed item ends either way whatever its terms, `period_end` meaning the end of the
+        trial, and nothing is refunded. For `period_end` the paid terms of all licensed items must end at the same
+        time. Metered and one-time items have no paid term: with `period_end` they end together with the licensed
+        items of the same cancellation, and a cancellation without a licensed item ends only `immediate`.
 
         A billing account has a monthly refund quota: how many subscriptions it may end early with a refund in a UTC
         calendar month. An `immediate` cancellation costs one for every subscription with a refund above zero, unless
         it is withdrawn or fails. `period_end` cancellations, metered and one-time items, free trials and purchases
         that cost nothing cost none. The preview shows the quota in `refund_quota`.
 
+        With `refund_policy` `none` an `immediate` cancellation returns nothing of the unused value and costs none of
+        the refund quota, so items can still be ended at once when the quota is used up.
+
         Refused with:
 
-        - 400 `BILLING_CANCELLATION_INVALID` when `items` or `proration_date` is invalid (`meta.field`), or the items
-          do not share one service, project, account and currency;
+        - 400 `BILLING_CANCELLATION_INVALID` when `items` or `proration_date` is invalid, or `refund_policy` is given
+          with `period_end` (`meta.field`), or the items do not share one service, project, account and currency;
         - 409 `BILLING_CANCELLATION_CONFLICT` when an item has not started or has ended;
         - 422 `BILLING_CANCELLATION_MODE_FIXED` when `mode` is not allowed, and `BILLING_CANCELLATION_TERMS_UNSET`
           when a licensed item has no cancellation terms, both with `meta.subscription_item_id`;
@@ -96,9 +100,11 @@ paths:
         - 409 `BILLING_CANCELLATION_REFUND_CHANGED` when the refund no longer equals `expected_refundable_amount`;
         - 422 `BILLING_CANCELLATION_REFUND_QUOTA_EXCEEDED` when the cancellation costs more of the monthly refund
           quota than remains, with `meta.limit`, `meta.used`, `meta.remaining`, `meta.cost` and `meta.reset_at` as in
-          the preview's `refund_quota`; `period_end` stays available.
+          the preview's `refund_quota`; `period_end`, where the items allow it, and `immediate` with `refund_policy`
+          `none` stay available.
 
-        Repeating the request for the same items, mode and amount while the cancellation is open returns it with 200.
+        Repeating the request for the same items, mode, amount and `refund_policy` while the cancellation is open
+        returns it with 200.
         When it covers every continuing item of a subscription, unpaid renewal orders of that subscription are
         canceled with it and its automatic renewal is turned off.
       operationId: create-cancellation
@@ -204,6 +210,8 @@ components:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
             - type: string
               pattern: ^[0-9]{1,15}([.][0-9]{1,10})?$
+        refund_policy:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationRefundPolicy
         reason:
           description: A note from the account holder, kept with the cancellation.
           type: string
@@ -274,6 +282,8 @@ components:
           description: The refund confirmed when the cancellation was created. Absent when the platform created it.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
+        refund_policy:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationRefundPolicy
         failure_code:
           description: "Present with `failed`: the owning service's code, such as for a disk that can only be released with its server."
           type: string
@@ -425,8 +435,8 @@ components:
         canceled_at:
           type: string
           format: date-time
-        forfeit_remaining_value:
-          type: boolean
+        refund_policy:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationRefundPolicy
         failure_code:
           type: string
         failure_reason:
@@ -437,7 +447,6 @@ components:
         - status
         - mode
         - requested_at
-        - forfeit_remaining_value
     CancellationPreviewRequest:
       description: "What ending these items together would return, for one mode; preview `immediate` and `period_end` separately to compare. Refused with 409 `BILLING_SUBSCRIPTION_OPERATION_PENDING` when an item is already being canceled (`meta.cancellation_id`), its subscription is being reclaimed (`meta.reason` `reclaim_requested`) or the item has a paid change waiting to switch (`meta.order_id`)."
       type: object
@@ -456,6 +465,8 @@ components:
             $ref: "#/components/schemas/CancellationItemInput"
         mode:
           $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationMode
+        refund_policy:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationRefundPolicy
       required:
         - billing_account_id
         - items
@@ -463,8 +474,8 @@ components:
       additionalProperties: false
     CancellationPreview:
       description: |-
-        What the cancellation would return, per item and in total, as of now. Give `proration_date` and
-        `refundable_amount` when creating the cancellation.
+        What the cancellation would return, per item and in total, as of now. Give `proration_date`,
+        `refundable_amount` and `refund_policy` when creating the cancellation.
 
         - `unused_amount`: before tax, the amount paid for the current periods in proportion to the time remaining.
         - `short_rate_surcharge_amount`: before tax, the part of `forfeited_amount` due to the short rate of the
@@ -474,7 +485,8 @@ components:
         - `refund_amount`: the part returned to the balance or the payment method.
         - `credit_amount`: the part restored to the credit grants that paid.
         - `tax_amount`: the tax included in `refundable_amount`.
-        - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return.
+        - `forfeited_amount`: before tax, the part of `unused_amount` the refund terms do not return; all of it with
+          `refund_policy` `none`.
         - `refund_quota`: the billing account's monthly refund quota and what this cancellation would cost of it;
           absent when refunds are not limited.
 
@@ -491,6 +503,8 @@ components:
           description: For `immediate`, the second the refund is computed as of. Give it when creating the cancellation.
           type: string
           format: date-time
+        refund_policy:
+          $ref: ../../billing/type/v1/cancellation.yaml#/components/schemas/CancellationRefundPolicy
         currency:
           type: string
         unused_amount:
