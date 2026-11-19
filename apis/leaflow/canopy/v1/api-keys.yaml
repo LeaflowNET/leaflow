@@ -185,8 +185,74 @@ paths:
                 $ref: "#/components/schemas/APIKeyResource"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/rate-limit:
+    get:
+      summary: Get the project's shared inference rate limit
+      description: |-
+        Returns the effective requests-per-minute (RPM) limit for the project identified by the verified IAM token. Only operators can change the limit. Canopy's deployment configuration defaults to 120 RPM and may be overridden per project; this is our limit, independent of any upstream provider's limits. A value of 0 means unlimited.
+
+        All Canopy-issued API keys belonging to this project share one limit across all models in a rolling 60-second window. Only inference authenticated with these API keys counts: IAM project-token inference, internal-service inference and model listing are excluded. This management endpoint still requires an IAM token, not an API key.
+
+        A streaming request counts once. Responses WebSocket traffic counts each `response.create`; realtime traffic counts each session. Admitted attempts count even if the upstream fails. Gateway retries do not count again, and rate-limit rejections do not consume capacity.
+
+        `rpm` is the exact count of API-key arrivals that passed the project rate limiter in the last 60 seconds, including attempts rejected before model admission. Other calls are excluded. `tpm` sums normalized token-usage deltas observed in the most recent 60 one-second buckets; streaming usage may arrive late depending on the provider and may include estimates. TPM is observational, not enforced.
+
+        Live metrics remain available when the limit is 0. If the live store is unavailable, `rpm` and `tpm` are null, not zero; the configured limit is still returned. Snapshots have one-second precision and are refreshed at least every two seconds; clients should poll every five seconds.
+
+        An attempt exceeding a nonzero limit is rejected with 429 `RATE_LIMIT_EXCEEDED`. `Retry-After` gives the wait in seconds. Inference rate-limit headers are `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (Unix seconds). If Redis cannot perform the rate-limit check, inference fails with 503 rather than bypassing the limit. Rate-limit edits take effect within 30 seconds.
+      operationId: get-rate-limit
+      tags:
+        - APIKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
 components:
   schemas:
+    RateLimitResource:
+      type: object
+      properties:
+        rpm_limit:
+          description: Effective project-shared limit in requests per minute for Canopy API-key inference. 0 means unlimited.
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2147483647
+        rpm:
+          description: Exact API-key arrivals passing the project rate limiter in the last 60 seconds, including pre-model rejections. Null when the live store is unavailable.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        tpm:
+          description: Normalized API-key token-usage deltas observed in the last 60 one-second buckets, including delayed streaming usage and estimates. Not a limit. Null when the live store is unavailable.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        window_seconds:
+          description: Length of the observation window in seconds.
+          type: integer
+          format: int32
+          enum: [60]
+        observed_at:
+          description: UTC RFC 3339 snapshot time, with one-second precision.
+          type: string
+          format: date-time
+      required:
+        - rpm_limit
+        - rpm
+        - tpm
+        - window_seconds
+        - observed_at
+      additionalProperties: false
     APIKeyResource:
       type: object
       properties:
