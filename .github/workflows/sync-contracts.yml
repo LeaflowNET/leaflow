@@ -1,41 +1,6 @@
-# Bring current contracts into apis/ and open a pull request.
+# Bring current contracts into apis/ on manual dispatch.
 #
-# Two ways in, and the design does not depend on which one works:
-#
-#   push to contracts/sync   the contracts repository pushed a branch here
-#   schedule                 reconciliation, once a day
-#
-# The contracts repository pushes with a deploy key: a credential scoped to this
-# one repository, holding no API rights, belonging to no person, and revocable
-# without touching anyone's account. What is genuinely unclear is whether a
-# deploy-key push starts a workflow — GitHub documents that GITHUB_TOKEN pushes
-# do not, and says nothing either way about deploy keys.
-#
-# So this does not rely on the answer. If the push does start this workflow, the
-# pull request appears immediately. If it does not, the scheduled run finds the
-# branch within a day and opens the same one. Either way the result is identical
-# and nothing silently does not happen.
-#
-# The outcome is a commit on main. This used to open a pull request, on the
-# argument that a contract can remove an operation, which removes a command,
-# which breaks whatever was scripted against it — so a person should look.
-#
-# That gate was never real. GitHub Actions is not permitted to create pull
-# requests in this repository, so every run ended by pushing contracts/pr and
-# then failing; the "review" was somebody noticing the red run and merging the
-# branch by hand. A gate that nobody passes through is not a gate, it is a step
-# that has to be worked around.
-#
-# What the pull request body was for is kept: the list of commands that appear
-# and disappear is now the commit message, so `git log` answers the same question
-# the review was supposed to. And `verify` below still runs before anything is
-# pushed — a contract that does not build or does not parse never reaches main.
-#
-# What is given up, stated plainly: a contract that removes a command now lands
-# without anyone deciding it should. The place to catch that is upstream, in the
-# contracts repository, where the removal is written — not here, where it has
-# already happened.
-#
+# Verified with go build, go test, and leaflow-doctor before committing to main.
 # One consequence of pushing with GITHUB_TOKEN: it does not start other
 # workflows, so ci.yml will not run on these commits. That is why verify is here
 # rather than left to CI.
@@ -43,10 +8,6 @@
 name: sync-contracts
 
 on:
-  push:
-    branches: [contracts/sync]
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -78,17 +39,7 @@ jobs:
       - name: record the current command surface
         run: go run ./cmd/leaflow-doctor -commands > /tmp/before.txt
 
-      - name: take contracts from the pushed branch
-        if: github.event_name == 'push'
-        run: |
-          git fetch origin "${GITHUB_REF_NAME}"
-          source_dir=$(mktemp -d)
-          trap 'rm -rf "$source_dir"' EXIT
-          git archive "origin/${GITHUB_REF_NAME}" apis/leaflow | tar -x -C "$source_dir"
-          ./scripts/sync-contracts.sh "$source_dir/apis"
-
       - name: take contracts from the source repository
-        if: github.event_name != 'push'
         uses: actions/checkout@v7
         with:
           repository: ${{ env.CONTRACTS_REPO }}
@@ -97,7 +48,6 @@ jobs:
           token: ${{ secrets.CONTRACTS_TOKEN || github.token }}
 
       - name: copy contracts
-        if: github.event_name != 'push'
         run: ./scripts/sync-contracts.sh .contracts
 
       # Stage first, then ask the index. The two ways in leave the change in
