@@ -49,7 +49,7 @@ info:
     - **A usage query must carry a time range**, spanning no more than 31 days for individual request records (which are retained for 90 days), or 400 days for aggregated usage endpoints (which are retained for 400 days). `from` and `to` carry a timezone offset, which the server does not infer.
     - **The request and response bodies do not appear in the ledger.** They are not recorded. Quote the request `id` when reporting a problem.
     - **Usage may be estimated.** The upstream provider does not report usage on every request. Where it does not, `usage_source` is `estimated` and the figures are derived from the character classes of the payload, to within roughly fifteen per cent.
-    - **The service is enabled before use.** A project enables the model platform once, through `create-service`; the forwarding endpoints refuse its requests until the service is `active`. Requests are then billed under the service's subscription by the tokens they use, at the rates Billing holds for each model's `billing`.
+    - **The service is enabled before use.** A project enables the model platform once, through `create-enablement`; the forwarding endpoints refuse its requests until the enablement is `active`. Requests are then billed under the enablement's subscription by the tokens they use, at the rates Billing holds for each model's `billing`.
 servers:
   - url: https://canopy.leaflow.cloud
     description: Canopy management and project inference
@@ -62,7 +62,7 @@ tags:
     description: Project API keys.
   - name: Model
     description: Callable model catalogue and billing metadata.
-  - name: Service
+  - name: Enable
     description: Project service enablement.
   - name: Usage
     description: Recorded requests and token or media usage.
@@ -125,8 +125,8 @@ paths:
     $ref: ./requests.yaml#/paths/~1api~1v1~1requests
   /api/v1/requests/{requestId}:
     $ref: ./requests.yaml#/paths/~1api~1v1~1requests~1{requestId}
-  /api/v1/service:
-    $ref: ./services.yaml#/paths/~1api~1v1~1service
+  /api/v1/enablement:
+    $ref: ./enablement.yaml#/paths/~1api~1v1~1enablement
   /api/v1/usage/by-api-key:
     $ref: ./usage.yaml#/paths/~1api~1v1~1usage~1by-api-key
   /api/v1/usage/by-model:
@@ -193,6 +193,8 @@ components:
       $ref: ./api-keys.yaml#/components/schemas/IssuedAPIKeyResource
     UpdateAPIKeyRequestBody:
       $ref: ./api-keys.yaml#/components/schemas/UpdateAPIKeyRequestBody
+    ModelCategory:
+      $ref: ./models.yaml#/components/schemas/ModelCategory
     ModelResource:
       $ref: ./models.yaml#/components/schemas/ModelResource
     ModelBilling:
@@ -201,14 +203,14 @@ components:
       $ref: ./models.yaml#/components/schemas/ModelMeter
     ModelListResponseBody:
       $ref: ./models.yaml#/components/schemas/ModelListResponseBody
-    ServiceResource:
-      $ref: ./services.yaml#/components/schemas/ServiceResource
-    CreateServiceRequestBody:
-      $ref: ./services.yaml#/components/schemas/CreateServiceRequestBody
-    CreateServiceResponseBody:
-      $ref: ./services.yaml#/components/schemas/CreateServiceResponseBody
+    EnablementResource:
+      $ref: ./enablement.yaml#/components/schemas/EnablementResource
+    CreateEnablementRequestBody:
+      $ref: ./enablement.yaml#/components/schemas/CreateEnablementRequestBody
+    CreateEnablementResponseBody:
+      $ref: ./enablement.yaml#/components/schemas/CreateEnablementResponseBody
     CheckoutOptions:
-      $ref: ./services.yaml#/components/schemas/CheckoutOptions
+      $ref: ./enablement.yaml#/components/schemas/CheckoutOptions
     ReasoningDiagnostics:
       $ref: ./requests.yaml#/components/schemas/ReasoningDiagnostics
     MediaUsage:

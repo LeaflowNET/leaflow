@@ -1,0 +1,284 @@
+paths:
+  /api/v2/attack-incidents:
+    get:
+      operationId: list-attack-incidents
+      summary: List attack incidents
+      description:
+        Lists DDoS attack and blackhole incidents recorded for public addresses held by this project, newest
+        first. Filters are combined with AND. Results are paginated.
+      tags:
+        - attack-incidents
+      parameters:
+        - name: region_id
+          in: query
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/RegionId
+        - name: elastic_ip_id
+          in: query
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+        - name: target_address
+          in: query
+          description: An IPv4/IPv6 host address or CIDR to match exactly.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AttackIncidentStatus"
+        - name: mitigation_action
+          in: query
+          schema:
+            $ref: "#/components/schemas/AttackMitigationAction"
+        - name: started_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: started_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttackIncidentListResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/attack-incidents/{attackIncidentId}:
+    get:
+      operationId: get-attack-incident
+      summary: Get an attack incident
+      tags:
+        - attack-incidents
+      parameters:
+        - name: attackIncidentId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/AttackIncidentId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttackIncident"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
+components:
+  schemas:
+    AttackDirection:
+      type: string
+      enum:
+        - inbound
+        - outbound
+    AttackIncidentStatus:
+      type: string
+      enum:
+        - active
+        - ended
+    AttackMitigationAction:
+      type: string
+      enum:
+        - none
+        - scrubbing
+        - rate_limit
+        - blackhole
+    AttackEndSource:
+      type: string
+      enum:
+        - reported
+        - auto_expired
+        - timed_out
+        - operator
+    ActiveAttackSummary:
+      description: The active attack or blackhole mitigation currently affecting this elastic IP.
+      type: object
+      properties:
+        incident_id:
+          $ref: ./identifiers.yaml#/components/schemas/AttackIncidentId
+        mitigation_action:
+          $ref: "#/components/schemas/AttackMitigationAction"
+        started_at:
+          type: string
+          format: date-time
+        blackholed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        expected_end_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        peak_attack_bps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        peak_attack_pps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+      required:
+        - incident_id
+        - mitigation_action
+        - started_at
+        - blackholed_at
+        - expected_end_at
+        - peak_attack_bps
+        - peak_attack_pps
+      additionalProperties: false
+    AttackIncident:
+      description: One DDoS attack or blackhole incident recorded for an address held by this project.
+      type: object
+      properties:
+        id:
+          $ref: ./identifiers.yaml#/components/schemas/AttackIncidentId
+        region_id:
+          $ref: ./identifiers.yaml#/components/schemas/RegionId
+        elastic_ip_id:
+          anyOf:
+            - $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+            - type: "null"
+        virtual_private_cloud_id:
+          anyOf:
+            - $ref: ./identifiers.yaml#/components/schemas/VirtualPrivateCloudId
+            - type: "null"
+        target_address:
+          description: Target IP address or CIDR.
+          type: string
+        direction:
+          $ref: "#/components/schemas/AttackDirection"
+        status:
+          $ref: "#/components/schemas/AttackIncidentStatus"
+        mitigation_action:
+          $ref: "#/components/schemas/AttackMitigationAction"
+        end_source:
+          type:
+            - string
+            - "null"
+          enum:
+            - reported
+            - auto_expired
+            - timed_out
+            - operator
+            - null
+        started_at:
+          type: string
+          format: date-time
+        last_event_at:
+          type: string
+          format: date-time
+        blackholed_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        expected_end_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        peak_attack_bps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        peak_attack_pps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        threshold_bps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        threshold_pps:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        attack_types:
+          type: array
+          items:
+            type: string
+        target_ports:
+          type: array
+          items:
+            type: integer
+            format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - region_id
+        - elastic_ip_id
+        - virtual_private_cloud_id
+        - target_address
+        - direction
+        - status
+        - mitigation_action
+        - end_source
+        - started_at
+        - last_event_at
+        - blackholed_at
+        - expected_end_at
+        - ended_at
+        - peak_attack_bps
+        - peak_attack_pps
+        - threshold_bps
+        - threshold_pps
+        - attack_types
+        - target_ports
+        - created_at
+        - updated_at
+      additionalProperties: false
+    AttackIncidentListResponseBody:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttackIncident"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+      required:
+        - items
+        - pagination
+      additionalProperties: false

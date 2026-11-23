@@ -200,6 +200,54 @@ paths:
             application/json:
               schema:
                 $ref: ../../type/v1/error.yaml#/components/schemas/Error
+  /api/v2/elastic-ips/{elasticIpId}/attack-incidents:
+    get:
+      summary: List attack incidents for an elastic IP
+      description:
+        Lists DDoS attack and blackhole incidents recorded for this elastic IP while held by this project,
+        newest first. Results are paginated.
+      operationId: list-elastic-ip-attack-incidents
+      tags:
+        - elastic-ips
+      parameters:
+        - name: elasticIpId
+          in: path
+          required: true
+          schema:
+            $ref: ./identifiers.yaml#/components/schemas/ElasticIpId
+        - name: status
+          in: query
+          schema:
+            $ref: ./attack-incidents.yaml#/components/schemas/AttackIncidentStatus
+        - name: mitigation_action
+          in: query
+          schema:
+            $ref: ./attack-incidents.yaml#/components/schemas/AttackMitigationAction
+        - name: started_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: started_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./attack-incidents.yaml#/components/schemas/AttackIncidentListResponseBody
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: ../../type/v1/error.yaml#/components/schemas/Error
   /api/v2/elastic-ips/{elasticIpId}/traffic-usage:
     get:
       summary: List the traffic an elastic IP sent
@@ -525,6 +573,11 @@ components:
           anyOf:
             - $ref: ./latest-operations.yaml#/components/schemas/LatestOperation
             - type: "null"
+        active_attack:
+          description: The active attack or blackhole mitigation affecting this address; null when no attack is active.
+          anyOf:
+            - $ref: ./attack-incidents.yaml#/components/schemas/ActiveAttackSummary
+            - type: "null"
       required:
         - internet_charge_type
         - id
@@ -548,6 +601,7 @@ components:
         - failure_reason
         - association
         - latest_operation
+        - active_attack
       additionalProperties: false
     TrafficUsage:
       description: The traffic sent to the internet in one interval.
