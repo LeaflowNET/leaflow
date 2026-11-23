@@ -74,6 +74,9 @@ type Config struct {
 	Contexts        map[string]*Context `mapstructure:"contexts" yaml:"contexts,omitempty"`
 	Output          string              `mapstructure:"output" yaml:"output,omitempty"`
 
+	// ProjectOverride beats the environment for this run and must never be saved.
+	ProjectOverride string `mapstructure:"-" yaml:"-"`
+
 	path string `mapstructure:"-" yaml:"-"`
 }
 
@@ -200,6 +203,9 @@ func (c *Config) Context() *Context {
 
 	effective.applyDefaults()
 	effective.applyEnv()
+	if c.ProjectOverride != "" {
+		effective.Project = c.ProjectOverride
+	}
 
 	return &effective
 }

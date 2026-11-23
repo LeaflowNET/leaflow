@@ -180,12 +180,7 @@ func (a *App) buildKernel(cmd *cobra.Command) error {
 		cfg.Current = a.contextName
 	}
 
-	// Applied to the stored context but never saved: a flag states intent for
-	// this run, and everything downstream reads its own copy through
-	// cfg.Context(), so setting it on a local copy here would have no effect.
-	if a.projectID != "" {
-		cfg.EditContext("").Project = a.projectID
-	}
+	cfg.ProjectOverride = a.projectID
 
 	requested := cfg.Output
 	if a.outputName != "" {

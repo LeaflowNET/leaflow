@@ -215,6 +215,53 @@ func TestEnvironmentBeatsFile(t *testing.T) {
 	}
 }
 
+func TestProjectOverrideIsRunScoped(t *testing.T) {
+	inTempDir(t)
+	for _, name := range []string{"LEAFLOW_CONFIG", "LEAFLOW_CONTEXT", "LEAFLOW_CURRENT"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv("LEAFLOW_PROJECT", "p-env")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.EditContext("").Project = "p-file"
+	cfg.ProjectOverride = "p-flag"
+
+	for range 2 {
+		active := cfg.Context()
+		if active.Project != "p-flag" {
+			t.Errorf("project=%q, want runtime override", active.Project)
+		}
+		active.Project = "mutated"
+	}
+	if got := cfg.EditContext("").Project; got != "p-file" {
+		t.Errorf("stored project=%q, want p-file", got)
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(cfg.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"p-flag", "p-env", "mutated"} {
+		if strings.Contains(string(written), leaked) {
+			t.Errorf("runtime value %q persisted in config", leaked)
+		}
+	}
+	reloaded, err := config.Load(cfg.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.EditContext("").Project; got != "p-file" {
+		t.Errorf("reloaded project=%q, want p-file", got)
+	}
+	if got := reloaded.Context().Project; got != "p-env" {
+		t.Errorf("reloaded effective project=%q, want environment", got)
+	}
+}
+
 // A config named explicitly and missing is a typo worth reporting; a missing
 // default config is just a fresh install.
 func TestMissingExplicitConfigIsAnError(t *testing.T) {
