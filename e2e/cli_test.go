@@ -50,15 +50,22 @@ func TestProjectInferenceCLI(t *testing.T) {
 		return cmd
 	}
 
-	for _, example := range []struct{ name, operation, path, method, body, response string }{
-		{"models", "list-inference-models", "/v1/models", "get", "", `{"object":"list","data":[{"id":"e2e-model"}]}`},
-		{"completion", "create-chat-completion", "/v1/chat/completions", "post", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}]}`, `{"object":"chat.completion","choices":[{"message":{"content":"hello"}}]}`},
-		{"embeddings", "create-embeddings", "/v1/embeddings", "post", `{"model":"e2e-model","input":["hello"],"dimensions":2}`, `{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2]}]}`},
+	for _, example := range []struct {
+		name, operation, path, method, body, response string
+		requireAuth                                   bool
+	}{
+		{"models", "list-inference-models", "/v1/models", "get", "", `{"object":"list","data":[{"id":"e2e-model"}]}`, false},
+		{"completion", "create-chat-completion", "/v1/chat/completions", "post", `{"model":"e2e-model","messages":[{"role":"user","content":"hello"}]}`, `{"object":"chat.completion","choices":[{"message":{"content":"hello"}}]}`, true},
+		{"embeddings", "create-embeddings", "/v1/embeddings", "post", `{"model":"e2e-model","input":["hello"],"dimensions":2}`, `{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2]}]}`, true},
 	} {
 		t.Run(example.name, func(t *testing.T) {
 			observed := make(chan string, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != example.path || strings.ToLower(r.Method) != example.method || r.Header.Get("Authorization") != "Bearer e2e-project-token" || r.Header.Get("OpenAI-Project") != "" {
+				wantAuth := ""
+				if example.requireAuth {
+					wantAuth = "Bearer e2e-project-token"
+				}
+				if r.URL.Path != example.path || strings.ToLower(r.Method) != example.method || r.Header.Get("Authorization") != wantAuth || r.Header.Get("OpenAI-Project") != "" {
 					observed <- "incorrect route, method or project credential"
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
