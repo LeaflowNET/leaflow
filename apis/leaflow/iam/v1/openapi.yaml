@@ -297,6 +297,11 @@ paths:
             description: Matches against user id, email address or name
             type: string
             maxLength: 255
+        - name: service_account
+          in: query
+          description: When true, returns only service accounts; when false, excludes service accounts; omitted returns all members
+          schema:
+            type: boolean
       responses:
         "200":
           description: OK
@@ -954,6 +959,421 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts:
+    get:
+      summary: List the service accounts of this project
+      description: |-
+        Suspended service accounts are included. Deleted service accounts are omitted unless `include_deleted` is true. Visible to any project member.
+      operationId: list-service-accounts
+      tags:
+        - ServiceAccount
+      parameters:
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: keyword
+          in: query
+          description: Matches against service account id, name, email or description
+          schema:
+            type: string
+            maxLength: 255
+        - name: include_deleted
+          in: query
+          description: Include service accounts that have been deleted
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create a service account
+      description: |-
+        Creates a project-owned service account and joins it to the current project as a member. Its `id` is also its member `user_id`; manage roles and direct permissions through `/api/v1/members/{userId}/roles` and `/api/v1/members/{userId}/permissions`.
+
+        Requires `iam:service_accounts.manage`. When initial `roles` are supplied, `iam:members.manage` is also required, and granting `ADMIN` requires the caller to be a project owner or administrator.
+      operationId: create-service-account
+      tags:
+        - ServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceAccountRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}:
+    get:
+      summary: Get a service account
+      description: A deleted service account remains readable with `status` `DELETED`. Visible to any project member.
+      operationId: get-service-account
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update a service account
+      description: Updates the display name, description or optional email address of an active or suspended service account. Requires `iam:service_accounts.manage`.
+      operationId: update-service-account
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateServiceAccountRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete a service account
+      description: |-
+        Immediately retires the service account's membership, revokes all signing keys and SSH keys, clears its profile fields and records its deletion timestamp. Deleted service accounts cannot be restored, and their names may be reused.
+
+        Requires `iam:service_accounts.manage`. Repeating the call on an already deleted service account returns it unchanged.
+      operationId: delete-service-account
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}:disable:
+    post:
+      summary: Disable a service account
+      description: Suspends the service account, preventing token exchanges and project writes while preserving its identity and resources for later reuse. Requires `iam:service_accounts.manage`.
+      operationId: disable-service-account
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}:enable:
+    post:
+      summary: Enable a service account
+      description: Returns a suspended service account to `ACTIVE`. Requires `iam:service_accounts.manage`.
+      operationId: enable-service-account
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}/keys:
+    get:
+      summary: List the signing keys of a service account
+      description: Never returns private keys. Revoked keys are omitted unless `include_revoked` is true. Visible to any project member.
+      operationId: list-service-account-keys
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: include_revoked
+          in: query
+          description: Include revoked keys
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageServiceAccountKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Create or upload a signing key for a service account
+      description: |-
+        Adds an Ed25519 signing key for RFC 7523 token exchange. A service account may hold at most 5 active unexpired keys at a time.
+
+        With `origin` `GENERATED`, the platform generates an Ed25519 key pair, stores only the public key, and returns the private key once inside `credentials`. With `origin` `UPLOADED`, `public_key` carries a PKIX PEM Ed25519 public key and `credentials` is omitted.
+
+        Requires `iam:service_accounts.manage`.
+      operationId: create-service-account-key
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceAccountKeyRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateServiceAccountKeyResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}/keys/{keyId}:
+    delete:
+      summary: Revoke a signing key of a service account
+      description: Marks the key `REVOKED` and retains the row for audit. Repeating the call returns the revoked key. Requires `iam:service_accounts.manage`.
+      operationId: revoke-service-account-key
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}/ssh-keys:
+    get:
+      summary: List the SSH keys of a service account
+      description: Most recent first. Visible to any project member.
+      operationId: list-service-account-ssh-keys
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Limit
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Offset
+        - name: status
+          in: query
+          description: Both kinds are returned while this is absent
+          explode: false
+          schema:
+            description: Both kinds are returned while this is absent
+            type: string
+            enum:
+              - ACTIVE
+              - REVOKED
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LengthAwarePageServiceAccountSSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Add an SSH key to a service account
+      description: Registers an OpenSSH public key on the service account. Requires `iam:service_accounts.manage`.
+      operationId: create-service-account-ssh-key
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceAccountSSHKeyRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountSSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/service-accounts/{serviceAccountId}/ssh-keys/{keyId}:
+    delete:
+      summary: Revoke an SSH key of a service account
+      description: Marks the key `REVOKED` and retains the row for audit. Requires `iam:service_accounts.manage`.
+      operationId: revoke-service-account-ssh-key
+      tags:
+        - ServiceAccount
+      parameters:
+        - name: serviceAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceAccountSSHKeyResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1360,6 +1780,9 @@ components:
         left:
           description: True when this person is no longer a member of the project.
           type: boolean
+        service_account:
+          description: True when this member is a project-owned service account rather than a personal account.
+          type: boolean
         user_id:
           type: string
       required:
@@ -1369,6 +1792,7 @@ components:
         - last_name
         - avatar_hash
         - left
+        - service_account
       additionalProperties: false
     MemberResource:
       type: object
@@ -1396,6 +1820,9 @@ components:
             - "null"
           items:
             $ref: "#/components/schemas/MemberPermissionResource"
+        service_account:
+          description: True when this member is a project-owned service account
+          type: boolean
         user_id:
           type: string
       required:
@@ -1406,6 +1833,7 @@ components:
         - avatar_hash
         - grant
         - permissions
+        - service_account
         - created_by
         - created_at
       additionalProperties: false
@@ -1891,4 +2319,326 @@ components:
           type: integer
           format: int64
       required: [items, total, limit, offset]
+      additionalProperties: false
+    ServiceAccountResource:
+      type: object
+      properties:
+        id:
+          description: Platform user id of this service account
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        email:
+          description: Optional email address; empty when not configured
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, BANNED, DELETED]
+        roles:
+          description: Role codes currently assigned to this service account in the project
+          type: array
+          items:
+            type: string
+        created_by:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - project_id
+        - name
+        - description
+        - email
+        - status
+        - roles
+        - created_by
+        - created_at
+        - updated_at
+        - deleted_at
+      additionalProperties: false
+    LengthAwarePageServiceAccountResource:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceAccountResource"
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+      required: [items, total, limit, offset]
+      additionalProperties: false
+    CreateServiceAccountRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 500
+        email:
+          description: Optional email address; omit or leave empty unless using an allowed domain
+          type: string
+          maxLength: 320
+        roles:
+          description: Optional initial role codes to assign at creation; `OWNER` is not accepted
+          type: array
+          items:
+            type: string
+      required: [name]
+      additionalProperties: false
+    UpdateServiceAccountRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 500
+        email:
+          description: Optional email address; pass an empty string to clear it
+          type: string
+          maxLength: 320
+      minProperties: 1
+      additionalProperties: false
+    ServiceAccountKeyResource:
+      type: object
+      properties:
+        id:
+          description: Key identifier, also used as the JWT `kid` header
+          type: string
+          format: uuid
+        service_account_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        origin:
+          type: string
+          enum: [GENERATED, UPLOADED]
+        public_key:
+          description: Ed25519 public key in PKIX PEM format
+          type: string
+        fingerprint:
+          description: SHA-256 fingerprint of the public key (`SHA256:...`)
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, REVOKED]
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        revoked_by:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - service_account_id
+        - name
+        - origin
+        - public_key
+        - fingerprint
+        - status
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - revoked_at
+        - revoked_by
+      additionalProperties: false
+    LengthAwarePageServiceAccountKeyResource:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceAccountKeyResource"
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+      required: [items, total, limit, offset]
+      additionalProperties: false
+    CreateServiceAccountKeyRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        origin:
+          type: string
+          enum: [GENERATED, UPLOADED]
+        public_key:
+          description: Required for `UPLOADED` keys; must be a PKIX PEM Ed25519 public key. Must be omitted for `GENERATED` keys
+          type: string
+          maxLength: 2048
+        expires_at:
+          description: Optional expiry timestamp; cannot be extended after creation
+          type: string
+          format: date-time
+      required: [name, origin]
+      additionalProperties: false
+    ServiceAccountCredentialsResource:
+      description: One-time credentials document returned only when creating a `GENERATED` key
+      type: object
+      properties:
+        type:
+          type: string
+        project_id:
+          type: string
+          format: uuid
+        service_account_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        key_id:
+          type: string
+          format: uuid
+        algorithm:
+          type: string
+        private_key:
+          description: PKCS#8 PEM Ed25519 private key, returned once and never stored
+          type: string
+        token_uri:
+          description: Token exchange endpoint URL and expected JWT `aud` claim
+          type: string
+      required:
+        - type
+        - project_id
+        - service_account_id
+        - name
+        - email
+        - key_id
+        - algorithm
+        - private_key
+        - token_uri
+      additionalProperties: false
+    CreateServiceAccountKeyResponseBody:
+      type: object
+      properties:
+        key:
+          $ref: "#/components/schemas/ServiceAccountKeyResource"
+        credentials:
+          $ref: "#/components/schemas/ServiceAccountCredentialsResource"
+      required: [key]
+      additionalProperties: false
+    ServiceAccountSSHKeyResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        public_key:
+          description: The key in OpenSSH format, without the comment it was added with
+          type: string
+        fingerprint:
+          description: The SHA-256 fingerprint, as `ssh-keygen -l` prints it
+          type: string
+        key_type:
+          description: The algorithm, such as `ssh-ed25519`
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, REVOKED]
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - public_key
+        - fingerprint
+        - key_type
+        - status
+        - created_at
+      additionalProperties: false
+    LengthAwarePageServiceAccountSSHKeyResource:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceAccountSSHKeyResource"
+        limit:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+      required: [items, total, limit, offset]
+      additionalProperties: false
+    CreateServiceAccountSSHKeyRequestBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        public_key:
+          description: The public key in OpenSSH format. A certificate is refused
+          type: string
+          minLength: 1
+          maxLength: 16384
+      required: [name, public_key]
       additionalProperties: false

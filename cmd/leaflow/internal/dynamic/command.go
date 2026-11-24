@@ -62,7 +62,7 @@ func NewCommand(use string, op *spec.Operation, rt *Runtime) *cobra.Command {
 }
 
 func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error {
-	path, query, body, err := binding.Values(cmd, args)
+	path, query, header, body, err := binding.Values(cmd, args)
 	if err != nil {
 		return err
 	}
@@ -80,6 +80,7 @@ func run(cmd *cobra.Command, args []string, binding *Binding, rt *Runtime) error
 		Operation: binding.Operation,
 		Path:      fillPath(binding, path),
 		Query:     url.Values(query),
+		Header:    header,
 		Body:      body,
 		Files:     files,
 		Stream:    stream,

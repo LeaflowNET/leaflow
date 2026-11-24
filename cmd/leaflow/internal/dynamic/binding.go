@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -149,7 +150,11 @@ func (b *Binding) assignFlagNames() {
 	}
 
 	for _, parameter := range b.Query {
-		name := freeName(naming.Kebab(parameter.Name), "query-", taken)
+		prefix := "query-"
+		if parameter.In == openapi3.ParameterInHeader {
+			prefix = "header-"
+		}
+		name := freeName(naming.Kebab(parameter.Name), prefix, taken)
 
 		taken[name] = true
 		b.flagNames[parameter] = name
@@ -256,8 +261,8 @@ func registerFlag(flags *pflag.FlagSet, name string, schema *openapi3.Schema, us
 	}
 }
 
-// Values collects what was typed into the three pieces a request needs.
-func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, query map[string][]string, body any, err error) {
+// Values collects what was typed into the pieces a request needs.
+func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, query map[string][]string, header http.Header, body any, err error) {
 	flags := cmd.Flags()
 
 	path = make([]string, 0, len(b.Path))
@@ -287,6 +292,7 @@ func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, quer
 	// Only send what was actually given: `--name ""` filters on an empty name,
 	// while omitting it does not filter on name at all.
 	query = map[string][]string{}
+	header = http.Header{}
 
 	for _, parameter := range b.Query {
 		name := b.FlagName(parameter)
@@ -302,7 +308,11 @@ func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, quer
 			continue
 		}
 
-		query[parameter.Name] = values
+		if parameter.In == openapi3.ParameterInHeader {
+			header[http.CanonicalHeaderKey(parameter.Name)] = values
+		} else {
+			query[parameter.Name] = values
+		}
 	}
 
 	body, bodyErr := b.bodyValue(cmd)
@@ -311,12 +321,12 @@ func (b *Binding) Values(cmd *cobra.Command, args []string) (path []string, quer
 	}
 
 	if len(problems) > 0 {
-		return nil, nil, nil, &validate.Error{
+		return nil, nil, nil, nil, &validate.Error{
 			Problems: problems,
 		}
 	}
 
-	return path, query, body, nil
+	return path, query, header, body, nil
 }
 
 // appendProblems flattens a nested validation error instead of folding its

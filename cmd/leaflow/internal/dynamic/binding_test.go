@@ -96,3 +96,47 @@ func TestCommandUploadsRepeatedImageFilesInOrder(t *testing.T) {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
 }
+
+func TestCommandRoutesHeaderParametersToRequestHeaders(t *testing.T) {
+	var gotHeader, gotQueryKey, gotLimit string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("Idempotency-Key")
+		gotQueryKey = r.URL.Query().Get("Idempotency-Key")
+		gotLimit = r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[],"meta":{"request_id":"req-1","capability":"all.trends.list","source":{"provider":"okdata","platform":"all","fetched_at":null,"cached":false},"result_status":"empty","warnings":[],"unavailable":{},"replayed":false}}`)
+	}))
+	defer server.Close()
+
+	set, err := spec.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	rt := &Runtime{
+		Client:  transport.New(transport.Endpoints{Overrides: map[string]string{"okdata": server.URL}}, staticCreds{}, server.Client()),
+		Printer: &output.Printer{Format: output.FormatJSON, Out: &out},
+	}
+	roots := Build(set, rt)
+	var okdataCmd = roots[0]
+	for _, root := range roots {
+		if root.Use == "okdata" {
+			okdataCmd = root
+			break
+		}
+	}
+	okdataCmd.SetOut(&out)
+	okdataCmd.SetArgs([]string{"list-all-trends", "--idempotency-key", "test-key-123", "--limit", "5"})
+	if err := okdataCmd.ExecuteContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if gotHeader != "test-key-123" {
+		t.Fatalf("expected Idempotency-Key header %q, got %q", "test-key-123", gotHeader)
+	}
+	if gotQueryKey != "" {
+		t.Fatalf("header parameter leaked into query string: %q", gotQueryKey)
+	}
+	if gotLimit != "5" {
+		t.Fatalf("expected query param limit=5, got %q", gotLimit)
+	}
+}

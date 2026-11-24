@@ -986,6 +986,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /account/v1/oauth/token:
+    post:
+      summary: Exchange a service account JWT assertion for a scoped token
+      description: |-
+        No bearer token required. Authenticates a service account using an RFC 7523 JWT bearer assertion signed with an active Ed25519 key registered on that service account, and returns a standard scoped token for the owning project.
+
+        Accepts either `application/json` or `application/x-www-form-urlencoded`. The assertion must be a compact `EdDSA` JWS whose `kid` header names an active, unexpired key of the service account, whose `iss` and `sub` equal the service account id, whose `aud` exactly matches this token endpoint URL, and whose lifetime (`exp - iat`) does not exceed 300 seconds.
+
+        Any verification or account-state failure answers 401 `INVALID_GRANT`. Excess requests per key or service account answer 429.
+      operationId: exchange-service-account-token
+      tags:
+        - ScopedToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeServiceAccountTokenRequestBody"
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/ExchangeServiceAccountTokenRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthTokenResponseBody"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   securitySchemes:
     bearerAuth:
@@ -1965,4 +2000,44 @@ components:
         - expires_in
         - project
         - grant
+      additionalProperties: false
+    ExchangeServiceAccountTokenRequestBody:
+      type: object
+      properties:
+        grant_type:
+          description: Must be `urn:ietf:params:oauth:grant-type:jwt-bearer`
+          type: string
+          minLength: 1
+          maxLength: 128
+        assertion:
+          description: Compact EdDSA JWS signed with an active key of the service account
+          type: string
+          minLength: 1
+          maxLength: 8192
+      required:
+        - grant_type
+        - assertion
+      additionalProperties: false
+    OAuthTokenResponseBody:
+      type: object
+      properties:
+        access_token:
+          description: "The scoped token, to be sent as `Authorization: Bearer`"
+          type: string
+        token_type:
+          description: Always `Bearer`
+          type: string
+        expires_in:
+          description: Seconds remaining before expiry
+          type: integer
+          format: int64
+        expires_at:
+          description: When the token expires
+          type: string
+          format: date-time
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - expires_at
       additionalProperties: false

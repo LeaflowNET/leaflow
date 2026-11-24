@@ -3,16 +3,16 @@ components:
     IdempotencyKey:
       name: Idempotency-Key
       in: header
-      required: true
+      required: false
       schema:
         type: string
         minLength: 1
         maxLength: 255
         pattern: ^[!-~]+$
       description: |-
-        Use a new key for each query or page. Keys are scoped to the project and valid for 24 hours.
+        Optional caller-supplied idempotency key for 24-hour retry replay (scoped to the project).
 
-        Retry with the same key and request parameters to replay a completed result at no extra charge (meta.replayed is true). Reusing a key with a different request returns 409 IDEMPOTENCY_CONFLICT; an in-flight request returns 409 QUERY_IN_PROGRESS.
+        Omit this header for one-off queries. Supply a unique key per query or page when you want safe retries: retrying with the same key and request parameters replays the completed result at no extra charge (meta.replayed is true). Reusing a key with a different request returns 409 IDEMPOTENCY_CONFLICT; an in-flight request returns 409 QUERY_IN_PROGRESS.
 
         After 24 hours, the same key starts a new metered query.
   responses:
