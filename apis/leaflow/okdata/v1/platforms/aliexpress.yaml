@@ -1,0 +1,193 @@
+paths:
+  /api/v1/aliexpress/products/{product_id}:
+    get:
+      summary: AliExpress product details
+      description: |-
+        One AliExpress product by ID: title, price, units sold, rating, number of reviews, images and the store.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-aliexpress-product
+      tags:
+        - AliExpress
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            default: US
+            description:
+              Ship-to country as an ISO code; prices and availability follow it. Prices are in
+              US dollars.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The AliExpress item ID: the number in /item/<id>.html."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/aliexpress/products/{product_id}/reviews:
+    get:
+      summary: AliExpress product reviews
+      description: |-
+        Buyers' reviews of an AliExpress product: stars, text (with an English translation), date, the variant bought, photos and helpful votes.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-aliexpress-product-reviews
+      tags:
+        - AliExpress
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: filter
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - with_images
+            default: all
+            description: Every review (the default) or only those with photos.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The AliExpress item ID: the number in /item/<id>.html."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/aliexpress/products:
+    query:
+      summary: AliExpress product search
+      description: |-
+        Search AliExpress by keyword: title, price in US dollars, units sold, star rating and image, in AliExpress's order or by sales or price.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-aliexpress-products
+      tags:
+        - AliExpress
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchAliexpressProductsRequest"
+components:
+  schemas:
+    SearchAliexpressProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - default
+            - sales
+            - price_asc
+            - price_desc
+          default: default
+          description:
+            AliExpress's order (the default), best selling, or price low to high or high to
+            low.
+        country:
+          type: string
+          minLength: 1
+          default: US
+          description:
+            Ship-to country as an ISO code; prices and availability follow it. Prices are in
+            US dollars.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

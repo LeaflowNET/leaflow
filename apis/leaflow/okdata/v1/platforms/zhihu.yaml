@@ -1,0 +1,1041 @@
+paths:
+  /api/v1/zhihu/answers/{answer_id}/comments:
+    get:
+      summary: Zhihu answer comments
+      description: |-
+        The top-level comments on an answer, by the answer's ID, a page at a time in Zhihu's default order: text, commenter, likes, reply count, time posted and IP location.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-answer-comments
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: answer_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The answer ID (digits): the number after /answer/ in its link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/answers/{answer_id}:
+    get:
+      summary: Zhihu answer detail
+      description: |-
+        One answer by ID or link: the question it answers (as title), the full text, its author and when it was posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-zhihu-answer
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: answer_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The answer ID (digits): the number after /answer/ in its link. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/answers:lookup:
+    get:
+      summary: Zhihu answer detail by alternate identifier
+      description: |-
+        One answer by ID or link: the question it answers (as title), the full text, its author and when it was posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-zhihu-answer
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The answer link: zhihu.com/answer/… or zhihu.com/question/…/answer/…."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/articles/{article_id}:
+    get:
+      summary: Zhihu article detail
+      description: |-
+        One column article by ID or link: title, full text, author, upvotes, comment count and the topics it is filed under (as hashtags). Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-zhihu-article
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: article_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The article ID (digits): the number after zhuanlan.zhihu.com/p/. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/articles:lookup:
+    get:
+      summary: Zhihu article detail by alternate identifier
+      description: |-
+        One column article by ID or link: title, full text, author, upvotes, comment count and the topics it is filed under (as hashtags). Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-zhihu-article
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The article link: zhuanlan.zhihu.com/p/…."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/columns/{column_id}/articles:
+    get:
+      summary: Zhihu column articles
+      description: |-
+        The articles in a column, by the column's ID, 20 a page: title, text, author, time published, upvotes and comment count.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-column-articles
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: column_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The column ID: what follows zhuanlan.zhihu.com/ in the column's link (a word,
+              or c_ and digits)."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/comments/{comment_id}/replies:
+    get:
+      summary: Zhihu comment replies
+      description: |-
+        The replies under a top-level comment, by the comment's ID, 20 a page: text, replier, likes, IP location and which comment each one answers.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-comment-replies
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The top-level comment ID (digits), from zhihu.answers.comments.list.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/pins/{pin_id}:
+    get:
+      summary: Zhihu pin detail
+      description: |-
+        One pin (a short post, 想法) by ID or link: text, pictures, author, likes, comments, saves, reposts and time posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-zhihu-pin
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: pin_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The pin ID (digits): the number after zhihu.com/pin/. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/pins:lookup:
+    get:
+      summary: Zhihu pin detail by alternate identifier
+      description: |-
+        One pin (a short post, 想法) by ID or link: text, pictures, author, likes, comments, saves, reposts and time posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-zhihu-pin
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The pin link: zhihu.com/pin/…."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/posts:
+    query:
+      summary: Zhihu search
+      description: |-
+        Answers and articles matching keywords, by relevance, newest or most upvoted, or answers only or articles only: title (the question, for an answer), full text, author, upvotes, comments and saves.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-zhihu-posts
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchZhihuPostsRequest"
+  /api/v1/zhihu/questions/{question_id}/answers:
+    get:
+      summary: Zhihu question answers
+      description: |-
+        The answers to a question, by ID or link, 20 a page in Zhihu's own order: the question as title, full text, author and their followers, upvotes, comments, saves and time posted. Page on with the cursor to read them all. A cursor here lasts 10 minutes, not a day, so page straight through. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 10 minutes). Metered per request.
+      operationId: list-zhihu-question-answers
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: question_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The question ID (digits): the number after zhihu.com/question/. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/questions/answers:lookup:
+    get:
+      summary: Zhihu question answers by alternate identifier
+      description: |-
+        The answers to a question, by ID or link, 20 a page in Zhihu's own order: the question as title, full text, author and their followers, upvotes, comments, saves and time posted. Page on with the cursor to read them all. A cursor here lasts 10 minutes, not a day, so page straight through. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 10 minutes). Metered per request.
+      operationId: lookup-zhihu-question-answers
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The question link (an answer link under it works too): zhihu.com/question/…."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/questions/{question_id}:
+    get:
+      summary: Zhihu question detail
+      description: |-
+        One question by ID or link: its title, the details added under it, when it was asked, and how many views it has, with its answer and follower counts under ext. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-zhihu-question
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: question_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The question ID (digits): the number after zhihu.com/question/. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/questions:lookup:
+    get:
+      summary: Zhihu question detail by alternate identifier
+      description: |-
+        One question by ID or link: its title, the details added under it, when it was asked, and how many views it has, with its answer and follower counts under ext. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-zhihu-question
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The question link (an answer link under it works too): zhihu.com/question/…."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/trends:
+    get:
+      summary: Zhihu hot list
+      description: |-
+        The Zhihu hot list: the questions everyone is reading now, with rank and heat.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-zhihu-trends
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users/{username}/answers:
+    get:
+      summary: Zhihu user answers
+      description: |-
+        The answers a person wrote, by their handle, 20 a page, newest first: the question (as title), the text, upvotes, comments and time posted.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-user-answers
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The handle in the profile's link (url_token): what follows zhihu.com/people/."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users/{username}/articles:
+    get:
+      summary: Zhihu user articles
+      description: |-
+        The column articles a person wrote, by their handle, 20 a page, newest first: title, text, upvotes, comments and time published.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-user-articles
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The handle in the profile's link (url_token): what follows zhihu.com/people/."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users/{username}/followers:
+    get:
+      summary: Zhihu user followers
+      description: |-
+        The people following an account, by its handle, 20 a page: name, handle, headline, avatar, follower count, and (under ext) answer and article counts and whether it is an organisation.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-user-followers
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The handle in the profile's link (url_token): what follows zhihu.com/people/."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users/{username}:
+    get:
+      summary: Zhihu user profile
+      description: |-
+        A person's profile by the handle in their link: name, headline and follower count, with answer and article counts, whether it is an organisation and IP location under ext.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-zhihu-user
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The handle in the profile's link (url_token): what follows zhihu.com/people/."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users/{username}/pins:
+    get:
+      summary: Zhihu user pins
+      description: |-
+        The pins (short posts, 想法) a person posted, by their handle, 20 a page, newest first: text, pictures, likes, comments, saves, reposts and time posted.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-zhihu-user-pins
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The handle in the profile's link (url_token): what follows zhihu.com/people/."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/zhihu/users:
+    query:
+      summary: Zhihu user search
+      description: |-
+        People and organisations matching keywords, 20 a page: name and follower count, with answer and article counts, upvotes received and whether it is an organisation under ext. The headline is in the profile (zhihu.users.get).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-zhihu-users
+      tags:
+        - Zhihu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchZhihuUsersRequest"
+components:
+  schemas:
+    SearchZhihuPostsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        type:
+          type: string
+          minLength: 1
+          enum:
+            - answer
+            - article
+          description: Only answers, or only articles; both when left out.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchZhihuUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

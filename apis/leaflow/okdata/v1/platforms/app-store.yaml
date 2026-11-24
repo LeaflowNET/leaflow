@@ -1,0 +1,279 @@
+paths:
+  /api/v1/app-store/apps/{app_id}:
+    get:
+      summary: App Store app details
+      description: |-
+        One iPhone, iPad or Mac app by App Store ID or link, in any country's store: name, price and currency, average stars and number of ratings (in reviews), developer and screenshots. ext adds the bundle ID, current version and its release notes, release dates, category, age rating, size, languages and the current version's rating. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-app-store-app
+      tags:
+        - App Store
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The store, by two-letter country code (US, GB, JP, CN…): price, ratings and reviews
+              are that store's. Default: the country in url, else US."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: app_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The app's App Store ID: the digits after id in its apps.apple.com link. Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/app-store/apps:lookup:
+    get:
+      summary: App Store app details by alternate identifier
+      description: |-
+        One iPhone, iPad or Mac app by App Store ID or link, in any country's store: name, price and currency, average stars and number of ratings (in reviews), developer and screenshots. ext adds the bundle ID, current version and its release notes, release dates, category, age rating, size, languages and the current version's rating. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-app-store-app
+      tags:
+        - App Store
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The app's apps.apple.com link; the ID is read from it, and so is the store's country
+              unless country is given.
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The store, by two-letter country code (US, GB, JP, CN…): price, ratings and reviews
+              are that store's. Default: the country in url, else US."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/app-store/apps/{app_id}/reviews:
+    get:
+      summary: App Store reviews
+      description: |-
+        Written customer reviews of an app in one country's store, newest or most helpful first, 50 a page and at most 10 pages (about 500 a country): stars, title and text, the app version reviewed (in variant), the reviewer's name, date and helpful votes (in likes). Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-app-store-app-reviews
+      tags:
+        - App Store
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The store, by two-letter country code (US, GB, JP, CN…): price, ratings and reviews
+              are that store's. Default: the country in url, else US."
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - recent
+              - helpful
+            default: recent
+            description: Newest first (the default) or most helpful first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: app_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The app's App Store ID: the digits after id in its apps.apple.com link. Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/app-store/apps/reviews:lookup:
+    get:
+      summary: App Store reviews by alternate identifier
+      description: |-
+        Written customer reviews of an app in one country's store, newest or most helpful first, 50 a page and at most 10 pages (about 500 a country): stars, title and text, the app version reviewed (in variant), the reviewer's name, date and helpful votes (in likes). Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-app-store-app-reviews
+      tags:
+        - App Store
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The app's apps.apple.com link; the ID is read from it, and so is the store's country
+              unless country is given.
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The store, by two-letter country code (US, GB, JP, CN…): price, ratings and reviews
+              are that store's. Default: the country in url, else US."
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - recent
+              - helpful
+            default: recent
+            description: Newest first (the default) or most helpful first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas: {}

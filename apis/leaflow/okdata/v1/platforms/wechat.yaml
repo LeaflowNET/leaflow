@@ -1,0 +1,325 @@
+paths:
+  /api/v1/wechat/accounts:
+    query:
+      summary: WeChat Official Account live search
+      description: |-
+        Official Accounts and service accounts for keywords, live from WeChat Search, closest first (less related ones may follow): original ID, WeChat ID, name, bio, avatar, whether verified and by whom, number of original articles. Charged per call; no follower or read counts (wechat_mp.accounts.search gives estimates of those).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-wechat-accounts
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatAccountsRequest"
+  /api/v1/wechat/backup/posts:
+    query:
+      summary: WeChat Search articles and videos (backup)
+      description: |-
+        The backup of wechat.posts.search: the same parameters and result.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request. Separately priced backup capability; not used for automatic failover.
+      operationId: search-wechat-backup-posts
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatBackupPostsRequest"
+  /api/v1/wechat/index/keywords/{keyword}/history:
+    get:
+      summary: WeChat Index
+      description: |-
+        A keyword's WeChat Index over the last 30 days, one figure a day (points[].composite_index). The index is WeChat's attention score across Search, articles, Moments and more, not a count of searches, and does not compare with Douyin's or Xiaohongshu's; days are China calendar days (UTC+8).
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-index-keywords-history
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: keyword
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: One keyword.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/KeywordHistoryListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat/keywords/{keyword}/related-keywords:
+    get:
+      summary: WeChat Search suggestions
+      description: |-
+        The suggestions WeChat Search lists under its search box for a keyword, in its order, about 9 at a time (the keyword itself left out). Words and their places only, without an index.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-wechat-related-keywords
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: keyword
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: One keyword.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/KeywordRelatedListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat/miniprograms:
+    query:
+      summary: WeChat mini program search
+      description: |-
+        Mini programs for keywords through WeChat Search, the first page (about 25): name, description, icon, original ID and AppID (some brand ones show none), the owner and whether verified, recent users as WeChat shows them (the floor of its band: 100000 for 100k+), and whether it is a mini game.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: search-wechat-miniprograms
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/MiniprogramListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatMiniprogramsRequest"
+  /api/v1/wechat/posts:
+    query:
+      summary: WeChat Search articles and videos
+      description: |-
+        WeChat Search results for keywords: Official Account articles and Channels videos mixed (type says which), by relevance, newest or hottest, filtered by time posted, or articles or videos only. Title or description, the source account name, time posted; articles with their link (and a band of reads on some), videos with likes and an export/… ID for wechat_channels.videos.get. WeChat Search gives no account ID.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-wechat-posts
+      tags:
+        - WeChat Search
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatPostsRequest"
+components:
+  schemas:
+    SearchWechatAccountsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchWechatBackupPostsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        published_within:
+          type: string
+          minLength: 1
+          enum:
+            - day
+            - week
+            - half_year
+          description: Only results from the last day, week or half year.
+        type:
+          type: string
+          minLength: 1
+          enum:
+            - article
+            - video
+          description:
+            Official Account articles only, or Channels videos only; both, mixed, when left
+            out.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchWechatMiniprogramsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchWechatPostsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        published_within:
+          type: string
+          minLength: 1
+          enum:
+            - day
+            - week
+            - half_year
+          description: Only results from the last day, week or half year.
+        type:
+          type: string
+          minLength: 1
+          enum:
+            - article
+            - video
+          description:
+            Official Account articles only, or Channels videos only; both, mixed, when left
+            out.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

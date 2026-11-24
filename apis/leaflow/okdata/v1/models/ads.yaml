@@ -1,0 +1,188 @@
+components:
+  schemas:
+    Ad:
+      type: object
+      properties:
+        id:
+          description: Ad ID in the library.
+          type: string
+        url:
+          description: Link to the ad in the library.
+          type: string
+          format: uri
+        advertiser:
+          anyOf:
+            - $ref: "#/components/schemas/AdvertiserRef"
+            - type: "null"
+          description: Who runs the ad.
+        title:
+          description: Headline, where the ad has one.
+          type:
+            - string
+            - "null"
+        text:
+          description: Ad copy as plain text; empty when the ad has none.
+          type: string
+        format:
+          description: Creative format; dynamic means the platform assembles it per viewer (catalog ads).
+          type:
+            - string
+            - "null"
+          enum:
+            - image
+            - video
+            - carousel
+            - text
+            - dynamic
+        images:
+          description: Image URLs of the creative.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        videos:
+          description: Video URLs of the creative.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        landing_url:
+          description: Where the ad leads.
+          type:
+            - string
+            - "null"
+        cta:
+          description: Call-to-action button text.
+          type:
+            - string
+            - "null"
+        platforms:
+          description: Where it is delivered, e.g. facebook, instagram.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        active:
+          description: Whether the ad is still running.
+          type:
+            - boolean
+            - "null"
+        first_shown_at:
+          description: First time or day shown, ISO 8601 in UTC.
+          type:
+            - string
+            - "null"
+        last_shown_at:
+          description: Last time or day shown, ISO 8601 in UTC.
+          type:
+            - string
+            - "null"
+        reach:
+          description:
+            "People reached, as the library publishes it: a bracket such as 1K-10K, or a count
+            (the EU reach of a Meta ad); null where none is published."
+          type:
+            - string
+            - "null"
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    Advertiser:
+      type: object
+      properties:
+        id:
+          description: Advertiser ID in the library.
+          type: string
+        url:
+          description: The advertiser's page in the library.
+          type: string
+          format: uri
+        name:
+          description: The name the library shows, often the legal entity.
+          type: string
+        region:
+          description: Country or region it is registered in (ISO code).
+          type:
+            - string
+            - "null"
+        ads:
+          description: The library's estimate of how many ads it has.
+          type:
+            - integer
+            - "null"
+          format: int64
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AdvertiserRef:
+      type: object
+      properties:
+        id:
+          description: The advertiser's ID in the library.
+          type:
+            - string
+            - "null"
+        name:
+          description: The advertiser's name.
+          type:
+            - string
+            - "null"
+        url:
+          description: The advertiser's page.
+          type:
+            - string
+            - "null"
+      additionalProperties: false
+    AdPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ad"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AdResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Ad"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AdvertiserPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Advertiser"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata

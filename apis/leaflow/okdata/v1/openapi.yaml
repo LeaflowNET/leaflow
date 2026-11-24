@@ -1,0 +1,1007 @@
+openapi: 3.2.1
+info:
+  title: Leaflow OKData API
+  version: 1.0.0
+  description: |-
+    Public social, creator, advertising, and e-commerce data across 30 platforms supplied by OKData for Leaflow projects.
+
+    Enable OKData once per project (`okdata:enablement.create`) before invoking metered queries (`okdata:query.invoke`). Project identity and billing ownership come solely from the verified IAM scoped token.
+
+    Search and structured analytical queries use `QUERY` with JSON bodies. Resource reads use `GET` with path identifiers and query parameters; alternate identifiers use read-only `:lookup` operations. All data operations require an `Idempotency-Key` header (24-hour replay window) and use shared response models, optional `view` and `fields` projections, and cursor pagination where supported. Every page is a separate metered query. Retail prices and invoices are managed by Leaflow Billing.
+x-leaflow-mcp-opt-in: true
+servers:
+  - url: https://okdata.leaflow.cloud
+security:
+  - bearerAuth: []
+tags:
+  - name: Enablement
+    description: Project activation and enablement status
+  - name: Capabilities
+    description: Free discovery of available queries and billing metadata
+  - name: Requests
+    description: Project-scoped query history and 24-hour saved result replay
+  - name: Alibaba 1688
+    description: Alibaba 1688 wholesale products, reviews, and shops
+  - name: AliExpress
+    description: AliExpress products and customer reviews
+  - name: Cross-Platform
+    description: Cross-platform aggregated trend feeds
+  - name: Amazon
+    description: Amazon products, reviews, and bestseller lists
+  - name: App Store
+    description: Apple App Store applications and user reviews
+  - name: Baidu
+    description: Baidu hot search trends
+  - name: Bilibili
+    description: Bilibili videos, accounts, comments, trends, and live streams
+  - name: Bluesky
+    description: Bluesky posts, accounts, and comments
+  - name: Douyin
+    description: Douyin videos, accounts, comments, trends, live streams, Xingtu, and Douyin Index
+  - name: Douyin Shop
+    description: Douyin Shop products, reviews, and shops
+  - name: Google Ads
+    description: Google Ads Transparency advertisers and ads
+  - name: Instagram
+    description: Instagram posts, accounts, comments, hashtags, and transcripts
+  - name: Kuaishou
+    description: Kuaishou videos, accounts, comments, trends, and live streams
+  - name: Meta Ads
+    description: Meta Ad Library ads and advertisers
+  - name: Reddit
+    description: Reddit posts, comments, communities, trends, accounts, and transcripts
+  - name: Taobao
+    description: Taobao and Tmall products, reviews, and shops
+  - name: Telegram
+    description: Telegram public channels and messages
+  - name: TikTok
+    description: TikTok videos, accounts, comments, transcripts, ads, shop, and live streams
+  - name: Toutiao
+    description: Toutiao articles, videos, comments, accounts, and trends
+  - name: Twitch
+    description: Twitch live stream status
+  - name: WeChat Search
+    description: WeChat Search posts, accounts, keywords, index, and mini-programs
+  - name: WeChat Channels
+    description: WeChat Channels videos, accounts, comments, collections, and live streams
+  - name: WeChat Official Accounts
+    description: WeChat Official Accounts articles, comments, metrics, and owners
+  - name: Weibo
+    description: Weibo posts, accounts, comments, trends, and followers
+  - name: X
+    description: X (Twitter) posts, accounts, threads, lists, communities, and trends
+  - name: Xianyu
+    description: Xianyu second-hand product listings
+  - name: Xiaohongshu
+    description: Xiaohongshu notes, accounts, comments, trends, Pugongying, and shop
+  - name: Xigua Video
+    description: Xigua Video videos, accounts, and comments
+  - name: YouTube
+    description: YouTube videos, channels, comments, transcripts, and community posts
+  - name: Zhihu
+    description: Zhihu questions, answers, articles, pins, comments, trends, and accounts
+paths:
+  /api/v1/enablement:
+    get:
+      summary: Get OKData enablement
+      description:
+        Returns the current project's OKData enablement status. Metered queries require an
+        active enablement.
+      operationId: get-enablement
+      tags:
+        - Enablement
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/EnablementResource
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+    post:
+      summary: Enable OKData
+      description: |-
+        Enables OKData for the current project. Start in the Console. Queries are billed under the resulting subscription.
+
+        Returns pending with a Checkout Session. It becomes active once checkout completes and the order is settled.
+
+        Returns 409 ENABLEMENT_ALREADY_EXISTS while an enablement is pending or active.
+      operationId: create-enablement
+      x-leaflow-console-only: true
+      tags:
+        - Enablement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/CreateEnablementRequestBody
+      responses:
+        "202":
+          description: The enablement and Checkout Session were created.
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/CreateEnablementResponseBody
+        "409":
+          $ref: ./common.yaml#/components/responses/Conflict
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/capabilities:
+    get:
+      summary: List OKData capabilities
+      description:
+        Lists available data queries across all 30 platforms along with pagination, batching,
+        and Billing meter references. Free and does not enable OKData or call the supplier.
+      operationId: list-capabilities
+      tags:
+        - Capabilities
+      parameters:
+        - name: query
+          in: query
+          description:
+            Search terms matching capability ID, display name, platform, resource type, action,
+            or bilingual aliases.
+          schema:
+            type: string
+            maxLength: 200
+        - name: platform
+          in: query
+          description: Exact platform identifier, such as douyin, xiaohongshu, x, or wechat_channels.
+          schema:
+            type: string
+            maxLength: 64
+        - name: category
+          in: query
+          description: Capability category filter.
+          schema:
+            type: string
+            enum:
+              - social
+              - creator
+              - ads
+              - commerce
+        - name: resource_type
+          in: query
+          description: Resource type filter, such as video, account, comment, product, ad, or live_room.
+          schema:
+            type: string
+            maxLength: 64
+        - name: action
+          in: query
+          description: Action kind filter, such as search, get, batch_get, or list.
+          schema:
+            type: string
+            maxLength: 64
+        - name: billing_unit
+          in: query
+          description: Metering unit filter (call or item).
+          schema:
+            type: string
+            enum:
+              - call
+              - item
+        - name: include_backup
+          in: query
+          description: Whether to include separately priced backup capabilities. Defaults to true.
+          schema:
+            type: boolean
+            default: true
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/CapabilityListResponseBody
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/capabilities/{capabilityId}:
+    get:
+      summary: Get an OKData capability
+      description:
+        Returns metadata, cursor TTL, batch limit, Billing meter references, and cached source
+        availability for a single capability. Does not execute paid data queries.
+      operationId: get-capability
+      tags:
+        - Capabilities
+      parameters:
+        - name: capabilityId
+          in: path
+          required: true
+          description: Capability identifier, such as douyin.videos.search or zhihu.questions.answers.list.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/CapabilityResource
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/requests:
+    get:
+      summary: List OKData query requests
+      description:
+        Lists metered OKData query records for the current project, newest first. Can also
+        look up a request by its Idempotency-Key. Free and does not expose supplier costs.
+      operationId: list-requests
+      tags:
+        - Requests
+      parameters:
+        - name: from
+          in: query
+          description: Inclusive start timestamp (RFC 3339).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Exclusive end timestamp (RFC 3339).
+          schema:
+            type: string
+            format: date-time
+        - name: capability
+          in: query
+          description: Filter by exact capability identifier.
+          schema:
+            type: string
+            maxLength: 128
+        - name: platform
+          in: query
+          description: Filter by source platform identifier.
+          schema:
+            type: string
+            maxLength: 64
+        - name: status
+          in: query
+          description: Filter by request status.
+          schema:
+            type: string
+            enum:
+              - pending
+              - succeeded
+              - failed
+              - reconciliation_required
+        - name: idempotency_key
+          in: query
+          description:
+            Optional Idempotency-Key to locate its current request record within the 24-hour
+            window.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/RequestListResponseBody
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/requests/{requestId}:
+    get:
+      summary: Get an OKData query request
+      description:
+        Returns status, metering summary, and saved-result availability for a single project
+        request.
+      operationId: get-request
+      tags:
+        - Requests
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          description: Leaflow request ID.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/RequestRecord
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/requests/{requestId}/result:
+    get:
+      summary: Read a saved OKData query result
+      description:
+        Re-reads the saved normalized response of a completed project query within its 24-hour
+        replay window at no extra charge. Returns 404 REQUEST_RESULT_NOT_FOUND if the request did not
+        succeed or 410 RESULT_EXPIRED after retention ends.
+      operationId: get-request-result
+      tags:
+        - Requests
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          description: Leaflow request ID.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ./common.yaml#/components/schemas/SavedRequestResult
+        default:
+          $ref: ./common.yaml#/components/responses/Error
+  /api/v1/alibaba-1688/products/{product_id}:
+    $ref: ./platforms/alibaba-1688.yaml#/paths/~1api~1v1~1alibaba-1688~1products~1{product_id}
+  /api/v1/alibaba-1688/products/{product_id}/reviews:
+    $ref: ./platforms/alibaba-1688.yaml#/paths/~1api~1v1~1alibaba-1688~1products~1{product_id}~1reviews
+  /api/v1/alibaba-1688/products:
+    $ref: ./platforms/alibaba-1688.yaml#/paths/~1api~1v1~1alibaba-1688~1products
+  /api/v1/alibaba-1688/shops/{shop_id}/products:
+    $ref: ./platforms/alibaba-1688.yaml#/paths/~1api~1v1~1alibaba-1688~1shops~1{shop_id}~1products
+  /api/v1/aliexpress/products/{product_id}:
+    $ref: ./platforms/aliexpress.yaml#/paths/~1api~1v1~1aliexpress~1products~1{product_id}
+  /api/v1/aliexpress/products/{product_id}/reviews:
+    $ref: ./platforms/aliexpress.yaml#/paths/~1api~1v1~1aliexpress~1products~1{product_id}~1reviews
+  /api/v1/aliexpress/products:
+    $ref: ./platforms/aliexpress.yaml#/paths/~1api~1v1~1aliexpress~1products
+  /api/v1/all/trends:
+    $ref: ./platforms/all.yaml#/paths/~1api~1v1~1all~1trends
+  /api/v1/amazon/bestsellers:
+    $ref: ./platforms/amazon.yaml#/paths/~1api~1v1~1amazon~1bestsellers
+  /api/v1/amazon/products/{product_id}:
+    $ref: ./platforms/amazon.yaml#/paths/~1api~1v1~1amazon~1products~1{product_id}
+  /api/v1/amazon/products/{product_id}/reviews:
+    $ref: ./platforms/amazon.yaml#/paths/~1api~1v1~1amazon~1products~1{product_id}~1reviews
+  /api/v1/amazon/products:
+    $ref: ./platforms/amazon.yaml#/paths/~1api~1v1~1amazon~1products
+  /api/v1/app-store/apps/{app_id}:
+    $ref: ./platforms/app-store.yaml#/paths/~1api~1v1~1app-store~1apps~1{app_id}
+  /api/v1/app-store/apps:lookup:
+    $ref: ./platforms/app-store.yaml#/paths/~1api~1v1~1app-store~1apps:lookup
+  /api/v1/app-store/apps/{app_id}/reviews:
+    $ref: ./platforms/app-store.yaml#/paths/~1api~1v1~1app-store~1apps~1{app_id}~1reviews
+  /api/v1/app-store/apps/reviews:lookup:
+    $ref: ./platforms/app-store.yaml#/paths/~1api~1v1~1app-store~1apps~1reviews:lookup
+  /api/v1/baidu/trends:
+    $ref: ./platforms/baidu.yaml#/paths/~1api~1v1~1baidu~1trends
+  /api/v1/bilibili/backup/users/{user_id}/videos:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1backup~1users~1{user_id}~1videos
+  /api/v1/bilibili/videos/{video_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1videos~1{video_id}~1comments~1{comment_id}~1replies
+  /api/v1/bilibili/live/rooms/{room_id}:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1live~1rooms~1{room_id}
+  /api/v1/bilibili/live/rooms:lookup:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1live~1rooms:lookup
+  /api/v1/bilibili/live/users/{user_id}:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1live~1users~1{user_id}
+  /api/v1/bilibili/trends:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1trends
+  /api/v1/bilibili/users/{user_id}:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1users~1{user_id}
+  /api/v1/bilibili/users/{user_id}/videos:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1users~1{user_id}~1videos
+  /api/v1/bilibili/videos/{video_id}/comments:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1videos~1{video_id}~1comments
+  /api/v1/bilibili/videos/{video_id}:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1videos~1{video_id}
+  /api/v1/bilibili/videos:lookup:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1videos:lookup
+  /api/v1/bilibili/videos:
+    $ref: ./platforms/bilibili.yaml#/paths/~1api~1v1~1bilibili~1videos
+  /api/v1/bluesky/posts/{post_id}/comments:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1posts~1{post_id}~1comments
+  /api/v1/bluesky/posts/comments:lookup:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1posts~1comments:lookup
+  /api/v1/bluesky/posts/{post_id}:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1posts~1{post_id}
+  /api/v1/bluesky/posts:lookup:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1posts:lookup
+  /api/v1/bluesky/users/{user_id}:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1users~1{user_id}
+  /api/v1/bluesky/users:lookup:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1users:lookup
+  /api/v1/bluesky/users/{user_id}/posts:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1users~1{user_id}~1posts
+  /api/v1/bluesky/users/posts:lookup:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1users~1posts:lookup
+  /api/v1/bluesky/users:
+    $ref: ./platforms/bluesky.yaml#/paths/~1api~1v1~1bluesky~1users
+  /api/v1/douyin/backup/users/{user_id}/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1backup~1users~1{user_id}~1videos
+  /api/v1/douyin/backup/users/videos:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1backup~1users~1videos:lookup
+  /api/v1/douyin/backup/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1backup~1videos
+  /api/v1/douyin/videos/{video_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1{video_id}~1comments~1{comment_id}~1replies
+  /api/v1/douyin/hashtags/{hashtag_id}/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1hashtags~1{hashtag_id}~1videos
+  /api/v1/douyin/index/brands/{brand}/history:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1brands~1{brand}~1history
+  /api/v1/douyin/index/brands/{brand}/metrics:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1brands~1{brand}~1metrics
+  /api/v1/douyin/index/creators/{creator_id}/audience:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1creators~1{creator_id}~1audience
+  /api/v1/douyin/index/creators/{creator_id}/metrics:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1creators~1{creator_id}~1metrics
+  /api/v1/douyin/index/creators/{creator_id}/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1creators~1{creator_id}~1videos
+  /api/v1/douyin/index/keywords/{keyword}/audience:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1keywords~1{keyword}~1audience
+  /api/v1/douyin/index/keywords/history:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1keywords~1history
+  /api/v1/douyin/index/keywords/{keyword}/related-keywords:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1keywords~1{keyword}~1related-keywords
+  /api/v1/douyin/index/trends:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1trends
+  /api/v1/douyin/index/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1index~1videos
+  /api/v1/douyin/keywords/{keyword}/related-keywords:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1keywords~1{keyword}~1related-keywords
+  /api/v1/douyin/live/rooms/{room_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1rooms~1{room_id}
+  /api/v1/douyin/live/rooms:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1rooms:lookup
+  /api/v1/douyin/live/streamers/{streamer_id}/metrics:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1streamers~1{streamer_id}~1metrics
+  /api/v1/douyin/live/streamers:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1streamers
+  /api/v1/douyin/live/users/{user_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1users~1{user_id}
+  /api/v1/douyin/live/users:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1live~1users:lookup
+  /api/v1/douyin/trends:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1trends
+  /api/v1/douyin/users/{user_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users~1{user_id}
+  /api/v1/douyin/users:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users:lookup
+  /api/v1/douyin/users/history:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users~1history:lookup
+  /api/v1/douyin/users:batchGetHistory:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users:batchGetHistory
+  /api/v1/douyin/users:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users
+  /api/v1/douyin/users/{user_id}/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1users~1{user_id}~1videos
+  /api/v1/douyin/videos/{video_id}/comments:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1{video_id}~1comments
+  /api/v1/douyin/videos/{video_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1{video_id}
+  /api/v1/douyin/videos:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos:lookup
+  /api/v1/douyin/videos/{video_id}/metrics:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1{video_id}~1metrics
+  /api/v1/douyin/videos/metrics:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1metrics:lookup
+  /api/v1/douyin/videos/{video_id}/related-videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos~1{video_id}~1related-videos
+  /api/v1/douyin/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1videos
+  /api/v1/douyin/xingtu/campaigns:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1campaigns
+  /api/v1/douyin/xingtu/creators/{creator_id}/audience:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1audience
+  /api/v1/douyin/xingtu/creators/{creator_id}/content-mix:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1content-mix
+  /api/v1/douyin/xingtu/creators/{creator_id}/conversion:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1conversion
+  /api/v1/douyin/xingtu/creators/{creator_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}
+  /api/v1/douyin/xingtu/creators:batchGet:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators:batchGet
+  /api/v1/douyin/xingtu/creators/{creator_id}/keywords:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1keywords
+  /api/v1/douyin/xingtu/creators/{creator_id}/metrics:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1metrics
+  /api/v1/douyin/xingtu/creators/{creator_id}/rates:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1rates
+  /api/v1/douyin/xingtu/creators/{creator_id}/scores:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1scores
+  /api/v1/douyin/xingtu/creators:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators
+  /api/v1/douyin/xingtu/creators/{creator_id}/videos:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1creators~1{creator_id}~1videos
+  /api/v1/douyin/xingtu/videos/{video_id}:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1videos~1{video_id}
+  /api/v1/douyin/xingtu/videos:lookup:
+    $ref: ./platforms/douyin.yaml#/paths/~1api~1v1~1douyin~1xingtu~1videos:lookup
+  /api/v1/douyin-shop/products/{product_id}:
+    $ref: ./platforms/douyin-shop.yaml#/paths/~1api~1v1~1douyin-shop~1products~1{product_id}
+  /api/v1/douyin-shop/products/{product_id}/reviews:
+    $ref: ./platforms/douyin-shop.yaml#/paths/~1api~1v1~1douyin-shop~1products~1{product_id}~1reviews
+  /api/v1/douyin-shop/products:
+    $ref: ./platforms/douyin-shop.yaml#/paths/~1api~1v1~1douyin-shop~1products
+  /api/v1/douyin-shop/shops/{shop_id}/products:
+    $ref: ./platforms/douyin-shop.yaml#/paths/~1api~1v1~1douyin-shop~1shops~1{shop_id}~1products
+  /api/v1/google/advertisers/{advertiser_id}/ads:
+    $ref: ./platforms/google.yaml#/paths/~1api~1v1~1google~1advertisers~1{advertiser_id}~1ads
+  /api/v1/google/advertisers/ads:lookup:
+    $ref: ./platforms/google.yaml#/paths/~1api~1v1~1google~1advertisers~1ads:lookup
+  /api/v1/google/advertisers:
+    $ref: ./platforms/google.yaml#/paths/~1api~1v1~1google~1advertisers
+  /api/v1/instagram/posts/{post_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1{post_id}~1comments~1{comment_id}~1replies
+  /api/v1/instagram/hashtags/{hashtag_id}/posts:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1hashtags~1{hashtag_id}~1posts
+  /api/v1/instagram/posts/{post_id}/comments:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1{post_id}~1comments
+  /api/v1/instagram/posts/comments:lookup:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1comments:lookup
+  /api/v1/instagram/posts/{post_id}:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1{post_id}
+  /api/v1/instagram/posts:lookup:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts:lookup
+  /api/v1/instagram/posts/{post_id}/transcript:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1{post_id}~1transcript
+  /api/v1/instagram/posts/transcript:lookup:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1posts~1transcript:lookup
+  /api/v1/instagram/users/{username}:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1users~1{username}
+  /api/v1/instagram/users/{username}/posts:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1users~1{username}~1posts
+  /api/v1/instagram/users:
+    $ref: ./platforms/instagram.yaml#/paths/~1api~1v1~1instagram~1users
+  /api/v1/kuaishou/videos/{video_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos~1{video_id}~1comments~1{comment_id}~1replies
+  /api/v1/kuaishou/live/products:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1live~1products
+  /api/v1/kuaishou/live/rooms:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1live~1rooms
+  /api/v1/kuaishou/live/users/{user_id}:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1live~1users~1{user_id}
+  /api/v1/kuaishou/trends:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1trends
+  /api/v1/kuaishou/users/{user_id}:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1users~1{user_id}
+  /api/v1/kuaishou/users:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1users
+  /api/v1/kuaishou/users/{user_id}/videos:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1users~1{user_id}~1videos
+  /api/v1/kuaishou/videos/{video_id}/comments:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos~1{video_id}~1comments
+  /api/v1/kuaishou/videos/comments:lookup:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos~1comments:lookup
+  /api/v1/kuaishou/videos/{video_id}:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos~1{video_id}
+  /api/v1/kuaishou/videos:lookup:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos:lookup
+  /api/v1/kuaishou/videos:
+    $ref: ./platforms/kuaishou.yaml#/paths/~1api~1v1~1kuaishou~1videos
+  /api/v1/meta/ads/{ad_id}:
+    $ref: ./platforms/meta.yaml#/paths/~1api~1v1~1meta~1ads~1{ad_id}
+  /api/v1/meta/ads:lookup:
+    $ref: ./platforms/meta.yaml#/paths/~1api~1v1~1meta~1ads:lookup
+  /api/v1/meta/ads:
+    $ref: ./platforms/meta.yaml#/paths/~1api~1v1~1meta~1ads
+  /api/v1/meta/advertisers/{advertiser_id}/ads:
+    $ref: ./platforms/meta.yaml#/paths/~1api~1v1~1meta~1advertisers~1{advertiser_id}~1ads
+  /api/v1/meta/advertisers/ads:lookup:
+    $ref: ./platforms/meta.yaml#/paths/~1api~1v1~1meta~1advertisers~1ads:lookup
+  /api/v1/reddit/popular/posts:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1popular~1posts
+  /api/v1/reddit/posts/{post_id}/comments:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts~1{post_id}~1comments
+  /api/v1/reddit/posts/comments:lookup:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts~1comments:lookup
+  /api/v1/reddit/posts/{post_id}:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts~1{post_id}
+  /api/v1/reddit/posts:lookup:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts:lookup
+  /api/v1/reddit/posts:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts
+  /api/v1/reddit/posts/{post_id}/transcript:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts~1{post_id}~1transcript
+  /api/v1/reddit/posts/transcript:lookup:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1posts~1transcript:lookup
+  /api/v1/reddit/subreddits/{subreddit_id}:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1subreddits~1{subreddit_id}
+  /api/v1/reddit/subreddits/{subreddit_id}/posts:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1subreddits~1{subreddit_id}~1posts
+  /api/v1/reddit/trends:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1trends
+  /api/v1/reddit/users/{username}:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1users~1{username}
+  /api/v1/reddit/users/{username}/posts:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1users~1{username}~1posts
+  /api/v1/reddit/users/{username}/subreddits:
+    $ref: ./platforms/reddit.yaml#/paths/~1api~1v1~1reddit~1users~1{username}~1subreddits
+  /api/v1/taobao/products/{product_id}:
+    $ref: ./platforms/taobao.yaml#/paths/~1api~1v1~1taobao~1products~1{product_id}
+  /api/v1/taobao/products/{product_id}/reviews:
+    $ref: ./platforms/taobao.yaml#/paths/~1api~1v1~1taobao~1products~1{product_id}~1reviews
+  /api/v1/taobao/products:
+    $ref: ./platforms/taobao.yaml#/paths/~1api~1v1~1taobao~1products
+  /api/v1/taobao/shops/{shop_id}/products:
+    $ref: ./platforms/taobao.yaml#/paths/~1api~1v1~1taobao~1shops~1{shop_id}~1products
+  /api/v1/telegram/channels/{username}:
+    $ref: ./platforms/telegram.yaml#/paths/~1api~1v1~1telegram~1channels~1{username}
+  /api/v1/telegram/channels/{username}/messages:
+    $ref: ./platforms/telegram.yaml#/paths/~1api~1v1~1telegram~1channels~1{username}~1messages
+  /api/v1/telegram/channels/{username}/messages/{message_id}:
+    $ref: ./platforms/telegram.yaml#/paths/~1api~1v1~1telegram~1channels~1{username}~1messages~1{message_id}
+  /api/v1/telegram/messages:lookup:
+    $ref: ./platforms/telegram.yaml#/paths/~1api~1v1~1telegram~1messages:lookup
+  /api/v1/tiktok/ads:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1ads
+  /api/v1/tiktok/videos/{video_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos~1{video_id}~1comments~1{comment_id}~1replies
+  /api/v1/tiktok/creative-center/ads/{ad_id}:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1creative-center~1ads~1{ad_id}
+  /api/v1/tiktok/creative-center/ads:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1creative-center~1ads
+  /api/v1/tiktok/hashtags/{hashtag_id}/videos:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1hashtags~1{hashtag_id}~1videos
+  /api/v1/tiktok/live/rooms/{room_id}/products:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1live~1rooms~1{room_id}~1products
+  /api/v1/tiktok/live/streamers:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1live~1streamers
+  /api/v1/tiktok/live/users/{username}:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1live~1users~1{username}
+  /api/v1/tiktok/shop/products/{product_id}:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1shop~1products~1{product_id}
+  /api/v1/tiktok/shop/products:lookup:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1shop~1products:lookup
+  /api/v1/tiktok/shop/products/{product_id}/reviews:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1shop~1products~1{product_id}~1reviews
+  /api/v1/tiktok/shop/products:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1shop~1products
+  /api/v1/tiktok/shop/sellers/{seller_id}/products:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1shop~1sellers~1{seller_id}~1products
+  /api/v1/tiktok/users/{username}/followers:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1users~1{username}~1followers
+  /api/v1/tiktok/users/followers:lookup:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1users~1followers:lookup
+  /api/v1/tiktok/users/{username}:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1users~1{username}
+  /api/v1/tiktok/users:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1users
+  /api/v1/tiktok/users/{username}/videos:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1users~1{username}~1videos
+  /api/v1/tiktok/videos/{video_id}/comments:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos~1{video_id}~1comments
+  /api/v1/tiktok/videos/{video_id}:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos~1{video_id}
+  /api/v1/tiktok/videos:lookup:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos:lookup
+  /api/v1/tiktok/videos:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos
+  /api/v1/tiktok/videos/{video_id}/transcript:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos~1{video_id}~1transcript
+  /api/v1/tiktok/videos/transcript:lookup:
+    $ref: ./platforms/tiktok.yaml#/paths/~1api~1v1~1tiktok~1videos~1transcript:lookup
+  /api/v1/toutiao/articles/{article_id}:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1articles~1{article_id}
+  /api/v1/toutiao/articles:lookup:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1articles:lookup
+  /api/v1/toutiao/posts/{post_id}/comments:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1posts~1{post_id}~1comments
+  /api/v1/toutiao/posts/comments:lookup:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1posts~1comments:lookup
+  /api/v1/toutiao/trends:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1trends
+  /api/v1/toutiao/users/{user_id}:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1users~1{user_id}
+  /api/v1/toutiao/users:lookup:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1users:lookup
+  /api/v1/toutiao/videos/{video_id}:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1videos~1{video_id}
+  /api/v1/toutiao/videos:lookup:
+    $ref: ./platforms/toutiao.yaml#/paths/~1api~1v1~1toutiao~1videos:lookup
+  /api/v1/twitch/live/users/{username}:
+    $ref: ./platforms/twitch.yaml#/paths/~1api~1v1~1twitch~1live~1users~1{username}
+  /api/v1/wechat/accounts:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1accounts
+  /api/v1/wechat/backup/posts:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1backup~1posts
+  /api/v1/wechat/index/keywords/{keyword}/history:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1index~1keywords~1{keyword}~1history
+  /api/v1/wechat/keywords/{keyword}/related-keywords:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1keywords~1{keyword}~1related-keywords
+  /api/v1/wechat/miniprograms:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1miniprograms
+  /api/v1/wechat/posts:
+    $ref: ./platforms/wechat.yaml#/paths/~1api~1v1~1wechat~1posts
+  /api/v1/wechat-channels/backup/users/{user_id}:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1backup~1users~1{user_id}
+  /api/v1/wechat-channels/backup/users/{user_id}/videos:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1backup~1users~1{user_id}~1videos
+  /api/v1/wechat-channels/backup/videos:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1backup~1videos
+  /api/v1/wechat-channels/collections/{collection_id}/videos:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1collections~1{collection_id}~1videos
+  /api/v1/wechat-channels/videos/{video_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos~1{video_id}~1comments~1{comment_id}~1replies
+  /api/v1/wechat-channels/live/rooms/{room_id}:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1live~1rooms~1{room_id}
+  /api/v1/wechat-channels/live/users/{user_id}:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1live~1users~1{user_id}
+  /api/v1/wechat-channels/users/{user_id}/collections:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1users~1{user_id}~1collections
+  /api/v1/wechat-channels/users/{user_id}:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1users~1{user_id}
+  /api/v1/wechat-channels/users/{user_id}/live-replays:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1users~1{user_id}~1live-replays
+  /api/v1/wechat-channels/users:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1users
+  /api/v1/wechat-channels/users/{user_id}/videos:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1users~1{user_id}~1videos
+  /api/v1/wechat-channels/videos/{video_id}/comments:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos~1{video_id}~1comments
+  /api/v1/wechat-channels/videos/{video_id}:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos~1{video_id}
+  /api/v1/wechat-channels/videos:lookup:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos:lookup
+  /api/v1/wechat-channels/videos/{video_id}/metrics:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos~1{video_id}~1metrics
+  /api/v1/wechat-channels/videos:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos
+  /api/v1/wechat-channels/videos/{video_id}/share-links:
+    $ref: ./platforms/wechat-channels.yaml#/paths/~1api~1v1~1wechat-channels~1videos~1{video_id}~1share-links
+  /api/v1/wechat-mp/accounts/{account_id}/articles:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1accounts~1{account_id}~1articles
+  /api/v1/wechat-mp/accounts/{account_id}:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1accounts~1{account_id}
+  /api/v1/wechat-mp/accounts/{account_id}/owner:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1accounts~1{account_id}~1owner
+  /api/v1/wechat-mp/accounts:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1accounts
+  /api/v1/wechat-mp/articles/comments:lookup:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1articles~1comments:lookup
+  /api/v1/wechat-mp/articles:lookup:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1articles:lookup
+  /api/v1/wechat-mp/articles/metrics:lookup:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1articles~1metrics:lookup
+  /api/v1/wechat-mp/comments/{comment_id}/replies:
+    $ref: ./platforms/wechat-mp.yaml#/paths/~1api~1v1~1wechat-mp~1comments~1{comment_id}~1replies
+  /api/v1/weibo/backup/trends:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1backup~1trends
+  /api/v1/weibo/comments/{comment_id}/replies:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1comments~1{comment_id}~1replies
+  /api/v1/weibo/posts/{post_id}/comments:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts~1{post_id}~1comments
+  /api/v1/weibo/posts/comments:lookup:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts~1comments:lookup
+  /api/v1/weibo/posts/{post_id}:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts~1{post_id}
+  /api/v1/weibo/posts:lookup:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts:lookup
+  /api/v1/weibo/posts/{post_id}/likers:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts~1{post_id}~1likers
+  /api/v1/weibo/posts/likers:lookup:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts~1likers:lookup
+  /api/v1/weibo/posts:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1posts
+  /api/v1/weibo/trends:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1trends
+  /api/v1/weibo/users/{user_id}/followers:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1users~1{user_id}~1followers
+  /api/v1/weibo/users/{user_id}:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1users~1{user_id}
+  /api/v1/weibo/users/{user_id}/posts:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1users~1{user_id}~1posts
+  /api/v1/weibo/users:
+    $ref: ./platforms/weibo.yaml#/paths/~1api~1v1~1weibo~1users
+  /api/v1/x/communities/{community_id}:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1communities~1{community_id}
+  /api/v1/x/communities/{community_id}/members:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1communities~1{community_id}~1members
+  /api/v1/x/communities/{community_id}/posts:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1communities~1{community_id}~1posts
+  /api/v1/x/lists/{list_id}/followers:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1lists~1{list_id}~1followers
+  /api/v1/x/lists/{list_id}/members:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1lists~1{list_id}~1members
+  /api/v1/x/lists/{list_id}/posts:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1lists~1{list_id}~1posts
+  /api/v1/x/posts/{post_id}/article:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts~1{post_id}~1article
+  /api/v1/x/posts/{post_id}:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts~1{post_id}
+  /api/v1/x/posts:lookup:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts:lookup
+  /api/v1/x/posts/{post_id}/quotes:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts~1{post_id}~1quotes
+  /api/v1/x/posts/{post_id}/replies:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts~1{post_id}~1replies
+  /api/v1/x/posts/{post_id}/retweeters:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts~1{post_id}~1retweeters
+  /api/v1/x/posts:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1posts
+  /api/v1/x/threads/{thread_id}/posts:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1threads~1{thread_id}~1posts
+  /api/v1/x/trends:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1trends
+  /api/v1/x/users/{username}/followers:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users~1{username}~1followers
+  /api/v1/x/users/{username}/following:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users~1{username}~1following
+  /api/v1/x/users/{username}:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users~1{username}
+  /api/v1/x/users:lookup:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users:lookup
+  /api/v1/x/users:batchGet:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users:batchGet
+  /api/v1/x/users/{username}/mentions:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users~1{username}~1mentions
+  /api/v1/x/users/{username}/posts:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users~1{username}~1posts
+  /api/v1/x/users:
+    $ref: ./platforms/x.yaml#/paths/~1api~1v1~1x~1users
+  /api/v1/xianyu/products/{product_id}:
+    $ref: ./platforms/xianyu.yaml#/paths/~1api~1v1~1xianyu~1products~1{product_id}
+  /api/v1/xianyu/products:
+    $ref: ./platforms/xianyu.yaml#/paths/~1api~1v1~1xianyu~1products
+  /api/v1/xiaohongshu/notes/{note_id}/comments/{comment_id}/replies:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1notes~1{note_id}~1comments~1{comment_id}~1replies
+  /api/v1/xiaohongshu/images:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1images
+  /api/v1/xiaohongshu/keywords/{keyword}/related-keywords:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1keywords~1{keyword}~1related-keywords
+  /api/v1/xiaohongshu/notes/{note_id}/comments:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1notes~1{note_id}~1comments
+  /api/v1/xiaohongshu/notes/{note_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1notes~1{note_id}
+  /api/v1/xiaohongshu/notes:lookup:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1notes:lookup
+  /api/v1/xiaohongshu/notes:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1notes
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/audience:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1audience
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/costs/history:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1costs~1history
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/costs/metrics:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1costs~1metrics
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/followers/history:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1followers~1history
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/followers/metrics:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1followers~1metrics
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/metrics:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1metrics
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/notes:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1notes
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/related-creators:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators~1{creator_id}~1related-creators
+  /api/v1/xiaohongshu/pgy/creators:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1creators
+  /api/v1/xiaohongshu/pgy/keywords/{keyword}/history:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1keywords~1{keyword}~1history
+  /api/v1/xiaohongshu/pgy/keywords/{keyword}/related-keywords:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1keywords~1{keyword}~1related-keywords
+  /api/v1/xiaohongshu/pgy/notes/{note_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1notes~1{note_id}
+  /api/v1/xiaohongshu/pgy/notes:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1pgy~1notes
+  /api/v1/xiaohongshu/shop/products/{product_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1shop~1products~1{product_id}
+  /api/v1/xiaohongshu/shop/products/{product_id}/reviews:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1shop~1products~1{product_id}~1reviews
+  /api/v1/xiaohongshu/shop/products:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1shop~1products
+  /api/v1/xiaohongshu/topics/{topic_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1topics~1{topic_id}
+  /api/v1/xiaohongshu/topics/{topic_id}/notes:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1topics~1{topic_id}~1notes
+  /api/v1/xiaohongshu/trends:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1trends
+  /api/v1/xiaohongshu/users/{user_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1users~1{user_id}
+  /api/v1/xiaohongshu/users:lookup:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1users:lookup
+  /api/v1/xiaohongshu/users/{user_id}/notes:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1users~1{user_id}~1notes
+  /api/v1/xiaohongshu/users:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1users
+  /api/v1/xiaohongshu/videos/{video_id}:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1videos~1{video_id}
+  /api/v1/xiaohongshu/videos:lookup:
+    $ref: ./platforms/xiaohongshu.yaml#/paths/~1api~1v1~1xiaohongshu~1videos:lookup
+  /api/v1/xigua/users/{user_id}:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1users~1{user_id}
+  /api/v1/xigua/users:lookup:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1users:lookup
+  /api/v1/xigua/users/{user_id}/videos:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1users~1{user_id}~1videos
+  /api/v1/xigua/users/videos:lookup:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1users~1videos:lookup
+  /api/v1/xigua/videos/{video_id}/comments:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1videos~1{video_id}~1comments
+  /api/v1/xigua/videos/comments:lookup:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1videos~1comments:lookup
+  /api/v1/xigua/videos/{video_id}:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1videos~1{video_id}
+  /api/v1/xigua/videos:lookup:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1videos:lookup
+  /api/v1/xigua/videos:
+    $ref: ./platforms/xigua.yaml#/paths/~1api~1v1~1xigua~1videos
+  /api/v1/youtube/channels/{channel_id}:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels~1{channel_id}
+  /api/v1/youtube/channels:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels:lookup
+  /api/v1/youtube/channels/{channel_id}/posts:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels~1{channel_id}~1posts
+  /api/v1/youtube/channels/posts:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels~1posts:lookup
+  /api/v1/youtube/channels:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels
+  /api/v1/youtube/channels/{channel_id}/videos:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels~1{channel_id}~1videos
+  /api/v1/youtube/channels/videos:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1channels~1videos:lookup
+  /api/v1/youtube/comments/replies:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1comments~1replies:lookup
+  /api/v1/youtube/posts/{post_id}:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1posts~1{post_id}
+  /api/v1/youtube/posts:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1posts:lookup
+  /api/v1/youtube/videos/{video_id}/comments:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1videos~1{video_id}~1comments
+  /api/v1/youtube/videos/{video_id}:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1videos~1{video_id}
+  /api/v1/youtube/videos:lookup:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1videos:lookup
+  /api/v1/youtube/videos:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1videos
+  /api/v1/youtube/videos/{video_id}/transcript:
+    $ref: ./platforms/youtube.yaml#/paths/~1api~1v1~1youtube~1videos~1{video_id}~1transcript
+  /api/v1/zhihu/answers/{answer_id}/comments:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1answers~1{answer_id}~1comments
+  /api/v1/zhihu/answers/{answer_id}:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1answers~1{answer_id}
+  /api/v1/zhihu/answers:lookup:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1answers:lookup
+  /api/v1/zhihu/articles/{article_id}:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1articles~1{article_id}
+  /api/v1/zhihu/articles:lookup:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1articles:lookup
+  /api/v1/zhihu/columns/{column_id}/articles:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1columns~1{column_id}~1articles
+  /api/v1/zhihu/comments/{comment_id}/replies:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1comments~1{comment_id}~1replies
+  /api/v1/zhihu/pins/{pin_id}:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1pins~1{pin_id}
+  /api/v1/zhihu/pins:lookup:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1pins:lookup
+  /api/v1/zhihu/posts:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1posts
+  /api/v1/zhihu/questions/{question_id}/answers:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1questions~1{question_id}~1answers
+  /api/v1/zhihu/questions/answers:lookup:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1questions~1answers:lookup
+  /api/v1/zhihu/questions/{question_id}:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1questions~1{question_id}
+  /api/v1/zhihu/questions:lookup:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1questions:lookup
+  /api/v1/zhihu/trends:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1trends
+  /api/v1/zhihu/users/{username}/answers:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users~1{username}~1answers
+  /api/v1/zhihu/users/{username}/articles:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users~1{username}~1articles
+  /api/v1/zhihu/users/{username}/followers:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users~1{username}~1followers
+  /api/v1/zhihu/users/{username}:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users~1{username}
+  /api/v1/zhihu/users/{username}/pins:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users~1{username}~1pins
+  /api/v1/zhihu/users:
+    $ref: ./platforms/zhihu.yaml#/paths/~1api~1v1~1zhihu~1users
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken

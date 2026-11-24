@@ -1,0 +1,212 @@
+paths:
+  /api/v1/google/advertisers/{advertiser_id}/ads:
+    get:
+      summary: Google advertiser ads
+      description: |-
+        An advertiser's ads in the Google Ads Transparency Center (Search, YouTube, Display, Shopping, Maps, Play), by advertiser ID or by the brand's website domain: format, preview image, first and last time shown. 40 ads a page.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-google-advertiser-ads
+      tags:
+        - Google Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Only ads shown in this country (ISO code); anywhere when left out.
+        - name: format
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - text
+              - image
+              - video
+            default: all
+            description: Only text, image or video ads; all by default.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: advertiser_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The advertiser ID (AR…), from the advertiser search. Give id or domain.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/google/advertisers/ads:lookup:
+    get:
+      summary: Google advertiser ads by alternate identifier
+      description: |-
+        An advertiser's ads in the Google Ads Transparency Center (Search, YouTube, Display, Shopping, Maps, Play), by advertiser ID or by the brand's website domain: format, preview image, first and last time shown. 40 ads a page.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-google-advertiser-ads
+      tags:
+        - Google Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: domain
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The brand's website domain. Give id or domain.
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Only ads shown in this country (ISO code); anywhere when left out.
+        - name: format
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - text
+              - image
+              - video
+            default: all
+            description: Only text, image or video ads; all by default.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/google/advertisers:
+    query:
+      summary: Google Ads Transparency advertiser search
+      description: |-
+        Find advertisers in the Google Ads Transparency Center by name: advertiser ID, the name Google verified, the country it is registered in and the center's estimate of how many ads it has. The verified name is often the legal entity, not the brand.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-google-advertisers
+      tags:
+        - Google Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdvertiserPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchGoogleAdvertisersRequest"
+components:
+  schemas:
+    SearchGoogleAdvertisersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        country:
+          type: string
+          minLength: 1
+          description: Country to search in (ISO code); US by default.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

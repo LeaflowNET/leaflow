@@ -1,0 +1,413 @@
+paths:
+  /api/v1/wechat-mp/accounts/{account_id}/articles:
+    get:
+      summary: Official Account article history
+      description: |-
+        An Official Account's published articles, newest first, without a QR login: the articles tab of its page by default, or its videos or pictures tab.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-mp-account-articles
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - articles
+              - videos
+              - images
+            default: articles
+            description: "Which tab of the account's page: articles (the default), videos or pictures."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: account_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The account original ID (gh_…) from accounts.search, or its WeChat ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/accounts/{account_id}:
+    get:
+      summary: Official Account profile
+      description: |-
+        An Official Account by its original ID: name, IP location, number of original articles, the linked Channels account and whether it is banned. WeChat shows no bio, avatar or follower count here.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-mp-account
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: account_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The account's original ID, mostly gh_… (not its name). Find it by name with wechat.accounts.search;
+              an article's author.id is one too.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/accounts/{account_id}/owner:
+    get:
+      summary: Official Account owner
+      description: |-
+        Who an Official Account is registered to, by its original ID: the company, body or person, its kind, registration number and country, the verification status, kind and date, when the account was registered, and the third-party services it has authorised.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-mp-account-owner
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: account_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The account's original ID (gh_…); wechat.accounts.search or wechat_mp.accounts.search
+              finds it by name.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/AccountOwnerResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/accounts:
+    query:
+      summary: Official Account search
+      description: |-
+        Find Official Accounts by name or keyword, with their original ID (gh_…). Charged per account returned; when the balance is below a full page, the first page shrinks to what it covers.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: search-wechat-mp-accounts
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatMpAccountsRequest"
+  /api/v1/wechat-mp/articles/comments:lookup:
+    get:
+      summary: Official Account article comments by alternate identifier
+      description: |-
+        The featured comments on an article, by its link: text, commenter, likes, reply count, time posted, IP location and whether pinned. A comment's id goes to wechat_mp.comments.replies.list.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-wechat-mp-article-comments
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The article link: the long link with __biz, mid, idx and sn, or the short /s/
+              link."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/articles:lookup:
+    get:
+      summary: Official Account article detail by alternate identifier
+      description: |-
+        Full text of an article as plain text, with the account and the time it was published.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-wechat-mp-article
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/articles/metrics:lookup:
+    get:
+      summary: Official Account article stats by alternate identifier
+      description: |-
+        The counts of an article right now, by its link: reads, likes, recommends (在看, in ext), shares, saves and comments. Only the counts: title and text come from wechat_mp.articles.get.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-wechat-mp-article-metrics
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The article link: the long link with __biz, mid, idx and sn, or the short /s/
+              link."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-mp/comments/{comment_id}/replies:
+    get:
+      summary: Official Account comment replies
+      description: |-
+        The replies under one comment on an article, by the comment's ID and the article's link: text, replier, likes, time posted and IP location. The first batch only, without further pages.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-wechat-mp-comment-replies
+      tags:
+        - WeChat Official Accounts
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The comment ID (digits): the id wechat_mp.articles.comments.list gives."
+        - name: article_url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The link of the article the comment is on (an article is named by its link): the
+              long link with __biz, mid, idx and sn, or the short /s/ link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchWechatMpAccountsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

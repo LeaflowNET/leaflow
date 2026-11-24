@@ -1,0 +1,452 @@
+paths:
+  /api/v1/xigua/users/{user_id}:
+    get:
+      summary: Xigua Video creator profile
+      description: |-
+        A creator by user ID or profile link: name, bio, avatar, verification, followers as Xigua shows them, video count and total likes. ext gives the Toutiao and Xigua followers apart, total shares and the province the creator posts from. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xigua-user
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The creator's user ID: digits, from ixigua.com/home/<id>/ or a video's author.id
+              (the same ID as on Toutiao). Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/users:lookup:
+    get:
+      summary: Xigua Video creator profile by alternate identifier
+      description: |-
+        A creator by user ID or profile link: name, bio, avatar, verification, followers as Xigua shows them, video count and total likes. ext gives the Toutiao and Xigua followers apart, total shares and the province the creator posts from. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-xigua-user
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The creator's ixigua.com/home/… profile link; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/users/{user_id}/videos:
+    get:
+      summary: Xigua Video creator videos
+      description: |-
+        A creator's videos, newest first, about 30 a page: title, plays, likes, comments, shares, saves, length, cover and time published. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xigua-user-videos
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The creator's user ID: digits, from ixigua.com/home/<id>/ or a video's author.id
+              (the same ID as on Toutiao). Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/users/videos:lookup:
+    get:
+      summary: Xigua Video creator videos by alternate identifier
+      description: |-
+        A creator's videos, newest first, about 30 a page: title, plays, likes, comments, shares, saves, length, cover and time published. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-xigua-user-videos
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The creator's ixigua.com/home/… profile link; the ID is read from it.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/videos/{video_id}/comments:
+    get:
+      summary: Xigua Video comments
+      description: |-
+        Top-level comments on a video, 20 a page, hottest first: text, commenter, likes, reply count, time posted and the commenter's province. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xigua-video-comments
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The video ID: the digits in its ixigua.com link (the same ID as on Toutiao). Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/videos/comments:lookup:
+    get:
+      summary: Xigua Video comments by alternate identifier
+      description: |-
+        Top-level comments on a video, 20 a page, hottest first: text, commenter, likes, reply count, time posted and the commenter's province. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-xigua-video-comments
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Its ixigua.com link (or the same video's toutiao.com/video/ link); the ID is read
+              from it. Short v.ixigua.com share links are not read.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/videos/{video_id}:
+    get:
+      summary: Xigua Video detail
+      description: |-
+        One Xigua video by ID or link: title, author and followers, time published, plays, likes, comments, shares, saves, length and cover. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xigua-video
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The video ID: the digits in its ixigua.com link (the same ID as on Toutiao). Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/videos:lookup:
+    get:
+      summary: Xigua Video detail by alternate identifier
+      description: |-
+        One Xigua video by ID or link: title, author and followers, time published, plays, likes, comments, shares, saves, length and cover. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-xigua-video
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Its ixigua.com link (or the same video's toutiao.com/video/ link); the ID is read
+              from it. Short v.ixigua.com share links are not read.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xigua/videos:
+    query:
+      summary: Xigua Video search
+      description: |-
+        The top videos for keywords, up to 10 in one answer (no further pages), in Xigua's order: title, author, plays, comments, length, cover and time published.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: search-xigua-videos
+      tags:
+        - Xigua Video
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiguaVideosRequest"
+components:
+  schemas:
+    SearchXiguaVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

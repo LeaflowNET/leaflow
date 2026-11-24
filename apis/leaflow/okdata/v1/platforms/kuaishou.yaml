@@ -1,0 +1,705 @@
+paths:
+  /api/v1/kuaishou/videos/{video_id}/comments/{comment_id}/replies:
+    get:
+      summary: Kuaishou comment replies
+      description: |-
+        The replies under a top-level comment, by the comment's ID and its video's ID: text, replier, likes, time posted and IP location.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-kuaishou-comment-replies
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The top-level comment ID (digits).
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the comment's video (the 3x… part of its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/live/products:
+    get:
+      summary: "Kuaishou shopping board: hot products"
+      description: |-
+        The hot-products tab of Kuaishou's shopping board right now, 50 products in board order: name, price, the seller's Kuaishou user ID (kuaishou.users.get takes it), picture, the coupon or positive-review label it shows, and its heat (Kuaishou's popularity score). Kuaishou shows no sales count on this board. Items come in rank order; ext.rank (view=full) has the place.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-kuaishou-trending-live-products
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/live/rooms:
+    get:
+      summary: Kuaishou live boards
+      description: |-
+        Kuaishou's live boards right now, 50 rooms that are live: the overall board, the shopping board of the hottest live sellers, or one by content (music, dance, looks, folk arts, dating, gaming, anime, stories, group and multi-host streams). Each with rank, the host's name, user ID and avatar, the room's caption and its heat (Kuaishou's popularity score).
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-kuaishou-trending-live-rooms
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: board
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - shopping
+              - music
+              - dance
+              - looks
+              - folk_art
+              - dating
+              - gaming
+              - anime
+              - story
+              - group
+              - grid
+            default: all
+            description:
+              "Which board: overall (the default), shopping (live sellers), or one content board:
+              music, dance, looks, folk arts, dating, gaming, anime, stories, group streams or nine-grid
+              multi-host streams."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/live/users/{user_id}:
+    get:
+      summary: Kuaishou account live status
+      description: |-
+        Whether a Kuaishou account is live right now, by user ID. When it is: the live stream ID, its caption, the start time, the cover and the host. Kuaishou shows no viewer count here; kuaishou.live.rooms.trending has the rooms on the boards with their heat.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-kuaishou-live-user
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The user ID (digits, not the Kuaishou handle), from a search or a video’s author.id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/trends:
+    get:
+      summary: Kuaishou hot list
+      description: |-
+        Kuaishou's hot list: 50 trending topics and the one pinned above them, with heat.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-kuaishou-trends
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/users/{user_id}:
+    get:
+      summary: Kuaishou account profile
+      description: |-
+        An account by user ID: name, handle, bio, followers, following, video count, total likes, verification and IP location.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-kuaishou-user
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The user ID (digits, not the Kuaishou handle), from a search or a video’s author.id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/users:
+    query:
+      summary: Kuaishou account search
+      description: |-
+        Find accounts by keyword, optionally only verified ones or those live now, by gender, or ordered by followers: user ID, name, handle, bio, followers and verification.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-kuaishou-users
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchKuaishouUsersRequest"
+  /api/v1/kuaishou/users/{user_id}/videos:
+    get:
+      summary: Kuaishou account videos
+      description: |-
+        An account's videos, newest or most popular first: caption, plays, likes, comments and time posted.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-kuaishou-user-videos
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+              - popular
+            default: latest
+            description: Result order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The user ID (digits, not the Kuaishou handle), from a search or a video’s author.id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/videos/{video_id}/comments:
+    get:
+      summary: Kuaishou video comments
+      description: |-
+        Top-level comments on a video: text, commenter, likes, time posted and IP location. The first page is bigger, often 30 to 40: Kuaishou's featured comments, then the newest; later pages hold about 10 each, newest first. A featured comment can come again on a later page, so dedupe by id. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-kuaishou-video-comments
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The video ID: the 3x… part of the web link. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/videos/comments:lookup:
+    get:
+      summary: Kuaishou video comments by alternate identifier
+      description: |-
+        Top-level comments on a video: text, commenter, likes, time posted and IP location. The first page is bigger, often 30 to 40: Kuaishou's featured comments, then the newest; later pages hold about 10 each, newest first. A featured comment can come again on a later page, so dedupe by id. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-kuaishou-video-comments
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/videos/{video_id}:
+    get:
+      summary: Kuaishou video detail
+      description: |-
+        One video by ID or link (a v.kuaishou.com short link works too): caption, author, plays, likes, comments and shares. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-kuaishou-video
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The video ID: the 3x… part of the web link. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/videos:lookup:
+    get:
+      summary: Kuaishou video detail by alternate identifier
+      description: |-
+        One video by ID or link (a v.kuaishou.com short link works too): caption, author, plays, likes, comments and shares. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-kuaishou-video
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/kuaishou/videos:
+    query:
+      summary: Kuaishou video search
+      description: |-
+        Videos matching keywords, newest or most liked first, filtered by time posted and length: caption, author, plays, likes, comments and shares.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-kuaishou-videos
+      tags:
+        - Kuaishou
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchKuaishouVideosRequest"
+components:
+  schemas:
+    SearchKuaishouUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        filter:
+          type: string
+          minLength: 1
+          enum:
+            - verified
+            - live
+          description: Only verified accounts, or only those live now.
+        gender:
+          type: string
+          minLength: 1
+          enum:
+            - female
+            - male
+          description: Only female or only male accounts (as the profile says).
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - most_followers
+            - fewest_followers
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchKuaishouVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        published_within:
+          type: string
+          minLength: 1
+          enum:
+            - day
+            - week
+            - month
+          description: Only videos from the last day, week or month.
+        duration:
+          type: string
+          minLength: 1
+          enum:
+            - under_1_min
+            - 1_to_5_min
+            - over_5_min
+          description: Only videos of this length.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

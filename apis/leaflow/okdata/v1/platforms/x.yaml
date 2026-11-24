@@ -1,0 +1,1190 @@
+paths:
+  /api/v1/x/communities/{community_id}:
+    get:
+      summary: X community profile
+      description: |-
+        A community by ID: name, description, member count, when it was created, and under ext its moderators, how people join and its topic.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-x-community
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: community_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The community ID (the digits after /i/communities/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommunityResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/communities/{community_id}/members:
+    get:
+      summary: X community members
+      description: |-
+        The accounts that have joined a community, 20 a page: handle, name, bio, followers and verification.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-community-members
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: community_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The community ID (the digits after /i/communities/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/communities/{community_id}/posts:
+    get:
+      summary: X community posts
+      description: |-
+        Posts in a community, newest first, 20 a page: text, author, time posted, views, likes and reposts.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-community-posts
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: community_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The community ID (the digits after /i/communities/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/lists/{list_id}/followers:
+    get:
+      summary: X list followers
+      description: |-
+        Up to 20 accounts that follow a list: handle, name, bio, followers and verification. One page only; there is no next page.
+
+        Requires an active OKData enablement. Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-list-followers
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: list_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The list ID (the digits after /i/lists/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/lists/{list_id}/members:
+    get:
+      summary: X list members
+      description: |-
+        The accounts a list is made of, 20 a page: handle, name, bio, followers and verification.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-list-members
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: list_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The list ID (the digits after /i/lists/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/lists/{list_id}/posts:
+    get:
+      summary: X list posts
+      description: |-
+        The timeline of a list, newest first, about 100 posts a page: text, author, time posted, views, likes and reposts.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-x-list-posts
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: list_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The list ID (the digits after /i/lists/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts/{post_id}/article:
+    get:
+      summary: X article
+      description: |-
+        The long-form article attached to a post, by the post ID: title, the whole text, author, time published, views, likes and replies.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-x-post-article
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the post the article is attached to.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts/{post_id}:
+    get:
+      summary: X post detail
+      description: |-
+        One post by ID or link: text, media, views, likes, reposts and replies. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-x-post
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The post ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts:lookup:
+    get:
+      summary: X post detail by alternate identifier
+      description: |-
+        One post by ID or link: text, media, views, likes, reposts and replies. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-x-post
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts/{post_id}/quotes:
+    get:
+      summary: X post quotes
+      description: |-
+        Posts that quote a post, newest or most popular first, 20 a page: what people added, who they are and how far it went.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-post-quotes
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+              - popular
+            default: latest
+            description: Result order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the post that was quoted.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts/{post_id}/replies:
+    get:
+      summary: X post replies
+      description: |-
+        The replies under a post, in the order X ranks them, about 35 a page. A reply is a post itself, so each comes back as a post: text, author, time posted, views, likes and its own reply count.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-x-post-replies
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The post ID (the digits after /status/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts/{post_id}/retweeters:
+    get:
+      summary: X post retweeters
+      description: |-
+        The accounts that retweeted a post, about 100 a page: handle, name, bio and follower count.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-x-post-retweeters
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The post ID (the digits after /status/ in its link).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/posts:
+    query:
+      summary: X post search
+      description: |-
+        Posts matching a query (X search operators work), latest or top.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-x-posts
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXPostsRequest"
+  /api/v1/x/threads/{thread_id}/posts:
+    get:
+      summary: X thread
+      description: |-
+        The posts of a thread, from the ID of any post in it: the post it started from, the author's follow-ups and the replies in between. X sets the page size, up to about 50.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-thread-posts
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: thread_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of any post in the thread.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/trends:
+    get:
+      summary: X trending topics
+      description: |-
+        Trending topics worldwide or for one country.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-x-trends
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: ISO country code; worldwide when omitted.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users/{username}/followers:
+    get:
+      summary: X account followers
+      description: |-
+        The accounts following an account, newest followers first, 200 a page: handle, name, bio, followers and post count.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-user-followers
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The X handle, with or without @.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users/{username}/following:
+    get:
+      summary: X account following
+      description: |-
+        The accounts an account follows, most recently followed first, 200 a page: handle, name, bio, followers and post count.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-user-following
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The X handle, with or without @.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users/{username}:
+    get:
+      summary: X account profile
+      description: |-
+        An account by handle or numeric ID, or up to 100 accounts by ID in one call: followers, following, post count, bio and verification. IDs that find no account are listed under data.missing and not charged; a batch that finds none costs one account. Give one of id, username, ids.
+
+        Requires an active OKData enablement. Metered per returned item with per-request minimum and cap rules.
+      operationId: get-x-user
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The handle, with or without @. Give one of id, username or ids.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users:lookup:
+    get:
+      summary: X account profile by alternate identifier
+      description: |-
+        An account by handle or numeric ID, or up to 100 accounts by ID in one call: followers, following, post count, bio and verification. IDs that find no account are listed under data.missing and not charged; a batch that finds none costs one account. Give one of id, username, ids.
+
+        Requires an active OKData enablement. Metered per returned item with per-request minimum and cap rules.
+      operationId: lookup-x-user
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The numeric account ID. Give one of id, username or ids.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users:batchGet:
+    get:
+      summary: X account profile (batch)
+      description: |-
+        An account by handle or numeric ID, or up to 100 accounts by ID in one call: followers, following, post count, bio and verification. IDs that find no account are listed under data.missing and not charged; a batch that finds none costs one account. The batch form: up to 100 values of ids in a JSON body. Found objects come back in data.items, the rest in data.missing; a batch that finds none is charged as not found (0).
+
+        Requires an active OKData enablement. Batch lookup accepting up to 100 IDs per request. Metered per returned item with per-request minimum and cap rules.
+      operationId: batch-get-x-users
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 256
+            minItems: 1
+            maxItems: 100
+            description: Up to 100 numeric account IDs.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountBatchResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users/{username}/mentions:
+    get:
+      summary: X account mentions
+      description: |-
+        Posts that mention an account, newest first, 20 a page: text, author, time posted, views, likes and reposts.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: list-x-user-mentions
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The X handle, with or without @.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users/{username}/posts:
+    get:
+      summary: X account posts
+      description: |-
+        An account's posts, newest first.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-x-user-posts
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The handle, with or without @.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/x/users:
+    query:
+      summary: X account search
+      description: |-
+        Accounts matching keywords, 20 a page: handle, name, bio, followers, following, post count and verification.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per returned item with per-request minimum and cap rules.
+      operationId: search-x-users
+      tags:
+        - X
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXUsersRequest"
+components:
+  schemas:
+    SearchXPostsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - latest
+            - top
+          default: latest
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchXUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

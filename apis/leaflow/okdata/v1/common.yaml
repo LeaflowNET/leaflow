@@ -1,0 +1,614 @@
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        pattern: ^[!-~]+$
+      description: |-
+        Use a new key for each query or page. Keys are scoped to the project and valid for 24 hours.
+
+        Retry with the same key and request parameters to replay a completed result at no extra charge (meta.replayed is true). Reusing a key with a different request returns 409 IDEMPOTENCY_CONFLICT; an in-flight request returns 409 QUERY_IN_PROGRESS.
+
+        After 24 hours, the same key starts a new metered query.
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: An enablement is already pending or active.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    CheckoutOptions:
+      $ref: ../../billing/type/v1/checkout.yaml#/components/schemas/CheckoutOptions
+    View:
+      type: string
+      enum:
+        - brief
+        - compact
+        - standard
+        - full
+      default: standard
+      description:
+        Response detail level. brief returns core identifiers, title, short text excerpt, link,
+        time, and primary counts; compact omits empty fields and truncates long text; standard is the
+        default; full includes platform-specific extras under ext. Does not affect billing.
+    Fields:
+      type: array
+      minItems: 1
+      maxItems: 64
+      items:
+        type: string
+        minLength: 1
+        maxLength: 128
+      description:
+        Optional field paths to retain on each returned object (for example id, text, metrics.likes)
+        to reduce payload size. Does not affect billing.
+    EnablementResource:
+      type: object
+      additionalProperties: false
+      description: OKData activation status for a project.
+      required:
+        - status
+        - plan_id
+        - failure_reason
+        - checkout_session_id
+        - order_id
+        - subscription_id
+        - activated_at
+        - ended_at
+      properties:
+        status:
+          type: string
+          enum:
+            - inactive
+            - pending
+            - active
+            - failed
+          description:
+            "inactive: not enabled; pending: awaiting checkout or order acceptance; active:
+            queries are allowed; failed: activation did not complete."
+        failure_reason:
+          type:
+            - string
+            - "null"
+          enum:
+            - checkout_expired
+            - order_declined
+            - order_canceled
+            - order_expired
+            - null
+          description: Why activation failed. Null unless status is failed.
+        checkout_session_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Checkout Session for the latest activation attempt. Null before activation is requested.
+        order_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Associated order. Null until checkout completes.
+        plan_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Billing plan for OKData enablement. Null if unavailable.
+        subscription_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Associated subscription. Null until checkout completes.
+        activated_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: When the enablement became active. Null until then.
+        ended_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: When the subscription ended. Null while active or not yet ended.
+    CreateEnablementRequestBody:
+      type: object
+      additionalProperties: false
+      properties:
+        checkout:
+          $ref: "#/components/schemas/CheckoutOptions"
+    CreateEnablementResponseBody:
+      type: object
+      additionalProperties: false
+      description: The pending enablement and its Checkout Session.
+      required:
+        - enablement
+        - checkout_session_id
+        - order_id
+      properties:
+        enablement:
+          $ref: "#/components/schemas/EnablementResource"
+        checkout_session_id:
+          type: string
+          format: uuid
+          description: Checkout Session to complete.
+        order_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Resulting order. Null until checkout completes.
+    CapabilityMeter:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - meter_lookup_key
+        - unit
+        - dimension_keys
+        - dimensions
+      properties:
+        kind:
+          type: string
+          enum:
+            - requests
+            - items
+        meter_lookup_key:
+          type: string
+          description: Billing meter lookup key (requests or items).
+        unit:
+          type: string
+          enum:
+            - call
+            - item
+          description: "Metering unit: call for per-request pricing, item for per-returned-item pricing."
+        dimension_keys:
+          type: array
+          items:
+            type: string
+        dimensions:
+          type: object
+          additionalProperties:
+            type: string
+        min_billable_items:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+          description:
+            Per-request minimum billable item count for item-metered capabilities; null for
+            call-metered capabilities.
+        max_billable_items:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+          description:
+            Per-request maximum billable item count cap for item-metered capabilities; null
+            for call-metered capabilities.
+    CapabilityBilling:
+      type: object
+      additionalProperties: false
+      description:
+        Billing references for this capability. Retail prices and quotes come from Leaflow
+        Billing.
+      required:
+        - plan_id
+        - meters
+      properties:
+        plan_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Billing plan associated with this capability.
+        meters:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityMeter"
+    CapabilityResource:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - operation_id
+        - method
+        - path
+        - provider
+        - platform
+        - category
+        - resource_type
+        - action
+        - status
+        - is_backup
+        - paginated
+        - cursor_ttl_seconds
+        - batch_max
+        - billing
+      properties:
+        id:
+          type: string
+          description: Capability identifier, such as douyin.videos.search.
+        name:
+          type: string
+          description: Display name.
+        operation_id:
+          type: string
+          description: OpenAPI operationId for this query.
+        method:
+          type: string
+          enum:
+            - GET
+            - QUERY
+            - POST
+          description: HTTP method for this data query.
+        path:
+          type: string
+          description: Leaflow REST endpoint path for this query.
+        provider:
+          type: string
+          description: Data provider identifier (okdata).
+        platform:
+          type: string
+          description: Source platform identifier, such as douyin, xiaohongshu, x, or wechat_channels.
+        category:
+          type: string
+          enum:
+            - social
+            - creator
+            - ads
+            - commerce
+          description: High-level capability category.
+        resource_type:
+          type: string
+          description: Kind of data returned, such as post, account, comment, product, ad, or live_room.
+        action:
+          type: string
+          enum:
+            - search
+            - create
+            - lookup
+            - get
+            - batch_get
+            - list
+            - get_metrics
+            - get_history
+            - batch_get_history
+            - list_related
+            - list_trending
+          description: Query action kind.
+        search_terms:
+          type: array
+          items:
+            type: string
+          description: Additional search aliases in English and Chinese.
+        status:
+          type: string
+          enum:
+            - available
+            - unavailable
+            - unknown
+          description:
+            Current availability from the source status feed. Unknown when no current status
+            can be confirmed; unrelated to preview/stable maturity.
+        is_backup:
+          type: boolean
+          description:
+            True for separately priced backup capabilities. Backup capabilities are never invoked
+            automatically.
+        paginated:
+          type: boolean
+          description: Whether this query accepts a cursor and returns cursor pagination metadata.
+        cursor_ttl_seconds:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+          description:
+            Cursor validity window in seconds (for example 600 for zhihu.questions.answers.list,
+            86400 for other paginated queries); null when not paginated.
+        batch_max:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+          description: Maximum number of IDs accepted per batch request; null for non-batch queries.
+        billing:
+          $ref: "#/components/schemas/CapabilityBilling"
+    CapabilityListResponseBody:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityResource"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+    RequestRecord:
+      type: object
+      additionalProperties: false
+      description: Project-scoped record of a metered OKData query. Does not expose supplier account costs.
+      required:
+        - id
+        - capability
+        - platform
+        - status
+        - started_at
+        - finished_at
+        - failure_reason
+        - metered_unit
+        - metered_quantity
+        - result_available
+        - result_expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Leaflow request ID.
+        capability:
+          type: string
+          description: Capability identifier executed by this request.
+        platform:
+          type: string
+          description: Source platform identifier.
+        status:
+          type: string
+          enum:
+            - pending
+            - succeeded
+            - failed
+            - reconciliation_required
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        failure_reason:
+          type:
+            - string
+            - "null"
+          description: Machine-readable failure reason code when failed; null otherwise.
+        metered_unit:
+          type:
+            - string
+            - "null"
+          enum:
+            - call
+            - item
+            - null
+          description: Metering unit reported to Billing, or null when uncharged or pending settlement.
+        metered_quantity:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Quantity recorded for Billing (0 when uncharged or pending).
+        result_available:
+          type: boolean
+          description:
+            True while the saved response payload can still be re-read via get-request-result
+            at no extra charge.
+        result_expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description:
+            When the saved response payload expires (24 hours after completion); null when
+            unavailable.
+    RequestListResponseBody:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RequestRecord"
+        pagination:
+          $ref: ../../type/v1/pagination.yaml#/components/schemas/OffsetPagination
+    SavedRequestResult:
+      type: object
+      additionalProperties: false
+      description:
+        Replayed payload of a previously completed OKData query within its 24-hour retention
+        window.
+      required:
+        - request_id
+        - capability
+        - result
+        - replayed
+        - expires_at
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        capability:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+          description: Original normalized response body of the completed query.
+        replayed:
+          type: boolean
+          description: Always true when reading a stored result.
+        expires_at:
+          type: string
+          format: date-time
+    SourceWarning:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - items_dropped
+            - text_truncated
+            - link_omitted
+            - items_truncated
+            - note
+          description: Normalized data-result warning code, excluding procurement details.
+        message:
+          type: string
+          description: Human-readable data-result warning.
+        count:
+          type: integer
+          format: int64
+          description: Number of affected items.
+        item:
+          type: integer
+          format: int64
+          description: Index of the affected item.
+        fields:
+          type: array
+          items:
+            type: string
+          description: Affected record field paths.
+    DataSource:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - platform
+        - fetched_at
+        - cached
+      properties:
+        provider:
+          type: string
+          description: Third-party data supplier (okdata).
+        platform:
+          type: string
+          description: Original data platform.
+        fetched_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: When data was fetched from the source platform. Null if unreported.
+        cached:
+          type: boolean
+          description: True when the supplier answered from its short-lived result cache.
+        upstream_request_id:
+          type: string
+          description: Supplier request reference for support.
+    ResultMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - request_id
+        - capability
+        - source
+        - result_status
+        - warnings
+        - unavailable
+        - replayed
+      properties:
+        request_id:
+          type: string
+          description: Leaflow request reference for support and result replay.
+        capability:
+          type: string
+          description: Capability identifier executed by this request.
+        source:
+          $ref: "#/components/schemas/DataSource"
+        result_status:
+          type: string
+          enum:
+            - complete
+            - partial
+            - empty
+          description:
+            "complete: full result; partial: some fields or batch IDs missing; empty: no matching
+            data."
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceWarning"
+        unavailable:
+          type: object
+          additionalProperties:
+            type: string
+          description:
+            Fields unavailable from the platform or capability and their reasons (for example
+            platform or capability).
+        replayed:
+          type: boolean
+          description: True when returning a saved result for the same Idempotency-Key at no extra charge.
+    DataCursorPagination:
+      type: object
+      additionalProperties: false
+      description:
+        Cursor pagination metadata for upstream data feeds. Pass next_cursor back unchanged
+        as cursor with the same request parameters (view and fields may change) to fetch the next metered
+        page.
+      required:
+        - returned
+        - has_more
+        - next_cursor
+        - cursor_expires_at
+      properties:
+        returned:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Actual number of items returned in this page.
+        has_more:
+          type: boolean
+          description: True if and only if next_cursor is non-null.
+        next_cursor:
+          type:
+            - string
+            - "null"
+          description: Opaque cursor for the next page. Null when there are no more pages.
+        cursor_expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description:
+            Expiration time of next_cursor (typically 24 hours; 10 minutes for zhihu.questions.answers.list).
+            Null when next_cursor is null.
+    MissingItem:
+      type: object
+      additionalProperties: false
+      description: An ID requested in a batch lookup that could not be retrieved.
+      required:
+        - id
+        - reason
+      properties:
+        id:
+          type: string
+        reason:
+          type: string

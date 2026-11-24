@@ -1,0 +1,943 @@
+components:
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          description: Account ID on the platform.
+          type: string
+        url:
+          description: Profile link.
+          type: string
+          format: uri
+        username:
+          description: Handle, where the platform has one.
+          type:
+            - string
+            - "null"
+        name:
+          description: Display name.
+          type: string
+        bio:
+          description: Profile bio.
+          type:
+            - string
+            - "null"
+        avatar_url:
+          description: Avatar image URL.
+          type:
+            - string
+            - "null"
+        verified:
+          description: Whether the platform shows a verification badge.
+          type:
+            - boolean
+            - "null"
+        followers:
+          description: Followers.
+          type:
+            - integer
+            - "null"
+          format: int64
+        following:
+          description: Accounts it follows.
+          type:
+            - integer
+            - "null"
+          format: int64
+        posts:
+          description: Posts, videos, notes or articles published.
+          type:
+            - integer
+            - "null"
+          format: int64
+        likes:
+          description: Total likes received, where the platform shows it.
+          type:
+            - integer
+            - "null"
+          format: int64
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AccountChange:
+      type: object
+      properties:
+        followers:
+          description: Change in net followers gained.
+          type:
+            - number
+            - "null"
+          format: double
+        likes:
+          description: Change in likes received.
+          type:
+            - number
+            - "null"
+          format: double
+        comments:
+          description: Change in comments received.
+          type:
+            - number
+            - "null"
+          format: double
+        shares:
+          description: Change in shares received.
+          type:
+            - number
+            - "null"
+          format: double
+        posts:
+          description: Change in posts published.
+          type:
+            - number
+            - "null"
+          format: double
+      additionalProperties: false
+    AccountGain:
+      type: object
+      properties:
+        followers:
+          description: Net followers gained; negative when the account lost followers.
+          type:
+            - integer
+            - "null"
+          format: int64
+        likes:
+          description: Likes received.
+          type:
+            - integer
+            - "null"
+          format: int64
+        comments:
+          description: Comments received.
+          type:
+            - integer
+            - "null"
+          format: int64
+        shares:
+          description: Shares received.
+          type:
+            - integer
+            - "null"
+          format: int64
+        posts:
+          description: Posts published.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    AccountHistory:
+      type: object
+      properties:
+        id:
+          description: The account's numeric ID (the one asked about).
+          type: string
+        name:
+          description: Display name.
+          type:
+            - string
+            - "null"
+        url:
+          description: Profile link.
+          type:
+            - string
+            - "null"
+        avatar_url:
+          description: Avatar.
+          type:
+            - string
+            - "null"
+        days:
+          description: How many of the most recent days the figures cover.
+          type: integer
+          format: int64
+        gained:
+          anyOf:
+            - $ref: "#/components/schemas/AccountGain"
+            - type: "null"
+          description: What the account gained over the period.
+        change:
+          anyOf:
+            - $ref: "#/components/schemas/AccountChange"
+            - type: "null"
+          description:
+            "Each gain against the same length of time before, as a ratio: 0.3 is 30% more,
+            -0.5 is half."
+        totals:
+          anyOf:
+            - $ref: "#/components/schemas/AccountTotals"
+            - type: "null"
+          description: Totals as of now.
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    AccountRef:
+      type: object
+      properties:
+        id:
+          description: Account ID on the platform.
+          type: string
+        username:
+          description: Handle, where the platform has one.
+          type:
+            - string
+            - "null"
+        name:
+          description: Display name.
+          type:
+            - string
+            - "null"
+        avatar_url:
+          description: Avatar image URL.
+          type:
+            - string
+            - "null"
+        followers:
+          description: Follower count at fetch time.
+          type:
+            - integer
+            - "null"
+          format: int64
+        verified:
+          description: Whether the platform shows a verification badge.
+          type:
+            - boolean
+            - "null"
+      additionalProperties: false
+    AccountTotals:
+      type: object
+      properties:
+        followers:
+          description: Followers now.
+          type:
+            - integer
+            - "null"
+          format: int64
+        likes:
+          description: Likes received in all.
+          type:
+            - integer
+            - "null"
+          format: int64
+        posts:
+          description: Posts in all.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    Comment:
+      type: object
+      properties:
+        id:
+          description: Comment ID.
+          type: string
+        post_id:
+          description: ID of the post it is under.
+          type: string
+        parent_id:
+          description: The comment it replies to; null for top-level comments.
+          type:
+            - string
+            - "null"
+        text:
+          description: Comment text.
+          type: string
+        published_at:
+          description: When it was posted, ISO 8601 in UTC.
+          type: string
+          format: date-time
+        author:
+          anyOf:
+            - $ref: "#/components/schemas/AccountRef"
+            - type: "null"
+          description: Who wrote it.
+        likes:
+          description: Likes on the comment.
+          type:
+            - integer
+            - "null"
+          format: int64
+        replies:
+          description: Replies under it.
+          type:
+            - integer
+            - "null"
+          format: int64
+        ip_location:
+          description: Region label the platform shows next to the comment, if any.
+          type:
+            - string
+            - "null"
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    Community:
+      type: object
+      properties:
+        id:
+          description: ID; pass it as is to the endpoints that take one.
+          type: string
+        name:
+          description: Name of the community.
+          type: string
+        url:
+          description: Link to the community.
+          type:
+            - string
+            - "null"
+        description:
+          description: What the community says it is about.
+          type:
+            - string
+            - "null"
+        avatar_url:
+          description: Icon of the community.
+          type:
+            - string
+            - "null"
+        nsfw:
+          description: Whether it is marked as adult content.
+          type:
+            - boolean
+            - "null"
+        created_at:
+          description: When the community was created.
+          type:
+            - string
+            - "null"
+        metrics:
+          anyOf:
+            - $ref: "#/components/schemas/CommunityMetrics"
+            - type: "null"
+          description: Counts at fetch time.
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    CommunityMetrics:
+      type: object
+      properties:
+        members:
+          description: Members.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    KeywordHistory:
+      type: object
+      properties:
+        keyword:
+          description: The keyword.
+          type: string
+        points:
+          description: One entry a day, oldest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/KeywordPoint"
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    KeywordPoint:
+      type: object
+      properties:
+        date:
+          description: "The day: a calendar day in China time (UTC+8), written as 00:00 UTC of that date."
+          type: string
+          format: date-time
+        search_index:
+          description:
+            "That day's search index: the platform's measure of search interest, not a count
+            of searches; null for a day the index has not published yet."
+          type:
+            - integer
+            - "null"
+          format: int64
+        composite_index:
+          description:
+            "That day's composite index: the platform's measure of attention to content about
+            the keyword, not a count; null for a day the index has not published yet."
+          type:
+            - integer
+            - "null"
+          format: int64
+        notes:
+          description: Posts about the keyword that day.
+          type:
+            - integer
+            - "null"
+          format: int64
+        impressions:
+          description: Times those posts were shown that day.
+          type:
+            - integer
+            - "null"
+          format: int64
+        views:
+          description: Times those posts were read that day.
+          type:
+            - integer
+            - "null"
+          format: int64
+        engagements:
+          description: Interactions with those posts that day.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    KeywordRelated:
+      type: object
+      properties:
+        keyword:
+          description: The related keyword.
+          type: string
+        related_to:
+          description: The keyword asked about.
+          type: string
+        relation:
+          description:
+            "How it relates: searched together (query), appears together in content (posts),
+            searched before (prior) or after (after), or suggested as you type (suggestion)."
+          type:
+            - string
+            - "null"
+          enum:
+            - query
+            - posts
+            - prior
+            - after
+            - suggestion
+        rank:
+          description: Position among the keywords of the same relation, from 1.
+          type:
+            - integer
+            - "null"
+          format: int64
+        relevance:
+          description: How closely it is related, 0 to 1.
+          type:
+            - number
+            - "null"
+          format: double
+        search_index:
+          description:
+            Its search index (the platform's measure, not a count); null where the platform
+            gives none.
+          type:
+            - integer
+            - "null"
+          format: int64
+        composite_index:
+          description: Its composite index (the platform's measure of attention, not a count).
+          type:
+            - integer
+            - "null"
+          format: int64
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    Metrics:
+      type: object
+      properties:
+        views:
+          description: Views or plays.
+          type:
+            - integer
+            - "null"
+          format: int64
+        likes:
+          description: Likes.
+          type:
+            - integer
+            - "null"
+          format: int64
+        comments:
+          description: Comments.
+          type:
+            - integer
+            - "null"
+          format: int64
+        shares:
+          description: Shares.
+          type:
+            - integer
+            - "null"
+          format: int64
+        favorites:
+          description: Saves or favorites.
+          type:
+            - integer
+            - "null"
+          format: int64
+        reposts:
+          description: Reposts, retweets or forwards.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    Post:
+      type: object
+      properties:
+        id:
+          description: Post ID on the platform.
+          type: string
+        url:
+          description: Link to the post.
+          type: string
+          format: uri
+        type:
+          description: What kind of post it is.
+          type: string
+          enum:
+            - video
+            - image
+            - text
+            - article
+        title:
+          description: Title, where the platform has one (videos, notes, articles).
+          type:
+            - string
+            - "null"
+        text:
+          description: Caption, body or description as plain text; articles come as Markdown.
+          type: string
+        lang:
+          description: Language code, as reported or detected.
+          type:
+            - string
+            - "null"
+        published_at:
+          description:
+            When it was published, ISO 8601 in UTC; null only where the source gives no time
+            (wechat_mp.articles.metrics, wechat_channels.videos.metrics, youtube.channels.videos.list
+            with type=short) or left it out of an answer (youtube.videos.get now and then), then listed
+            in meta.unavailable. Never an empty string.
+          type:
+            - string
+            - "null"
+        author:
+          anyOf:
+            - $ref: "#/components/schemas/AccountRef"
+            - type: "null"
+          description: Who posted it.
+        metrics:
+          anyOf:
+            - $ref: "#/components/schemas/Metrics"
+            - type: "null"
+          description: Counts at fetch time; a count the platform hides is null.
+        images:
+          description: Image URLs for image posts and notes.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        hashtags:
+          description: "Hashtags or topics, without the # sign."
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    Segment:
+      type: object
+      properties:
+        start:
+          description: Start, in seconds from the beginning.
+          type: number
+          format: double
+        end:
+          description: End, in seconds from the beginning.
+          type: number
+          format: double
+        text:
+          description: What is said in this segment.
+          type: string
+      additionalProperties: false
+    Topic:
+      type: object
+      properties:
+        id:
+          description: ID; pass it as is to the endpoints that take one.
+          type: string
+        name:
+          description: Name of the topic.
+          type: string
+        url:
+          description: Link to the topic page.
+          type:
+            - string
+            - "null"
+        description:
+          description: What the topic page says it is about; null when it says nothing.
+          type:
+            - string
+            - "null"
+        metrics:
+          anyOf:
+            - $ref: "#/components/schemas/TopicMetrics"
+            - type: "null"
+          description: Counts at fetch time.
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    TopicMetrics:
+      type: object
+      properties:
+        views:
+          description: Views of the topic page.
+          type:
+            - integer
+            - "null"
+          format: int64
+        posts:
+          description: Posts under the topic.
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    Transcript:
+      type: object
+      properties:
+        video_id:
+          description: ID of the video.
+          type: string
+        lang:
+          description: Language of this transcript.
+          type: string
+        segments:
+          description: Timed segments in order.
+          type: array
+          items:
+            $ref: "#/components/schemas/Segment"
+        text:
+          description: All segments joined as plain text.
+          type: string
+      additionalProperties: false
+    Trend:
+      type: object
+      properties:
+        rank:
+          description: Position on the board, 1 is the top.
+          type: integer
+          format: int64
+        name:
+          description: The topic or search term.
+          type: string
+        heat:
+          description: The heat score the platform shows; scales differ by platform.
+          type:
+            - number
+            - "null"
+          format: double
+        url:
+          description: Link to the topic page, if there is one.
+          type:
+            - string
+            - "null"
+        platform:
+          description:
+            "The platform whose list the entry is on, e.g. weibo: what tells entries apart
+            on all.trends.list."
+          type: string
+      additionalProperties: false
+    AccountBatchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - missing
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Account"
+        missing:
+          type: array
+          items:
+            $ref: ../common.yaml#/components/schemas/MissingItem
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AccountHistoryBatchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - missing
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountHistory"
+        missing:
+          type: array
+          items:
+            $ref: ../common.yaml#/components/schemas/MissingItem
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AccountHistoryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/AccountHistory"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AccountListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Account"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AccountPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Account"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    AccountResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Account"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    CommentListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    CommentPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    CommunityResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Community"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    KeywordHistoryListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeywordHistory"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    KeywordHistoryResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/KeywordHistory"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    KeywordRelatedListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeywordRelated"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    PostListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Post"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    PostPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Post"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    PostResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Post"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    TopicResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Topic"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    TranscriptResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Transcript"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    TrendListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trend"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    TrendPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trend"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata

@@ -1,0 +1,300 @@
+components:
+  schemas:
+    LiveMetrics:
+      type: object
+      properties:
+        viewers:
+          description: People in the room right now.
+          type:
+            - integer
+            - "null"
+          format: int64
+        total_viewers:
+          description:
+            People who have come into the room since it started; where the platform rounds
+            it (100,000+), the lower bound.
+          type:
+            - integer
+            - "null"
+          format: int64
+        likes:
+          description: Likes since it started.
+          type:
+            - integer
+            - "null"
+          format: int64
+        heat:
+          description:
+            The platform's own popularity score for the room, not a head count (Kuaishou's
+            and Bilibili's).
+          type:
+            - integer
+            - "null"
+          format: int64
+        products:
+          description: Products on sale in the room (the shopping bag).
+          type:
+            - integer
+            - "null"
+          format: int64
+      additionalProperties: false
+    LiveRoom:
+      type: object
+      properties:
+        id:
+          description:
+            "The room's ID; the endpoints that read a room take it. Null where the platform
+            names no room: an account that is not live, or a board entry that links to the host only."
+          type:
+            - string
+            - "null"
+        url:
+          description: The room's web page; null where the platform gives the room none.
+          type:
+            - string
+            - "null"
+        status:
+          description:
+            "live: streaming now. offline: not streaming (the other fields then describe the
+            last session, where the platform still shows it)."
+          type: string
+          enum:
+            - live
+            - offline
+        title:
+          description: The room's title as the host set it.
+          type:
+            - string
+            - "null"
+        category:
+          description:
+            The room's category or game, in the platform's words (Twitch's game, Bilibili's
+            area); null where the platform gives none.
+          type:
+            - string
+            - "null"
+        cover_url:
+          description: Cover image.
+          type:
+            - string
+            - "null"
+        host:
+          anyOf:
+            - $ref: ./social.yaml#/components/schemas/AccountRef
+            - type: "null"
+          description: The host's public account.
+        started_at:
+          description: When the current (or last) session started, ISO 8601 in UTC.
+          type:
+            - string
+            - "null"
+        rank:
+          description: Place on the board, from 1; null outside boards.
+          type:
+            - integer
+            - "null"
+          format: int64
+        metrics:
+          anyOf:
+            - $ref: "#/components/schemas/LiveMetrics"
+            - type: "null"
+          description: Room-level counts at fetch time; a count the platform does not show is null.
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    LiveStreamer:
+      type: object
+      properties:
+        id:
+          description:
+            "The streamer's ID on the board's source: the Xingtu creator ID on Douyin (what
+            douyin.live.streamers.metrics takes), the user ID on TikTok."
+          type: string
+        url:
+          description: The streamer's page, where there is one.
+          type:
+            - string
+            - "null"
+        username:
+          description: Handle, where the board gives one.
+          type:
+            - string
+            - "null"
+        name:
+          description: Display name; null where the source gives none (douyin.live.streamers.metrics).
+          type:
+            - string
+            - "null"
+        avatar_url:
+          description: Avatar image URL.
+          type:
+            - string
+            - "null"
+        followers:
+          description: Followers.
+          type:
+            - integer
+            - "null"
+          format: int64
+        rank:
+          description: Place on the board, from 1; null outside boards.
+          type:
+            - integer
+            - "null"
+          format: int64
+        score:
+          description: "The board's score: TikTok's points, or Xingtu's score from 0 to 1."
+          type:
+            - number
+            - "null"
+          format: double
+        category:
+          description: Content or product category, in the platform's words.
+          type:
+            - string
+            - "null"
+        room_id:
+          description: The room the streamer is live in now, where the board gives it.
+          type:
+            - string
+            - "null"
+        days:
+          description: Days the figures cover; null when the board does not say.
+          type:
+            - integer
+            - "null"
+          format: int64
+        sessions:
+          description: Live sessions in the period.
+          type:
+            - integer
+            - "null"
+          format: int64
+        avg_views:
+          description: Average views a session.
+          type:
+            - integer
+            - "null"
+          format: int64
+        avg_unique_viewers:
+          description: Average people who watched a session.
+          type:
+            - integer
+            - "null"
+          format: int64
+        avg_viewers:
+          description: Average people watching at once.
+          type:
+            - integer
+            - "null"
+          format: int64
+        peak_viewers:
+          description: Most people watching at once.
+          type:
+            - integer
+            - "null"
+          format: int64
+        avg_watch_seconds:
+          description: Average seconds a viewer stayed.
+          type:
+            - integer
+            - "null"
+          format: int64
+        new_followers:
+          description: Followers gained live in the period.
+          type:
+            - integer
+            - "null"
+          format: int64
+        engagement_rate:
+          anyOf:
+            - $ref: ./creator.yaml#/components/schemas/Band
+            - type: "null"
+          description: Engagement rate as the platform works it out, 0 to 1, as a band.
+        gmv:
+          anyOf:
+            - $ref: ./creator.yaml#/components/schemas/Band
+            - type: "null"
+          description: Sales over the period, in yuan, as a band.
+        avg_gmv:
+          anyOf:
+            - $ref: ./creator.yaml#/components/schemas/Band
+            - type: "null"
+          description: Average sales a session, in yuan, as a band.
+        gpm:
+          anyOf:
+            - $ref: ./creator.yaml#/components/schemas/Band
+            - type: "null"
+          description: Sales per thousand views (GPM), in yuan, as a band.
+        avg_price:
+          anyOf:
+            - $ref: ./creator.yaml#/components/schemas/Band
+            - type: "null"
+          description: Average price of the products sold, in yuan, as a band.
+        products:
+          description: Products sold live in the period.
+          type:
+            - integer
+            - "null"
+          format: int64
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    LiveRoomListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveRoom"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    LiveRoomResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/LiveRoom"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    LiveStreamerListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveStreamer"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    LiveStreamerResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/LiveStreamer"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata

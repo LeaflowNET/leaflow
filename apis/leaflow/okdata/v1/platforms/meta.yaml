@@ -1,0 +1,378 @@
+paths:
+  /api/v1/meta/ads/{ad_id}:
+    get:
+      summary: Meta Ad Library ad detail
+      description: |-
+        One ad of the Meta Ad Library by its library ID or link: advertiser, copy, images and videos, landing page, platforms, first and last day shown, and whether it is still running. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-meta-ad
+      tags:
+        - Meta Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: ad_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The Ad Library ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/meta/ads:lookup:
+    get:
+      summary: Meta Ad Library ad detail by alternate identifier
+      description: |-
+        One ad of the Meta Ad Library by its library ID or link: advertiser, copy, images and videos, landing page, platforms, first and last day shown, and whether it is still running. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-meta-ad
+      tags:
+        - Meta Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/meta/ads:
+    query:
+      summary: Meta Ad Library search
+      description: |-
+        Search the Meta Ad Library (Facebook, Instagram, Messenger) by keyword: advertiser, copy, headline, images and videos, landing page, where it runs and since when. Can be limited to one country, to image or video ads, and to ads running now or stopped.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-meta-ads
+      tags:
+        - Meta Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchMetaAdsRequest"
+  /api/v1/meta/advertisers/{advertiser_id}/ads:
+    get:
+      summary: Meta advertiser ads
+      description: |-
+        The ads one advertiser (a Facebook page) runs in the Meta Ad Library, by the page ID or the brand's name: copy, creative, landing page, platforms and dates. The way to see what a competitor is running now.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-meta-advertiser-ads
+      tags:
+        - Meta Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Only ads shown in this country (ISO code); all countries when left out.
+        - name: status
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - active
+              - inactive
+              - all
+            default: active
+            description: Ads running now (the default), stopped ones, or both.
+        - name: media
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - image
+              - video
+            default: all
+            description: Only image or only video ads; all by default.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - impressions
+              - newest
+            default: impressions
+            description: Most impressions first (the default) or newest first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: advertiser_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The advertiser's Facebook page ID. Give id or name.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/meta/advertisers/ads:lookup:
+    get:
+      summary: Meta advertiser ads by alternate identifier
+      description: |-
+        The ads one advertiser (a Facebook page) runs in the Meta Ad Library, by the page ID or the brand's name: copy, creative, landing page, platforms and dates. The way to see what a competitor is running now.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-meta-advertiser-ads
+      tags:
+        - Meta Ads
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: name
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The advertiser's name as on its Facebook page. Give id or name.
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Only ads shown in this country (ISO code); all countries when left out.
+        - name: status
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - active
+              - inactive
+              - all
+            default: active
+            description: Ads running now (the default), stopped ones, or both.
+        - name: media
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - image
+              - video
+            default: all
+            description: Only image or only video ads; all by default.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - impressions
+              - newest
+            default: impressions
+            description: Most impressions first (the default) or newest first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchMetaAdsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        country:
+          type: string
+          minLength: 1
+          description: Only ads shown in this country (ISO code); all countries when left out.
+        status:
+          type: string
+          minLength: 1
+          enum:
+            - active
+            - inactive
+            - all
+          default: active
+          description: Ads running now (the default), stopped ones, or both.
+        media:
+          type: string
+          minLength: 1
+          enum:
+            - all
+            - image
+            - video
+          default: all
+          description: Only image or only video ads; all by default.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - impressions
+            - newest
+          default: impressions
+          description: Most impressions first (the default) or newest first.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

@@ -1,0 +1,200 @@
+paths:
+  /api/v1/telegram/channels/{username}:
+    get:
+      summary: Telegram channel profile
+      description: |-
+        A public Telegram channel by handle: name, description, avatar, subscribers (rounded, as t.me shows them) and verification, and under ext the photo, video, file and link counts it shows.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-telegram-channel
+      tags:
+        - Telegram
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The public channel's handle (what follows t.me/), with or without @.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/telegram/channels/{username}/messages:
+    get:
+      summary: Telegram channel messages
+      description: |-
+        A public channel's messages, newest first, 20 a page: text, time posted, views (rounded from a thousand up, as t.me shows them) and images, video covers included. Each id (handle/number, as in telegram/401) goes straight to the message endpoint.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-telegram-channel-messages
+      tags:
+        - Telegram
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The public channel's handle (what follows t.me/), with or without @.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/telegram/channels/{username}/messages/{message_id}:
+    get:
+      summary: Telegram message detail
+      description: |-
+        One message of a public channel, by handle/number or its t.me link: text, time posted, views and images, video covers included. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-telegram-message
+      tags:
+        - Telegram
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: message_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            pattern: ^[0-9]+$
+            description: Message sequence number within the channel, without the username prefix.
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            pattern: ^[^/]+$
+            description: Public channel username.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/telegram/messages:lookup:
+    get:
+      summary: Telegram message detail by alternate identifier
+      description: |-
+        One message of a public channel, by handle/number or its t.me link: text, time posted, views and images, video covers included. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-telegram-message
+      tags:
+        - Telegram
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The message link: t.me/<channel>/<number>."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas: {}

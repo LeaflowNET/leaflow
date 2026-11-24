@@ -1,0 +1,819 @@
+paths:
+  /api/v1/youtube/channels/{channel_id}:
+    get:
+      summary: YouTube channel profile
+      description: |-
+        A channel by ID or handle: name, handle, description, avatar, verification, subscribers and video count, and under ext its total views, the day it joined, the links in its About section, country and banner. Subscribers are rounded as YouTube shows them (15.1M comes back as 15100000), and so is the video count now and then (6.2K); ext.followers_text and ext.posts_text keep the text as shown. Give id or username.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-youtube-channel
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: channel_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The channel ID, starting with UC. Give id or username.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/channels:lookup:
+    get:
+      summary: YouTube channel profile by alternate identifier
+      description: |-
+        A channel by ID or handle: name, handle, description, avatar, verification, subscribers and video count, and under ext its total views, the day it joined, the links in its About section, country and banner. Subscribers are rounded as YouTube shows them (15.1M comes back as 15100000), and so is the video count now and then (6.2K); ext.followers_text and ext.posts_text keep the text as shown. Give id or username.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-youtube-channel
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The channel's handle, with or without @. Give id or username.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/channels/{channel_id}/posts:
+    get:
+      summary: YouTube channel posts
+      description: |-
+        The posts on a channel's Posts tab (once Community), newest first, about 10 a page, by channel ID or handle: text, pictures, likes, the video a post shares (ext.video_id, its cover in images), and roughly when it was posted (YouTube says "4 days ago"). A channel ID nobody has reads like a channel without posts: an empty page. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-youtube-channel-posts
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: channel_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The channel ID, starting with UC. Give id or username.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/channels/posts:lookup:
+    get:
+      summary: YouTube channel posts by alternate identifier
+      description: |-
+        The posts on a channel's Posts tab (once Community), newest first, about 10 a page, by channel ID or handle: text, pictures, likes, the video a post shares (ext.video_id, its cover in images), and roughly when it was posted (YouTube says "4 days ago"). A channel ID nobody has reads like a channel without posts: an empty page. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-youtube-channel-posts
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The channel's handle, with or without @. Give id or username.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/channels:
+    query:
+      summary: YouTube channel search
+      description: |-
+        Find channels by keywords, 20 a page in YouTube's order: channel ID, name, the start of the description, avatar and subscribers (rounded as YouTube shows them). No handle or badge here; youtube.channels.get gives the badge.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-youtube-channels
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchYoutubeChannelsRequest"
+  /api/v1/youtube/channels/{channel_id}/videos:
+    get:
+      summary: YouTube channel videos
+      description: |-
+        A channel's videos or its Shorts, newest first, about 30 a page, by channel ID or handle: title, views, cover and, for videos, length and roughly when it was published. These are the channel list as YouTube shows it: views are rounded ("75K views" comes back as 75000, the text in ext.views_text) and times approximate (YouTube says "3 weeks ago"). For a video's exact views, likes and publish time, call youtube.videos.get. A channel ID nobody has reads like a channel without such videos: an empty page. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-youtube-channel-videos
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: type
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - video
+              - short
+            default: video
+            description: Regular videos (the default) or Shorts.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+            default: latest
+            description: Newest first; the only order this source has (no most-viewed order).
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: channel_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The channel ID, starting with UC. Give id or username.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/channels/videos:lookup:
+    get:
+      summary: YouTube channel videos by alternate identifier
+      description: |-
+        A channel's videos or its Shorts, newest first, about 30 a page, by channel ID or handle: title, views, cover and, for videos, length and roughly when it was published. These are the channel list as YouTube shows it: views are rounded ("75K views" comes back as 75000, the text in ext.views_text) and times approximate (YouTube says "3 weeks ago"). For a video's exact views, likes and publish time, call youtube.videos.get. A channel ID nobody has reads like a channel without such videos: an empty page. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-youtube-channel-videos
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The channel's handle, with or without @. Give id or username.
+        - name: type
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - video
+              - short
+            default: video
+            description: Regular videos (the default) or Shorts.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+            default: latest
+            description: Newest first; the only order this source has (no most-viewed order).
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/comments/replies:lookup:
+    get:
+      summary: YouTube comment replies by alternate identifier
+      description: |-
+        The replies under a comment, by the comment's replies token, about 10 at a time: text, replier (handle, avatar, verification), likes, and roughly when it was posted (YouTube says "6 years ago"). post_id and parent_id are read from the token.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-youtube-comment-replies
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: replies_token
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The comment's replies token (YouTube's continuation for its replies, starting
+              Eg0S), not the comment ID: ext.replies_token of the comment in youtube.videos.comments.list
+              with view=full."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/posts/{post_id}:
+    get:
+      summary: YouTube post detail
+      description: |-
+        One channel post (once a Community post) by ID or link: text, channel, pictures, likes, the video it shares (ext.video_id, its cover in images), and roughly when it was posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-youtube-post
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The post ID, starting with Ug (what follows /post/ in its link). Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/posts:lookup:
+    get:
+      summary: YouTube post detail by alternate identifier
+      description: |-
+        One channel post (once a Community post) by ID or link: text, channel, pictures, likes, the video it shares (ext.video_id, its cover in images), and roughly when it was posted. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-youtube-post
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/videos/{video_id}/comments:
+    get:
+      summary: YouTube video comments
+      description: |-
+        Comments on a video, top or newest first.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-youtube-video-comments
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - top
+              - latest
+            default: top
+            description: Result order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/videos/{video_id}:
+    get:
+      summary: YouTube video detail
+      description: |-
+        One video by ID or link: title, description, views, likes, comments, publish time and channel, as exact numbers. A count YouTube does not show (comments turned off) or a part the source could not read this time comes back null and is named in meta.unavailable. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-youtube-video
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/videos:lookup:
+    get:
+      summary: YouTube video detail by alternate identifier
+      description: |-
+        One video by ID or link: title, description, views, likes, comments, publish time and channel, as exact numbers. A count YouTube does not show (comments turned off) or a part the source could not read this time comes back null and is named in meta.unavailable. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-youtube-video
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/youtube/videos:
+    query:
+      summary: YouTube video search
+      description: |-
+        Videos matching keywords with views, length and channel.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-youtube-videos
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchYoutubeVideosRequest"
+  /api/v1/youtube/videos/{video_id}/transcript:
+    get:
+      summary: YouTube video transcript
+      description: |-
+        The transcript of a video with timestamps, in the original or a chosen language.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-youtube-video-transcript
+      tags:
+        - YouTube
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: lang
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Preferred transcript language. The result's lang is the track actually returned.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TranscriptResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchYoutubeChannelsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchYoutubeVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - most_viewed
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

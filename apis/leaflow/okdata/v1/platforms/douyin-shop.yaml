@@ -1,0 +1,204 @@
+paths:
+  /api/v1/douyin-shop/products/{product_id}:
+    get:
+      summary: Douyin Shop product details
+      description: |-
+        One Douyin Shop product by ID: title, total units sold, the share of good reviews, all images and detail images, service promises (free returns, freight insurance) and the shop. The price is not in this answer; search gives it.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-douyin-shop-product
+      tags:
+        - Douyin Shop
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The Douyin Shop product ID: the id= number in a haohuo.jinritemai.com link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/douyin-shop/products/{product_id}/reviews:
+    get:
+      summary: Douyin Shop product reviews
+      description: |-
+        Buyers' reviews of a Douyin Shop product: stars, text, date, the variant bought, photos and likes, with the shop's reply.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-douyin-shop-product-reviews
+      tags:
+        - Douyin Shop
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The Douyin Shop product ID: the id= number in a haohuo.jinritemai.com link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/douyin-shop/products:
+    query:
+      summary: Douyin Shop product search
+      description: |-
+        Search Douyin Shop products in the creator affiliate marketplace (精选联盟) by keyword: title, final price, monthly sales, the shop and its score, and the commission rate a creator earns per sale.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-douyin-shop-products
+      tags:
+        - Douyin Shop
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchDouyinShopProductsRequest"
+  /api/v1/douyin-shop/shops/{shop_id}/products:
+    get:
+      summary: Douyin Shop store products
+      description: |-
+        The products a Douyin Shop store sells, by shop ID: title, price, monthly sales, cover image and service tags.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-douyin-shop-shop-products
+      tags:
+        - Douyin Shop
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: shop_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The shop ID: the shop.id in search results or product details."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchDouyinShopProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

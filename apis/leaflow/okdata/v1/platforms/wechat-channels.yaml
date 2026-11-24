@@ -1,0 +1,942 @@
+paths:
+  /api/v1/wechat-channels/backup/users/{user_id}:
+    get:
+      summary: WeChat Channels account profile (backup)
+      description: |-
+        The backup of wechat_channels.users.get: the same parameters and result, without the number of videos.
+
+        Requires an active OKData enablement. Metered per request. Separately priced backup capability; not used for automatic failover.
+      operationId: get-wechat-channels-backup-user
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/backup/users/{user_id}/videos:
+    get:
+      summary: WeChat Channels account videos (backup)
+      description: |-
+        The backup of wechat_channels.users.videos.list: the same parameters and result, 15 a page (a live stream in progress comes first).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request. Separately priced backup capability; not used for automatic failover.
+      operationId: list-wechat-channels-backup-user-videos
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/backup/videos:
+    query:
+      summary: WeChat Channels video search (backup)
+      description: |-
+        The backup of wechat_channels.videos.search: the same parameters and result, plus comment and share counts (no saves).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request. Separately priced backup capability; not used for automatic failover.
+      operationId: search-wechat-channels-backup-videos
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatChannelsBackupVideosRequest"
+  /api/v1/wechat-channels/collections/{collection_id}/videos:
+    get:
+      summary: WeChat Channels collection videos
+      description: |-
+        The videos in a Channels collection, in the collection's own order (oldest first), 20 a page: description, account, time posted, likes, comments, shares and saves, length. url is the video file (encrypted: decrypt it with ext.decode_key from the same answer).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-channels-collection-videos
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: collection_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The collection ID (digits): the id wechat_channels.users.collections.list gives."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos/{video_id}/comments/{comment_id}/replies:
+    get:
+      summary: WeChat Channels comment replies
+      description: |-
+        The replies under a top-level comment, by the comment's ID and its video's ID: text, replier, likes, time posted and IP location.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-channels-comment-replies
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The top-level comment ID (digits), from the video comments.
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the comment's video (digits).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/live/rooms/{room_id}:
+    get:
+      summary: WeChat Channels live room
+      description: |-
+        A Channels live by its live ID (the id wechat_channels.live.users.get answers with): whether it is still on, start time, likes, the host and the cover, and once it has ended, how many people watched the replay. The count WeChat labels as online here is everyone who has come in since the live started, so it is returned as total_viewers; WeChat gives no figure for who is in the room right now, so viewers is null. A live ID WeChat does not know answers not_found and is charged like any other call.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-channels-live-room
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: host_id
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The host's account ID (v2_…@finder), host.id of that same answer. Optional; it
+              helps WeChat find the live.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: room_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The live ID (digits): the id wechat_channels.live.users.get answers with while
+              the account is live."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/live/users/{user_id}:
+    get:
+      summary: WeChat Channels account live status
+      description: |-
+        Whether a Channels account is live right now, by account ID. When it is: the live ID, title, start time, likes, people who have come in since it started and the cover. Past sessions are in wechat_channels.users.live_replays.list.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-channels-live-user
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/users/{user_id}/collections:
+    get:
+      summary: WeChat Channels account collections
+      description: |-
+        Every public collection (playlist) of a Channels account, in one answer: name, description, cover, number of videos and when it was last updated. A collection's id is what wechat_channels.collections.videos.list takes.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-wechat-channels-user-collections
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/ChannelsCollectionListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/users/{user_id}:
+    get:
+      summary: WeChat Channels account profile
+      description: |-
+        A Channels account by its ID: name, signature, avatar, IP location, number of videos, live hours and the linked Official Account. Followers and total likes are null when WeChat hides them.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-channels-user
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/users/{user_id}/live-replays:
+    get:
+      summary: WeChat Channels live replays
+      description: |-
+        An account's live-stream replays, newest first, up to about 50 a page: title, time, likes, comments and shares. url is the video file (encrypted: decrypt it with ext.decode_key from the same answer).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-channels-user-live-replays
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/users:
+    query:
+      summary: WeChat Channels account search
+      description: |-
+        Find a Channels account by its name through WeChat Search: account ID (v2_…@finder), name, avatar and who verified it. WeChat Search usually returns the one account whose name matches best.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-wechat-channels-users
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatChannelsUsersRequest"
+  /api/v1/wechat-channels/users/{user_id}/videos:
+    get:
+      summary: WeChat Channels account videos
+      description: |-
+        An account's videos, newest first, about 15 a page: description, time posted, likes, comments, shares and saves, length. url is the video file (encrypted: decrypt it with ext.decode_key from the same answer).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-channels-user-videos
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID: starts with v2_ and ends with @finder. Find it with wechat_channels.users.search,
+              or read a video's author.id. The sph… ID the app shows is not it."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos/{video_id}/comments:
+    get:
+      summary: WeChat Channels video comments
+      description: |-
+        Top-level comments on a video, hottest first: text, commenter, likes, reply count, time posted and IP location.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-wechat-channels-video-comments
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The video ID (digits): the id a video list or detail gives."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos/{video_id}:
+    get:
+      summary: WeChat Channels video detail
+      description: |-
+        One video by its ID, a search result's export/… ID or its share link: description, author (with the account ID), time posted, likes, comments, shares, saves and location. url is the video file (encrypted: decrypt it with ext.decode_key from the same answer). Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-channels-video
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID (digits), or a search result's export/… ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos:lookup:
+    get:
+      summary: WeChat Channels video detail by alternate identifier
+      description: |-
+        One video by its ID, a search result's export/… ID or its share link: description, author (with the account ID), time posted, likes, comments, shares, saves and location. url is the video file (encrypted: decrypt it with ext.decode_key from the same answer). Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-wechat-channels-video
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos/{video_id}/metrics:
+    get:
+      summary: WeChat Channels video stats
+      description: |-
+        The latest counts of a Channels video by its ID: likes, comments, shares and saves, with its description and account. The counts may be a few hours old; ext.counted_at says when they were taken. Cheaper than the whole video (wechat_channels.videos.get).
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-wechat-channels-video-metrics
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The video ID (digits): the id a video list or detail gives."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/wechat-channels/videos:
+    query:
+      summary: WeChat Channels video search
+      description: |-
+        Channels videos for keywords through WeChat Search, by relevance, newest or hottest, filtered by time posted: description, the account name and avatar, time posted, length and cover (the url). Likes are usually missing, often for the whole page, and comments, shares and saves always are: those come back null and meta.unavailable lists them; wechat_channels.videos.get has every count. The id is an export/… ID that wechat_channels.videos.get turns into the video, its numeric ID and the account ID; it expires, so use it soon.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-wechat-channels-videos
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchWechatChannelsVideosRequest"
+  /api/v1/wechat-channels/videos/{video_id}/share-links:
+    post:
+      summary: WeChat Channels video share link
+      description: |-
+        A link that opens a Channels video in WeChat (weixin.qq.com/sph/…), made from the video's ID. Each call makes a new link and older ones keep working; a link cannot be built from the ID by hand.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: create-wechat-channels-video-share-link
+      tags:
+        - WeChat Channels
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The video ID (digits): the id a video list or detail gives. A search result's
+              export/… ID goes through wechat_channels.videos.get first."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/ChannelsShareLinkResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWechatChannelsVideoShareLinkRequest"
+components:
+  schemas:
+    SearchWechatChannelsBackupVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        published_within:
+          type: string
+          minLength: 1
+          enum:
+            - day
+            - week
+            - half_year
+          description: Only videos from the last day, week or half year.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchWechatChannelsUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchWechatChannelsVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - popular
+          default: relevance
+          description: Result order.
+        published_within:
+          type: string
+          minLength: 1
+          enum:
+            - day
+            - week
+            - half_year
+          description: Only videos from the last day, week or half year.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    CreateWechatChannelsVideoShareLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields

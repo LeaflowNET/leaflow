@@ -1,0 +1,427 @@
+paths:
+  /api/v1/toutiao/articles/{article_id}:
+    get:
+      summary: Toutiao article
+      description: |-
+        One Toutiao article by ID or link, with its full text: title, author, time published, reads, likes, comments, shares and saves, and the pictures in it. ext adds the province it was posted from and, for a reprint, the original link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-toutiao-article
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: article_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The article ID: the digits after /article/ in its toutiao.com link. Give id or
+              url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/articles:lookup:
+    get:
+      summary: Toutiao article by alternate identifier
+      description: |-
+        One Toutiao article by ID or link, with its full text: title, author, time published, reads, likes, comments, shares and saves, and the pictures in it. ext adds the province it was posted from and, for a reprint, the original link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-toutiao-article
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "Its toutiao.com link (/article/…, /group/… or m.toutiao.com); the ID is read from
+              it. Short m.toutiao.com/is/ share links are not read: open one and copy the full link."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/posts/{post_id}/comments:
+    get:
+      summary: Toutiao comments
+      description: |-
+        Top-level comments on a Toutiao article or video, 20 a page, hottest first: text, commenter, likes, reply count, time posted and the commenter's province. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-toutiao-post-comments
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The article or video ID: the digits after /article/ or /video/ in its toutiao.com
+              link. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/posts/comments:lookup:
+    get:
+      summary: Toutiao comments by alternate identifier
+      description: |-
+        Top-level comments on a Toutiao article or video, 20 a page, hottest first: text, commenter, likes, reply count, time posted and the commenter's province. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-toutiao-post-comments
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The article's or video's toutiao.com link; the ID is read from it. Short m.toutiao.com/is/
+              share links are not read.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/trends:
+    get:
+      summary: Toutiao hot board
+      description: |-
+        The Toutiao hot board: the 50 news events read most right now, with rank and heat.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-toutiao-trends
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/users/{user_id}:
+    get:
+      summary: Toutiao account profile
+      description: |-
+        A Toutiao account by user ID or profile link: name, bio, avatar, verification, followers as Toutiao shows them and total likes. ext splits the followers into Toutiao and Xigua Video, and adds the video count and the province the account posts from. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-toutiao-user
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The user ID: digits, from toutiao.com/c/user/<id>/ or a post's author.id. Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/users:lookup:
+    get:
+      summary: Toutiao account profile by alternate identifier
+      description: |-
+        A Toutiao account by user ID or profile link: name, bio, avatar, verification, followers as Toutiao shows them and total likes. ext splits the followers into Toutiao and Xigua Video, and adds the video count and the province the account posts from. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-toutiao-user
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The profile link, toutiao.com/c/user/<id>/ or the toutiao.com/c/user/token/… form.
+              A token link is looked up the first time (a little slower); its user ID is remembered after
+              that.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/videos/{video_id}:
+    get:
+      summary: Toutiao video
+      description: |-
+        One Toutiao video by ID or link: title, author and followers, time published, plays, likes, comments, shares, saves, length and cover. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-toutiao-video
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The video ID: the digits after /video/ in its toutiao.com link. Give id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/toutiao/videos:lookup:
+    get:
+      summary: Toutiao video by alternate identifier
+      description: |-
+        One Toutiao video by ID or link: title, author and followers, time published, plays, likes, comments, shares, saves, length and cover. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-toutiao-video
+      tags:
+        - Toutiao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "Its toutiao.com link (/video/…, /group/… or m.toutiao.com); the ID is read from
+              it. Short m.toutiao.com/is/ share links are not read: open one and copy the full link."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas: {}

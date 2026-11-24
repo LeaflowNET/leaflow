@@ -1,0 +1,204 @@
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          description: Product ID in the shop.
+          type: string
+        url:
+          description: Product page.
+          type: string
+          format: uri
+        title:
+          description: Product title.
+          type: string
+        price:
+          description: Current price (the lowest variant), in the currency given.
+          type:
+            - number
+            - "null"
+          format: double
+        original_price:
+          description: List price before discount, where shown.
+          type:
+            - number
+            - "null"
+          format: double
+        currency:
+          description: ISO 4217 currency code.
+          type:
+            - string
+            - "null"
+        sold:
+          description: Units sold, as the shop shows it.
+          type:
+            - integer
+            - "null"
+          format: int64
+        rating:
+          description: Average stars, 0 to 5.
+          type:
+            - number
+            - "null"
+          format: double
+        reviews:
+          description: Number of reviews.
+          type:
+            - integer
+            - "null"
+          format: int64
+        images:
+          description: Product image URLs.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        shop:
+          anyOf:
+            - $ref: "#/components/schemas/ShopRef"
+            - type: "null"
+          description: Who sells it.
+        ext:
+          description: Platform-specific extras. Only returned with view=full.
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+    Review:
+      type: object
+      properties:
+        id:
+          description: Review ID.
+          type: string
+        product_id:
+          description: ID of the product reviewed.
+          type: string
+        rating:
+          description: Stars, 1 to 5.
+          type:
+            - number
+            - "null"
+          format: double
+        text:
+          description: Review text; empty when the buyer left only stars.
+          type: string
+        translation:
+          description:
+            The review in English, as the store translates it; null where the store gives no
+            translation.
+          type:
+            - string
+            - "null"
+        published_at:
+          description: When it was posted, ISO 8601 in UTC (a day for platforms that show only the date).
+          type:
+            - string
+            - "null"
+        author_name:
+          description: Reviewer name as the shop shows it, often masked.
+          type:
+            - string
+            - "null"
+        variant:
+          description: The variant bought.
+          type:
+            - string
+            - "null"
+        images:
+          description: Photos attached to the review.
+          type:
+            - array
+            - "null"
+          items:
+            type: string
+        likes:
+          description: Likes on the review.
+          type:
+            - integer
+            - "null"
+          format: int64
+        verified_purchase:
+          description: Whether the shop marks it as a verified purchase.
+          type:
+            - boolean
+            - "null"
+      additionalProperties: false
+    ShopRef:
+      type: object
+      properties:
+        id:
+          description: Shop or seller ID.
+          type:
+            - string
+            - "null"
+        name:
+          description: Shop name.
+          type:
+            - string
+            - "null"
+        url:
+          description: Shop page.
+          type:
+            - string
+            - "null"
+      additionalProperties: false
+    ProductListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    ProductPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    ProductResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - item
+        - meta
+      properties:
+        item:
+          description: Returned record, or null when meta.result_status is empty.
+          anyOf:
+            - $ref: "#/components/schemas/Product"
+            - type: "null"
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata
+    ReviewPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+        - meta
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Review"
+        pagination:
+          $ref: ../common.yaml#/components/schemas/DataCursorPagination
+        meta:
+          $ref: ../common.yaml#/components/schemas/ResultMetadata

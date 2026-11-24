@@ -1,0 +1,659 @@
+paths:
+  /api/v1/bilibili/backup/users/{user_id}/videos:
+    get:
+      summary: Bilibili account videos (backup)
+      description: |-
+        The backup of bilibili.users.videos.list, for when it cannot serve: an account's uploads, newest first, 20 a page (its data path pages by 20),. Title, cover, views, danmaku, length and time published; no description, likes or comment count. A user that does not exist reads like one without uploads: an empty page, not a 404.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request. Separately priced backup capability; not used for automatic failover.
+      operationId: list-bilibili-backup-user-videos
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The user ID (mid, digits): the number after space.bilibili.com/ in a space link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/videos/{video_id}/comments/{comment_id}/replies:
+    get:
+      summary: Bilibili comment replies
+      description: |-
+        The replies to a comment, by the comment's ID and its video's BV ID: text, replier, likes, which reply each answers (parent_id), time posted and IP location.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-bilibili-comment-replies
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The comment ID (digits): the id bilibili.videos.comments.list gives."
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The BV ID of the comment's video (the post_id a comment gives).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/live/rooms/{room_id}:
+    get:
+      summary: Bilibili live room
+      description: |-
+        A Bilibili live room by its number or live.bilibili.com link: whether it is live, title, the host's user ID and followers, start time, the room's popularity score, area, tags and cover. A room playing recordings between sessions counts as offline. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bilibili-live-room
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: room_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The room number, long or short: the digits in a live.bilibili.com/… link. Give
+              id or url."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/live/rooms:lookup:
+    get:
+      summary: Bilibili live room by alternate identifier
+      description: |-
+        A Bilibili live room by its number or live.bilibili.com link: whether it is live, title, the host's user ID and followers, start time, the room's popularity score, area, tags and cover. A room playing recordings between sessions counts as offline. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-bilibili-live-room
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A live.bilibili.com link to the room, as copied.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/live/users/{user_id}:
+    get:
+      summary: Bilibili account live status
+      description: |-
+        Whether a Bilibili account is live right now, by user ID: its room number and link, the room's title, cover and popularity score, and the host with followers. bilibili.live.rooms.get has the start time, area and tags.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bilibili-live-user
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The user ID (mid, digits): the number after space.bilibili.com/ in a space link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/trends:
+    get:
+      summary: Bilibili hot searches
+      description: |-
+        Bilibili's hot search terms right now, up to 50, with rank and heat.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-bilibili-trends
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: board
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - hot_search
+            default: hot_search
+            description: "Which list: hot searches is the only one."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/users/{user_id}:
+    get:
+      summary: Bilibili account profile
+      description: |-
+        An account by user ID: name, bio, avatar, verification and what it says, followers, following, number of videos, total likes, level and live room link.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bilibili-user
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The user ID (mid, digits): the number after space.bilibili.com/ in a space link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/users/{user_id}/videos:
+    get:
+      summary: Bilibili account videos
+      description: |-
+        An account's uploads, newest first, 30 a page: title, description, views, comments, danmaku, length and time published.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-bilibili-user-videos
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The user ID (mid, digits): the number after space.bilibili.com/ in a space link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/videos/{video_id}/comments:
+    get:
+      summary: Bilibili video comments
+      description: |-
+        Comments on a video, hottest or newest first.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-bilibili-video-comments
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - hot
+              - latest
+            default: hot
+            description: Result order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/videos/{video_id}:
+    get:
+      summary: Bilibili video detail
+      description: |-
+        One video by BV ID or link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bilibili-video
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/videos:lookup:
+    get:
+      summary: Bilibili video detail by alternate identifier
+      description: |-
+        One video by BV ID or link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-bilibili-video
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bilibili/videos:
+    query:
+      summary: Bilibili video search
+      description: |-
+        Videos matching keywords, with views, danmaku, likes and coins.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-bilibili-videos
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchBilibiliVideosRequest"
+    get:
+      summary: Bilibili popular videos
+      description: |-
+        Bilibili's popular videos, 20 a page: title, description, uploader, views, likes, coins, saves, danmaku, length, section, IP location and why it is recommended.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-bilibili-trending-videos
+      tags:
+        - Bilibili
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchBilibiliVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - most_viewed
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

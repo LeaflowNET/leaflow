@@ -1,0 +1,1300 @@
+paths:
+  /api/v1/tiktok/ads:
+    query:
+      summary: TikTok Ads Library search
+      description: |-
+        Search TikTok's public Ads Library (ads shown in Europe) by keyword or by advertiser name: advertiser, headline, videos and images, first and last day shown and the library's bracket of people reached. A transparency record of all ads, not the Creative Center's showcase.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-tiktok-ads
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTiktokAdsRequest"
+  /api/v1/tiktok/videos/{video_id}/comments/{comment_id}/replies:
+    get:
+      summary: TikTok comment replies
+      description: |-
+        The replies to a comment, by the comment's ID and its video's ID, 20 a page: text, replier, likes, time posted and which comment each one answers. A comment that does not exist reads like one without replies: an empty page, not a 404.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-comment-replies
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The comment ID (digits), from the video comments.
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the video the comment is under (the comment's post_id).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/creative-center/ads/{ad_id}:
+    get:
+      summary: TikTok Creative Center top ad
+      description: |-
+        One Top Ad of TikTok's Creative Center by its ID: the ad's video and cover, caption, brand, landing page, and under ext its likes, comments, shares, length, objective, industry and the countries it ran in. A showcase entry, without run dates.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-creative-center-ad
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: ad_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The Top Ad ID (digits), from the Creative Center top ads search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/creative-center/ads:
+    query:
+      summary: TikTok Creative Center top ads
+      description: |-
+        Search the Top Ads of TikTok's Creative Center by keyword: the ad's video, caption and brand, for one country over the last 7, 30 or 180 days. With view=full also likes, click-through rate, budget level, objective and industry. A showcase of ads that did well, without run dates.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-tiktok-creative-center-ads
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/ads.yaml#/components/schemas/AdPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTiktokCreativeCenterAdsRequest"
+  /api/v1/tiktok/hashtags/{hashtag_id}/videos:
+    get:
+      summary: TikTok hashtag videos
+      description: |-
+        The videos under a hashtag, by its name, about 20 a page in TikTok's order: caption, author, plays, likes, comments, shares, saves, hashtags and time posted, with length, cover and music under ext.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-hashtag-videos
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: hashtag_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The hashtag name, with or without #."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/live/rooms/{room_id}/products:
+    get:
+      summary: TikTok LIVE shopping bag
+      description: |-
+        What a TikTok LIVE in the US is selling right now, by room ID and host ID (both in tiktok.live.users.get), 15 a page in the order of the room's shopping bag: title, price and list price, units sold, picture and the seller.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-live-room-products
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: host_id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: "The host's user ID (digits): tiktok.live.users.get answers with it as host.id."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: room_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The room ID: tiktok.live.users.get answers with it as id."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/live/streamers:
+    get:
+      summary: TikTok LIVE shopping ranking
+      description: |-
+        TikTok's LIVE shopping ranking in the US for the current period: the top 99 live sellers with rank, handle, name, followers, TikTok's points and the room they are live in now, and when the period ends.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-tiktok-trending-live-streamers
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveStreamerListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/live/users/{username}:
+    get:
+      summary: TikTok account LIVE status
+      description: |-
+        Whether a TikTok account is LIVE right now, by handle: the room ID, title, start time, people in the room now and people who have come in since it started, the cover and the host with followers. An account that is not live answers with status offline and its last room, where TikTok still shows it.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-live-user
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The handle, with or without @.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/live.yaml#/components/schemas/LiveRoomResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/shop/products/{product_id}:
+    get:
+      summary: TikTok Shop product detail
+      description: |-
+        One TikTok Shop product by ID or link: title, price and discount, units sold, rating, number of reviews, all images, and the shop with its rating and followers. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-shop-product
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Shop region as an ISO country code; US by default and the most complete.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The product ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/shop/products:lookup:
+    get:
+      summary: TikTok Shop product detail by alternate identifier
+      description: |-
+        One TikTok Shop product by ID or link: title, price and discount, units sold, rating, number of reviews, all images, and the shop with its rating and followers. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-tiktok-shop-product
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Shop region as an ISO country code; US by default and the most complete.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/shop/products/{product_id}/reviews:
+    get:
+      summary: TikTok Shop product reviews
+      description: |-
+        Buyers' reviews of a TikTok Shop product: stars, text, the variant bought, photos and whether the purchase is verified.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-shop-product-reviews
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: Shop region as an ISO country code; US by default and the most complete.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The product ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/shop/products:
+    query:
+      summary: TikTok Shop product search
+      description: |-
+        Search TikTok Shop products by keyword: title, current and original price, units sold, rating, number of reviews, image and shop.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-tiktok-shop-products
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTiktokShopProductsRequest"
+  /api/v1/tiktok/shop/sellers/{seller_id}/products:
+    get:
+      summary: TikTok Shop seller products
+      description: |-
+        The products a TikTok Shop seller in the United States has on sale, by the seller's ID, a page at a time (TikTok sets the size, often 10 to 20): title, current and original price, rating, number of reviews, units sold and image.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-shop-seller-products
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: seller_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The seller ID (digits): the last part of the shop's link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/users/{username}/followers:
+    get:
+      summary: TikTok account followers
+      description: |-
+        The accounts following a TikTok account, newest followers first, 20 a page, by handle or account ID: handle, name, bio, avatar, followers, following, video count, likes received, and (under ext) the follower's country or region and language. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-user-followers
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The TikTok handle, with or without @. Give username or id.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/users/followers:lookup:
+    get:
+      summary: TikTok account followers by alternate identifier
+      description: |-
+        The accounts following a TikTok account, newest followers first, 20 a page, by handle or account ID: handle, name, bio, avatar, followers, following, video count, likes received, and (under ext) the follower's country or region and language. Give id or username.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-tiktok-user-followers
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The account ID instead of the handle: the digits in id from tiktok.users.get,
+              or its ext.sec_uid (MS4w…). Saves the handle lookup. Give username or id."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/users/{username}:
+    get:
+      summary: TikTok account profile
+      description: |-
+        Followers, likes, video count and bio of an account.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-user
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The handle, with or without @.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/users:
+    query:
+      summary: TikTok account search
+      description: |-
+        Find TikTok accounts by keyword, 30 a page: handle, name, avatar, followers, following, video count and likes received.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-tiktok-users
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTiktokUsersRequest"
+  /api/v1/tiktok/users/{username}/videos:
+    get:
+      summary: TikTok account videos
+      description: |-
+        The videos an account posted, by handle, 10 a page, newest or most popular first: caption, plays, likes, comments, shares, saves and time posted. Pinned videos are marked as such (ext.is_pinned). The list can also hold collabs another account posted with this one, as TikTok's profile shows them: their author is that other account (in nasa's list, a video by @whitehouse). To keep only the account's own videos, keep the items whose author.username is the handle you asked for.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-user-videos
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: username
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The TikTok handle, with or without @.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+              - popular
+            default: latest
+            description: Newest first (the default) or most popular first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/videos/{video_id}/comments:
+    get:
+      summary: TikTok video comments
+      description: |-
+        Comments on a video with likes and reply counts.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-tiktok-video-comments
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/videos/{video_id}:
+    get:
+      summary: TikTok video detail
+      description: |-
+        One video by ID or link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-video
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/videos:lookup:
+    get:
+      summary: TikTok video detail by alternate identifier
+      description: |-
+        One video by ID or link. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-tiktok-video
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/videos:
+    query:
+      summary: TikTok video search
+      description: |-
+        Videos matching keywords worldwide, with plays, likes, comments and shares.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-tiktok-videos
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTiktokVideosRequest"
+  /api/v1/tiktok/videos/{video_id}/transcript:
+    get:
+      summary: TikTok video transcript
+      description: |-
+        What is said in a TikTok video, by ID or link: the whole text and timed segments, from the video's captions (TikTok's own, often auto-generated). lang picks the captions' language; a video without captions in it comes back not found and is charged like any lookup. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-tiktok-video-transcript
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: lang
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The captions' language as a two-letter code (en, es, ja); the video's own captions
+              when left out.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The video ID (digits). Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TranscriptResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/tiktok/videos/transcript:lookup:
+    get:
+      summary: TikTok video transcript by alternate identifier
+      description: |-
+        What is said in a TikTok video, by ID or link: the whole text and timed segments, from the video's captions (TikTok's own, often auto-generated). lang picks the captions' language; a video without captions in it comes back not found and is charged like any lookup. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-tiktok-video-transcript
+      tags:
+        - TikTok
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: lang
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The captions' language as a two-letter code (en, es, ja); the video's own captions
+              when left out.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TranscriptResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchTiktokAdsRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          properties:
+            query:
+              type: string
+              minLength: 1
+              description: Keywords. Give query or advertiser.
+            cursor:
+              type: string
+              minLength: 1
+              description:
+                Opaque cursor from pagination.next_cursor of the previous call. Each page is
+                a separate metered query.
+            view:
+              $ref: ../common.yaml#/components/schemas/View
+            fields:
+              $ref: ../common.yaml#/components/schemas/Fields
+          required:
+            - query
+        - type: object
+          additionalProperties: false
+          properties:
+            advertiser:
+              type: string
+              minLength: 1
+              description: The advertiser's name. Give query or advertiser.
+            cursor:
+              type: string
+              minLength: 1
+              description:
+                Opaque cursor from pagination.next_cursor of the previous call. Each page is
+                a separate metered query.
+            view:
+              $ref: ../common.yaml#/components/schemas/View
+            fields:
+              $ref: ../common.yaml#/components/schemas/Fields
+          required:
+            - advertiser
+    SearchTiktokCreativeCenterAdsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        country:
+          type: string
+          minLength: 1
+          description: Country as an ISO code; US by default.
+        window:
+          type: string
+          minLength: 1
+          enum:
+            - "30"
+            - "7"
+            - "180"
+          default: "30"
+          description: Look back this many days; 30 by default.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - likes
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchTiktokShopProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        country:
+          type: string
+          minLength: 1
+          description: Shop region as an ISO country code; US by default and the most complete.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchTiktokUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchTiktokVideosRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - latest
+            - most_liked
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

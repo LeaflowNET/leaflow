@@ -1,0 +1,464 @@
+paths:
+  /api/v1/bluesky/posts/{post_id}/comments:
+    get:
+      summary: Bluesky post replies
+      description: |-
+        The direct replies to a post in Bluesky's order, all in one answer (up to about 200, no further page): text, author, likes, reply count and time. A reply is a post too: pass its id here for the replies under it. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-bluesky-post-comments
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The post's at:// URI, as the id of any Bluesky post in our answers (at://<DID>/app.bsky.feed.post/<key>).
+              Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/posts/comments:lookup:
+    get:
+      summary: Bluesky post replies by alternate identifier
+      description: |-
+        The direct replies to a post in Bluesky's order, all in one answer (up to about 200, no further page): text, author, likes, reply count and time. A reply is a post too: pass its id here for the replies under it. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-bluesky-post-comments
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The bsky.app post link (/profile/<handle>/post/<key>).
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/posts/{post_id}:
+    get:
+      summary: Bluesky post
+      description: |-
+        One post by its at:// URI or bsky.app link: text, language, pictures or video, hashtags, author, time, and likes, replies, reposts, quotes and saves. ext names the post it replies to or quotes, and any link card. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bluesky-post
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: post_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The post's at:// URI, as the id of any Bluesky post in our answers (at://<DID>/app.bsky.feed.post/<key>).
+              Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/posts:lookup:
+    get:
+      summary: Bluesky post by alternate identifier
+      description: |-
+        One post by its at:// URI or bsky.app link: text, language, pictures or video, hashtags, author, time, and likes, replies, reposts, quotes and saves. ext names the post it replies to or quotes, and any link card. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-bluesky-post
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The bsky.app post link (/profile/<handle>/post/<key>).
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/users/{user_id}:
+    get:
+      summary: Bluesky profile
+      description: |-
+        A Bluesky account by handle, DID or profile link: display name, handle, bio, avatar, the verification badge, followers, following and post count. ext adds when it joined, its banner, pinned post and how many lists, feeds and starter packs it made. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-bluesky-user
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The account's handle (bsky.app, name.bsky.social, with or without @) or its DID
+              (did:plc:…); a bare name is read as name.bsky.social. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/users:lookup:
+    get:
+      summary: Bluesky profile by alternate identifier
+      description: |-
+        A Bluesky account by handle, DID or profile link: display name, handle, bio, avatar, the verification badge, followers, following and post count. ext adds when it joined, its banner, pinned post and how many lists, feeds and starter packs it made. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-bluesky-user
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The bsky.app profile link; the handle or DID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/users/{user_id}/posts:
+    get:
+      summary: Bluesky account posts
+      description: |-
+        An account's posts, newest first, 30 a page, as its profile tabs show them: posts (the default), posts and replies, or media only. Each has the text, pictures or video, likes, replies, reposts, saves and time. Reposts are listed as on the profile: the original post, with ext.reposted_at. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-bluesky-user-posts
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - posts
+              - replies
+              - media
+            default: posts
+            description:
+              "Which profile tab: posts (the default; the account's posts and reposts, no replies),
+              replies (its replies too), or media (only posts with pictures or video)."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              The account's handle (bsky.app, name.bsky.social, with or without @) or its DID
+              (did:plc:…); a bare name is read as name.bsky.social. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/users/posts:lookup:
+    get:
+      summary: Bluesky account posts by alternate identifier
+      description: |-
+        An account's posts, newest first, 30 a page, as its profile tabs show them: posts (the default), posts and replies, or media only. Each has the text, pictures or video, likes, replies, reposts, saves and time. Reposts are listed as on the profile: the original post, with ext.reposted_at. Give id or url.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: lookup-bluesky-user-posts
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: The bsky.app profile link; the handle or DID is read from it.
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - posts
+              - replies
+              - media
+            default: posts
+            description:
+              "Which profile tab: posts (the default; the account's posts and reposts, no replies),
+              replies (its replies too), or media (only posts with pictures or video)."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/bluesky/users:
+    query:
+      summary: Bluesky account search
+      description: |-
+        Accounts whose name, handle or bio match the keywords, 25 a page in Bluesky's order: handle, display name, bio, avatar and the verification badge. Search results carry no counts; bluesky.users.get has them.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-bluesky-users
+      tags:
+        - Bluesky
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchBlueskyUsersRequest"
+components:
+  schemas:
+    SearchBlueskyUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

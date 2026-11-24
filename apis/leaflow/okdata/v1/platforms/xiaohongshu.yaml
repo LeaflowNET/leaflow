@@ -1,0 +1,1866 @@
+paths:
+  /api/v1/xiaohongshu/notes/{note_id}/comments/{comment_id}/replies:
+    get:
+      summary: Xiaohongshu comment replies
+      description: |-
+        The replies under a top-level comment, by the comment’s ID and its note’s ID: text, replier, likes and time posted. A comment that does not exist reads as one without replies.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-comment-replies
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: comment_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The top-level comment ID, from the note comments.
+        - name: note_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The ID of the note the comment is under (the comment’s post_id).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/images:
+    query:
+      summary: Xiaohongshu image search
+      description: |-
+        Pictures matching keywords, each with the note it comes from: the picture at full size, the note’s title, text, author, likes, comments and saves. Shares are not given here; the note detail has them.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xiaohongshu-images
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiaohongshuImagesRequest"
+  /api/v1/xiaohongshu/keywords/{keyword}/related-keywords:
+    get:
+      summary: Xiaohongshu search suggestions
+      description: |-
+        What Xiaohongshu’s search box suggests as a keyword is typed, in its order, about 10 at a time. Words and places only, no index.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-xiaohongshu-related-keywords
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: keyword
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: One keyword.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/KeywordRelatedListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/notes/{note_id}/comments:
+    get:
+      summary: Xiaohongshu note comments
+      description: |-
+        Comments on a note with likes and reply counts.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-note-comments
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: note_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The note ID.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/CommentPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/notes/{note_id}:
+    get:
+      summary: Xiaohongshu note detail
+      description: |-
+        Full text, all images (a video note gives its cover, not the video file), likes, saves and comments count of one note. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-note
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: note_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The note ID. Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/notes:lookup:
+    get:
+      summary: Xiaohongshu note detail by alternate identifier
+      description: |-
+        Full text, all images (a video note gives its cover, not the video file), likes, saves and comments count of one note. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-xiaohongshu-note
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/notes:
+    query:
+      summary: Xiaohongshu note search
+      description: |-
+        Notes matching keywords, newest or most popular first, with images and the author.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xiaohongshu-notes
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiaohongshuNotesRequest"
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/audience:
+    get:
+      summary: Xiaohongshu PGY creator audience
+      description: |-
+        Who follows a Xiaohongshu creator, by PGY creator ID: the share of each gender, age group, province, city, interest and phone brand, and the day the figures are of.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-audience
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/AudienceResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/costs/history:
+    get:
+      summary: Xiaohongshu PGY creator core figures history
+      description: |-
+        A creator’s core figures for each of the last 30 or 90 days, by PGY creator ID: CPM, cost per interaction, per read and per shop visitor, and the median impressions, reads, interactions and shop visitors of a note, with the same figures for the whole period. Of everyday or sponsored notes.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-costs-history
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: window
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - 30d
+              - 90d
+            default: 30d
+            description: "The period: the last 30 or 90 days."
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - everyday
+              - sponsored
+            default: everyday
+            description:
+              "Whose figures: the creator’s everyday notes (the default) or sponsored notes,
+              as the two tabs of the PGY creator page."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyCreatorCostHistoryResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/costs/metrics:
+    get:
+      summary: Xiaohongshu PGY creator costs and summary
+      description: |-
+        What a creator is expected to cost, by PGY creator ID: the estimated CPM, cost per interaction, per read and per shop visitor of an image note and of a video note, each against comparable creators; median impressions, reads, interactions and shop visitors of a note; follower growth and notes over 30 days; invitation reply rate and the easy-to-reach and active marks; PGY’s highlight, the content mix and the industries worked with. Of everyday or sponsored notes.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-costs-metrics
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - everyday
+              - sponsored
+            default: everyday
+            description:
+              "Whose figures: the creator’s everyday notes (the default) or sponsored notes,
+              as the two tabs of the PGY creator page."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyCreatorCostsResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/followers/history:
+    get:
+      summary: Xiaohongshu PGY creator follower history
+      description: |-
+        A creator’s follower count for each of the last 30 or 60 days, by PGY creator ID, with the net gain over the period and the gain as a share. Shows steady growth, sudden drops or bought followers.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-followers-history
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: window
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - 30d
+              - 60d
+            default: 30d
+            description: "How many of the most recent days: 30 or 60."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/FollowerHistoryResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/followers/metrics:
+    get:
+      summary: Xiaohongshu PGY creator follower quality
+      description: |-
+        How much a creator’s followers are worth, by PGY creator ID: followers and the net gain over 30 days, and how many are active, engaged, reading and buying, each as a share of all followers and against comparable creators.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-followers-metrics
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyCreatorFollowersResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}:
+    get:
+      summary: Xiaohongshu PGY creator detail
+      description: |-
+        A Xiaohongshu creator's PGY profile: followers, likes and saves, median reads and engagements, content and feature tags, and what an image note and a video note cost (in yuan) and whether each is open.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/CreatorResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/metrics:
+    get:
+      summary: Xiaohongshu PGY creator note metrics
+      description: |-
+        How a creator’s everyday or sponsored notes did over the last 30 or 90 days, by PGY creator ID: notes and video notes, median impressions, reads, interactions and follows, engagement and completion rates, the share of notes past 100 and 1,000 likes, the standing among comparable creators, and where impressions and reads came from. The full view adds each note’s figures and long-term reads of notes from about half a year back.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-creator-metrics
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: window
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - 30d
+              - 90d
+            default: 30d
+            description: "The period: the last 30 or 90 days."
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - everyday
+              - sponsored
+            default: everyday
+            description:
+              "Whose figures: the creator’s everyday notes (the default) or sponsored notes,
+              as the two tabs of the PGY creator page."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyCreatorMetricsResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/notes:
+    get:
+      summary: Xiaohongshu PGY creator notes
+      description: |-
+        A page of a creator’s notes as PGY shows them (笔记案例), by PGY creator ID: reads, likes, saves, shop visitors, whether it was sponsored and for which brand. Sponsored or cross-domain sponsored notes alone, image or video notes alone, newest, most read or most engaged first, by content feature or category, with reads of organic traffic alone if wanted.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-pgy-creator-notes
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: tab
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - sponsored
+              - cross_domain
+            default: all
+            description:
+              "Which notes: all (the default), sponsored notes alone, or cross-domain sponsored
+              notes alone (those with shop visitors)."
+        - name: type
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - image
+              - video
+            description: Image notes or video notes alone; both when left out. Only with tab=all.
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - latest
+              - most_read
+              - most_engaged
+            default: latest
+            description: "Order: newest first (the default), most read first or most interactions first."
+        - name: traffic
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - all
+              - organic
+            default: all
+            description:
+              "Which traffic the reads count: all, promoted traffic included (the default), or
+              organic traffic alone. Likes and saves stay the same."
+        - name: feature_tag
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Only notes with this content feature tag, as written in the creator detail’s ext.feature_tags.
+              A tag that does not exist finds nothing.
+        - name: category
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Only notes of this content category, as written in the creator detail’s categories.
+              A category that does not exist finds nothing.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyCreatorPostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators/{creator_id}/related-creators:
+    get:
+      summary: Xiaohongshu PGY similar creators
+      description: |-
+        The creators PGY recommends as similar to one, by PGY creator ID: ID, name, Xiaohongshu ID, location, content categories, followers, median reads and engagements, and what an image note and a video note cost (in yuan). Four a page, usually a handful to a few dozen in all.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-related-pgy-creators
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: creator_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              PGY creator ID (24 hex characters, the same as the Xiaohongshu user ID), from the
+              PGY creator search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/CreatorPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/creators:
+    query:
+      summary: Xiaohongshu PGY creator search
+      description: |-
+        Find Xiaohongshu creators on PGY (蒲公英), the official creator marketplace, by what their notes are about or by name, filtered by followers and note type, sorted by followers, engagement, reads or rate. Each with followers, median reads and engagements of everyday notes, content categories and what an image note and a video note cost (in yuan).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xiaohongshu-pgy-creators
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/CreatorPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiaohongshuPgyCreatorsRequest"
+  /api/v1/xiaohongshu/pgy/keywords/{keyword}/history:
+    get:
+      summary: Xiaohongshu PGY keyword search index
+      description: |-
+        A keyword’s search index on Xiaohongshu day by day over about the last three months (the platform sets the period), with each day’s notes about it and how often they were shown, read and engaged with. The index is the platform’s measure, not a count of searches.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-keywords-history
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: keyword
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: One keyword.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/KeywordHistoryResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/keywords/{keyword}/related-keywords:
+    get:
+      summary: Xiaohongshu PGY related keywords
+      description: |-
+        What people search on Xiaohongshu before and after a keyword, up to about 100 words in one answer, each with its place by relevance, its search index, the notes about it and their reads. For widening a seed keyword.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-xiaohongshu-related-pgy-keywords
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: keyword
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: One keyword.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/KeywordRelatedListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/notes/{note_id}:
+    get:
+      summary: Xiaohongshu PGY note figures
+      description: |-
+        The figures PGY shows a brand for one note, by note ID: impressions, reads, likes, saves, comments, shares and the follows it brought, the brand it was reported for, the click-through band of the brand’s components, and its title, text, pictures, time published and creator. PGY has figures for its creators’ notes only; a note without them is not found.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-pgy-note
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: note_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "Note ID (24 hex characters): the part after explore/ in a note link, or an id
+              from the PGY creator notes."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/creator.yaml#/components/schemas/PgyNoteResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/pgy/notes:
+    get:
+      summary: Xiaohongshu PGY trending notes
+      description: |-
+        The trending notes of PGY’s content square: eight boards (Xiaohongshu hot, product seeding, e-commerce promotion, PGY sponsored, lead collection, e-commerce hot, seeding to shop, app promotion), whole or narrowed to some words, over the last 3, 7, 14 or 30 days, image or video notes alone if wanted. Each with title, time published, reads, likes, saves, comments, pictures and the creator’s ID, name and followers. Each board holds its top 100.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-trending-pgy-notes
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: board
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - hot
+              - seeding
+              - shop_promo
+              - pgy
+              - leads
+              - shop_hot
+              - direct_seeding
+              - app_promo
+            default: hot
+            description:
+              "Which board: hot (Xiaohongshu hot, the default), seeding (product seeding), shop_promo
+              (e-commerce promotion), pgy (PGY sponsored), leads (lead collection), shop_hot (e-commerce
+              hot), direct_seeding (seeding to shop) or app_promo (app promotion)."
+        - name: query
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Only notes about these words, matched against the whole note; leave out for the
+              whole board.
+        - name: window
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - 3d
+              - 7d
+              - 14d
+              - 30d
+            default: 7d
+            description: "Over how many of the last days: 3, 7 (the default), 14 or 30."
+        - name: type
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - image
+              - video
+            description: Image notes or video notes alone; both when left out.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/shop/products/{product_id}:
+    get:
+      summary: Xiaohongshu shop product detail
+      description: |-
+        A product in Xiaohongshu’s shop by its ID: title, current and original price in yuan, pictures, units sold, rating, reviews and shop. It is the product page an overseas app user sees, so promotions may differ from what users in China see.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-shop-product
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The product ID (24 hex characters), from the shop product search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/shop/products/{product_id}/reviews:
+    get:
+      summary: Xiaohongshu shop product reviews
+      description: |-
+        The first page of buyers' reviews of a product in Xiaohongshu's shop: stars, text, the variant bought, photos and likes. The app gives no further page.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). The source currently documents a single terminal page, despite including cursor metadata in its protocol. Metered per request.
+      operationId: list-xiaohongshu-shop-product-reviews
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - relevance
+              - latest
+            default: relevance
+            description: Result order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The product ID (24 hex characters), from the shop product search.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/shop/products:
+    query:
+      summary: Xiaohongshu shop product search
+      description: |-
+        Search products in Xiaohongshu's shop by keyword: title, current and original price in yuan, image and shop. Units sold are not shown as a number.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xiaohongshu-shop-products
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiaohongshuShopProductsRequest"
+  /api/v1/xiaohongshu/topics/{topic_id}:
+    get:
+      summary: Xiaohongshu topic detail
+      description: |-
+        A topic (hashtag) page by its ID: name, description, views and the number of people its page says are discussing it, with its link.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-topic
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: topic_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The topic page ID (24 hex characters): the id in a topic link, e.g. a hashtag
+              link in a note."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TopicResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/topics/{topic_id}/notes:
+    get:
+      summary: Xiaohongshu topic notes
+      description: |-
+        The hottest notes under a topic (hashtag) page, about 10 in one answer: title, text, author, likes, comments, saves, shares, pictures and hashtags.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: list-xiaohongshu-topic-notes
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: topic_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The topic page ID (24 hex characters): the id in a topic link, e.g. a hashtag
+              link in a note."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostListResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/trends:
+    get:
+      summary: Xiaohongshu hot topics
+      description: |-
+        The hot topics Xiaohongshu suggests to creators right now, with heat.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-trends
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/TrendPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/users/{user_id}:
+    get:
+      summary: Xiaohongshu account profile
+      description: |-
+        Followers, likes and saves, note count and bio of an account. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-user
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The account ID (sec_uid / user id as the platform uses it).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/users:lookup:
+    get:
+      summary: Xiaohongshu account profile by alternate identifier
+      description: |-
+        Followers, likes and saves, note count and bio of an account. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-xiaohongshu-user
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/users/{user_id}/notes:
+    get:
+      summary: Xiaohongshu account notes
+      description: |-
+        An account's notes, newest first.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-xiaohongshu-user-notes
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: user_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The account ID (sec_uid / user id as the platform uses it).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/users:
+    query:
+      summary: Xiaohongshu account search
+      description: |-
+        Find accounts by keyword: user ID, Xiaohongshu ID, name, avatar, followers (as the app rounds them) and official verification.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xiaohongshu-users
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/AccountPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXiaohongshuUsersRequest"
+  /api/v1/xiaohongshu/videos/{video_id}:
+    get:
+      summary: Xiaohongshu video note with its video
+      description: |-
+        A video note by ID or link: title, text, author, likes, comments, saves and shares, plus the video file, its length and cover, the subtitles the platform made where it has them, and whether the note is a reported brand partnership. Video notes only; an image note is the note detail’s. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xiaohongshu-video
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: video_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: The note ID (24 hex characters). Give id or url.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xiaohongshu/videos:lookup:
+    get:
+      summary: Xiaohongshu video note with its video by alternate identifier
+      description: |-
+        A video note by ID or link: title, text, author, likes, comments, saves and shares, plus the video file, its length and cover, the subtitles the platform made where it has them, and whether the note is a reported brand partnership. Video notes only; an image note is the note detail’s. Give id or url.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: lookup-xiaohongshu-video
+      tags:
+        - Xiaohongshu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: url
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description: A share link or page URL; the ID is read from it.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/social.yaml#/components/schemas/PostResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchXiaohongshuImagesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchXiaohongshuNotesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - general
+            - latest
+            - popular
+          default: general
+          description: Result order.
+        type:
+          type: string
+          minLength: 1
+          enum:
+            - all
+            - video
+            - image
+          default: all
+          description: Note type.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchXiaohongshuPgyCreatorsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        search_by:
+          type: string
+          minLength: 1
+          enum:
+            - notes
+            - name
+          default: notes
+          description: Match the words against what creators post (the default) or against their names.
+        followers_min:
+          type: integer
+          format: int64
+          minimum: 0
+          description: At least this many followers.
+        followers_max:
+          type: integer
+          format: int64
+          minimum: 0
+          description: At most this many followers.
+        type:
+          type: string
+          minLength: 1
+          enum:
+            - all
+            - image
+            - video
+          default: all
+          description: Creators who mostly post image notes or video notes; both by default.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - most_followers
+            - most_engagements
+            - most_reads
+            - lowest_rate
+            - highest_rate
+          default: relevance
+          description: Result order.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchXiaohongshuShopProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
+    SearchXiaohongshuUsersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

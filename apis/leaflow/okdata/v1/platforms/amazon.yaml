@@ -1,0 +1,392 @@
+paths:
+  /api/v1/amazon/bestsellers:
+    get:
+      summary: Amazon Best Sellers
+      description: |-
+        An Amazon Best Sellers list for a category, in rank order: rank, title, price, rating, number of ratings and photo. Also New Releases, Movers & Shakers, Most Wished For and Gift Ideas.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-amazon-bestsellers
+      tags:
+        - Amazon
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: category
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The category as it appears in the Best Sellers link: kitchen, electronics, beauty,
+              sporting-goods, pet-supplies…"
+        - name: list
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - best_sellers
+              - new_releases
+              - movers_and_shakers
+              - most_wished_for
+              - gift_ideas
+            default: best_sellers
+            description:
+              "Which list: Best Sellers (the default), New Releases, Movers & Shakers, Most Wished
+              For or Gift Ideas."
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - US
+              - GB
+              - DE
+              - FR
+              - IT
+              - ES
+              - NL
+              - BE
+              - PL
+              - SE
+              - CA
+              - MX
+              - BR
+              - AU
+              - JP
+              - IN
+              - SG
+              - AE
+              - SA
+              - TR
+              - EG
+              - CN
+            default: US
+            description:
+              "The Amazon store, by country: US (amazon.com, the default), GB (amazon.co.uk),
+              DE, JP and others. Prices come in that store's currency."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/amazon/products/{product_id}:
+    get:
+      summary: Amazon product details
+      description: |-
+        One Amazon product by ASIN: title, price and list price, rating and number of ratings, units bought last month, all photos, brand, the "About this item" bullets, category path and Best Sellers Rank.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-amazon-product
+      tags:
+        - Amazon
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - US
+              - GB
+              - DE
+              - FR
+              - IT
+              - ES
+              - NL
+              - BE
+              - PL
+              - SE
+              - CA
+              - MX
+              - BR
+              - AU
+              - JP
+              - IN
+              - SG
+              - AE
+              - SA
+              - TR
+              - EG
+              - CN
+            default: US
+            description:
+              "The Amazon store, by country: US (amazon.com, the default), GB (amazon.co.uk),
+              DE, JP and others. Prices come in that store's currency."
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The ASIN: the 10-character product ID after /dp/ in an Amazon link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/amazon/products/{product_id}/reviews:
+    get:
+      summary: Amazon product reviews
+      description: |-
+        Customer reviews of an Amazon product: stars, title and text, date, the variant bought, photos, helpful votes and whether the purchase is verified.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). The source currently documents a single terminal page, despite including cursor metadata in its protocol. Metered per request.
+      operationId: list-amazon-product-reviews
+      tags:
+        - Amazon
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: country
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - US
+              - GB
+              - DE
+              - FR
+              - IT
+              - ES
+              - NL
+              - BE
+              - PL
+              - SE
+              - CA
+              - MX
+              - BR
+              - AU
+              - JP
+              - IN
+              - SG
+              - AE
+              - SA
+              - TR
+              - EG
+              - CN
+            default: US
+            description:
+              "The Amazon store, by country: US (amazon.com, the default), GB (amazon.co.uk),
+              DE, JP and others. Prices come in that store's currency."
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - top
+              - recent
+            default: top
+            description:
+              "Most helpful first (the default) or newest first. Amazon now shows signed-out
+              visitors one fixed set: the up to 10 reviews on the product page, and it ignores the order
+              asked for (checked 2026-11-18: top and recent gave the same 10), so one call gets all there
+              is and a second order adds nothing. There is no next page and no star filter; for critical
+              reviews, keep ratings of 3 or less from that set."
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The ASIN: the 10-character product ID after /dp/ in an Amazon link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/amazon/products:
+    query:
+      summary: Amazon product search
+      description: |-
+        Search an Amazon store by keyword, as a shopper sees the results: title, price and list price, star rating, number of ratings, units bought last month, Prime, Best Seller and Amazon's Choice badges, and the photo.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-amazon-products
+      tags:
+        - Amazon
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchAmazonProductsRequest"
+components:
+  schemas:
+    SearchAmazonProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        country:
+          type: string
+          minLength: 1
+          enum:
+            - US
+            - GB
+            - DE
+            - FR
+            - IT
+            - ES
+            - NL
+            - BE
+            - PL
+            - SE
+            - CA
+            - MX
+            - BR
+            - AU
+            - JP
+            - IN
+            - SG
+            - AE
+            - SA
+            - TR
+            - EG
+            - CN
+          default: US
+          description:
+            "The Amazon store, by country: US (amazon.com, the default), GB (amazon.co.uk),
+            DE, JP and others. Prices come in that store's currency."
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - relevance
+            - best_sellers
+            - reviews
+            - newest
+            - lowest_price
+            - highest_price
+          default: relevance
+          description: "Amazon's order: relevance (the default), most reviewed, newest, or by price.
+            best_sellers keeps the search words: the matching products, the most bought last month first
+            (Amazon's own Best Sellers sort drops the words; for a category's Best Sellers list use
+            amazon.bestsellers.list)."
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

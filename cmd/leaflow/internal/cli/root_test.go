@@ -108,12 +108,12 @@ func TestProjectFlagUsesMatchingCredentials(t *testing.T) {
 				t.Errorf("unexpected exchange request: %s %s", r.Method, r.Header.Get("Authorization"))
 			}
 			_, _ = w.Write([]byte(`{"token":"token-B","expires_in":3600}`))
-		case "/v1/models":
+		case "/api/v1/enablement":
 			requests.Add(1)
 			if got := r.Header.Get("Authorization"); got != "Bearer token-B" {
 				t.Errorf("authorization=%q, want project B token", got)
 			}
-			_, _ = w.Write([]byte(`{"object":"list","data":[]}`))
+			_, _ = w.Write([]byte(`{"status":"active"}`))
 		default:
 			t.Errorf("unexpected request: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -145,7 +145,7 @@ func TestProjectFlagUsesMatchingCredentials(t *testing.T) {
 	var out, stderr bytes.Buffer
 	app := &App{Out: &out, Err: &stderr, In: strings.NewReader("")}
 	for range 2 {
-		if code := app.Run([]string{"--project", "p-B", "canopy", "list-inference-models", "-o", "json"}); code != ExitOK {
+		if code := app.Run([]string{"--project", "p-B", "canopy", "get-enablement", "-o", "json"}); code != ExitOK {
 			t.Fatalf("code=%d stderr=%s", code, stderr.String())
 		}
 	}

@@ -1,0 +1,272 @@
+paths:
+  /api/v1/taobao/products/{product_id}:
+    get:
+      summary: Taobao product details
+      description: |-
+        One Taobao or Tmall product by ID: title, price, all main images and the video, item properties, the variants (SKUs) with their prices and stock, where it ships from, and the shop. Stock reads at most 200, so 200 means 200 or more.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-taobao-product
+      tags:
+        - Taobao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The Taobao or Tmall item ID: the id= number in an item.taobao.com or detail.tmall.com
+              link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/taobao/products/{product_id}/reviews:
+    get:
+      summary: Taobao product reviews
+      description: |-
+        Buyers' reviews of a Taobao or Tmall product: text, date, the variant bought, photos and likes, newest first or in Taobao's order.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-taobao-product-reviews
+      tags:
+        - Taobao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - recent
+              - default
+            default: recent
+            description: Newest first (the default) or Taobao's overall order.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The Taobao or Tmall item ID: the id= number in an item.taobao.com or detail.tmall.com
+              link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/taobao/products:
+    query:
+      summary: Taobao product search
+      description: |-
+        Search Taobao and Tmall by keyword: title, price and list price, buyers in the last month, the shop and where it ships from, by sales, price or Taobao's own order, with a price range and a Tmall-only switch. The price is the one the result list shows (often after a coupon, or for the default variant), so it can differ from products.get.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-taobao-products
+      tags:
+        - Taobao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchTaobaoProductsRequest"
+  /api/v1/taobao/shops/{shop_id}/products:
+    get:
+      summary: Taobao shop products
+      description: |-
+        The products a Taobao or Tmall shop sells, 60 a page: title, price and list price, buyers in the last 30 days, review count and image, by sales, newest, seller credit or price. Takes the seller ID and the shop ID, both in a product's details.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-taobao-shop-products
+      tags:
+        - Taobao
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: shop_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The shop ID: ext.shop_id in a product's details, or the number in a shop<id>.taobao.com
+              link."
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - sales
+              - newest
+              - credit
+              - price_asc
+              - price_desc
+            default: sales
+            description: Best sellers first (the default), newest, seller credit, or by price.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: seller_id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The seller ID (also called user ID): shop.id in a product's details or in search
+              results."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchTaobaoProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - sales
+            - default
+            - price_asc
+            - price_desc
+          default: sales
+          description: By sales (the default), Taobao's overall order, or by price.
+        tmall_only:
+          type: boolean
+          default: false
+          description: Only Tmall shops.
+        price_min:
+          type: string
+          minLength: 1
+          description: Lowest price in yuan, inclusive.
+        price_max:
+          type: string
+          minLength: 1
+          description: Highest price in yuan, inclusive.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

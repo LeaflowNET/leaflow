@@ -1,0 +1,254 @@
+paths:
+  /api/v1/alibaba-1688/products/{product_id}:
+    get:
+      summary: 1688 product details
+      description: |-
+        One 1688 offer by ID: title, price range and tiered wholesale prices, minimum order, units sold this year, images and video, variants with stock, shipping fee and origin, and the supplier.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-alibaba-1688-product
+      tags:
+        - Alibaba 1688
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The 1688 offer ID: the number in detail.1688.com/offer/<id>.html."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/alibaba-1688/products/{product_id}/reviews:
+    get:
+      summary: 1688 product reviews
+      description: |-
+        Buyers' reviews of a 1688 offer: stars, text, date and the variant bought, in 1688's order or newest first.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-alibaba-1688-product-reviews
+      tags:
+        - Alibaba 1688
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - default
+              - recent
+            default: default
+            description: 1688's order (the default) or newest first.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The 1688 offer ID: the number in detail.1688.com/offer/<id>.html."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ReviewPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/alibaba-1688/products:
+    query:
+      summary: 1688 product search
+      description: |-
+        Search 1688, China's wholesale marketplace, by keyword: title, wholesale price, minimum order, units sold, repurchase rate and the supplier (factory or trader, location), by sales or price. Units sold is the list's rounded figure and stops at 100,000; the price is the list's (usually the cheapest tier); products.get has the year's sales and every variant's price.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-alibaba-1688-products
+      tags:
+        - Alibaba 1688
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchAlibaba1688ProductsRequest"
+  /api/v1/alibaba-1688/shops/{shop_id}/products:
+    get:
+      summary: 1688 supplier products
+      description: |-
+        The offers a 1688 supplier sells, by its member ID: title, wholesale and dropshipping price, units sold, category and listing date, sorted by sales, price or date.
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: list-alibaba-1688-shop-products
+      tags:
+        - Alibaba 1688
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: sort
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            enum:
+              - default
+              - sales
+              - price_asc
+              - price_desc
+              - newest
+              - oldest
+            default: default
+            description: The supplier's order (the default), best selling, by price, or by listing date.
+        - name: cursor
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: string
+            minLength: 1
+            description:
+              Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+              separate metered query.
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: shop_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description:
+              "The supplier's member ID, starting b2b-: the shop.id in search results or product
+              details."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+components:
+  schemas:
+    SearchAlibaba1688ProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - default
+            - sales
+            - price_asc
+            - price_desc
+          default: default
+          description: 1688's order (the default), best selling, or by price.
+        price_min:
+          type: string
+          minLength: 1
+          description: Lowest price in yuan, inclusive.
+        price_max:
+          type: string
+          minLength: 1
+          description: Highest price in yuan, inclusive.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query

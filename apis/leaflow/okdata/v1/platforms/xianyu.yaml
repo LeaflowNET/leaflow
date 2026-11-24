@@ -1,0 +1,105 @@
+paths:
+  /api/v1/xianyu/products/{product_id}:
+    get:
+      summary: Xianyu listing details
+      description: |-
+        One Xianyu listing by ID: the full description, asking and original price, condition, all photos, views, wants and favorites, shipping fee, and the seller with their city and items sold.
+
+        Requires an active OKData enablement. Metered per request.
+      operationId: get-xianyu-product
+      tags:
+        - Xianyu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+        - name: view
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/View
+        - name: fields
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            $ref: ../common.yaml#/components/schemas/Fields
+        - name: product_id
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: string
+            minLength: 1
+            description: "The Xianyu (Goofish) item ID: the itemId= number in a goofish.com link."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+  /api/v1/xianyu/products:
+    query:
+      summary: Xianyu listing search
+      description: |-
+        Search Xianyu (Goofish), China's second-hand marketplace, by keyword: title, asking price and original price, the seller and their area, newest, cheapest or by seller credit. How many want a listing comes with products.get; the result list does not carry it (null).
+
+        Requires an active OKData enablement. Returns one page per request; only a returned next_cursor permits continuation. Each page is a separate metered query (cursor TTL: 24 hours). Metered per request.
+      operationId: search-xianyu-products
+      tags:
+        - Xianyu
+      parameters:
+        - $ref: ../common.yaml#/components/parameters/IdempotencyKey
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: ../models/commerce.yaml#/components/schemas/ProductPageResponse
+        default:
+          $ref: ../common.yaml#/components/responses/Error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchXianyuProductsRequest"
+components:
+  schemas:
+    SearchXianyuProductsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 1
+          description: Keywords, as a person would type them into the platform search box.
+        sort:
+          type: string
+          minLength: 1
+          enum:
+            - default
+            - newest
+            - price_asc
+            - price_desc
+            - credit
+          default: default
+          description: Xianyu's order (the default), newest listings, by price, or by seller credit.
+        cursor:
+          type: string
+          minLength: 1
+          description:
+            Opaque cursor from pagination.next_cursor of the previous call. Each page is a
+            separate metered query.
+        view:
+          $ref: ../common.yaml#/components/schemas/View
+        fields:
+          $ref: ../common.yaml#/components/schemas/Fields
+      required:
+        - query
