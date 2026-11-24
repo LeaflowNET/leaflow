@@ -107,10 +107,31 @@ type Credentials struct {
 	ProjectID string `json:"project_id,omitempty"`
 }
 
+type keyringBackend interface {
+	Get(service, user string) (string, error)
+	Set(service, user, password string) error
+	Delete(service, user string) error
+}
+
+type osKeyring struct{}
+
+func (osKeyring) Get(service, user string) (string, error) {
+	return keyring.Get(service, user)
+}
+
+func (osKeyring) Set(service, user, password string) error {
+	return keyring.Set(service, user, password)
+}
+
+func (osKeyring) Delete(service, user string) error {
+	return keyring.Delete(service, user)
+}
+
 type Store struct {
 	contextName string
 	fallback    string
 	mode        StorageMode
+	keyring     keyringBackend
 }
 
 func NewStore(contextName string, mode StorageMode) (*Store, error) {
@@ -127,29 +148,55 @@ func NewStore(contextName string, mode StorageMode) (*Store, error) {
 		contextName: contextName,
 		fallback:    filepath.Join(dir, "credentials", contextName+".json"),
 		mode:        mode,
+		keyring:     osKeyring{},
 	}, nil
 }
 
-func (s *Store) Load() (*Credentials, error) {
-	if s.mode != StorageFile {
-		data, err := keyring.Get(keyringService, s.contextName)
-		if err == nil {
-			return decode([]byte(data))
-		}
-
-		if s.mode == StorageKeychain {
-			if errors.Is(err, keyring.ErrNotFound) {
-				return nil, ErrNoCredentials
-			}
-
-			return nil, fmt.Errorf("%w: %v", ErrNoKeychain, err)
-		}
-
-		// A keychain that exists but cannot be opened (locked, no session bus)
-		// falls through to the file. Reporting it would put a complaint in front
-		// of every command on such machines.
+func (s *Store) backend() keyringBackend {
+	if s.keyring != nil {
+		return s.keyring
 	}
 
+	return osKeyring{}
+}
+
+func (s *Store) Load() (*Credentials, error) {
+	if s.mode == StorageFile {
+		return s.loadFile()
+	}
+
+	if s.mode == StorageAuto {
+		// In auto mode, Save removes the fallback file whenever the keychain
+		// succeeds, so a file on disk means credentials fell back here (for
+		// example after outgrowing the OS keychain size limit). Prefer it over
+		// any stale keychain entry left behind by an older CLI build.
+		if creds, err := s.loadFile(); err == nil {
+			return creds, nil
+		} else if !errors.Is(err, ErrNoCredentials) {
+			return nil, err
+		}
+	}
+
+	data, err := s.backend().Get(keyringService, s.contextName)
+	if err == nil {
+		return decode([]byte(data))
+	}
+
+	if s.mode == StorageKeychain {
+		if errors.Is(err, keyring.ErrNotFound) {
+			return nil, ErrNoCredentials
+		}
+
+		return nil, fmt.Errorf("%w: %v", ErrNoKeychain, err)
+	}
+
+	// A keychain that exists but cannot be opened (locked, no session bus)
+	// or has no entry means the context is not logged in once the fallback
+	// file has already been checked above.
+	return nil, ErrNoCredentials
+}
+
+func (s *Store) loadFile() (*Credentials, error) {
 	raw, err := os.ReadFile(s.fallback)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -180,7 +227,7 @@ func (s *Store) Save(creds *Credentials) error {
 	}
 
 	if s.mode != StorageFile {
-		if err := keyring.Set(keyringService, s.contextName, string(data)); err == nil {
+		if err := s.backend().Set(keyringService, s.contextName, string(data)); err == nil {
 			// Never leave two copies: a revoked keychain entry with a stale file
 			// beside it would still work, which is the whole reason this removal
 			// is not best-effort. A file that will not go is reported, because
@@ -198,7 +245,24 @@ func (s *Store) Save(creds *Credentials) error {
 		}
 	}
 
-	return s.saveFile(data)
+	if err := s.saveFile(data); err != nil {
+		return err
+	}
+
+	// Never leave a stale keychain entry beside the fallback file: when a
+	// fresh token payload exceeds the OS keychain entry limit (e.g. macOS
+	// security(1) 4096-byte limit or Windows Credential Manager 2560-byte
+	// limit), leaving an older entry in the keychain would keep a second copy
+	// around and break older readers or logout invariants.
+	if err := s.backend().Delete(keyringService, s.contextName); err != nil &&
+		!errors.Is(err, keyring.ErrNotFound) {
+		if _, getErr := s.backend().Get(keyringService, s.contextName); getErr == nil {
+			return fmt.Errorf("%w: credentials were saved to %s but the previous keychain entry could not be removed: %v",
+				ErrCredentialsUnwritable, s.fallback, err)
+		}
+	}
+
+	return nil
 }
 
 func (s *Store) saveFile(data []byte) error {
@@ -224,7 +288,7 @@ func (s *Store) saveFile(data []byte) error {
 // Clear removes both copies regardless of mode. Logging out has to be complete,
 // including a file left behind by an earlier run under a different setting.
 func (s *Store) Clear() error {
-	if err := keyring.Delete(keyringService, s.contextName); err != nil &&
+	if err := s.backend().Delete(keyringService, s.contextName); err != nil &&
 		!errors.Is(err, keyring.ErrNotFound) {
 		// An unopenable keychain is not a logout failure; removing the file is
 		// what matters.
@@ -244,11 +308,18 @@ func (s *Store) Fallback() string {
 
 // Describe says where credentials actually live, for `leaflow auth status`.
 func (s *Store) Describe() string {
-	if _, err := os.Stat(s.fallback); err == nil {
+	switch s.mode {
+	case StorageFile:
 		return "file " + s.fallback
-	}
+	case StorageKeychain:
+		return "system keychain"
+	default:
+		if _, err := os.Stat(s.fallback); err == nil {
+			return "file " + s.fallback
+		}
 
-	return "system keychain"
+		return "system keychain"
+	}
 }
 
 // isUsable allows 30 seconds of slack: a token with two seconds left expires in
