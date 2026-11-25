@@ -422,12 +422,12 @@ components:
       description: Balance, credits and unpaid charges, each reported separately.
       type: object
       properties:
-        available_credit:
-          description: Balance minus pending balance returns and the part of unbilled_amount and due that estimated_credit_applied does not cover. Negative only when the balance and applicable credit fall short of what the account owes.
+        available_balance:
+          description: Total funds available for current charges. It is the account balance plus remaining credits, minus pending balance returns, unbilled usage and the amount due on issued invoices. Credits with restrictions remain included and are detailed in credit_groups.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         estimated_credit_applied:
-          description: Credit expected to pay unbilled_amount and due, matching each charge to the grants whose scope, validity and conditions it meets, in the order credit is applied at payment. Nothing is deducted until an invoice is paid, so credits still includes this amount.
+          description: Credit expected to pay unbilled_amount and amount_due, matching each charge to the grants whose scope, validity and conditions it meets, in the order credit is applied at payment. Nothing is deducted until an invoice is paid, so credits still includes this amount.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         unbilled_amount:
@@ -440,7 +440,7 @@ components:
         currency:
           type: string
         balance:
-          description: Topped-up funds in the account's currency, excluding credits. May be negative after a payment dispute. Amounts owed are reported in due; this is not a withdrawable amount.
+          description: Topped-up funds in the account's currency, excluding credits. May be negative after a payment dispute. Amounts owed are reported in amount_due; this is not a withdrawable amount.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credits:
@@ -448,7 +448,7 @@ components:
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         restricted_credits:
-          description: Currently valid credit restricted to certain products, operations or conditions; part of credits, not of balance.
+          description: Currently valid credit restricted to certain products, operations or conditions; part of credit_balance, not of balance.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
         credit_groups:
@@ -456,13 +456,13 @@ components:
           type: array
           items:
             $ref: ./credit-grants.yaml#/components/schemas/CreditGroup
-        due:
-          description: Amount still payable on issued invoices. The invoice of an order not yet accepted is excluded, here and from available_credit. Usage not yet invoiced is reported separately.
+        amount_due:
+          description: Amount still payable on issued invoices. The invoice of an order not yet accepted is excluded, here and from available_balance. Usage not yet invoiced is reported separately.
           allOf:
             - $ref: ../../type/v1/money.yaml#/components/schemas/Money
-        pending_returns_amount:
+        pending_refund_amount:
           $ref: ../../type/v1/money.yaml#/components/schemas/Money
-          description: Balance held for pending top-up refunds and not spendable. Unbilled usage does not hold balance.
+          description: Balance held for pending top-up refunds and not spendable. Unbilled usage is reported separately and reduces available_balance.
       required:
         - billing_account_id
         - currency
@@ -470,11 +470,11 @@ components:
         - credits
         - restricted_credits
         - credit_groups
-        - due
-        - available_credit
+        - amount_due
+        - available_balance
         - estimated_credit_applied
         - unbilled_amount
-        - pending_returns_amount
+        - pending_refund_amount
     AccountDeletionReadiness:
       type: object
       properties:

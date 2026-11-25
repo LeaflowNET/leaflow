@@ -197,7 +197,7 @@ paths:
       - $ref: ./openapi.yaml#/components/parameters/PaymentMethodId
     put:
       summary: Set default payment method
-      description: Makes an active saved payment method the default for its billing account and returns it. Expired or removed methods cannot be selected; selecting the current default changes nothing.
+      description: Makes an active saved payment method the default for its billing account and returns it. The default is used as the fallback for authorized subscription renewals. Month-end usage collection requires a separate authorization.
       operationId: set-default-payment-method
       tags:
         - payments
@@ -208,6 +208,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaymentMethod"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/billing-accounts/{accountId}/invoice-collection:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/AccountId
+    get:
+      summary: Get monthly invoice collection settings
+      operationId: get-invoice-collection
+      tags:
+        - payments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceCollection"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    put:
+      summary: Set monthly invoice collection settings
+      description: Selects how future month-end usage invoices are collected. charge_automatically authorizes off-session payment of the amount remaining after eligible credits and account balance and requires an active saved card. send_invoice disables that authorization and must omit payment_method_id.
+      operationId: set-invoice-collection
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceCollection"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceCollection"
         default:
           $ref: ./openapi.yaml#/components/responses/Error
   /api/v1/payment-methods/{paymentMethodId}:
@@ -536,6 +574,19 @@ components:
       required:
         - items
         - pagination
+    InvoiceCollection:
+      type: object
+      properties:
+        collection_method:
+          type: string
+          enum:
+            - send_invoice
+            - charge_automatically
+        payment_method_id:
+          type: string
+          format: uuid
+      required:
+        - collection_method
     PaymentMethod:
       type: object
       properties:
@@ -561,6 +612,18 @@ components:
             - "null"
         is_default:
           type: boolean
+        fingerprint:
+          type:
+            - string
+            - "null"
+        invoice_collection_authorized_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
         status:
           type: string
           enum:
@@ -572,6 +635,7 @@ components:
         - billing_account_id
         - payment_gateway
         - is_default
+        - created_at
         - status
     PaymentMethodList:
       type: object

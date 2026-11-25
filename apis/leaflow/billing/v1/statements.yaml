@@ -2,7 +2,7 @@ paths:
   /api/v1/monthly-statements:
     get:
       summary: List monthly statements
-      description: Monthly statements of account per UTC calendar month for your billing accounts, newest first. Each month summarizes order invoices issued in the month, closed usage statements of the month, credit notes issued in the month and payments recorded on those invoices.
+      description: Monthly statements of account per UTC calendar month for your billing accounts, newest first. Each month summarizes order invoices issued in the month, usage invoices issued for the month, credit notes issued in the month and payments recorded on those invoices.
       operationId: list-monthly-statements
       tags:
         - statements
@@ -38,7 +38,7 @@ paths:
   /api/v1/monthly-statements/pdf:
     get:
       summary: Download monthly statement PDF
-      description: Renders the statement of account of one finalized UTC calendar month from invoices, usage statements, credit notes and payments read at download time. Supplement statements, later credit notes and later payments are reflected in later downloads. Not a tax invoice or a demand for payment. A month that is not finalized returns 409 with `BILLING_STATEMENT_NOT_FINALIZED`.
+      description: Renders the statement of account of one finalized UTC calendar month from invoices, usage statements, credit notes and payments read at download time. Later supplement statements, credit notes and payments are reflected in later downloads. Not a tax invoice or a demand for payment. A month that is not finalized returns 409 with `BILLING_STATEMENT_NOT_FINALIZED`.
       operationId: download-monthly-statement-pdf
       tags:
         - statements
@@ -304,7 +304,7 @@ components:
         - total
         - rounding_amount
     Statement:
-      description: "An account's consumption for one billing period up to one closing. Usage is invoiced after every settlement run, about hourly: each closing issues an invoice for the usage priced since the previous one and collects it from credits and balance, and later usage goes into the next statement of the same period. A closed statement does not change. The period's consumption is the sum of its statements."
+      description: "An account's consumption for one UTC calendar month up to one closing. Usage remains in the open statement while it is being priced, so its estimate participates in balance and arrears checks. The normal closing is after month end and the late-usage window, when one usage invoice is issued for the month and collected from credits and balance. A closed statement does not change."
       type: object
       properties:
         id:
@@ -370,7 +370,7 @@ components:
         - open
         - closed
     StatementType:
-      description: "`interim`: a closing before the period's usage is final, without minimum charges. `final`: the first closing after the period ended and its late usage was settled, applying the period's minimum charges. `supplement`: a closing after the final one, for usage priced late. An open statement is interim."
+      description: "`interim`: a closing before the period's usage is final, currently operator-triggered and also used by historical hourly billing, without minimum charges. `final`: the normal first closing after the period ended and its late usage was settled, applying the period's minimum charges. `supplement`: a closing after the final one, for usage priced late. An open statement is still being accumulated."
       type: string
       enum:
         - interim

@@ -217,7 +217,7 @@ paths:
         subscription of the session whose lines are all of plans its offer lists, within each plan's `max_quantity`,
         and that has a licensed line and no trial of its own. `auto_renew` turns automatic renewal on or off for every subscription with licensed items the session
         opens; for a free trial, it decides whether the trial converts to paid when it ends. A session that is not
-        open is refused with `BILLING_CHECKOUT_SESSION_COMPLETE` or `BILLING_CHECKOUT_SESSION_EXPIRED`.
+        open is refused with `BILLING_CHECKOUT_SESSION_COMPLETE` or `BILLING_CHECKOUT_SESSION_EXPIRED`. When supplied, `expected_revision` enables optimistic concurrency and stale values are refused with `BILLING_CHECKOUT_SESSION_REVISION_CHANGED`.
 
         Open to the owner of the session's billing account and to members of its project.
       operationId: update-checkout-session
@@ -254,7 +254,7 @@ paths:
 
         Confirming a complete session again with the same terms returns it with its order; different terms are refused
         with `BILLING_CHECKOUT_SESSION_COMPLETE`. An expired session is refused with `BILLING_CHECKOUT_SESSION_EXPIRED`.
-        The order is delivered by the service that owns it once paid; confirmation alone does not mean delivery.
+        The order is delivered by the service that owns it once paid; confirmation alone does not mean delivery. When supplied, `expected_revision` is checked before creating an order or invoice.
 
         Open to the owner of the session's billing account and to members of its project.
       operationId: confirm-checkout-session
@@ -383,6 +383,11 @@ components:
           description: "`open` in a preview."
           allOf:
             - $ref: "#/components/schemas/CheckoutSessionStatus"
+        revision:
+          description: Incremented on every persisted session change and used for optimistic concurrency.
+          type: integer
+          format: int64
+          minimum: 1
         currency:
           type: string
         checkout:
@@ -493,6 +498,7 @@ components:
         - type
         - change_effective
         - status
+        - revision
         - currency
         - checkout
         - promotion_code
@@ -1144,6 +1150,11 @@ components:
       description: Give at least one choice. Saving a choice equal to the current one changes nothing.
       type: object
       properties:
+        expected_revision:
+          description: The revision returned with the session being updated.
+          type: integer
+          format: int64
+          minimum: 1
         promotion_code:
           description: The promotion code to complete the session with; null removes it, and the best applicable account discount applies instead.
           type:
@@ -1165,6 +1176,11 @@ components:
     CheckoutSessionConfirm:
       type: object
       properties:
+        expected_revision:
+          description: The revision returned with the session being confirmed.
+          type: integer
+          format: int64
+          minimum: 1
         expected_amount:
           description: The session's `total` as read, after discounts and tax and before credit grants or balance.
           allOf:
