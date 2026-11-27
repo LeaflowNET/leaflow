@@ -2,14 +2,19 @@ paths:
   /api/v1/memories:
     get:
       summary: List what the assistant remembers
-      description:
-        "Facts the assistant has written down for the current account in this project. They
-        appear at the start of every later conversation. Members of the same project each have their own,
-        and this returns only the current account's. Not paginated: there is a cap on how many there
-        can be, and all of them come back at once."
+      description: |-
+        Facts the assistant has written down in this project. Without `agentId`, returns the current
+        account's private memories; with `agentId`, returns that project agent's memories.
       operationId: list-memories
       tags:
         - Memory
+      parameters:
+        - name: agentId
+          in: query
+          description: Return memories belonging to this project agent instead of the caller's personal assistant.
+          schema:
+            type: string
+            maxLength: 64
       responses:
         "200":
           description: OK
@@ -22,9 +27,9 @@ paths:
   /api/v1/memories/{memory}:
     delete:
       summary: Delete one memory
-      description:
-        The assistant stops remembering this. It takes effect at once, so the next conversation
-        will not carry it. The assistant may well learn the same thing again.
+      description: |-
+        Removes a stored memory immediately. Pass `agentId` when deleting a memory belonging to a
+        project agent.
       operationId: delete-memory
       tags:
         - Memory
@@ -34,6 +39,11 @@ paths:
           required: true
           schema:
             type: string
+        - name: agentId
+          in: query
+          schema:
+            type: string
+            maxLength: 64
       responses:
         "204":
           description: No Content
@@ -54,6 +64,11 @@ components:
     MemoryResource:
       type: object
       properties:
+        agentId:
+          description: The project agent this memory belongs to. Null for a person's private memory.
+          type:
+            - string
+            - "null"
         body:
           description: The fact itself
           type: string
@@ -63,14 +78,10 @@ components:
         id:
           type: string
         name:
-          description:
-            The name the assistant gave this fact; it overwrites or deletes its own entries
-            by that name
+          description: The name the assistant gave this fact; it overwrites or deletes its own entries by that name
           type: string
         sourceThreadId:
-          description:
-            Which conversation the assistant learned it in. That conversation may since have
-            been deleted
+          description: Which conversation the assistant learned it in. That conversation may since have been deleted
           type: string
         updatedAt:
           type: string

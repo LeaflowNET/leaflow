@@ -1,0 +1,331 @@
+syntax = "proto3";
+
+package leaflow.fleet.controlplane.tool.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+import "leaflow/fleet/controlplane/control/v1/control.proto";
+import "leaflow/fleet/dataplane/virtualdesktop/capture/v1/capture.proto";
+import "leaflow/fleet/dataplane/virtualdesktop/display/v1/display.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/controlplane/tool/v1;toolv1";
+
+// Tools inside a session: built-in capabilities of the Agent and external tools
+// served by MCP servers configured by the account. MCP is one protocol for
+// external tools, not how built-in tools run. Tool identity is determined by
+// the Agent's registered source, never by claims in an external tool's name,
+// description, or annotations.
+//
+// ToolService is a session service. Fleet may relay tool calls, results, and
+// images over the session's control connection without requiring the caller to
+// open a WebRTC connection; that relay path is hop-by-hop encrypted, so the
+// Fleet service sees its contents. This exception does not alter the
+// end-to-end encryption guarantees of live desktop streams or existing
+// participant data channels. Implementations may also expose a reliable bulk
+// service channel of the same name on an authorized participant's data
+// connection, without making direct connectivity a prerequisite for tool calls.
+//
+// Only an explicit ListTools discovers tools live from built-in implementations
+// and permitted MCP servers. Neither the Agent nor Fleet maintains a tool
+// database or caches catalogs or call results; callers may retain descriptors
+// discovered in a previous round for subsequent calls and rediscover on demand.
+// CallTool does not require a prior ListTools and performs no extra discovery
+// round-trip to check existence; a missing tool fails directly with NOT_FOUND
+// and reason TOOL_NOT_FOUND. Protocol connections, processes, and in-flight
+// calls still maintain their own lifecycles, which are runtime state rather
+// than a cached tool catalog. Pagination tokens must validate against the live
+// list without persisting historical catalogs.
+//
+// Built-in virtual desktop tools use `computer.*` names and are never exposed
+// under CUA or MCP server names. They are listed only while virtual desktop
+// capabilities are actually available; calling one by name when unavailable
+// also returns TOOL_NOT_FOUND and cannot bypass live capability checks via an
+// older catalog. Users do not need to open a desktop first; the system prepares
+// a lightweight graphical context for the account on demand.
+//
+// Built-in tools reuse the existing permissions and arbitration of each
+// underlying capability: read-only participants may observe but cannot perform
+// mutating actions, and input operations still enforce the input lease, target
+// window, modal restrictions, and window resize/shape generations. When relayed
+// over control, `authorization` must first be verified under control.v1 for
+// platform signature, issuer, machine/session, lifetime, identity, and policies
+// to establish an authentic session caller, without requiring or fabricating a
+// WebRTC Connection. Direct callers derive their authentic identity from the
+// transport channel; if `authorization` is also supplied, it must match the
+// channel identity. Tool arguments cannot self-assert identity or switch
+// accounts or sessions. When a call is cancelled, its authorization expires, or
+// the caller leaves, in-flight calls are cancelled; completed side effects are
+// not replayed automatically.
+//
+// External MCP tools can execute arbitrary code as the account and must never
+// be treated as safe based on a self-reported `readOnlyHint`. Only non-read-only
+// participants of the session's owning account whose authorization explicitly
+// carries a ToolPolicy permitting that server may start, discover, or call it.
+// Local provider channels must still enforce account permissions; the machine
+// McpService relay path must not be used as a substitute for this service.
+//
+// Tool results carry multimodal content without requiring MCP transport. Images
+// travel as encoded bytes; callers convert them into model-specific image
+// content at the model adapter boundary. Implementations must not upload images
+// to public URLs by default or write images or tool payloads into logs.
+service ToolService {
+  // Lists tools discoverable by this participant. Sources that cannot be used
+  // are reported in `unavailable_sources` without blocking other sources.
+  // Built-in tools remain discoverable when no MCP server is configured.
+  //
+  // Every word in `query` matches tool name, title, or description
+  // case-insensitively. When `page_size` is unset, the Agent chooses up to 100.
+  // Each response is also bounded by the channel message budget and may return
+  // fewer than `page_size`. `page_token` belongs only to this participant and
+  // identical query; if the live list changed, fails with FAILED_PRECONDITION
+  // and reason TOOL_LIST_CHANGED so the caller restarts from the first page
+  // without replaying any CallTool.
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+
+  // Calls a tool from an explicit source. `arguments_json` is a JSON object of
+  // at most 256 KiB. Schemas serve discovery; built-in implementations validate
+  // arguments independently, and external MCP servers use MCP `tools/call`.
+  //
+  // Every call re-checks caller authorization and source availability.
+  // Permission denials, invalid arguments, and unknown tools fail via RPC
+  // status; application-level tool execution errors return `is_error = true`.
+  // Failure does not imply that no side effects occurred, so callers must not
+  // retry blindly.
+  //
+  // The complete result must fit within the peer's message size limit. When it
+  // does not fit, fails with RESOURCE_EXHAUSTED and reason
+  // TOOL_RESULT_TOO_LARGE rather than truncating images, faking success, or
+  // substituting unauthorized external download URLs.
+  rpc CallTool(CallToolRequest) returns (CallToolResponse);
+}
+
+// The authentic source and canonical name of a tool, rather than any alias a
+// model might use.
+message ToolRef {
+  oneof source {
+    // Stable name in the Agent's built-in catalog, such as
+    // `computer.get_desktop_state`.
+    string builtin = 1;
+    // An MCP server configured by the account and its raw `tools/list` name.
+    McpToolRef mcp = 2;
+  }
+}
+
+// Names an MCP server belonging to the session's owning account; never selects
+// another account's server.
+message McpToolRef {
+  string server = 1;
+  string name = 2;
+}
+
+// Source filter during discovery; unspecified selects all permitted sources.
+enum ToolSourceKind {
+  TOOL_SOURCE_KIND_UNSPECIFIED = 0;
+  TOOL_SOURCE_KIND_BUILTIN = 1;
+  TOOL_SOURCE_KIND_MCP = 2;
+}
+
+// Descriptor of a tool. Descriptions, schemas, and metadata from external
+// sources are untrusted content and grant no permissions.
+message ToolDescriptor {
+  ToolRef tool = 1;
+  // Suggested display name. When a model imposes length or character limits, a
+  // client may maintain aliases, but must restore the full ToolRef on CallTool
+  // rather than guessing the source by parsing or truncating names.
+  string name = 2;
+  string title = 3;
+  string description = 4;
+  // JSON Schema object serialized as JSON text to preserve values and extension
+  // keywords.
+  string input_schema_json = 5;
+  // Empty when no output schema is declared.
+  string output_schema_json = 6;
+  // Optional JSON object, such as external tool annotations; for display and
+  // hints only, never authorization.
+  string metadata_json = 7;
+}
+
+message ListToolsRequest {
+  string query = 1;
+  ToolSourceKind source = 2;
+  // Optional single server filter when `source` includes MCP; empty selects all
+  // permitted servers.
+  string mcp_server = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+  // Required when Fleet relays over session control, with
+  // `Authorization.control_only = true`; never supplied via tool arguments.
+  // Direct participants obtain a non-control_only authorization from their
+  // transport channel and cannot use tool requests to escalate or spoof between
+  // carriers.
+  leaflow.fleet.controlplane.control.v1.SignedAuthorization authorization = 6;
+}
+
+message ListToolsResponse {
+  repeated ToolDescriptor tools = 1;
+  string next_page_token = 2;
+  repeated UnavailableToolSource unavailable_sources = 3;
+}
+
+// Reports an unavailable tool source without exposing credentials, arguments,
+// or results.
+message UnavailableToolSource {
+  ToolSourceKind source = 1;
+  // Empty for the built-in source.
+  string mcp_server = 2;
+  google.rpc.Status status = 3;
+}
+
+message CallToolRequest {
+  ToolRef tool = 1;
+  string arguments_json = 2;
+  // Same rules as `ListToolsRequest.authorization`; verified on every call.
+  leaflow.fleet.controlplane.control.v1.SignedAuthorization authorization = 3;
+  // Correlation ID for live tool activity events, not an idempotency key for
+  // caching or replay. Chosen by Fleet as 1 to 64 ASCII letters, digits, or
+  // `-`; callers must not automatically retry side-effecting actions with it.
+  string operation_id = 4;
+}
+
+message CallToolResponse {
+  // Ordered content blocks; a single result may mix text, images, and
+  // structured items.
+  repeated ToolContent content = 1;
+  // Optional JSON object. Preserves `structuredContent` for MCP sources and
+  // follows the declared output schema for built-in tools.
+  string structured_content_json = 2;
+  bool is_error = 3;
+  // Optional extension JSON object, such as MCP `_meta`; does not duplicate
+  // `content`, `structuredContent`, `isError`, or image bytes, and grants no
+  // permissions.
+  string metadata_json = 4;
+}
+
+message ToolContent {
+  oneof content {
+    string text = 1;
+    ToolImage image = 2;
+    // External content block without a dedicated representation, preserving its
+    // original JSON object and `type`; not a text substitute for images, and
+    // must never execute embedded code or auto-fetch embedded URLs.
+    string json = 3;
+  }
+  // Optional extension JSON object for the block, such as `annotations`/`_meta`;
+  // does not duplicate body text or image bytes and cannot spoof origin,
+  // elevate privileges, or trigger external network fetches.
+  string metadata_json = 4;
+}
+
+message ToolImage {
+  // Encoded PNG, JPEG, or WebP bytes, not a base64 string inside JSON.
+  bytes data = 1;
+  string mime_type = 2;
+  // Actual pixel dimensions of the encoded image, matching its image header.
+  leaflow.fleet.dataplane.virtualdesktop.display.v1.Size size = 3;
+  // Coordinate mapping attached to built-in screenshots; unset for external
+  // images without reliable local session coordinates.
+  ScreenshotContext screenshot = 4;
+}
+
+// Associates image pixels with the observed windows. Image downscaling does not
+// alter the original capture geometry recorded here.
+message ScreenshotContext {
+  // Non-empty, opaque, self-contained mapping token issued by the session,
+  // valid only for the original caller and graphical context generation; not an
+  // authorization credential. Implementations verify integrity, lifetime, and
+  // live window state without a database, image cache, or stored history.
+  // Expired or invalidated tokens fail with STALE_CAPTURE rather than silently
+  // acting against a newer screenshot.
+  string reference = 1;
+  // 0 for the full canvas; otherwise the target window of CaptureScreenshot.
+  uint64 window_id = 2;
+  // Original captured region: canvas coordinates for a full-canvas capture, or
+  // window-local coordinates for a single-window capture. Points in the image
+  // are scaled from `ToolImage.size` back to `area` and combined with `windows`
+  // to resolve target window-local coordinates.
+  leaflow.fleet.dataplane.virtualdesktop.display.v1.Rectangle area = 3;
+  // Same as `CaptureScreenshotResponse.windows`, including each window's
+  // geometry and `resize_counter`.
+  repeated leaflow.fleet.dataplane.virtualdesktop.capture.v1.CapturedWindow windows = 4;
+  google.protobuf.Timestamp captured_at = 5;
+  // Observed change revision; does not replace window resize/shape generation
+  // checks on input RPCs.
+  uint64 revision = 6;
+  bool quiet = 7;
+}
+
+// Tool policy carried in a participant's `Authorization.policies`. Built-in
+// tools continue to enforce each underlying capability's policy; this policy
+// never bypasses `read_only`, input leases, modal restrictions, or window
+// checks.
+message ToolPolicy {
+  // Explicitly allows external MCP tools of the account; denied when absent or
+  // false. Still subject to `read_only` and account ownership, and self-reported
+  // read-only hints never relax authorization.
+  bool allow_mcp = 1;
+  // Optional allowlist of exact MCP server names. When `allow_mcp` is true and
+  // this list is empty, all servers currently configured by the account are
+  // allowed so newly configured tools appear live without catalog caching or
+  // re-issuing authorizations. When non-empty, only listed names are allowed;
+  // wildcards are not supported.
+  repeated string mcp_servers = 2;
+}
+
+// Live visual hints of tool actions reported by the Agent and forwarded by
+// Fleet to frontends authorized to observe the session, with no event database
+// or result cache. Carries only action category, target position, and phase—
+// never typed text, keystrokes, clipboard data, images, or tool arguments.
+// Dropped events do not affect execution and never trigger action replay.
+// Served by Fleet on the session's control connection; `session_id` in every
+// event must match that connection.
+service ToolActivityService {
+  rpc ReportToolActivity(ReportToolActivityRequest) returns (ReportToolActivityResponse);
+}
+
+message ReportToolActivityRequest {
+  // At most 64 events and 32 KiB per request. High-frequency pointer positions
+  // may be coalesced; missing completion events are never fabricated.
+  repeated ToolActivity events = 1;
+}
+
+message ReportToolActivityResponse {}
+
+message ToolActivity {
+  string session_id = 1;
+  uint64 participant_id = 2;
+  string operation_id = 3;
+  // Process instance ID of the reporter, changing across restarts; `sequence`
+  // is ordered only within the same `instance_id`.
+  string instance_id = 4;
+  uint64 sequence = 5;
+  google.protobuf.Timestamp observed_at = 6;
+  ToolActivityPhase phase = 7;
+  // Canonical action name such as `computer.click`, never user input or shell
+  // commands.
+  string action = 8;
+  ToolActivityTarget target = 9;
+}
+
+message ToolActivityTarget {
+  // When 0, `position` is in canvas coordinates; otherwise in the target
+  // window's client-area coordinates—never client CSS, physical monitor, or
+  // downscaled screenshot coordinates. Positionless keyboard actions may set
+  // `window_id` alone.
+  uint64 window_id = 1;
+  leaflow.fleet.dataplane.virtualdesktop.display.v1.Point position = 2;
+  uint64 resize_counter = 3;
+  uint64 shape_counter = 4;
+}
+
+enum ToolActivityPhase {
+  TOOL_ACTIVITY_PHASE_UNSPECIFIED = 0;
+  // Permission and target checks passed and execution is about to start; does
+  // not prove the application received the action.
+  TOOL_ACTIVITY_PHASE_TARGETED = 1;
+  // The native input interface accepted the operation; does not imply the
+  // application or GPU has presented a new frame.
+  TOOL_ACTIVITY_PHASE_APPLIED = 2;
+  TOOL_ACTIVITY_PHASE_FINISHED = 3;
+  TOOL_ACTIVITY_PHASE_CANCELLED = 4;
+  TOOL_ACTIVITY_PHASE_FAILED = 5;
+}

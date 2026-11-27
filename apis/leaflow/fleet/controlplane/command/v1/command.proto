@@ -1,0 +1,346 @@
+syntax = "proto3";
+
+package leaflow.fleet.controlplane.command.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/leaflowapis/leaflow-go/fleet/controlplane/command/v1;commandv1";
+
+// Commands the platform runs on a machine through its Agent, instead of
+// logging in over SSH: no open port, no key to distribute and no address to
+// reach, since the Agent's control connection (leaflow.fleet.controlplane.control.v1)
+// already leads to the machine. Every call fails with the reasons of each
+// method in a google.rpc.ErrorInfo of the domain "fleet.leaflow.cloud".
+//
+// Accounts. A command runs as the account resolved for the platform user who
+// asked for it on the machine (leaflow.fleet.controlplane.directory.v1: their bound local
+// account when one is configured on the machine, or their directory account
+// otherwise), never as root or an unbound local account. The Agent runs it
+// through the account and session stacks of its PAM service, so it is refused
+// whenever a Fleet login of the account would be.
+//
+// Elevation. Inside a command, sudo(8) succeeds without a prompt while the
+// account may become root (admin, resolved at that moment), and refuses
+// otherwise: the user asked for the command, so the request stands for the
+// approval a person gives on a participant of a session
+// (leaflow.fleet.controlplane.privilege.v1).
+//
+// A command is one line for the account's login shell, as `ssh host
+// 'command'` runs it (RFC 4254 §6.5 "exec"): pipes, redirection and `&&`
+// work, and there is no terminal and no standard input.
+//
+// Background commands. When RunCommandRequest.background is true, the daemon
+// starts the command detached, persists its output to a per-boot runtime file
+// (for example under /run/user/<uid>/leaflow/commands/<command_id>/), and
+// returns immediately with CommandInfo. Background command state lives only in
+// the Agent and its per-boot runtime storage—never in Fleet's database—so a
+// machine reboot naturally clears every running command. While a background
+// command runs, the Agent proactively reports periodic heartbeats (every 30
+// minutes) and a terminal exit event through CommandEventService so Fleet can
+// publish them to EventBus.
+//
+// Neither the command nor its output is confidential to the platform: do
+// not put secrets into either.
+//
+// Feature "leaflow.fleet.controlplane.command.v1" (leaflow.fleet.controlplane.machine.v1 Feature):
+// AVAILABLE while leaflow.fleet.controlplane.directory.v1 is, since commands run as
+// directory accounts.
+
+// Runs and manages commands. Served by the daemon on its control connection;
+// Fleet calls it.
+service CommandService {
+  // Runs one command. For foreground calls (background=false), returns once it
+  // exited or was killed, with what it wrote. For background calls
+  // (background=true), starts the command detached, persists output to a file,
+  // and returns immediately with background_command. A command that fails is
+  // still a successful call: its exit status is its result.
+  //
+  // Fails with:
+  //   - INVALID_ARGUMENT and reason INVALID_REQUEST for an empty command,
+  //     one longer than 65536 bytes or one containing a NUL byte, or a
+  //     foreground timeout outside 1 to 300 seconds;
+  //   - NOT_FOUND and reason USER_NOT_FOUND for an account the machine's
+  //     copy of the directory does not hold for user_id;
+  //   - PERMISSION_DENIED and reason USER_NOT_ALLOWED for an account that
+  //     may not log in to the machine or one the machine does not serve (a
+  //     conflict);
+  //   - PERMISSION_DENIED and reason ACCOUNT_EXPIRED when PAM reports the
+  //     account expired (PAM_ACCT_EXPIRED);
+  //   - PERMISSION_DENIED and reason PAM_PERMISSION_DENIED when PAM refuses
+  //     the account or the session (PAM_PERM_DENIED), with metadata
+  //     "pamMessage", the text PAM gave;
+  //   - INTERNAL and reason COMMAND_START_FAILED when the shell could not
+  //     start; nothing ran;
+  //   - INTERNAL and reason COMMAND_LOST when the Agent lost the command
+  //     while it ran: it may have run in part, and what it wrote is gone.
+  // Calling again runs the command again: a caller that lost the result,
+  // such as with CONNECTION_LOST, does not know whether it ran. A foreground
+  // call without a timeout may run the command's timeout and 10 seconds more.
+  rpc RunCommand(RunCommandRequest) returns (RunCommandResponse);
+
+  // Lists background commands currently tracked by the Agent for the account
+  // since the machine booted, newest first. Includes recently exited commands
+  // retained in runtime storage so callers can inspect exit status and output.
+  rpc ListCommands(ListCommandsRequest) returns (ListCommandsResponse);
+
+  // Returns the current metadata and status of one background command.
+  // Fails with NOT_FOUND and reason COMMAND_NOT_FOUND when unknown or owned by
+  // another user.
+  rpc GetCommand(GetCommandRequest) returns (GetCommandResponse);
+
+  // Reads a bounded slice of a background command's persisted output file by
+  // tail lines, line range, or byte offset.
+  // Fails with NOT_FOUND and reason COMMAND_NOT_FOUND when unknown or owned by
+  // another user.
+  rpc ReadCommandOutput(ReadCommandOutputRequest) returns (ReadCommandOutputResponse);
+
+  // Stops a running background command belonging to the account. Stopping a
+  // command that has already exited succeeds and returns its current metadata.
+  // Fails with NOT_FOUND and reason COMMAND_NOT_FOUND when unknown or owned by
+  // another user.
+  rpc StopCommand(StopCommandRequest) returns (StopCommandResponse);
+}
+
+// Receives background command lifecycle reports proactively pushed by the
+// Agent daemon and forwards them to EventBus. Served by Fleet on the daemon's
+// control connection; Fleet does not persist command state in its database.
+service CommandEventService {
+  // Reports a periodic running heartbeat (every 30 minutes) or a terminal exit
+  // event for a background command. The Agent retains unacknowledged EXITED
+  // events in memory and retries after reconnecting until answered with
+  // success; missed RUNNING heartbeats are not replayed.
+  rpc ReportCommandEvent(ReportCommandEventRequest) returns (ReportCommandEventResponse);
+}
+
+// Lifecycle state of a background command.
+enum CommandState {
+  COMMAND_STATE_UNSPECIFIED = 0;
+  // Process is still running.
+  COMMAND_STATE_RUNNING = 1;
+  // Process has exited or was terminated; metadata and output remain readable
+  // until the retention limit is reached or the machine reboots.
+  COMMAND_STATE_EXITED = 2;
+}
+
+// Output stream selected when reading a persisted command output file.
+enum CommandOutputStream {
+  COMMAND_OUTPUT_STREAM_UNSPECIFIED = 0;
+  // Merged standard output and standard error in write order.
+  COMMAND_OUTPUT_STREAM_COMBINED = 1;
+  // Standard output only.
+  COMMAND_OUTPUT_STREAM_STDOUT = 2;
+  // Standard error only.
+  COMMAND_OUTPUT_STREAM_STDERR = 3;
+}
+
+// Kind of lifecycle event reported by the Agent daemon.
+enum CommandEventKind {
+  COMMAND_EVENT_KIND_UNSPECIFIED = 0;
+  // Periodic heartbeat while the command continues to run (every 30 minutes).
+  COMMAND_EVENT_KIND_RUNNING = 1;
+  // Terminal notification once the command exits or is terminated.
+  COMMAND_EVENT_KIND_EXITED = 2;
+}
+
+// Metadata and current status of a background command tracked by the Agent.
+message CommandInfo {
+  // Unique identifier chosen by the Agent (canonical lowercase UUID).
+  string command_id = 1;
+  // Platform user UUID owning the command.
+  string user_id = 2;
+  // Effective OS username running the command on the machine.
+  string username = 3;
+  // Shell command line when started via RunCommand; empty when started with an
+  // argument vector only.
+  string command = 4;
+  // Full argument vector executed on the machine (for example ["/bin/sh", "-c", "..."]
+  // or the exact argv passed to a session background process).
+  repeated string argv = 5;
+  // Resolved working directory where the command was started.
+  string working_directory = 6;
+  // Optional session_id when this background process belongs to a Fleet session.
+  string session_id = 7;
+  CommandState state = 8;
+  google.protobuf.Timestamp started_at = 9;
+  // Set when state is COMMAND_STATE_EXITED.
+  google.protobuf.Timestamp finished_at = 10;
+  // Elapsed wall time since started_at (while running) or total runtime (once exited).
+  google.protobuf.Duration duration = 11;
+  // How the command ended. Set when state is COMMAND_STATE_EXITED.
+  oneof termination {
+    // It exited with this status (wait(2) WEXITSTATUS), 0 being success.
+    int32 exit_status = 12;
+    // A signal ended it (wait(2) WTERMSIG), such as 9 or 15.
+    int32 signal = 13;
+  }
+  // True when the configured timeout killed the command.
+  bool timed_out = 14;
+  // Machine-readable termination reason: exited, signaled, stopped, timed_out,
+  // output_limit, start_failed, or failed. Empty while running.
+  string reason = 15;
+  // Absolute path on the machine where combined output is persisted so callers
+  // and AI tools can search or read it locally.
+  string output_path = 16;
+  // Total bytes written to the combined output file so far.
+  uint64 output_bytes = 17;
+  // Total lines written to the combined output file so far.
+  uint64 output_lines = 18;
+  // Output reached the Agent's retention cap and further bytes were discarded.
+  bool output_truncated = 19;
+}
+
+// The request of RunCommand.
+message RunCommandRequest {
+  // The platform user who asked for the command.
+  string user_id = 1;
+  // The user's directory account (leaflow.fleet.controlplane.directory.v1 Account), whose
+  // user_id is the one above.
+  string username = 2;
+  // The command line for the account's login shell (`shell -c command`).
+  string command = 3;
+  // Kills the command, and every process it started, when it has not ended
+  // this long after it started. For foreground calls: 1 to 300 seconds; unset
+  // defaults to 60 seconds. For background calls: optional upper bound; unset
+  // runs until exit, StopCommand, or reboot.
+  google.protobuf.Duration timeout = 4;
+  // When true, starts the command detached in the background, persists output
+  // to a runtime file, and returns immediately with background_command.
+  bool background = 5;
+  // Optional working directory. Empty: the user's home directory.
+  string working_directory = 6;
+}
+
+// The response of RunCommand.
+message RunCommandResponse {
+  // How the command ended (foreground runs).
+  oneof termination {
+    // It exited with this status (wait(2) WEXITSTATUS), 0 being success.
+    // Any other value is the command's own verdict.
+    int32 exit_status = 1;
+    // A signal ended it (wait(2) WTERMSIG), such as 9 when the timeout
+    // killed it.
+    int32 signal = 2;
+  }
+  // The timeout ended it.
+  bool timed_out = 3;
+  // What it wrote to standard output, at most 1 MiB; the rest is discarded.
+  bytes stdout = 4;
+  // stdout is cut short.
+  bool stdout_truncated = 5;
+  // What it wrote to standard error, at most 1 MiB; the rest is discarded.
+  bytes stderr = 6;
+  // stderr is cut short.
+  bool stderr_truncated = 7;
+  // Set when RunCommandRequest.background was true.
+  CommandInfo background_command = 8;
+}
+
+message ListCommandsRequest {
+  string user_id = 1;
+  string username = 2;
+  // Optional filter. Unspecified returns both running and retained exited
+  // commands.
+  CommandState state = 3;
+}
+
+message ListCommandsResponse {
+  repeated CommandInfo commands = 1;
+}
+
+message GetCommandRequest {
+  string user_id = 1;
+  string username = 2;
+  string command_id = 3;
+}
+
+message GetCommandResponse {
+  CommandInfo command = 1;
+}
+
+// Line-based slice of a persisted output file.
+message CommandLineRange {
+  // 1-based starting line number.
+  uint64 start_line = 1;
+  // Maximum lines to return.
+  uint32 max_lines = 2;
+}
+
+// Byte-based slice of a persisted output file.
+message CommandByteRange {
+  // 0-based byte offset.
+  uint64 offset = 1;
+  // Maximum bytes to return.
+  uint32 max_bytes = 2;
+}
+
+message ReadCommandOutputRequest {
+  string user_id = 1;
+  string username = 2;
+  string command_id = 3;
+  // Output stream to read. Unspecified defaults to COMMAND_OUTPUT_STREAM_COMBINED.
+  CommandOutputStream stream = 4;
+  // Slice of the output file to read. Unset defaults to the last 200 lines.
+  oneof range {
+    // Return at most the last N lines.
+    uint32 tail_lines = 5;
+    // Return lines starting at a 1-based line number.
+    CommandLineRange line_range = 6;
+    // Return bytes starting at a 0-based byte offset.
+    CommandByteRange byte_range = 7;
+  }
+}
+
+message ReadCommandOutputResponse {
+  // Output bytes in the requested slice, capped by the transfer budget (at most
+  // 256 KiB per response).
+  bytes data = 1;
+  // 1-based first line returned (0 when data is empty).
+  uint64 start_line = 2;
+  // 1-based last line returned (0 when data is empty).
+  uint64 end_line = 3;
+  // Total lines currently in the requested stream.
+  uint64 total_lines = 4;
+  // 0-based byte offset where data starts.
+  uint64 start_offset = 5;
+  // 0-based byte offset immediately after data, usable as the next offset.
+  uint64 next_offset = 6;
+  // Total bytes currently in the requested stream.
+  uint64 total_bytes = 7;
+  // More output exists beyond the returned slice.
+  bool has_more = 8;
+  // The underlying output file was truncated at the Agent's limit.
+  bool output_truncated = 9;
+  // Absolute path on the machine for the persisted output file.
+  string output_path = 10;
+}
+
+message StopCommandRequest {
+  string user_id = 1;
+  string username = 2;
+  string command_id = 3;
+}
+
+message StopCommandResponse {
+  CommandInfo command = 1;
+}
+
+// A lifecycle event for one background command, proactively reported by the Agent.
+message CommandEvent {
+  // /proc/sys/kernel/random/boot_id of the machine for the boot that ran this
+  // command.
+  string boot_id = 1;
+  string command_id = 2;
+  CommandEventKind kind = 3;
+  // Strictly increasing per command_id (starting at 1) to order events and
+  // deduplicate retries.
+  uint64 sequence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  CommandInfo command = 6;
+}
+
+message ReportCommandEventRequest {
+  CommandEvent event = 1;
+}
+
+message ReportCommandEventResponse {}

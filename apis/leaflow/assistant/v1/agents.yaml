@@ -1,0 +1,354 @@
+paths:
+  /api/v1/agents:
+    get:
+      summary: List project agents
+      description: |-
+        Lists the resident agents in this project, ordered by name. Each agent has a single living
+        conversation (`threadId`), an isolated service account (`serviceAccountId`), and an optional
+        Fleet machine binding (`machineId`).
+      operationId: list-agents
+      tags:
+        - Agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentListResponseBody"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    post:
+      summary: Create a project agent
+      description: |-
+        Creates a resident agent visible to the whole project, provisions its dedicated IAM service
+        account, grants machine login (and optional sudo) when `machineId` is bound, and creates its
+        single conversation thread.
+      operationId: create-agent
+      tags:
+        - Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentRequestBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+  /api/v1/agents/{agent}:
+    parameters:
+      - $ref: ./openapi.yaml#/components/parameters/AgentId
+    get:
+      summary: Get a project agent
+      operationId: get-agent
+      tags:
+        - Agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    patch:
+      summary: Update a project agent
+      description: |-
+        Updates the agent's profile, instructions, machine binding, or conversation model settings.
+        Omitted fields stay as they are; setting `machineId` to null unbinds the Fleet machine.
+      operationId: update-agent
+      tags:
+        - Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentRequestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResource"
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+    delete:
+      summary: Delete a project agent
+      description: |-
+        Removes the agent and its conversation when idle. Fails with 409 and code THREAD_RUNNING while
+        its conversation is running.
+      operationId: delete-agent
+      tags:
+        - Agent
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: ./openapi.yaml#/components/responses/Error
+components:
+  schemas:
+    AgentRuntime:
+      description: |-
+        How the agent executes turns: `hosted` runs on the platform's built-in model runtime;
+        `external` reserves integration with external or local agent runtimes such as A2A endpoints.
+      type: string
+      enum:
+        - hosted
+        - external
+    AgentResource:
+      description: A resident project agent with a dedicated service account and single living main thread.
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          description: Unique handle within the project, used in `@slug` mentions.
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        instructions:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/AgentRuntime"
+        serviceAccountId:
+          description: The IAM service account user id this agent acts as.
+          type: string
+        machineId:
+          description: The Fleet machine this agent is locked to. Null when unbound.
+          type:
+            - string
+            - "null"
+        machineSudo:
+          description: Whether the agent's service account holds administrative sudo access on `machineId`.
+          type: boolean
+        threadId:
+          description: The single conversation thread belonging to this agent.
+          type: string
+        modelId:
+          type: string
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+        status:
+          $ref: ./openapi.yaml#/components/schemas/ThreadStatus
+        activity:
+          type:
+            - string
+            - "null"
+        recentMessage:
+          type:
+            - string
+            - "null"
+        unread:
+          type: boolean
+        todos:
+          type: array
+          items:
+            $ref: ./threads.yaml#/components/schemas/TodoResource
+        pendingAction:
+          anyOf:
+            - $ref: ./threads.yaml#/components/schemas/PendingActionResource
+            - type: "null"
+        subagents:
+          $ref: ./threads.yaml#/components/schemas/SubagentCountResource
+        lastTurn:
+          anyOf:
+            - $ref: ./threads.yaml#/components/schemas/LastTurnResource
+            - type: "null"
+        creator:
+          description: Who created this agent and via which channel (`console`, `companion`, or `plan`). Null when unknown.
+          anyOf:
+            - $ref: "#/components/schemas/AgentCreatorResource"
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - instructions
+        - runtime
+        - serviceAccountId
+        - machineId
+        - machineSudo
+        - threadId
+        - modelId
+        - reasoningEffort
+        - approvalMode
+        - status
+        - activity
+        - recentMessage
+        - unread
+        - todos
+        - pendingAction
+        - subagents
+        - lastTurn
+        - creator
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    AgentCreatorResource:
+      description: |-
+        Provenance of who created this resident project agent and how. When created via a member's
+        personal companion AI (`type: companion`), `accessible` is true only for that member; private
+        conversation coordinates remain null for other project members.
+      type: object
+      properties:
+        userId:
+          type:
+            - string
+            - "null"
+        type:
+          type: string
+          enum:
+            - console
+            - companion
+            - plan
+        accessible:
+          type: boolean
+        threadId:
+          type:
+            - string
+            - "null"
+        turnId:
+          type:
+            - string
+            - "null"
+        turnNumber:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+        itemId:
+          type:
+            - string
+            - "null"
+        itemOrdinal:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        toolCall:
+          anyOf:
+            - $ref: ./thread-items.yaml#/components/schemas/OriginToolCallResource
+            - type: "null"
+      required:
+        - userId
+        - type
+        - accessible
+        - threadId
+        - turnId
+        - turnNumber
+        - itemId
+        - itemOrdinal
+        - toolCall
+      additionalProperties: false
+    AgentListResponseBody:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentResource"
+      required:
+        - agents
+      additionalProperties: false
+    CreateAgentRequestBody:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9-]{0,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        instructions:
+          type: string
+          maxLength: 32000
+        runtime:
+          $ref: "#/components/schemas/AgentRuntime"
+        machineId:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        machineSudo:
+          type: boolean
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reasoningEffort:
+          $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+      required:
+        - slug
+        - name
+      additionalProperties: false
+    UpdateAgentRequestBody:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z][a-z0-9-]{0,63}$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type: string
+          maxLength: 500
+        instructions:
+          type: string
+          maxLength: 32000
+        runtime:
+          $ref: "#/components/schemas/AgentRuntime"
+        machineId:
+          type:
+            - string
+            - "null"
+          maxLength: 64
+        machineSudo:
+          type: boolean
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reasoningEffort:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/ReasoningEffort
+            - type: "null"
+        approvalMode:
+          $ref: ./openapi.yaml#/components/schemas/ApprovalMode
+      additionalProperties: false

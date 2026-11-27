@@ -249,6 +249,11 @@ components:
       properties:
         id:
           type: string
+        agentId:
+          description: The project agent this conversation belongs to. Null for personal conversations.
+          type:
+            - string
+            - "null"
         role:
           description: "`main` for a conversation with a person, `subagent` for one started by another agent."
           type: string
@@ -260,7 +265,7 @@ components:
           type:
             - string
             - "null"
-        agentName:
+        subagentName:
           description: The subagent's name, unique among the subagents of its parent. Null for main conversations.
           type:
             - string
@@ -343,9 +348,10 @@ components:
           format: date-time
       required:
         - id
+        - agentId
         - role
         - parentId
-        - agentName
+        - subagentName
         - title
         - folderId
         - orderVersion
@@ -411,6 +417,46 @@ components:
         - itemIds
         - type
       additionalProperties: false
+    SubagentSummaryResource:
+      description: Lightweight live summary of a subagent conversation for sidebar navigation and status indicators.
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: ./openapi.yaml#/components/schemas/ThreadStatus
+        activity:
+          type:
+            - string
+            - "null"
+        pendingActionType:
+          anyOf:
+            - type: string
+              enum:
+                - approval
+                - question
+            - type: "null"
+        lastTurnStatus:
+          anyOf:
+            - $ref: ./openapi.yaml#/components/schemas/TurnStatus
+            - type: "null"
+        unread:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - status
+        - activity
+        - pendingActionType
+        - lastTurnStatus
+        - unread
+        - updatedAt
+      additionalProperties: false
     SubagentCountResource:
       type: object
       properties:
@@ -422,9 +468,20 @@ components:
           type: integer
           format: int64
           minimum: 0
+        needsAction:
+          type: integer
+          format: int64
+          minimum: 0
+        items:
+          description: Up to 20 subagents of this conversation, ordered by creation time.
+          type: array
+          items:
+            $ref: "#/components/schemas/SubagentSummaryResource"
       required:
         - total
         - running
+        - needsAction
+        - items
       additionalProperties: false
     LastTurnResource:
       type: object
@@ -524,6 +581,10 @@ components:
             type: string
         folderId:
           description: Only conversations in this folder.
+          type: string
+          maxLength: 64
+        agentId:
+          description: Only conversations belonging to this project agent.
           type: string
           maxLength: 64
         parentId:

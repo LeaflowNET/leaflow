@@ -76,16 +76,16 @@ info:
     A machine reports what it offers in `features`, each named after the protocol package that
     defines it:
 
-    - `leaflow.fleet.directory.v1`: the accounts of the project's members and the project's groups
+    - `leaflow.fleet.controlplane.directory.v1`: the accounts of the project's members and the project's groups
       exist on the machine; members log in over SSH with their keys and become root through sudo
       as their permissions allow;
-    - `leaflow.fleet.command.v1`: running commands;
-    - `leaflow.fleet.mcp.v1`: the MCP servers each account configures on the machine, local ones
+    - `leaflow.fleet.controlplane.command.v1`: running commands;
+    - `leaflow.fleet.controlplane.mcp.v1`: the MCP servers each account configures on the machine, local ones
       and remote ones it connects to;
-    - `leaflow.fleet.host.v1`: terminal sessions, with programs, files, ports, sound, devices,
+    - `leaflow.fleet.controlplane.host.v1`: terminal sessions, with programs, files, ports, sound, devices,
       printers and privilege approvals;
-    - `leaflow.fleet.virtualdesktop.host.v1`: sessions with a graphical backend;
-    - `leaflow.fleet.tool.v1`: live session tools. Builtin `computer.*` tools are exposed only while
+    - `leaflow.fleet.controlplane.desktop.v1`: sessions with a graphical backend;
+    - `leaflow.fleet.controlplane.tool.v1`: live session tools. Builtin `computer.*` tools are exposed only while
       the virtual desktop capability is actually available; MCP is a separate source.
 
     A graphical backend does not require a full desktop environment. When the machine reports
@@ -99,25 +99,36 @@ info:
 
     ## Directory
 
-    Every user has one account, as with Google Cloud OS Login: a username and a uid that are the
-    same on every machine of every project. The account is created the first time the user may log
-    in to a machine or opens a session; its username comes from the email address, such as
-    `alice_example_com` for `alice@example.com`, and its owner can change it. A project's machines
-    know the accounts of the project's members and the groups the project defines. A member who
-    leaves the project can no longer log in, and files keep their owner.
+    Every user has one directory account: a username and a uid that are the same on every machine
+    of every project. The account is created the first time the user may log in to a machine or
+    opens a session; its username comes from the email address, such as `alice_example_com` for
+    `alice@example.com`, and its owner can change it. Machines resolve accounts and project groups
+    on demand when they are used and cache active entries locally, rather than downloading the
+    whole project directory up front, and never write directory entries into their local account
+    files. A member who leaves the project can no longer log in through Fleet, and files keep
+    their owner.
+
+    On a machine that already has local Linux users configured in `/etc/passwd`, an existing
+    non-system local account (never `root`) can be bound 1:1 to a project member
+    (`PUT /api/v1/machines/{machineId}/local-accounts/{username}`, requiring `fleet:machines.admin`
+    on the machine). On that machine, the member's sessions, commands, MCP servers and `sudo`
+    approvals run as that local account — keeping its existing uid, home directory, shell, local
+    groups and `~/.ssh/authorized_keys` — while `sshd` also accepts the member's SSH keys registered
+    on the platform. Local passwords, local `authorized_keys` and non-Fleet logins of the local
+    account remain as configured on the machine.
 
     Who may log in to which machines, and who may become root there through sudo, are permissions
     of the project's roles: `fleet:machines.login` and `fleet:machines.admin`, each for all
-    machines or for chosen ones. Changes reach the machines within about a minute, and every login
-    and elevation is checked against the current permissions while the machine is connected. To
-    keep a member out of some machines, deny them `fleet:machines.login` on those machines.
-    Elevation through sudo is never approved by a password; see "Approving sudo".
+    machines or for chosen ones. Every login and elevation checks the current permissions while
+    the machine is connected, and revoking access ends open Fleet sessions on the machine. To keep
+    a member out of some machines, deny them `fleet:machines.login` on those machines. Elevation
+    through Fleet is approved without a password; see "Approving sudo".
 
     Members log in over SSH with the SSH keys of their own accounts (`/account/v1/me/ssh-keys` on
-    the account API), while they may log in to the machine.
+    the account API), while they may log in to the machine; on a bound local account, those keys
+    work alongside any keys already in the local account's `authorized_keys` files.
 
-    Machines resolve directory accounts and groups themselves and never write them into their local
-    account files. A local account or group that already uses a name or id of the directory keeps
+    An unbound local account or group that already uses a name or id of a directory entry keeps
     it, and the machine records the conflict among its events.
 
     ## Running commands
@@ -130,7 +141,7 @@ info:
 
     ## MCP servers
 
-    A machine that offers `leaflow.fleet.mcp.v1` reaches the MCP servers its accounts configure:
+    A machine that offers `leaflow.fleet.controlplane.mcp.v1` reaches the MCP servers its accounts configure:
     servers it runs itself and remote servers it connects to. Each account configures them in
     `~/.local/share/leaflow/agent/mcp.json` in its home directory, in the `mcpServers` format other
     MCP clients use, by hand or through this API; the machine picks up every change by itself.
@@ -394,6 +405,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/local-accounts:
+    get:
+      summary: List bound local accounts on a machine
+      description: |-
+        Returns the existing local Linux accounts on the machine that are bound to members of the
+        project, ordered by `username`.
+      operationId: list-machine-local-accounts
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+        - name: user_id
+          in: query
+          description: Return only the binding of this member
+          explode: false
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          description: Match the local username or the member's name, case-insensitively
+          explode: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineLocalAccountList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/local-accounts/{username}:
+    get:
+      summary: Get a bound local account on a machine
+      description: |-
+        Returns the binding of a local account on the machine. Fails with `LOCAL_ACCOUNT_NOT_FOUND`
+        when the local username is not bound on this machine.
+      operationId: get-machine-local-account
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/LocalUsername"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineLocalAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Bind or replace a local account on a machine
+      description: |-
+        Binds the existing local Linux account `username` on the machine to the project member
+        `user_id`, or replaces which member `username` is bound to. On this machine, Fleet opens
+        sessions, runs commands, starts MCP servers and approves `sudo` for that member as
+        `username`, keeping the local account's existing uid, home directory, shell, local groups
+        and `~/.ssh/authorized_keys`, while `sshd` also accepts the member's SSH keys from the
+        platform. The member's directory account is created if they have none yet.
+
+        If the machine has no such local user in `/etc/passwd`, if it is a system or non-login
+        account, or if the machine's local configuration disallows binding it, the machine refuses
+        to serve it and records a `local_account_refused` event.
+
+        Requires `fleet:machines.login` and `fleet:machines.admin` on the machine, since whoever
+        is bound to a local account inherits its existing files, groups and local `sudoers` rules.
+
+        Fails with:
+        - `USER_NOT_PROJECT_MEMBER` when `user_id` is not an active member of the project;
+        - `LOCAL_ACCOUNT_RESERVED` when `username` is `root` or a reserved system account name;
+        - `LOCAL_ACCOUNT_USER_BOUND` when `user_id` is already bound to another local account on
+          this machine, with `metadata.username` naming it; remove that binding first.
+      operationId: update-machine-local-account
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/LocalUsername"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMachineLocalAccountRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineLocalAccountResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Unbind a local account on a machine
+      description: |-
+        Removes the binding of `username` on the machine; removing one that is not bound succeeds.
+        Open Fleet sessions and MCP servers running under the binding end, while the local account
+        on the machine itself is left untouched.
+
+        Requires `fleet:machines.login` and `fleet:machines.admin` on the machine.
+      operationId: delete-machine-local-account
+      tags:
+        - Account
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/LocalUsername"
+      responses:
+        "204":
+          description: Removed
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/machines/{machineId}:runCommand:
     post:
       summary: Run a command
@@ -412,9 +558,15 @@ paths:
         Inside the command, `sudo` works without a prompt while the caller has
         `fleet:machines.admin` on the machine, and refuses otherwise.
 
-        After any required context preparation, the request is held until the command ends, at most
-        `timeout_seconds` and a few seconds more. Neither the command nor its output is hidden from the platform: do not put secrets
-        into either.
+        After any required context preparation, a foreground request is held until the command ends,
+        at most `timeout_seconds` and a few seconds more. When `background` is true, the Agent
+        starts the command detached, persists its output to a per-boot runtime file, and returns
+        immediately with `command` (including `command_id` and `output_path`); while it runs, the
+        Agent proactively reports a `leaflow.fleet.command.running` EventBus heartbeat every 30
+        minutes and a terminal `leaflow.fleet.command.exited` EventBus event upon completion.
+        Fleet keeps no database table for background commands; rebooting the machine clears all
+        running commands. Neither the command nor its output is hidden from the platform: do not
+        put secrets into either.
 
         Requires `fleet:machines.login` on the machine.
 
@@ -453,6 +605,152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/commands:
+    get:
+      summary: List background commands on a machine
+      description: |-
+        Queries the machine's Agent live for background commands belonging to the caller since the
+        machine booted, newest first. Fleet does not store command state in its database; after a
+        machine reboot, no running commands remain. Requires `fleet:machines.login` on the machine.
+      operationId: list-machine-commands
+      tags:
+        - Command
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - name: state
+          in: query
+          description: Filter by background command state
+          schema:
+            $ref: "#/components/schemas/CommandState"
+      responses:
+        "200":
+          description: Live background commands on the machine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineCommandList"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/commands/{commandId}:
+    get:
+      summary: Get a background command
+      description: Queries the machine's Agent live for the current metadata, duration, exit status, and output file path of one background command. Requires `fleet:machines.login` on the machine.
+      operationId: get-machine-command
+      tags:
+        - Command
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/CommandId"
+      responses:
+        "200":
+          description: Current background command metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineCommandResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/commands/{commandId}/output:
+    get:
+      summary: Read output of a background command
+      description: |-
+        Reads a bounded slice of a background command's persisted output file from the machine's
+        Agent. Choose at most one addressing mode: `tail_lines`, `start_line` (with optional
+        `max_lines`), or `offset` (with optional `max_bytes`). When none is specified, returns the
+        last 200 lines of the combined output stream. Requires `fleet:machines.login` on the machine.
+      operationId: read-machine-command-output
+      tags:
+        - Command
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/CommandId"
+        - name: stream
+          in: query
+          description: Which output stream to read; defaults to `combined`
+          schema:
+            $ref: "#/components/schemas/CommandOutputStream"
+        - name: tail_lines
+          in: query
+          description: Return at most the last N lines
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 5000
+        - name: start_line
+          in: query
+          description: 1-based starting line number
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: max_lines
+          in: query
+          description: Maximum lines to return from `start_line`
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 5000
+        - name: offset
+          in: query
+          description: 0-based byte offset into the output stream
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: max_bytes
+          in: query
+          description: Maximum bytes to return from `offset` (at most 262144)
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 262144
+      responses:
+        "200":
+          description: Output slice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineCommandOutput"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/machines/{machineId}/commands/{commandId}:stop:
+    post:
+      summary: Stop a background command
+      description: Stops a running background command belonging to the caller on the machine. Stopping an already exited command succeeds and returns its final metadata. Requires `fleet:machines.login` on the machine.
+      operationId: stop-machine-command
+      tags:
+        - Command
+      parameters:
+        - $ref: "#/components/parameters/MachineId"
+        - $ref: "#/components/parameters/CommandId"
+      responses:
+        "200":
+          description: Updated background command metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineCommandResource"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/machines/{machineId}/mcp-configuration:
     get:
       summary: Get the caller's MCP configuration on a machine
@@ -463,7 +761,7 @@ paths:
 
         Fails with:
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.controlplane.mcp.v1`;
         - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
           the machine refuses the account, as for opening a session;
         - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
@@ -501,7 +799,7 @@ paths:
           with `metadata.line` and `metadata.column`;
         - `MCP_CONFIGURATION_WRITE_FAILED` when the machine could not write the file;
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.controlplane.mcp.v1`;
         - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
           the machine refuses the account, as for opening a session;
         - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
@@ -546,7 +844,7 @@ paths:
           whole first;
         - `MCP_CONFIGURATION_WRITE_FAILED` when the machine could not write the file;
         - `MACHINE_OFFLINE` when the machine is not connected and does not connect again in time;
-        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.mcp.v1`;
+        - `FEATURE_UNAVAILABLE` when the machine does not offer `leaflow.fleet.controlplane.mcp.v1`;
         - `USER_NOT_FOUND`, `USER_NOT_ALLOWED`, `ACCOUNT_EXPIRED` or `PAM_PERMISSION_DENIED` when
           the machine refuses the account, as for opening a session;
         - `MCP_START_FAILED` when the machine could not start MCP for the caller's account;
@@ -2215,6 +2513,15 @@ components:
     bearerAuth:
       $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
   parameters:
+    CommandId:
+      name: commandId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9-]+$"
     MachineId:
       name: machineId
       in: path
@@ -2222,6 +2529,18 @@ components:
       schema:
         type: string
         format: uuid
+    LocalUsername:
+      name: username
+      in: path
+      required: true
+      description: |-
+        The login name of the existing local account on the machine (`/etc/passwd`), never `root`
+        or a system account
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 32
+        pattern: "^[a-z_][a-z0-9_-]*$"
     McpServerName:
       name: serverName
       in: path
@@ -2396,7 +2715,7 @@ components:
         - details
       properties:
         name:
-          description: The protocol package that defines the feature, such as `leaflow.fleet.command.v1`
+          description: The protocol package that defines the feature, such as `leaflow.fleet.controlplane.command.v1`
           type: string
         state:
           $ref: "#/components/schemas/FeatureState"
@@ -2442,10 +2761,15 @@ components:
         `directory_group_conflict`: a group is not served because a local group uses its name or
         gid, or its gid is among the subordinate ids of a local user; metadata `groupName`, and
         `conflict` `name`, `gid` or `subordinate`.
+        `local_account_refused`: a bound local account is not served on the machine because no
+        such local user exists, because it is `root` or a system or non-login account, or because
+        the machine's local configuration disallows binding it; metadata `username`, and `reason`
+        `missing`, `system` or `disallowed`.
       type: string
       enum:
         - directory_account_conflict
         - directory_group_conflict
+        - local_account_refused
     MachineEventResource:
       type: object
       required:
@@ -2789,6 +3113,74 @@ components:
           maxLength: 255
           pattern: "^/[^\\s:]+$"
       additionalProperties: false
+    MachineLocalAccountResource:
+      type: object
+      required:
+        - id
+        - machine_id
+        - username
+        - account_id
+        - user
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_id:
+          type: string
+          format: uuid
+        username:
+          description: The existing local login name on the machine (`/etc/passwd`)
+          type: string
+        account_id:
+          description: The bound member's account id
+          type: string
+          format: uuid
+        user:
+          $ref: "#/components/schemas/NamedIdentity"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    MachineLocalAccountList:
+      type: object
+      required:
+        - items
+        - total_count
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineLocalAccountResource"
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+      additionalProperties: false
+    UpdateMachineLocalAccountRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          description: The project member to bind to this local account on the machine
+          type: string
+          format: uuid
+      additionalProperties: false
     GroupResource:
       type: object
       required:
@@ -3003,7 +3395,7 @@ components:
           $ref: "#/components/schemas/DesktopOptions"
       additionalProperties: false
     DesktopOptions:
-      description: A desktop for the session, on a machine that offers `leaflow.fleet.virtualdesktop.host.v1`
+      description: A desktop for the session, on a machine that offers `leaflow.fleet.controlplane.desktop.v1`
       type: object
       required:
         - mode
@@ -3025,7 +3417,7 @@ components:
         session_desktop:
           description: |-
             In `desktop` mode, the desktop environment to start: a detail of the machine's
-            `leaflow.fleet.virtualdesktop.host.v1` feature without its `desktop.` prefix, such as
+            `leaflow.fleet.controlplane.desktop.v1` feature without its `desktop.` prefix, such as
             `XFCE`; the machine's default when omitted
           type: string
           maxLength: 128
@@ -3053,12 +3445,22 @@ components:
           minLength: 1
           maxLength: 65536
         timeout_seconds:
-          description: Kills the command, and every process it started, this long after it started
+          description: |-
+            Kills the command, and every process it started, this long after it started.
+            For foreground commands: 1–300 seconds (default 60).
+            For background commands: optional upper bound (omitted means unlimited until exit, stop, or reboot).
           type: integer
           format: int64
           minimum: 1
-          maximum: 300
-          default: 60
+          maximum: 86400
+        background:
+          description: Run the command detached in the background, persist output to a file, and return immediately with `command`
+          type: boolean
+          default: false
+        working_directory:
+          description: Optional working directory on the machine; empty uses the account's home directory
+          type: string
+          maxLength: 4096
       additionalProperties: false
     RunCommandResponse:
       type: object
@@ -3072,13 +3474,13 @@ components:
         - stderr_truncated
       properties:
         exit_status:
-          description: The status it exited with, 0 being success; null when a signal ended it
+          description: The status it exited with, 0 being success; null when a signal ended it or when started in the background
           type:
             - integer
             - "null"
           format: int32
         signal:
-          description: The signal that ended it, such as 9 when the timeout killed it; null when it exited
+          description: The signal that ended it, such as 9 when the timeout killed it; null when it exited or when started in the background
           type:
             - integer
             - "null"
@@ -3100,6 +3502,186 @@ components:
         stderr_truncated:
           description: "`stderr` is cut short"
           type: boolean
+        command:
+          description: Metadata of the started background command when `background` is true; null for foreground commands
+          anyOf:
+            - $ref: "#/components/schemas/MachineCommandResource"
+            - type: "null"
+      additionalProperties: false
+    CommandState:
+      type: string
+      enum:
+        - running
+        - exited
+    CommandOutputStream:
+      type: string
+      enum:
+        - combined
+        - stdout
+        - stderr
+    MachineCommandResource:
+      type: object
+      required:
+        - machine_id
+        - command_id
+        - user_id
+        - username
+        - command
+        - argv
+        - working_directory
+        - session_id
+        - state
+        - started_at
+        - finished_at
+        - duration_seconds
+        - exit_status
+        - signal
+        - timed_out
+        - reason
+        - output_path
+        - output_bytes
+        - output_lines
+        - output_truncated
+      properties:
+        machine_id:
+          type: string
+          format: uuid
+        command_id:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        command:
+          description: Full shell command line when started via RunCommand; empty when started with argv only
+          type: string
+        argv:
+          description: Full argument vector executed on the machine
+          type: array
+          items:
+            type: string
+        working_directory:
+          type: string
+        session_id:
+          description: Fleet session_id when this background process belongs to a session; null otherwise
+          type:
+            - string
+            - "null"
+        state:
+          $ref: "#/components/schemas/CommandState"
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        duration_seconds:
+          description: Elapsed runtime in seconds (while running) or total runtime in seconds (once exited)
+          type: number
+          format: double
+          minimum: 0
+        exit_status:
+          description: Exit status (0–255) when exited normally; null otherwise
+          type:
+            - integer
+            - "null"
+          format: int32
+        signal:
+          description: Signal number that terminated the process; null otherwise
+          type:
+            - integer
+            - "null"
+          format: int32
+        timed_out:
+          type: boolean
+        reason:
+          description: Termination reason (`exited`, `signaled`, `stopped`, `timed_out`, `output_limit`, `start_failed`, or `failed`); empty while running
+          type: string
+        output_path:
+          description: Absolute path on the machine where the combined output file is persisted
+          type: string
+        output_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        output_lines:
+          type: integer
+          format: int64
+          minimum: 0
+        output_truncated:
+          type: boolean
+      additionalProperties: false
+    MachineCommandList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineCommandResource"
+      additionalProperties: false
+    MachineCommandOutput:
+      type: object
+      required:
+        - machine_id
+        - command_id
+        - stream
+        - data
+        - start_line
+        - end_line
+        - total_lines
+        - start_offset
+        - next_offset
+        - total_bytes
+        - has_more
+        - output_truncated
+        - output_path
+      properties:
+        machine_id:
+          type: string
+          format: uuid
+        command_id:
+          type: string
+        stream:
+          $ref: "#/components/schemas/CommandOutputStream"
+        data:
+          description: Output bytes in standard Base64 (RFC 4648)
+          type: string
+          format: byte
+        start_line:
+          type: integer
+          format: int64
+          minimum: 0
+        end_line:
+          type: integer
+          format: int64
+          minimum: 0
+        total_lines:
+          type: integer
+          format: int64
+          minimum: 0
+        start_offset:
+          type: integer
+          format: int64
+          minimum: 0
+        next_offset:
+          type: integer
+          format: int64
+          minimum: 0
+        total_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        has_more:
+          type: boolean
+        output_truncated:
+          type: boolean
+        output_path:
+          type: string
       additionalProperties: false
     McpConfigurationFile:
       type: object

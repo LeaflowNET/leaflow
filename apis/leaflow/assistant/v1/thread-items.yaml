@@ -263,6 +263,19 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ItemSourceResource"
             - type: "null"
+        origin:
+          description: |-
+            Structured relational provenance for cross-delivered items (such as messages sent by a parent
+            conversation, subagent, project agent, personal companion AI, task, or future plan/document
+            notification). Omitted or null for ordinary in-conversation items.
+          anyOf:
+            - $ref: "#/components/schemas/ItemOriginResource"
+            - type: "null"
+        authorUserId:
+          description: The project member who sent a `user_message`. Null for other items.
+          type:
+            - string
+            - "null"
         modelId:
           description: The Canopy model that produced this item. Null for messages a person or another source sent.
           type:
@@ -316,6 +329,7 @@ components:
         - reverted
         - truncated
         - source
+        - authorUserId
         - modelId
         - durationMs
         - parts
@@ -383,20 +397,157 @@ components:
       properties:
         type:
           description: |-
-            `subagent` for a subagent reporting to its parent, `thread` for another of the person's
-            conversations, `task` for a task, `channel` for a chat app.
+            `subagent` for a subagent or its parent conversation, `thread` for another conversation,
+            `agent` for a project agent, `task` for a task, `channel` for a chat app, `plan` or `document`
+            for a structured plan or collaborative document notification.
           type: string
           enum:
             - subagent
             - thread
+            - agent
             - task
             - channel
+            - plan
+            - document
         id:
-          description: The conversation, task or channel the message came from.
+          description: The conversation, agent, task, channel, plan or document the message came from.
           type: string
+        slug:
+          description: For `agent` sources or agent-owned subagents, the sending agent's slug.
+          type:
+            - string
+            - "null"
       required:
         - type
         - id
+      additionalProperties: false
+    OriginToolCallResource:
+      description: Canonical `(namespace, tool)` identifier of the causal tool call item in the origin conversation, resolved directly from that item rather than stored as a mutable display string.
+      type: object
+      properties:
+        namespace:
+          type: string
+        tool:
+          type: string
+      required:
+        - namespace
+        - tool
+      additionalProperties: false
+    ItemOriginResource:
+      description: |-
+        Relational provenance of a cross-delivered item. Private companion conversation coordinates
+        (`threadId`, `turnId`, `itemId`, `itemOrdinal`, `threadTitle`) are populated only when
+        `accessible` is true for the current viewer.
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - companion
+            - agent
+            - subagent
+            - task
+            - channel
+            - plan
+            - document
+        agentId:
+          type:
+            - string
+            - "null"
+        agentSlug:
+          type:
+            - string
+            - "null"
+        agentName:
+          type:
+            - string
+            - "null"
+        subagentName:
+          type:
+            - string
+            - "null"
+        userId:
+          type:
+            - string
+            - "null"
+        threadTitle:
+          type:
+            - string
+            - "null"
+        accessible:
+          description: Whether the current viewer is permitted to open the origin conversation (`false` when sent from another member's private companion AI).
+          type: boolean
+        threadId:
+          type:
+            - string
+            - "null"
+        turnId:
+          type:
+            - string
+            - "null"
+        turnNumber:
+          description: 1-based turn number of `turnId` in the origin conversation.
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 1
+        itemId:
+          type:
+            - string
+            - "null"
+        itemOrdinal:
+          type:
+            - integer
+            - "null"
+          format: int64
+          minimum: 0
+        itemType:
+          type:
+            - string
+            - "null"
+        toolCall:
+          anyOf:
+            - $ref: "#/components/schemas/OriginToolCallResource"
+            - type: "null"
+        taskId:
+          type:
+            - string
+            - "null"
+        documentId:
+          type:
+            - string
+            - "null"
+        documentRevision:
+          type:
+            - integer
+            - "null"
+          format: int64
+        dispatchedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - type
+        - agentId
+        - agentSlug
+        - agentName
+        - subagentName
+        - userId
+        - threadTitle
+        - accessible
+        - threadId
+        - turnId
+        - turnNumber
+        - itemId
+        - itemOrdinal
+        - itemType
+        - toolCall
+        - taskId
+        - documentId
+        - documentRevision
+        - dispatchedAt
       additionalProperties: false
     ToolCallResource:
       type: object
@@ -532,6 +683,7 @@ components:
           enum:
             - text
             - file
+            - mention
         text:
           description: For `text` parts. Grows as the answer is written.
           type:
@@ -542,11 +694,31 @@ components:
           anyOf:
             - $ref: ./files.yaml#/components/schemas/FileResource
             - type: "null"
+        mention:
+          description: For `mention` parts. A project agent referenced inline.
+          anyOf:
+            - $ref: "#/components/schemas/MentionResource"
+            - type: "null"
       required:
         - id
         - type
         - text
         - file
+        - mention
+      additionalProperties: false
+    MentionResource:
+      type: object
+      properties:
+        agentId:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+      required:
+        - agentId
+        - slug
+        - name
       additionalProperties: false
     PresentationResource:
       description: Structured detail produced by a tool call, in addition to the one-line `detail`.
@@ -712,6 +884,7 @@ components:
 
         - `text` — the words, in `text`
         - `file` — a file uploaded earlier, by id in `fileId`
+        - `mention` — a project agent, by `agentId` or `slug`
         - `data-<name>` — context from the client, in `data`. The name is shown to the assistant so it
           can tell one block from another.
       type: object
@@ -726,6 +899,16 @@ components:
             - "null"
         fileId:
           description: The file must have been uploaded and not yet sent with another message.
+          type:
+            - string
+            - "null"
+        agentId:
+          description: For `mention` parts. Identifies the project agent by id.
+          type:
+            - string
+            - "null"
+        slug:
+          description: For `mention` parts. Identifies the project agent by slug without `@`.
           type:
             - string
             - "null"
@@ -830,6 +1013,9 @@ components:
           type: integer
           format: int64
           minimum: 0
+        item:
+          description: The accepted user message item written to the transcript or input queue.
+          $ref: "#/components/schemas/ThreadItemResource"
       required:
         - turnId
         - queued
