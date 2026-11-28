@@ -1,0 +1,2844 @@
+openapi: 3.2.1
+info:
+  title: Leaflow Vault API
+  version: 1.0.0
+  description: |-
+    Store, search, rotate, and use project secrets across eight typed collections: logins with
+    TOTP two-factor seeds, HTTP basic auth credentials, API keys, key-value secrets, SSH keys,
+    SSL/TLS certificates, Docker registry credentials, and secure notes.
+
+    ## Authentication
+
+    Every request carries a scoped token; see the `bearerAuth` security scheme. Neither the path
+    nor the headers carry a `project_id`: the current project is determined by the token.
+
+    ## Typed collections and unified discovery
+
+    - Each secret model has its own typed collection (`/api/v1/logins`, `/api/v1/basic-auths`,
+      `/api/v1/api-keys`, `/api/v1/kv-secrets`, `/api/v1/ssh-keys`, `/api/v1/tls-certificates`,
+      `/api/v1/docker-registries`, `/api/v1/secure-notes`) with exact request validation and public
+      metadata fields.
+    - All collections share one project-wide `id` and `slug` namespace. `GET /api/v1/secrets` and
+      `GET /api/v1/secrets:lookup` search and resolve secrets across every type at once.
+    - Public halves — such as SSH public keys, PEM certificate chains, certificate SANs and expiry
+      timestamps, registry server addresses, usernames, and KV field names — are included directly
+      on resource responses. Private keys, passwords, tokens, TOTP seeds, and note contents are
+      never included on listings or metadata reads.
+    - `vault:secret.use` permits platform injection and live TOTP code computation
+      (`POST /api/v1/logins/{secretId}:generateTotp`). `vault:secret.reveal` permits human members
+      to read stored secret material through `:reveal` while `revealable` is `true`. Service
+      accounts cannot call `:reveal`, and sealing (`revealable: false`) is irreversible.
+servers:
+  - url: https://vault.leaflow.cloud
+    description: Project secrets, certificates, and TOTP generation
+security:
+  - bearerAuth: []
+tags:
+  - name: Secrets
+    description: Unified cross-type search, slug lookup, and deletion
+  - name: Logins
+    description: Account logins with optional RFC 6238 TOTP two-factor seeds
+  - name: Basic Auths
+    description: Username and password pairs
+  - name: API Keys
+    description: API keys, bearer tokens, and provider key fields
+  - name: KV Secrets
+    description: Key-value environment sets
+  - name: SSH Keys
+    description: SSH private keys with derived public keys and fingerprints
+  - name: TLS Certificates
+    description: SSL/TLS certificate chains and private keys
+  - name: Docker Registries
+    description: Container registry credentials and dockerconfigjson payloads
+  - name: Secure Notes
+    description: Encrypted free-form text notes
+paths:
+  /api/v1/secrets:
+    get:
+      summary: Search and list secrets across all types
+      operationId: list-secrets
+      tags:
+        - Secrets
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - name: type
+          in: query
+          required: false
+          description: Narrow to a single credential type.
+          schema:
+            $ref: "#/components/schemas/SecretType"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretSummaryListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/secrets:lookup:
+    get:
+      summary: Look up any secret by slug
+      operationId: lookup-secret
+      tags:
+        - Secrets
+      parameters:
+        - name: slug
+          in: query
+          required: true
+          description: Project-unique slug of the secret.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecretSummaryResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/secrets/{secretId}:
+    delete:
+      summary: Delete a secret of any type
+      operationId: delete-secret
+      tags:
+        - Secrets
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── Logins ──────────────────────────────────────────────────────────────────
+  /api/v1/logins:
+    get:
+      summary: List login secrets
+      operationId: list-logins
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a login secret
+      operationId: create-login
+      tags:
+        - Logins
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLoginRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/logins/{secretId}:
+    get:
+      summary: Get a login secret
+      operationId: get-login
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate a login secret
+      operationId: update-login
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a login secret
+      operationId: delete-login
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/logins/{secretId}:reveal:
+    post:
+      summary: Reveal login secret material
+      operationId: reveal-login
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealLoginResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/logins/{secretId}:generateTotp:
+    post:
+      summary: Generate a live TOTP verification code
+      operationId: generate-login-totp
+      tags:
+        - Logins
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpCodeResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── Basic Auths ─────────────────────────────────────────────────────────────
+  /api/v1/basic-auths:
+    get:
+      summary: List basic auth secrets
+      operationId: list-basic-auths
+      tags:
+        - Basic Auths
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BasicAuthSecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a basic auth secret
+      operationId: create-basic-auth
+      tags:
+        - Basic Auths
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBasicAuthRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BasicAuthSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/basic-auths/{secretId}:
+    get:
+      summary: Get a basic auth secret
+      operationId: get-basic-auth
+      tags:
+        - Basic Auths
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BasicAuthSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate a basic auth secret
+      operationId: update-basic-auth
+      tags:
+        - Basic Auths
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBasicAuthRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BasicAuthSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a basic auth secret
+      operationId: delete-basic-auth
+      tags:
+        - Basic Auths
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/basic-auths/{secretId}:reveal:
+    post:
+      summary: Reveal basic auth password
+      operationId: reveal-basic-auth
+      tags:
+        - Basic Auths
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealBasicAuthResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── API Keys ────────────────────────────────────────────────────────────────
+  /api/v1/api-keys:
+    get:
+      summary: List API keys
+      operationId: list-api-keys
+      tags:
+        - API Keys
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create an API key
+      operationId: create-api-key
+      tags:
+        - API Keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/api-keys/{secretId}:
+    get:
+      summary: Get an API key
+      operationId: get-api-key
+      tags:
+        - API Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate an API key
+      operationId: update-api-key
+      tags:
+        - API Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApiKeyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an API key
+      operationId: delete-api-key
+      tags:
+        - API Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/api-keys/{secretId}:reveal:
+    post:
+      summary: Reveal API key material
+      operationId: reveal-api-key
+      tags:
+        - API Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealApiKeyResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── KV Secrets ──────────────────────────────────────────────────────────────
+  /api/v1/kv-secrets:
+    get:
+      summary: List KV secrets
+      operationId: list-kv-secrets
+      tags:
+        - KV Secrets
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KvSecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a KV secret
+      operationId: create-kv-secret
+      tags:
+        - KV Secrets
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKvSecretRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KvSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/kv-secrets/{secretId}:
+    get:
+      summary: Get a KV secret
+      operationId: get-kv-secret
+      tags:
+        - KV Secrets
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KvSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate a KV secret
+      operationId: update-kv-secret
+      tags:
+        - KV Secrets
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKvSecretRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KvSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a KV secret
+      operationId: delete-kv-secret
+      tags:
+        - KV Secrets
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/kv-secrets/{secretId}:reveal:
+    post:
+      summary: Reveal KV secret pairs
+      operationId: reveal-kv-secret
+      tags:
+        - KV Secrets
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealKvSecretResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── SSH Keys ────────────────────────────────────────────────────────────────
+  /api/v1/ssh-keys:
+    get:
+      summary: List SSH key secrets
+      operationId: list-ssh-keys
+      tags:
+        - SSH Keys
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshKeySecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create an SSH key secret
+      operationId: create-ssh-key
+      tags:
+        - SSH Keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSshKeyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/ssh-keys/{secretId}:
+    get:
+      summary: Get an SSH key secret
+      operationId: get-ssh-key
+      tags:
+        - SSH Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate an SSH key secret
+      operationId: update-ssh-key
+      tags:
+        - SSH Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSshKeyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SshKeySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an SSH key secret
+      operationId: delete-ssh-key
+      tags:
+        - SSH Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/ssh-keys/{secretId}:reveal:
+    post:
+      summary: Reveal SSH private key and passphrase
+      operationId: reveal-ssh-key
+      tags:
+        - SSH Keys
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealSshKeyResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── TLS Certificates ────────────────────────────────────────────────────────
+  /api/v1/tls-certificates:
+    get:
+      summary: List SSL/TLS certificate secrets
+      operationId: list-tls-certificates
+      tags:
+        - TLS Certificates
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - name: expiring_before
+          in: query
+          required: false
+          description: Return only certificates whose `not_after` is at or before this timestamp.
+          schema:
+            type: string
+            format: date-time
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsCertificateSecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Upload an SSL/TLS certificate and private key
+      operationId: create-tls-certificate
+      tags:
+        - TLS Certificates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTlsCertificateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsCertificateSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/tls-certificates/{secretId}:
+    get:
+      summary: Get an SSL/TLS certificate secret
+      operationId: get-tls-certificate
+      tags:
+        - TLS Certificates
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsCertificateSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update metadata or rotate an SSL/TLS certificate
+      operationId: update-tls-certificate
+      tags:
+        - TLS Certificates
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTlsCertificateRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsCertificateSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete an SSL/TLS certificate secret
+      operationId: delete-tls-certificate
+      tags:
+        - TLS Certificates
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/tls-certificates/{secretId}:reveal:
+    post:
+      summary: Reveal SSL/TLS private key
+      operationId: reveal-tls-certificate
+      tags:
+        - TLS Certificates
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealTlsCertificateResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── Docker Registries ───────────────────────────────────────────────────────
+  /api/v1/docker-registries:
+    get:
+      summary: List Docker registry secrets
+      operationId: list-docker-registries
+      tags:
+        - Docker Registries
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerRegistrySecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a Docker registry secret
+      operationId: create-docker-registry
+      tags:
+        - Docker Registries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDockerRegistryRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerRegistrySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/docker-registries/{secretId}:
+    get:
+      summary: Get a Docker registry secret
+      operationId: get-docker-registry
+      tags:
+        - Docker Registries
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerRegistrySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate a Docker registry secret
+      operationId: update-docker-registry
+      tags:
+        - Docker Registries
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDockerRegistryRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerRegistrySecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a Docker registry secret
+      operationId: delete-docker-registry
+      tags:
+        - Docker Registries
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/docker-registries/{secretId}:reveal:
+    post:
+      summary: Reveal Docker registry password and dockerconfigjson
+      operationId: reveal-docker-registry
+      tags:
+        - Docker Registries
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealDockerRegistryResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+  # ── Secure Notes ────────────────────────────────────────────────────────────
+  /api/v1/secure-notes:
+    get:
+      summary: List secure note secrets
+      operationId: list-secure-notes
+      tags:
+        - Secure Notes
+      parameters:
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/Page
+        - $ref: ../../type/v1/pagination.yaml#/components/parameters/PageSize
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecureNoteSecretListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a secure note secret
+      operationId: create-secure-note
+      tags:
+        - Secure Notes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSecureNoteRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecureNoteSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/secure-notes/{secretId}:
+    get:
+      summary: Get a secure note secret
+      operationId: get-secure-note
+      tags:
+        - Secure Notes
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecureNoteSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    patch:
+      summary: Update or rotate a secure note secret
+      operationId: update-secure-note
+      tags:
+        - Secure Notes
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSecureNoteRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecureNoteSecretResource"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Delete a secure note secret
+      operationId: delete-secure-note
+      tags:
+        - Secure Notes
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "204":
+          description: No Content
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/secure-notes/{secretId}:reveal:
+    post:
+      summary: Reveal secure note content
+      operationId: reveal-secure-note
+      tags:
+        - Secure Notes
+      parameters:
+        - $ref: "#/components/parameters/SecretId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealSecureNoteResponse"
+        default:
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: ../../type/v1/security.yaml#/components/securitySchemes/ScopedToken
+  parameters:
+    SecretId:
+      name: secretId
+      in: path
+      required: true
+      description: Secret identifier.
+      schema:
+        type: string
+        format: uuid
+    Query:
+      name: q
+      in: query
+      required: false
+      description: Keyword search over slug, name, public locator fields (domains, URIs, server, username, fingerprint, field keys), tags, and description.
+      schema:
+        type: string
+        maxLength: 200
+    Tag:
+      name: tag
+      in: query
+      required: false
+      description: Filter by exact tag.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      $ref: ../../type/v1/error.yaml#/components/schemas/Error
+    SecretType:
+      type: string
+      enum:
+        - login
+        - basic_auth
+        - api_key
+        - kv_secret
+        - ssh_key
+        - tls_certificate
+        - docker_registry
+        - secure_note
+    SecretStatus:
+      type: string
+      enum:
+        - active
+        - disabled
+    SecretSummaryResource:
+      description: Cross-type summary returned by unified search and lookup.
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          $ref: "#/components/schemas/SecretType"
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        summary:
+          description: Human-readable public summary (username, server, primary domain, fingerprint, or key count).
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        has_totp:
+          type: boolean
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        not_after:
+          description: Certificate expiration timestamp for `tls_certificate` secrets; null for other types.
+          type:
+            - string
+            - "null"
+          format: date-time
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - type
+        - status
+        - summary
+        - tags
+        - has_totp
+        - revealable
+        - version
+        - not_after
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    SecretSummaryListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecretSummaryResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+
+    # ── Login Schemas ─────────────────────────────────────────────────────────
+    LoginSecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        username:
+          type: string
+        uris:
+          type: array
+          items:
+            type: string
+        has_totp:
+          type: boolean
+        field_keys:
+          type: array
+          items:
+            type: string
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - username
+        - uris
+        - has_totp
+        - field_keys
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    LoginSecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LoginSecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateLoginRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        username:
+          type: string
+          maxLength: 512
+        password:
+          type: string
+          maxLength: 16384
+        totp:
+          description: Optional `otpauth://totp/...` URI or Base32 RFC 6238 secret seed.
+          type: string
+          maxLength: 2048
+        uris:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 16384
+      required:
+        - name
+      additionalProperties: false
+    UpdateLoginRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        username:
+          type: string
+          maxLength: 512
+        uris:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        password:
+          type: string
+          maxLength: 16384
+        totp:
+          type: string
+          maxLength: 2048
+        clear_totp:
+          type: boolean
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 16384
+      additionalProperties: false
+    RevealLoginResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        username:
+          type: string
+        password:
+          type: string
+        totp:
+          type: string
+        uris:
+          type: array
+          items:
+            type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - id
+        - slug
+        - version
+        - username
+        - password
+        - totp
+        - uris
+        - fields
+      additionalProperties: false
+    TotpCodeResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        digits:
+          type: integer
+          format: int64
+        period_seconds:
+          type: integer
+          format: int64
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - code
+        - digits
+        - period_seconds
+        - expires_at
+      additionalProperties: false
+
+    # ── Basic Auth Schemas ────────────────────────────────────────────────────
+    BasicAuthSecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        username:
+          type: string
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - username
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    BasicAuthSecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BasicAuthSecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateBasicAuthRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        username:
+          type: string
+          minLength: 1
+          maxLength: 512
+        password:
+          type: string
+          minLength: 1
+          maxLength: 16384
+      required:
+        - name
+        - username
+        - password
+      additionalProperties: false
+    UpdateBasicAuthRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        username:
+          type: string
+          minLength: 1
+          maxLength: 512
+        password:
+          type: string
+          minLength: 1
+          maxLength: 16384
+      additionalProperties: false
+    RevealBasicAuthResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - id
+        - slug
+        - version
+        - username
+        - password
+      additionalProperties: false
+
+    # ── API Key Schemas ───────────────────────────────────────────────────────
+    ApiKeySecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        provider:
+          type: string
+        token_prefix:
+          type: string
+        field_keys:
+          type: array
+          items:
+            type: string
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - provider
+        - token_prefix
+        - field_keys
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    ApiKeySecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKeySecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateApiKeyRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        provider:
+          type: string
+          maxLength: 128
+        token:
+          type: string
+          maxLength: 32768
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 32768
+      required:
+        - name
+      additionalProperties: false
+    UpdateApiKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        provider:
+          type: string
+          maxLength: 128
+        token:
+          type: string
+          maxLength: 32768
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 32768
+      additionalProperties: false
+    RevealApiKeyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        provider:
+          type: string
+        token:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - id
+        - slug
+        - version
+        - provider
+        - token
+        - fields
+      additionalProperties: false
+
+    # ── KV Secret Schemas ─────────────────────────────────────────────────────
+    KvSecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        field_keys:
+          type: array
+          items:
+            type: string
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - field_keys
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    KvSecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KvSecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateKvSecretRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        data:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
+            maxLength: 32768
+      required:
+        - name
+        - data
+      additionalProperties: false
+    UpdateKvSecretRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        data:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            type: string
+            maxLength: 32768
+      additionalProperties: false
+    RevealKvSecretResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        data:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+        - id
+        - slug
+        - version
+        - data
+      additionalProperties: false
+
+    # ── SSH Key Schemas ───────────────────────────────────────────────────────
+    SshKeySecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        public_key:
+          type: string
+        key_type:
+          type: string
+        fingerprint:
+          type: string
+        has_passphrase:
+          type: boolean
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - public_key
+        - key_type
+        - fingerprint
+        - has_passphrase
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    SshKeySecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SshKeySecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateSshKeyRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        private_key:
+          description: OpenSSH or PEM encoded private key. Public key and SHA-256 fingerprint are derived automatically.
+          type: string
+          minLength: 1
+          maxLength: 32768
+        passphrase:
+          type: string
+          maxLength: 4096
+      required:
+        - name
+        - private_key
+      additionalProperties: false
+    UpdateSshKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        private_key:
+          type: string
+          minLength: 1
+          maxLength: 32768
+        passphrase:
+          type: string
+          maxLength: 4096
+      additionalProperties: false
+    RevealSshKeyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        public_key:
+          type: string
+        private_key:
+          type: string
+        passphrase:
+          type: string
+      required:
+        - id
+        - slug
+        - version
+        - public_key
+        - private_key
+        - passphrase
+      additionalProperties: false
+
+    # ── TLS Certificate Schemas ───────────────────────────────────────────────
+    TlsCertificateSecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        certificate:
+          description: PEM-encoded leaf certificate and intermediate chain.
+          type: string
+        ca_certificate:
+          type: string
+        common_name:
+          type: string
+        dns_names:
+          type: array
+          items:
+            type: string
+        issuer:
+          type: string
+        serial_number:
+          type: string
+        key_algorithm:
+          type: string
+        fingerprint:
+          type: string
+        not_before:
+          type: string
+          format: date-time
+        not_after:
+          type: string
+          format: date-time
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - certificate
+        - ca_certificate
+        - common_name
+        - dns_names
+        - issuer
+        - serial_number
+        - key_algorithm
+        - fingerprint
+        - not_before
+        - not_after
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    TlsCertificateSecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TlsCertificateSecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateTlsCertificateRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        certificate:
+          description: PEM-encoded X.509 certificate chain, leaf certificate first.
+          type: string
+          minLength: 1
+          maxLength: 65536
+        private_key:
+          description: PEM-encoded private key matching the leaf certificate.
+          type: string
+          minLength: 1
+          maxLength: 32768
+        ca_certificate:
+          type: string
+          maxLength: 65536
+      required:
+        - name
+        - certificate
+        - private_key
+      additionalProperties: false
+    UpdateTlsCertificateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        certificate:
+          type: string
+          minLength: 1
+          maxLength: 65536
+        private_key:
+          type: string
+          minLength: 1
+          maxLength: 32768
+        ca_certificate:
+          type: string
+          maxLength: 65536
+      additionalProperties: false
+    RevealTlsCertificateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        certificate:
+          type: string
+        ca_certificate:
+          type: string
+        private_key:
+          type: string
+      required:
+        - id
+        - slug
+        - version
+        - certificate
+        - ca_certificate
+        - private_key
+      additionalProperties: false
+
+    # ── Docker Registry Schemas ───────────────────────────────────────────────
+    DockerRegistrySecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        server:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - server
+        - username
+        - email
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    DockerRegistrySecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerRegistrySecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateDockerRegistryRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        server:
+          type: string
+          minLength: 1
+          maxLength: 512
+        username:
+          type: string
+          minLength: 1
+          maxLength: 512
+        password:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        email:
+          type: string
+          maxLength: 320
+      required:
+        - name
+        - server
+        - username
+        - password
+      additionalProperties: false
+    UpdateDockerRegistryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        server:
+          type: string
+          minLength: 1
+          maxLength: 512
+        username:
+          type: string
+          minLength: 1
+          maxLength: 512
+        password:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        email:
+          type: string
+          maxLength: 320
+      additionalProperties: false
+    RevealDockerRegistryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        server:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        email:
+          type: string
+        dockerconfigjson:
+          description: Standard `.dockerconfigjson` document ready for container runtime or Kubernetes consumption.
+          type: string
+      required:
+        - id
+        - slug
+        - version
+        - server
+        - username
+        - password
+        - email
+        - dockerconfigjson
+      additionalProperties: false
+
+    # ── Secure Note Schemas ───────────────────────────────────────────────────
+    SecureNoteSecretResource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: "#/components/schemas/SecretStatus"
+        tags:
+          type: array
+          items:
+            type: string
+        byte_length:
+          type: integer
+          format: int64
+          minimum: 0
+        revealable:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        last_used_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - status
+        - tags
+        - byte_length
+        - revealable
+        - version
+        - expires_at
+        - last_used_at
+        - created_by
+        - created_at
+        - updated_at
+      additionalProperties: false
+    SecureNoteSecretListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecureNoteSecretResource"
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        page_size:
+          type: integer
+          format: int64
+          minimum: 1
+        total_count:
+          type: integer
+          format: int64
+          minimum: 0
+      required:
+        - items
+        - page
+        - page_size
+        - total_count
+      additionalProperties: false
+    CreateSecureNoteRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+          default: true
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        content:
+          type: string
+          minLength: 1
+          maxLength: 65536
+      required:
+        - name
+        - content
+      additionalProperties: false
+    UpdateSecureNoteRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        description:
+          type: string
+          maxLength: 1000
+        tags:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        revealable:
+          type: boolean
+        clear_expires_at:
+          type: boolean
+        expires_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        content:
+          type: string
+          minLength: 1
+          maxLength: 65536
+      additionalProperties: false
+    RevealSecureNoteResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        content:
+          type: string
+      required:
+        - id
+        - slug
+        - version
+        - content
+      additionalProperties: false
